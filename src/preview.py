@@ -9,6 +9,12 @@ to light and dark mode.
 from pathlib import Path
 
 import markdown as md
+import re
+from markdown.extensions import Extension
+from markdown.postprocessors import Postprocessor
+from pygments import highlight
+from pygments.lexers import get_lexer_by_name, guess_lexer
+from pygments.formatters import HtmlFormatter
 import gi
 
 gi.require_version("Gtk", "4.0")
@@ -43,16 +49,76 @@ HTML_TEMPLATE = """\
 </body>
 </html>"""
 
+EXTENSION_CONFIGS = {
+    "markdown.extensions.wikilinks": {"base_url": ""},
+}
+
+
+class PygmentsCodePostprocessor(Postprocessor):
+    """Replace fenced code blocks with Pygments-highlighted HTML."""
+    
+    PLACEHOLDER_PATTERN = re.compile(r'\x02wzxhzdk:(\d+)\x03')
+    LANG_PATTERN = re.compile(r'class="language-(\w+)"')
+    # Pattern to match <p> with placeholder
+    PARAGRAPH_PLACEHOLDER = re.compile(r'<p>\s*\x02wzxhzdk:(\d+)\x03\s*</p>')
+    
+    def __init__(self, md):
+        super().__init__(md)
+        self.formatter = HtmlFormatter(cssclass="codehilite", noclasses=False)
+    
+    def run(self, text):
+        def replace_placeholder(match):
+            index = int(match.group(1))
+            # Look up the stashed HTML
+            try:
+                stashed_html = self.md.htmlStash.rawHtmlBlocks[index]
+            except (IndexError, AttributeError):
+                return match.group(0)
+            
+            # Extract language from the stashed HTML
+            lang_match = self.LANG_PATTERN.search(stashed_html)
+            if not lang_match:
+                return match.group(0)
+            
+            lang = lang_match.group(1)
+            
+            # Extract code content from stashed HTML
+            code_match = re.search(r'<pre><code class="language-\w+">(.*?)</code></pre>', stashed_html, re.DOTALL)
+            if not code_match:
+                return match.group(0)
+            
+            code = code_match.group(1)
+            # Decode HTML entities
+            code = code.replace('<', '<').replace('>', '>').replace('&', '&')
+            
+            try:
+                lexer = get_lexer_by_name(lang, stripall=True)
+            except ValueError:
+                lexer = get_lexer_by_name('text', stripall=True)
+            
+            highlighted = highlight(code, lexer, self.formatter)
+            # Add data-lang attribute to the div
+            highlighted = highlighted.replace('<div class="codehilite">', f'<div class="codehilite" data-lang="{lang}">')
+            
+            return highlighted
+        
+        # Replace <p>placeholder</p> with highlighted code
+        return self.PARAGRAPH_PLACEHOLDER.sub(replace_placeholder, text)
+
+
+class PygmentsCodeExtension(Extension):
+    def extendMarkdown(self, md):
+        # Run after all other postprocessors (priority > 0 = later)
+        md.postprocessors.register(PygmentsCodePostprocessor(md), 'pygments_code', 50)
+
+
 MARKDOWN_EXTENSIONS = [
     "markdown.extensions.fenced_code",
     "markdown.extensions.tables",
     "markdown.extensions.toc",
     "markdown.extensions.wikilinks",
+    PygmentsCodeExtension(),
 ]
-
-EXTENSION_CONFIGS = {
-    "markdown.extensions.wikilinks": {"base_url": ""},
-}
 
 
 class Preview(Gtk.ScrolledWindow):
@@ -79,7 +145,7 @@ class Preview(Gtk.ScrolledWindow):
         self._web_view.set_background_color(bg)
 
         web_settings = self._web_view.get_settings()
-        web_settings.set_enable_javascript(False)
+        web_settings.set_enable_javascript(True)
 
         self.set_child(self._web_view)
 

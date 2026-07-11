@@ -89,6 +89,40 @@ meson.build            — build system
 
 ## Dev commands
 
+### Test-Script (`scripts/test-app.sh`)
+**Zweck:** Sauberer Neustart der App mit PID-File-Management, Pattern-Fallback, Validierung.
+
+```bash
+# Einfacher Aufruf (macht alles: kill alt + start neu + validieren)
+./scripts/test-app.sh
+
+# Manuelle Schritte falls nötig:
+# 1. Prüfen ob läuft
+pgrep -f "src.main" && echo "LÄUFT" || echo "FREI"
+# 2. Kill über PID-File (bevorzugt) oder Pattern
+# 4. Start mit Validierung
+./scripts/test-app.sh
+# 5. Logs prüfen
+tail -5 tmp/mv-stderr.log
+```
+
+**Was das Script tut:**
+1. **Kill:** Prüft `tmp/markdown-vault.pid` → wenn PID läuft → `kill` → nach 1s force `kill -9` → wartet auf Ende. Falls PID-File fehlt/kaputt → Pattern-Fallback (`pkill -f "python3 -m src.main"`).
+2. **Start:** `setsid python3 -m src.main >tmp/mv-stdout.log 2>tmp/mv-stderr.log & disown`, PID in `tmp/markdown-vault.pid` schreiben.
+3. **Validieren:** 2s warten → prüft Log auf `"main window presented"` → Exit-Code 0 bei Erfolg, 1 bei Fehler.
+4. **Logs:** Schreibt nach `tmp/mv-stdout.log` / `tmp/mv-stderr.log`, PID in `tmp/markdown-vault.pid`.
+
+**WICHTIG:** Vor jedem Test **immer** `./scripts/test-app.sh` nutzen — nie manuell `pkill` + `setsid` mixen. Verhindert verwaiste Prozesse, garantiert sauberen Neustart, Exit-Code für CI nutzbar.
+
+
+## Dev commands
+
+**Start-Prozedur (immer befolgen):**
+1. `pkill -f "python3 -m src.main" 2>/dev/null; sleep 1`  — existierende Instanzen killen (NUR unser Prozess!)
+2. `pgrep -f "src.main" && echo "LÄUFT NOCH!" || echo "FREI"`  — prüfen
+3. `setsid python3 -m src.main >tmp/mv-stdout.log 2>tmp/mv-stderr.log & disown`  — detached starten
+4. `sleep 2; tail -5 tmp/mv-stderr.log`  — Logs prüfen ("main window presented")
+
 ```bash
 # Run from source (no install needed)
 python3 -m src.main
@@ -102,6 +136,7 @@ disown
 # IMPORTANT: Before starting a new instance for testing, ALWAYS kill
 # all existing instances first to avoid duplicate windows:
 # pkill -f "python3 -m src.main" || true
+# (NICHT killall python3 — das killt auch firewalld & andere System-Python-Prozesse!)
 
 # Run detached for manual testing (survives bash tool timeout)
 setsid python3 -m src.main >tmp/mv-stdout.log 2>tmp/mv-stderr.log &
