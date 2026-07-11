@@ -86,6 +86,11 @@ def remove_vault(path: str) -> list[dict[str, str]]:
 
 _DEFAULT_SETTINGS = {
     "autosave_interval": 30,
+    "default_view_mode": "edit",
+    "editor_font_size": 14,
+    "editor_tab_width": 4,
+    "editor_wrap_text": True,
+    "preview_zoom": 1.0,
 }
 
 

@@ -66,6 +66,7 @@ class Preview(Gtk.ScrolledWindow):
     def __init__(self, css_path: str = "") -> None:
         super().__init__()
         self._css_path = css_path
+        self._zoom_level: float = 1.0
 
         self._web_view = WebKit.WebView()
         self._web_view.set_vexpand(True)
@@ -81,6 +82,19 @@ class Preview(Gtk.ScrolledWindow):
         web_settings.set_enable_javascript(False)
 
         self.set_child(self._web_view)
+
+    # ------------------------------------------------------------------
+    # Zoom
+    # ------------------------------------------------------------------
+
+    @property
+    def zoom_level(self) -> float:
+        return self._zoom_level
+
+    @zoom_level.setter
+    def zoom_level(self, level: float) -> None:
+        self._zoom_level = max(0.25, min(5.0, level))
+        self._web_view.set_zoom_level(self._zoom_level)
 
     # ------------------------------------------------------------------
     # Public API

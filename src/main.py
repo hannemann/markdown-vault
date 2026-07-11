@@ -54,6 +54,11 @@ class MarkdownVaultApp(Adw.Application):
         self.set_accels_for_action("win.toggle-search", ["<Control>f"])
         self.set_accels_for_action("win.save", ["<Control>s"])
         self.set_accels_for_action("win.close-tab", ["<Control>w"])
+        self.set_accels_for_action("win.new-file", ["<Control>n"])
+        self.set_accels_for_action("win.preferences", ["<Control>comma"])
+        self.set_accels_for_action("win.zoom-in", ["<Control>plus", "<Control>equal"])
+        self.set_accels_for_action("win.zoom-out", ["<Control>minus"])
+        self.set_accels_for_action("win.zoom-reset", ["<Control>0"])
 
     def _on_activate(self, app: "MarkdownVaultApp") -> None:
         """Present the main window when the application is activated."""

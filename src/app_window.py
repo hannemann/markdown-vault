@@ -17,7 +17,7 @@ import gi
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 
-from gi.repository import Gtk, Adw, Gio, GLib
+from gi.repository import Gtk, Adw, Gio, GLib, Gdk
 
 from .vault_tree import VaultTree
 from .editor import Editor
@@ -25,6 +25,7 @@ from .preview import Preview
 from .tabs import TabBar
 from .sidebar import Sidebar
 from .search import SearchBar
+from .preferences import PreferencesDialog
 from . import config
 from . import session
 
@@ -41,6 +42,11 @@ def _make_theme_handler(scheme: int):
     return _handler
 
 
+_ZOOM_STEP = 0.1
+_ZOOM_MIN = 0.25
+_ZOOM_MAX = 5.0
+
+
 class MainWindow(Adw.ApplicationWindow):
     """Top-level application window."""
 
@@ -52,6 +58,7 @@ class MainWindow(Adw.ApplicationWindow):
         self._autosave_id: int | None = None
         self._view_toggle_buttons: dict[str, Gtk.ToggleButton] = {}
         self._active_vault: str | None = None
+        self._settings = config.load_settings()
 
         # Load session for window geometry.
         _ses = session.load_session()
@@ -116,6 +123,8 @@ class MainWindow(Adw.ApplicationWindow):
                     fp,
                     view_mode=tab_data.get("view_mode", "edit"),
                     split_position=tab_data.get("split_position", 600),
+                    editor_zoom=tab_data.get("editor_zoom", 1.0),
+                    preview_zoom=tab_data.get("preview_zoom", 1.0),
                 )
         active = _ses.get("active_tab")
         if active and active in self._tab_bar.get_all_paths():
@@ -134,6 +143,22 @@ class MainWindow(Adw.ApplicationWindow):
         Adw.StyleManager.get_default().connect(
             "notify::dark", lambda *_: GLib.idle_add(self._on_color_scheme_changed),
         )
+
+        # Ctrl+Wheel zoom on the centre content area.
+        self._scroll_ctrl = Gtk.EventControllerScroll.new(
+            Gtk.EventControllerScrollFlags.VERTICAL
+        )
+        self._scroll_ctrl.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
+        self._scroll_ctrl.connect("scroll", self._on_scroll)
+        self._content_stack.add_controller(self._scroll_ctrl)
+
+        # Track pointer position for keyboard zoom.
+        self._ptr_x: float = 0.0
+        self._ptr_y: float = 0.0
+        self._motion_ctrl = Gtk.EventControllerMotion.new()
+        self._motion_ctrl.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
+        self._motion_ctrl.connect("motion", self._on_motion)
+        self._content_stack.add_controller(self._motion_ctrl)
 
     # ── Welcome view ───────────────────────────────────────────────
 
@@ -236,6 +261,10 @@ class MainWindow(Adw.ApplicationWindow):
         action_section.append("Full-Text Search", "win.toggle-search")
         menu.append_section(None, action_section)
 
+        prefs_section = Gio.Menu()
+        prefs_section.append("Preferences", "win.preferences")
+        menu.append_section(None, prefs_section)
+
         menu_btn.set_menu_model(menu)
         header.pack_end(menu_btn)
 
@@ -275,6 +304,22 @@ class MainWindow(Adw.ApplicationWindow):
 
         action = Gio.SimpleAction.new("close-tab", None)
         action.connect("activate", lambda *_: self._close_current_tab())
+        self.add_action(action)
+
+        action = Gio.SimpleAction.new("preferences", None)
+        action.connect("activate", lambda *_: self._open_preferences())
+        self.add_action(action)
+
+        action = Gio.SimpleAction.new("zoom-in", None)
+        action.connect("activate", lambda *_: self._zoom_active(+1))
+        self.add_action(action)
+
+        action = Gio.SimpleAction.new("zoom-out", None)
+        action.connect("activate", lambda *_: self._zoom_active(-1))
+        self.add_action(action)
+
+        action = Gio.SimpleAction.new("zoom-reset", None)
+        action.connect("activate", lambda *_: self._zoom_reset())
         self.add_action(action)
 
     # ── New file ───────────────────────────────────────────────────
@@ -343,6 +388,8 @@ class MainWindow(Adw.ApplicationWindow):
         *,
         view_mode: str = "edit",
         split_position: int = 600,
+        editor_zoom: float = 1.0,
+        preview_zoom: float = 1.0,
     ) -> None:
         """Open *file_path* in a new or existing tab."""
         for path in self._tab_bar.get_all_paths():
@@ -350,9 +397,17 @@ class MainWindow(Adw.ApplicationWindow):
                 self._tab_bar.set_active_tab(file_path)
                 return
 
-        editor = Editor()
+        editor = Editor(
+            base_font_size=self._settings.get("editor_font_size", 14),
+            tab_width=self._settings.get("editor_tab_width", 4),
+            wrap_text=self._settings.get("editor_wrap_text", True),
+        )
         preview = Preview()
         editor.open_file(file_path)
+
+        # Apply per-tab zoom.
+        editor.zoom_factor = editor_zoom
+        preview.zoom_level = preview_zoom
 
         split = Gtk.Paned(orientation=Gtk.Orientation.HORIZONTAL)
         split.set_start_child(editor)
@@ -491,6 +546,8 @@ class MainWindow(Adw.ApplicationWindow):
                 "path": path,
                 "view_mode": tab.view_mode,
                 "split_position": split_pos,
+                "editor_zoom": tab.editor.zoom_factor,
+                "preview_zoom": tab.preview.zoom_level,
             })
         return data
 
@@ -547,3 +604,96 @@ class MainWindow(Adw.ApplicationWindow):
                 base_dir = str(Path(tab.editor.file_path).parent) if tab.editor.file_path else ""
                 tab.preview.update_from_text(text, base_dir)
         return False  # remove idle handler
+
+    # ── Preferences ────────────────────────────────────────────────
+
+    def _open_preferences(self) -> None:
+        dlg = PreferencesDialog()
+        dlg.connect("settings-changed", self._on_preferences_changed)
+        dlg.present(self)
+
+    def _on_preferences_changed(self, _dlg) -> None:
+        self._settings = config.load_settings()
+        # Apply to all open editors.
+        for path in self._tab_bar.get_all_paths():
+            tab = self._tab_bar.get_tab(path)
+            if tab:
+                tab.editor.update_settings(
+                    font_size=self._settings.get("editor_font_size", 14),
+                    tab_width=self._settings.get("editor_tab_width", 4),
+                    wrap_text=self._settings.get("editor_wrap_text", True),
+                )
+        # Restart autosave with new interval.
+        self._cancel_autosave()
+        self._setup_autosave()
+
+    # ── Zoom ────────────────────────────────────────────────────────
+
+    def _on_motion(self, _ctrl, x: float, y: float) -> None:
+        """Track pointer position inside _content_stack."""
+        self._ptr_x = x
+        self._ptr_y = y
+
+    def _widget_origin_in_stack(self, widget: Gtk.Widget) -> tuple[int, int]:
+        """Walk up from *widget* to _content_stack, accumulating offsets."""
+        x, y = 0, 0
+        cur = widget
+        while cur is not None and cur is not self._content_stack:
+            a = cur.get_allocation()
+            x += a.x
+            y += a.y
+            cur = cur.get_parent()
+        return x, y
+
+    def _is_pointer_over_preview(self, tab, px: float, py: float) -> bool:
+        """Check if (px, py) in _content_stack coords is over the preview."""
+        if not tab.preview.get_visible():
+            return False
+        ox, oy = self._widget_origin_in_stack(tab.preview)
+        a = tab.preview.get_allocation()
+        return ox <= px < ox + a.width and oy <= py < oy + a.height
+
+    def _zoom_active(self, direction: int) -> None:
+        """Zoom the widget under the mouse pointer (keyboard shortcut)."""
+        tab = self._tab_bar.get_current_tab()
+        if not tab:
+            return
+        if self._is_pointer_over_preview(tab, self._ptr_x, self._ptr_y):
+            tab.preview.zoom_level = round(
+                tab.preview.zoom_level + direction * _ZOOM_STEP, 2,
+            )
+        else:
+            tab.editor.zoom_factor = round(
+                tab.editor.zoom_factor + direction * _ZOOM_STEP, 2,
+            )
+
+    def _zoom_reset(self) -> None:
+        tab = self._tab_bar.get_current_tab()
+        if not tab:
+            return
+        if self._is_pointer_over_preview(tab, self._ptr_x, self._ptr_y):
+            tab.preview.zoom_level = 1.0
+        else:
+            tab.editor.zoom_factor = 1.0
+
+    def _on_scroll(self, _ctrl, _dx, dy: float) -> bool:
+        """Ctrl+Wheel zoom handler."""
+        event = _ctrl.get_current_event()
+        if event is None:
+            return False
+        state = event.get_modifier_state()
+        if not (state & Gdk.ModifierType.CONTROL_MASK):
+            return False
+        tab = self._tab_bar.get_current_tab()
+        if not tab:
+            return False
+        direction = -1 if dy > 0 else 1
+        if self._is_pointer_over_preview(tab, self._ptr_x, self._ptr_y):
+            tab.preview.zoom_level = round(
+                tab.preview.zoom_level + direction * _ZOOM_STEP, 2,
+            )
+        else:
+            tab.editor.zoom_factor = round(
+                tab.editor.zoom_factor + direction * _ZOOM_STEP, 2,
+            )
+        return True

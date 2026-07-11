@@ -32,10 +32,13 @@ class Editor(Gtk.ScrolledWindow):
         "text-changed": (GObject.SIGNAL_RUN_LAST, None, ()),
     }
 
-    def __init__(self) -> None:
+    def __init__(self, base_font_size: int = 14, tab_width: int = 4,
+                 wrap_text: bool = True) -> None:
         super().__init__()
         self._file_path: str | None = None
         self._debounce_id: int | None = None
+        self._base_font_size: int = base_font_size
+        self._zoom_factor: float = 1.0
 
         self._buffer = GtkSource.Buffer()
         self._buffer.connect("modified-changed", self._on_buffer_modified)
@@ -52,14 +55,15 @@ class Editor(Gtk.ScrolledWindow):
         self._view.set_show_line_marks(True)
         self._view.set_auto_indent(True)
         self._view.set_indent_on_tab(True)
-        self._view.set_tab_width(4)
+        self._view.set_tab_width(tab_width)
         self._view.set_insert_spaces_instead_of_tabs(True)
-        self._view.set_wrap_mode(Gtk.WrapMode.WORD)
+        self._view.set_wrap_mode(Gtk.WrapMode.WORD if wrap_text else Gtk.WrapMode.NONE)
         self._view.set_left_margin(12)
         self._view.set_right_margin(12)
         self._view.set_top_margin(8)
         self._view.set_bottom_margin(8)
         self._view.add_css_class("editor-view")
+        self._apply_font_size()
 
         self.update_color_scheme()
 
@@ -126,6 +130,50 @@ class Editor(Gtk.ScrolledWindow):
     def focus(self) -> None:
         """Move keyboard focus to the text view."""
         self._view.grab_focus()
+
+    # ── Zoom ────────────────────────────────────────────────────────
+
+    @property
+    def zoom_factor(self) -> float:
+        return self._zoom_factor
+
+    @zoom_factor.setter
+    def zoom_factor(self, factor: float) -> None:
+        factor = max(0.25, min(5.0, factor))
+        self._zoom_factor = factor
+        self._apply_font_size()
+
+    @property
+    def base_font_size(self) -> int:
+        return self._base_font_size
+
+    @base_font_size.setter
+    def base_font_size(self, size: int) -> None:
+        self._base_font_size = max(8, min(72, size))
+        self._apply_font_size()
+
+    def _apply_font_size(self) -> None:
+        size = max(8, int(self._base_font_size * self._zoom_factor))
+        css = f"editor-view {{ font-size: {size}px; }}"
+        provider = Gtk.CssProvider()
+        provider.load_from_data(css.encode(), -1)
+        self._view.get_style_context().add_provider(
+            provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
+        )
+
+    def update_settings(self, font_size: int | None = None,
+                        tab_width: int | None = None,
+                        wrap_text: bool | None = None) -> None:
+        """Apply changed preferences live."""
+        if font_size is not None:
+            self._base_font_size = font_size
+            self._apply_font_size()
+        if tab_width is not None:
+            self._view.set_tab_width(tab_width)
+        if wrap_text is not None:
+            self._view.set_wrap_mode(
+                Gtk.WrapMode.WORD if wrap_text else Gtk.WrapMode.NONE
+            )
 
     # ------------------------------------------------------------------
     # Internal

@@ -129,5 +129,53 @@ class TestRemoveVault(_TempConfigMixin, unittest.TestCase):
         self.assertEqual(len(result), 0)
 
 
+class TestSettings(_TempConfigMixin, unittest.TestCase):
+    """Tests for ``load_settings`` and ``save_settings``."""
+
+    def test_load_settings_defaults_when_no_file(self):
+        s = _cfg.load_settings()
+        self.assertEqual(s["autosave_interval"], 30)
+        self.assertEqual(s["editor_font_size"], 14)
+        self.assertEqual(s["editor_tab_width"], 4)
+        self.assertTrue(s["editor_wrap_text"])
+        self.assertAlmostEqual(s["preview_zoom"], 1.0)
+        self.assertEqual(s["default_view_mode"], "edit")
+
+    def test_load_settings_on_corrupt_yaml(self):
+        _cfg.CONFIG_FILE.write_text("{{bad yaml", encoding="utf-8")
+        s = _cfg.load_settings()
+        self.assertEqual(s["autosave_interval"], 30)
+
+    def test_save_and_load_round_trip(self):
+        settings = _cfg.load_settings()
+        settings["autosave_interval"] = 60
+        settings["editor_font_size"] = 18
+        settings["editor_tab_width"] = 2
+        settings["editor_wrap_text"] = False
+        settings["preview_zoom"] = 1.5
+        _cfg.save_settings(settings)
+        loaded = _cfg.load_settings()
+        self.assertEqual(loaded["autosave_interval"], 60)
+        self.assertEqual(loaded["editor_font_size"], 18)
+        self.assertEqual(loaded["editor_tab_width"], 2)
+        self.assertFalse(loaded["editor_wrap_text"])
+        self.assertAlmostEqual(loaded["preview_zoom"], 1.5)
+
+    def test_save_settings_preserves_vaults(self):
+        _cfg.add_vault("Notes", "/tmp/notes")
+        settings = _cfg.load_settings()
+        settings["autosave_interval"] = 120
+        _cfg.save_settings(settings)
+        vaults = _cfg.load_vaults()
+        self.assertEqual(len(vaults), 1)
+        self.assertEqual(vaults[0]["name"], "Notes")
+
+    def test_save_settings_creates_dir(self):
+        shutil.rmtree(self._tmpdir, ignore_errors=True)
+        _cfg.save_settings({"autosave_interval": 10})
+        s = _cfg.load_settings()
+        self.assertEqual(s["autosave_interval"], 10)
+
+
 if __name__ == "__main__":
     unittest.main()

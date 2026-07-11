@@ -76,5 +76,34 @@ class TestPreview(unittest.TestCase):
         self.assertEqual(preview._css_path, "/tmp/test.css")
 
 
+class TestPreviewZoomStructure(unittest.TestCase):
+    """Verify the source defines zoom and theme-related properties."""
+
+    def test_preview_has_zoom_level_property(self):
+        from pathlib import Path as _P
+        src = _P(__file__).resolve().parent.parent / "src" / "preview.py"
+        source = src.read_text(encoding="utf-8")
+        self.assertIn("def zoom_level", source)
+        self.assertIn("_zoom_level", source)
+
+    def test_preview_has_update_theme_method(self):
+        from pathlib import Path as _P
+        src = _P(__file__).resolve().parent.parent / "src" / "preview.py"
+        source = src.read_text(encoding="utf-8")
+        self.assertIn("def update_theme", source)
+
+    def test_preview_has_update_from_text_method(self):
+        from pathlib import Path as _P
+        src = _P(__file__).resolve().parent.parent / "src" / "preview.py"
+        source = src.read_text(encoding="utf-8")
+        self.assertIn("def update_from_text", source)
+
+    def test_preview_has_get_theme_colors(self):
+        from pathlib import Path as _P
+        src = _P(__file__).resolve().parent.parent / "src" / "preview.py"
+        source = src.read_text(encoding="utf-8")
+        self.assertIn("_get_theme_colors", source)
+
+
 if __name__ == "__main__":
     unittest.main()

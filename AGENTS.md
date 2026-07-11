@@ -8,7 +8,8 @@ Markdown Vault — a GNOME desktop app for editing and previewing Markdown files
 - **Language**: Python 3
 - **UI toolkit**: GTK 4 + libadwaita
 - **Markdown rendering**: HTML/CSS via WebKitGTK (WebView)
-- **Config**: `~/.config/markdown-vault/vaults.yaml`
+- **Config**: `~/.config/markdown-vault/vaults.yaml` (vaults + settings)
+- **Session**: `~/.config/markdown-vault/session.json` (window geometry, tabs, view modes, split positions, sidebar, expanded_vaults, editor_zoom, preview_zoom)
 
 ## Tech decisions
 
@@ -44,6 +45,9 @@ Markdown Vault — a GNOME desktop app for editing and previewing Markdown files
 - **Tags/backlinks**: wikilink-style `[[page]]` parsing and backlink discovery.
 - **Keybindings**: GNOME-style defaults, vim/emacs modes optional.
 - **Markdown + images**: `![alt](path)` with relative and absolute path resolution.
+- **Preferences dialog**: ``Adw.PreferencesDialog`` for autosave interval, default view mode, editor font size/tab width/wrap, preview zoom.
+- **Zoom**: Ctrl+plus/minus/0 keyboard shortcuts; Ctrl+Wheel zoom on content area; per-tab zoom persisted in session.
+- **Session persistence**: window size, sidebar, tabs (view modes + split positions), active tab, expanded vaults, editor/preview zoom.
 
 ## Project structure (planned)
 
@@ -59,7 +63,9 @@ src/
   search.py            — bottom bar: full-text search across vaults
   git_integration.py   — git status, diff, commit
   tags.py              — [[wikilink]] parsing, backlinks
-  config.py            — vaults.yaml reader/writer
+  config.py            — vaults.yaml reader/writer + settings
+  session.py           — session persistence (JSON)
+  preferences.py       — Adw.PreferencesDialog
 data/
   de.hannemann.markdown-vault.desktop
   de.hannemann.markdown-vault.metainfo.xml
@@ -72,6 +78,12 @@ tests/
   test_config.py
   test_tags.py
   test_search.py
+  test_session.py
+  test_preferences.py
+  test_editor.py
+  test_preview.py
+  test_git_integration.py
+  test_tabs.py
 meson.build            — build system
 ```
 

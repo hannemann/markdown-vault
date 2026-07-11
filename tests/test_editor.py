@@ -60,5 +60,37 @@ class TestEditorFileOperations(unittest.TestCase):
         self.assertIn("日本語テスト", content)
 
 
+class TestEditorZoomStructure(unittest.TestCase):
+    """Verify the source defines zoom-related properties and methods."""
+
+    def test_editor_has_zoom_factor_property(self):
+        src = Path(__file__).resolve().parent.parent / "src" / "editor.py"
+        source = src.read_text(encoding="utf-8")
+        self.assertIn("def zoom_factor", source)
+        self.assertIn("_zoom_factor", source)
+
+    def test_editor_has_base_font_size_property(self):
+        src = Path(__file__).resolve().parent.parent / "src" / "editor.py"
+        source = src.read_text(encoding="utf-8")
+        self.assertIn("def base_font_size", source)
+
+    def test_editor_has_update_settings_method(self):
+        src = Path(__file__).resolve().parent.parent / "src" / "editor.py"
+        source = src.read_text(encoding="utf-8")
+        self.assertIn("def update_settings", source)
+
+    def test_editor_has_update_color_scheme_method(self):
+        src = Path(__file__).resolve().parent.parent / "src" / "editor.py"
+        source = src.read_text(encoding="utf-8")
+        self.assertIn("def update_color_scheme", source)
+
+    def test_editor_constructor_accepts_font_params(self):
+        src = Path(__file__).resolve().parent.parent / "src" / "editor.py"
+        source = src.read_text(encoding="utf-8")
+        self.assertIn("base_font_size", source)
+        self.assertIn("tab_width", source)
+        self.assertIn("wrap_text", source)
+
+
 if __name__ == "__main__":
     unittest.main()
