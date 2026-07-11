@@ -159,3 +159,11 @@ python3 -m unittest discover -s tests -v
 - GtkSourceView 5 renamed `begin_not_undoable_action` → `begin_irreversible_action`.
 - `editor.file_path` is a `str`, not `Path` — use `Path(editor.file_path).parent` for directory.
 - Kill all existing app instances before starting a new one (`pkill -f "python3 -m src.main" || true`). Duplicate instances cause confusing state.
+
+## Future Features
+
+- **Integration & E2E Tests**
+  - *Integration*: pytest + Xvfb (headless Display) — Widget-API-Tests für Tab-Handling, Editor↔Preview-Sync, Split-View, Vault-Tree-Expansion, Session-Restore
+  - *E2E*: pytest + dogtail/pyatspi (AT-SPI Accessibility) — echte Tastatur/Maus-Events via Accessibility-Bus
+  - Ziel: 80% kritische Pfade über Integration abdecken, E2E für User-Flows (New File, Open Vault, Preferences, Zoom)
+  - CI: GitHub Actions / GitLab CI mit `xvfb-run` und `libatspi2.0-0`
