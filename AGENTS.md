@@ -83,7 +83,7 @@ python3 -m src.main
 
 # Install dependencies (openSUSE Tumbleweed)
 sudo zypper install python3-gobject python3-gobject-Gdk gtk4-devel gtk4-tools \
-  libadwaita-devel libgtksourceview-5-0-devel libwebkitgtk-6_0-devel \
+  libadwaita-devel gtksourceview5-devel webkitgtk4-devel \
   gobject-introspection-devel python3-PyYAML python3-markdown meson gcc
 
 # Install dependencies (Fedora)

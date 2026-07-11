@@ -34,8 +34,8 @@ sudo zypper install \
   gtk4-devel \
   gtk4-tools \
   libadwaita-devel \
-  libgtksourceview-5-0-devel \
-  libwebkitgtk-6_0-devel \
+  gtksourceview5-devel \
+  webkitgtk4-devel \
   gobject-introspection-devel \
   python3-PyYAML \
   python3-markdown \
