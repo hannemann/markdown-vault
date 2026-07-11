@@ -13,21 +13,36 @@ Markdown Vault — a GNOME desktop app for editing and previewing Markdown files
 ## Tech decisions
 
 - Use `gi.require_version("Gtk", "4.0")` and `gi.require_version("Adw", "1")` before importing.
-- Markdown → HTML conversion uses Python `markdown` library (or `mistune`).
+- **GtkSourceView 5** for editor (`gi.require_version("GtkSource", "5")`).
+- Markdown → HTML conversion uses Python `markdown` library.
 - WebView is `WebKitGTK` via `gi.repository.WebKit`.
 - Vault list stored in YAML (`vaults.yaml`), not dconf — simpler to debug and version.
 - Images referenced in Markdown are resolved relative to the `.md` file's directory.
+- **Flatpak** as primary distribution format (sandboxed file access via portal).
+
+## Layout
+
+- **Left panel**: vault tree — all vaults as expandable file trees (IDE-style project browser).
+- **Center panel**: editor/preview/split with tabs.
+  - **Edit** — GtkSourceView with syntax highlighting.
+  - **Render** — WebKitGTK WebView with styled HTML.
+  - **Split** — editor + preview side by side.
+  - Default view is user-configurable.
+- **Right sidebar** (toggleable via hamburger menu or shortcut):
+  - Outline (headings of current file)
+  - Backlinks / `[[wikilink]]` references
+  - Git panel (status, diff, commit)
+  - File details (metadata, word count, last modified)
+- **Bottom bar**: full-text search across all vaults (Ctrl+F expands to vault-wide search).
 
 ## Features
 
-- **Three-panel layout**: vault tree (left) | editor/preview/split (center) | optional sidebar
-- **View modes**: Edit, Render, Split (default configurable in settings)
-- **Multiple vaults**: add/remove directories; tree view shows `.md` files and images
-- **Tabs**: open multiple files simultaneously
-- **Git integration**: status indicators, diff view, commit from within the app
-- **Full-text search**: search across all open vaults
-- **Tags/backlinks**: wikilink-style `[[page]]` support
-- **Keybindings**: configurable (default GNOME-style, vim/emacs modes optional)
+- **Multiple vaults**: freely selectable directories; add/remove via UI.
+- **Tabs**: open multiple files simultaneously in center panel.
+- **Git integration**: status indicators in file tree, diff view, commit from app.
+- **Tags/backlinks**: wikilink-style `[[page]]` parsing and backlink discovery.
+- **Keybindings**: GNOME-style defaults, vim/emacs modes optional.
+- **Markdown + images**: `![alt](path)` with relative and absolute path resolution.
 
 ## Project structure (planned)
 
@@ -36,10 +51,11 @@ src/
   main.py              — entry point, AdwApplication setup
   app_window.py        — main window, three-panel layout
   vault_tree.py        — left panel: file tree for vaults
-  editor.py            — text editor widget (GtkSourceView)
+  editor.py            — text editor widget (GtkSourceView 5)
   preview.py           — WebView-based Markdown renderer
   tabs.py              — tab management for open files
-  search.py            — full-text search across vaults
+  sidebar.py           — right sidebar (outline, backlinks, git, details)
+  search.py            — bottom bar: full-text search across vaults
   git_integration.py   — git status, diff, commit
   tags.py              — [[wikilink]] parsing, backlinks
   config.py            — vaults.yaml reader/writer
@@ -50,6 +66,7 @@ data/
   icons/
   css/
     style.css          — WebView styling for rendered Markdown
+  de.hannemann.markdown-vault.yml  — Flatpak manifest
 tests/
   test_config.py
   test_tags.py
@@ -64,10 +81,10 @@ meson.build            — build system
 python -m src.main
 
 # Install dependencies (Fedora)
-sudo dnf install gtk4 libadwaita webkitgtk6.0 python3-gobject python3-markdown python3-pyyaml
+sudo dnf install gtk4 libadwaita webkitgtk6.0 gtksourceview5 python3-gobject python3-markdown python3-pyyaml python3-pygit2
 
 # Install dependencies (Ubuntu/Debian)
-sudo apt install libgtk-4-dev libadwaita-1-dev libwebkitgtk-6.0-dev python3-gi python3-markdown python3-yaml
+sudo apt install libgtk-4-dev libadwaita-1-dev libwebkitgtk-6.0-dev libgtksourceview-5-dev python3-gi python3-markdown python3-yaml python3-pygit2
 
 # Build with meson
 meson setup builddir
