@@ -1,3 +1,17 @@
+"""Markdown Vault — right sidebar.
+
+Provides four switchable sub-views:
+
+* **Outline** — headings extracted from the current Markdown file.
+* **Backlinks** — files linking to the current file via ``[[wikilink]]``.
+* **Git** — working-tree status and diff preview.
+* **Details** — file metadata (path, word count, size, last modified).
+"""
+
+import re
+from datetime import datetime
+from pathlib import Path
+
 import gi
 
 gi.require_version("Gtk", "4.0")
@@ -6,28 +20,39 @@ gi.require_version("Adw", "1")
 from gi.repository import Gtk, GObject
 
 from . import git_integration, tags
-from pathlib import Path
+
+_HEADING_RE = re.compile(r"^(#{1,6})\s+(.+)$", re.MULTILINE)
 
 
 class Sidebar(Gtk.Box):
+    """Toggleable right sidebar with tabbed sub-views.
+
+    Signals:
+        file-open-requested(str): Emitted when the user clicks a
+            backlink, requesting the referenced file to be opened.
+    """
+
     __gsignals__ = {
         "file-open-requested": (GObject.SIGNAL_RUN_LAST, None, (str,)),
     }
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=0)
-        self.set_size_request(250, -1)
+        self.set_size_request(260, -1)
         self.set_visible(False)
 
+        self._current_file: str | None = None
+        self._vault_paths: list[str] = []
+
+        # --- Sub-view stack ---
         self._stack = Gtk.Stack()
         self._stack.set_transition_type(Gtk.StackTransitionType.CROSSFADE)
-        self.append(self._stack)
 
-        self._outline_page = self._build_outline_page()
-        self._stack.add_titled(self._outline_page, "outline", "Outline")
+        self._outline_list = self._make_scrollable_list()
+        self._stack.add_titled(self._outline_list["parent"], "outline", "Outline")
 
-        self._backlinks_page = self._build_backlinks_page()
-        self._stack.add_titled(self._backlinks_page, "backlinks", "Backlinks")
+        self._backlinks_list = self._make_scrollable_list()
+        self._stack.add_titled(self._backlinks_list["parent"], "backlinks", "Backlinks")
 
         self._git_page = self._build_git_page()
         self._stack.add_titled(self._git_page, "git", "Git")
@@ -39,35 +64,80 @@ class Sidebar(Gtk.Box):
         switcher.set_margin_top(6)
         switcher.set_margin_bottom(6)
         self.append(switcher)
+        self.append(self._stack)
 
-        self._current_file: str | None = None
-        self._vault_paths: list[str] = []
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
 
-    def _build_outline_page(self):
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
-        self._outline_list = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
-        self._outline_list.set_margin_top(8)
-        self._outline_list.set_margin_start(8)
-        self._outline_list.set_margin_end(8)
-        scrolled = Gtk.ScrolledWindow()
-        scrolled.set_child(self._outline_list)
-        scrolled.set_vexpand(True)
-        box.append(scrolled)
-        return box
+    def set_vault_paths(self, paths: list[str]) -> None:
+        """Set the list of vault root paths (used for backlink search)."""
+        self._vault_paths = list(paths)
 
-    def _build_backlinks_page(self):
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
-        self._backlinks_list = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
-        self._backlinks_list.set_margin_top(8)
-        self._backlinks_list.set_margin_start(8)
-        self._backlinks_list.set_margin_end(8)
-        scrolled = Gtk.ScrolledWindow()
-        scrolled.set_child(self._backlinks_list)
-        scrolled.set_vexpand(True)
-        box.append(scrolled)
-        return box
+    def update_for_file(self, file_path: str | None, text: str = "") -> None:
+        """Refresh all sub-views for *file_path*.
 
-    def _build_git_page(self):
+        Pass ``None`` to reset all views to their empty state.
+        """
+        self._current_file = file_path
+        self._refresh_outline(text)
+        self._refresh_backlinks(file_path)
+        self._refresh_git(file_path)
+        self._refresh_details(file_path, text)
+
+    # ------------------------------------------------------------------
+    # Outline
+    # ------------------------------------------------------------------
+
+    def _refresh_outline(self, text: str) -> None:
+        """Populate the outline list from Markdown headings in *text*."""
+        self._clear_list(self._outline_list["list"])
+        if not text:
+            return
+        for match in _HEADING_RE.finditer(text):
+            level = len(match.group(1))
+            heading = match.group(2)
+            label = Gtk.Label(label=f"{'  ' * (level - 1)}\u25cf {heading}")
+            label.set_xalign(0)
+            label.add_css_class("outline-item")
+            label.set_size_request(-1, 28)
+            self._outline_list["list"].append(label)
+
+    # ------------------------------------------------------------------
+    # Backlinks
+    # ------------------------------------------------------------------
+
+    def _refresh_backlinks(self, file_path: str | None) -> None:
+        """Populate the backlinks list."""
+        self._clear_list(self._backlinks_list["list"])
+        if not file_path or not self._vault_paths:
+            self._backlinks_list["list"].append(
+                self._empty_label("Open a file to see backlinks")
+            )
+            return
+        backlinks = tags.find_backlinks(Path(file_path), self._vault_paths)
+        if not backlinks:
+            self._backlinks_list["list"].append(
+                self._empty_label("No backlinks found")
+            )
+            return
+        for bl in backlinks:
+            btn = Gtk.Button(label=bl.name)
+            btn.add_css_class("flat")
+            btn.set_xalign(0)
+            btn.set_tooltip_text(str(bl))
+            btn.connect(
+                "clicked",
+                lambda _b, p=str(bl): self.emit("file-open-requested", p),
+            )
+            self._backlinks_list["list"].append(btn)
+
+    # ------------------------------------------------------------------
+    # Git
+    # ------------------------------------------------------------------
+
+    def _build_git_page(self) -> Gtk.Box:
+        """Create the git status / diff sub-view."""
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
         box.set_margin_top(8)
         box.set_margin_start(8)
@@ -86,7 +156,32 @@ class Sidebar(Gtk.Box):
 
         return box
 
-    def _build_details_page(self):
+    def _refresh_git(self, file_path: str | None) -> None:
+        """Update the git sub-view for the file's repository."""
+        if not file_path:
+            self._git_status_label.set_text("No file open")
+            self._git_diff_label.set_text("")
+            return
+        repo_dir = Path(file_path).parent
+        if not git_integration.is_git_repo(repo_dir):
+            self._git_status_label.set_text("Not a git repository")
+            self._git_diff_label.set_text("")
+            return
+        status = git_integration.get_status(repo_dir)
+        if status:
+            lines = [f"{e['status']}  {e['path']}" for e in status]
+            self._git_status_label.set_text("\n".join(lines))
+        else:
+            self._git_status_label.set_text("Working tree clean")
+        diff = git_integration.get_diff(repo_dir)
+        self._git_diff_label.set_text(diff[:2000] if diff else "")
+
+    # ------------------------------------------------------------------
+    # Details
+    # ------------------------------------------------------------------
+
+    def _build_details_page(self) -> Gtk.Box:
+        """Create the file-details sub-view."""
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
         box.set_margin_top(8)
         box.set_margin_start(8)
@@ -99,88 +194,55 @@ class Sidebar(Gtk.Box):
 
         return box
 
-    def set_vault_paths(self, paths: list[str]):
-        self._vault_paths = list(paths)
-
-    def update_for_file(self, file_path: str | None, text: str = ""):
-        self._current_file = file_path
-        self._update_outline(file_path, text)
-        self._update_backlinks(file_path)
-        self._update_git(file_path)
-        self._update_details(file_path, text)
-
-    def _update_outline(self, file_path: str | None, text: str):
-        for child in list(self._outline_list):
-            self._outline_list.remove(child)
-        if not text:
-            return
-        import re
-        for match in re.finditer(r"^(#{1,6})\s+(.+)$", text, re.MULTILINE):
-            level = len(match.group(1))
-            heading = match.group(2)
-            btn = Gtk.Label(label=f"{'  ' * (level - 1)}{heading}")
-            btn.set_xalign(0)
-            btn.add_css_class("outline-item")
-            btn.set_size_request(-1, 28)
-            self._outline_list.append(btn)
-
-    def _update_backlinks(self, file_path: str | None):
-        for child in list(self._backlinks_list):
-            self._backlinks_list.remove(child)
-        if not file_path or not self._vault_paths:
-            lbl = Gtk.Label(label="No backlinks")
-            lbl.set_xalign(0)
-            self._backlinks_list.append(lbl)
-            return
-        backlinks = tags.find_backlinks(Path(file_path), self._vault_paths)
-        if not backlinks:
-            lbl = Gtk.Label(label="No backlinks found")
-            lbl.set_xalign(0)
-            self._backlinks_list.append(lbl)
-            return
-        for bl in backlinks:
-            btn = Gtk.Button(label=bl.name)
-            btn.add_css_class("flat")
-            btn.set_xalign(0)
-            btn.connect("clicked", lambda _b, p=str(bl): self.emit("file-open-requested", p))
-            self._backlinks_list.append(btn)
-
-    def _update_git(self, file_path: str | None):
-        if not file_path:
-            self._git_status_label.set_text("No file open")
-            self._git_diff_label.set_text("")
-            return
-        from pathlib import Path
-        repo_dir = Path(file_path).parent
-        if not git_integration.is_git_repo(repo_dir):
-            self._git_status_label.set_text("Not a git repository")
-            self._git_diff_label.set_text("")
-            return
-        status = git_integration.get_status(repo_dir)
-        if status:
-            lines = [f"{e['status']} {e['path']}" for e in status]
-            self._git_status_label.set_text("\n".join(lines))
-        else:
-            self._git_status_label.set_text("Working tree clean")
-        diff = git_integration.get_diff(repo_dir)
-        self._git_diff_label.set_text(diff[:2000] if diff else "")
-
-    def _update_details(self, file_path: str | None, text: str):
+    def _refresh_details(self, file_path: str | None, text: str) -> None:
+        """Update file metadata display."""
         if not file_path:
             self._details_label.set_text("No file open")
             return
         p = Path(file_path)
-        stat = p.stat()
-        words = len(text.split()) if text else 0
-        lines = text.count("\n") + 1 if text else 0
-        from datetime import datetime
+        try:
+            stat = p.stat()
+        except OSError:
+            self._details_label.set_text("Cannot read file info")
+            return
+        word_count = len(text.split()) if text else 0
+        line_count = text.count("\n") + 1 if text else 0
         modified = datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M")
-        info = (
-            f"File: {p.name}\n"
-            f"Path: {p.parent}\n"
-            f"Words: {words}\n"
-            f"Lines: {lines}\n"
-            f"Size: {stat.st_size} bytes\n"
+        self._details_label.set_text(
+            f"File:  {p.name}\n"
+            f"Path:  {p.parent}\n"
+            f"Words: {word_count}\n"
+            f"Lines: {line_count}\n"
+            f"Size:  {stat.st_size:,} bytes\n"
             f"Modified: {modified}"
         )
-        self._details_label.set_text(info)
+
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _make_scrollable_list() -> dict:
+        """Create a ``Gtk.Box`` wrapped in a ``Gtk.ScrolledWindow``."""
+        inner = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+        inner.set_margin_top(8)
+        inner.set_margin_start(8)
+        inner.set_margin_end(8)
+        scrolled = Gtk.ScrolledWindow()
+        scrolled.set_child(inner)
+        scrolled.set_vexpand(True)
+        return {"parent": scrolled, "list": inner}
+
+    @staticmethod
+    def _clear_list(box: Gtk.Box) -> None:
+        """Remove all children from *box*."""
+        for child in list(box):
+            box.remove(child)
+
+    @staticmethod
+    def _empty_label(text: str) -> Gtk.Label:
+        """Return a dimmed placeholder label."""
+        lbl = Gtk.Label(label=text)
+        lbl.set_xalign(0)
+        lbl.add_css_class("dim-label")
+        return lbl

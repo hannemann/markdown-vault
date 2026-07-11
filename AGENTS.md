@@ -38,7 +38,8 @@ Markdown Vault — a GNOME desktop app for editing and previewing Markdown files
 ## Features
 
 - **Multiple vaults**: freely selectable directories; add/remove via UI.
-- **Tabs**: open multiple files simultaneously in center panel.
+- **Tabs**: open multiple files simultaneously in center panel. Each tab owns its own ``Editor`` + ``Preview`` instance.
+- **Dark mode**: ``Adw.StyleManager`` with System / Light / Dark toggle in hamburger menu. WebView CSS uses ``@theme_*`` named colours for automatic adaptation.
 - **Git integration**: status indicators in file tree, diff view, commit from app.
 - **Tags/backlinks**: wikilink-style `[[page]]` parsing and backlink discovery.
 - **Keybindings**: GNOME-style defaults, vim/emacs modes optional.
