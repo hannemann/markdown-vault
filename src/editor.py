@@ -63,6 +63,7 @@ class Editor(Gtk.ScrolledWindow):
         self._view.set_top_margin(8)
         self._view.set_bottom_margin(8)
         self._view.add_css_class("editor-view")
+        self._css_provider: Gtk.CssProvider | None = None
         self._apply_font_size()
 
         self.update_color_scheme()
@@ -154,11 +155,13 @@ class Editor(Gtk.ScrolledWindow):
 
     def _apply_font_size(self) -> None:
         size = max(8, int(self._base_font_size * self._zoom_factor))
-        css = f"editor-view {{ font-size: {size}px; }}"
-        provider = Gtk.CssProvider()
-        provider.load_from_data(css.encode(), -1)
+        css = f".editor-view {{ font-size: {size}px; }}"
+        if self._css_provider is not None:
+            self._view.get_style_context().remove_provider(self._css_provider)
+        self._css_provider = Gtk.CssProvider()
+        self._css_provider.load_from_data(css.encode(), -1)
         self._view.get_style_context().add_provider(
-            provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
+            self._css_provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
         )
 
     def update_settings(self, font_size: int | None = None,
