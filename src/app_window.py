@@ -403,6 +403,8 @@ class MainWindow(Adw.ApplicationWindow):
             wrap_text=self._settings.get("editor_wrap_text", True),
         )
         preview = Preview()
+        preview.set_vault_paths(self._vault_tree.get_vault_paths())
+        preview.connect("link-clicked", self._on_preview_link_clicked)
         editor.open_file(file_path)
 
         # Apply per-tab zoom.
@@ -457,6 +459,9 @@ class MainWindow(Adw.ApplicationWindow):
         self._open_file(file_path)
 
     def _on_search_result_selected(self, _search_bar, file_path: str) -> None:
+        self._open_file(file_path)
+
+    def _on_preview_link_clicked(self, _preview, file_path: str) -> None:
         self._open_file(file_path)
 
     # ── View mode ──────────────────────────────────────────────────

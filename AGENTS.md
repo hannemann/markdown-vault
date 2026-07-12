@@ -16,10 +16,13 @@ Markdown Vault — a GNOME desktop app for editing and previewing Markdown files
 - Use `gi.require_version("Gtk", "4.0")` and `gi.require_version("Adw", "1")` before importing.
 - **GtkSourceView 5** for editor (`gi.require_version("GtkSource", "5")`).
 - Markdown → HTML conversion uses Python `markdown` library.
+- **Math rendering**: `latex2mathml` converts LaTeX → MathML, WebKitGTK renders MathML natively. No JavaScript/CDN.
 - WebView is `WebKitGTK` via `gi.repository.WebKit`.
 - Vault list stored in YAML (`vaults.yaml`), not dconf — simpler to debug and version.
 - Images referenced in Markdown are resolved relative to the `.md` file's directory.
 - **Flatpak** as primary distribution format (sandboxed file access via portal).
+- **Dependencies**: Before adding a new Python dependency, ALWAYS ask the user first. Never add dependencies without confirmation.
+- **NEVER install packages**: You MUST NEVER run `pip install`, `zypper install`, `dnf install`, `apt install`, `pacman -S`, or any other package installation command. ONLY the user installs packages on this system. This is a non-negotiable rule. If a package is missing, tell the user what to install — do NOT install it yourself.
 
 ## Layout
 

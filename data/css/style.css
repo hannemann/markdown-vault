@@ -288,3 +288,45 @@ body {
     font-family: "Monaco", "Menlo", "Ubuntu Mono", monospace;
     font-size: 12px;
 }
+
+/* ── MathML ─────────────────────────────────────────────────────── */
+
+.markdown-body math {
+    font-family: "Latin Modern Math", "STIX Two Math", "Cambria Math", serif;
+    line-height: normal;
+    text-rendering: optimizeLegibility;
+}
+
+/* Block math: center on its own line */
+.markdown-body math[display="block"] {
+    display: block;
+    text-align: center;
+    margin: 1em 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+}
+
+/* Inline math: flow with surrounding text */
+.markdown-body math:not([display="block"]) {
+    display: inline;
+}
+
+/* Prevent nested fractions from being too tight */
+.markdown-body mfrac {
+    padding: 0.15em 0.1em;
+}
+
+/* Ensure large operator limits have vertical breathing room */
+.markdown-body munderover {
+    padding: 0.1em 0;
+}
+
+.markdown-body msubsup {
+    padding: 0.05em 0;
+}
+
+/* Spacing between adjacent MathML elements */
+.markdown-body math > mfrac + mfrac,
+.markdown-body math > mrow > mfrac + mfrac {
+    margin-left: 0.15em;
+}

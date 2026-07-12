@@ -124,7 +124,7 @@ class Sidebar(Gtk.Box):
         for bl in backlinks:
             btn = Gtk.Button(label=bl.name)
             btn.add_css_class("flat")
-            btn.set_xalign(0)
+            btn.set_halign(Gtk.Align.START)
             btn.set_tooltip_text(str(bl))
             btn.connect(
                 "clicked",

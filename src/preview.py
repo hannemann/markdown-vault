@@ -17,6 +17,7 @@ from markdown.treeprocessors import Treeprocessor
 from pygments import highlight
 from pygments.lexers import get_lexer_by_name, guess_lexer
 from pygments.formatters import HtmlFormatter
+from src.latex_mathml import MathMLPostprocessor
 import gi
 
 gi.require_version("Gtk", "4.0")
@@ -33,14 +34,7 @@ HTML_TEMPLATE = """\
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
-:root {{
-    --bg: {bg_color};
-    --fg: {fg_color};
-    --accent: {accent_color};
-    --dim: {dim_color};
-    --card-bg: {card_bg_color};
-    --borders: {borders_color};
-}}
+:root {{ --bg: {bg_color}; --fg: {fg_color}; --accent: {accent_color}; --dim: {dim_color}; --card-bg: {card_bg_color}; --borders: {borders_color}; }}
 </style>
 <link rel="stylesheet" href="file://{css_path}">
 </head>
@@ -219,15 +213,20 @@ MARKDOWN_EXTENSIONS = [
 class Preview(Gtk.ScrolledWindow):
     """Widget that renders Markdown as styled HTML.
 
-    Args:
-        css_path: Filesystem path to the CSS file used for styling.
-            When empty, a default location is resolved at render time.
+    Signals:
+        link-clicked(str): Emitted when a wikilink is clicked. The argument
+            is the resolved absolute path to the target ``.md`` file.
     """
+
+    __gsignals__ = {
+        "link-clicked": (GObject.SignalFlags.RUN_LAST, None, (str,)),
+    }
 
     def __init__(self, css_path: str = "") -> None:
         super().__init__()
         self._css_path = css_path
         self._zoom_level: float = 1.0
+        self._vault_paths: list[str] = []
 
         self._web_view = WebKit.WebView()
         self._web_view.set_vexpand(True)
@@ -241,6 +240,9 @@ class Preview(Gtk.ScrolledWindow):
 
         web_settings = self._web_view.get_settings()
         web_settings.set_enable_javascript(True)
+        web_settings.set_allow_file_access_from_file_urls(True)
+
+        self._web_view.connect("decide-policy", self._on_decide_policy)
 
         self.set_child(self._web_view)
 
@@ -258,6 +260,75 @@ class Preview(Gtk.ScrolledWindow):
         self._web_view.set_zoom_level(self._zoom_level)
 
     # ------------------------------------------------------------------
+    # Vault paths (for wikilink resolution)
+    # ------------------------------------------------------------------
+
+    def set_vault_paths(self, paths: list[str]) -> None:
+        """Set the vault root directories used to resolve wikilinks."""
+        self._vault_paths = list(paths)
+
+    # ------------------------------------------------------------------
+    # Navigation
+    # ------------------------------------------------------------------
+
+    def _on_decide_policy(self, _web_view, decision, decision_type):
+        """Intercept link clicks and resolve wikilinks to .md files."""
+        if decision_type != WebKit.PolicyDecisionType.NAVIGATION_ACTION:
+            return False
+
+        nav_action = decision.get_navigation_action()
+        request = nav_action.get_request()
+        uri = request.get_uri()
+
+        # Only handle file:// and relative links
+        if not uri:
+            return False
+
+        # Strip file:// prefix if present
+        path_str = uri
+        if path_str.startswith("file://"):
+            path_str = path_str[7:]
+
+        # Try to resolve as a wikilink (with or without .md)
+        resolved = self._resolve_wikilink(path_str)
+        if resolved:
+            decision.ignore()
+            self.emit("link-clicked", resolved)
+            return True
+
+        return False
+
+    def _resolve_wikilink(self, path_str: str) -> str | None:
+        """Resolve a link target to an existing .md file."""
+        from pathlib import Path as _P
+
+        target = _P(path_str)
+        name = target.name
+
+        # If it already has .md and exists, use it
+        if name.endswith(".md") and target.exists():
+            return str(target.resolve())
+
+        # Try with .md extension in same directory
+        with_md = target.with_suffix(".md")
+        if with_md.exists():
+            return str(with_md.resolve())
+
+        # Search in vault roots
+        stem = target.stem if name.endswith(".md") else name
+        for vp in self._vault_paths:
+            vault = _P(vp)
+            candidate = vault / f"{stem}.md"
+            if candidate.exists():
+                return str(candidate.resolve())
+            # Also check subdirectories
+            for md_file in vault.rglob("*.md"):
+                if md_file.stem == stem:
+                    return str(md_file.resolve())
+
+        return None
+
+    # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
 
@@ -272,6 +343,10 @@ class Preview(Gtk.ScrolledWindow):
             extensions=MARKDOWN_EXTENSIONS,
             extension_configs=EXTENSION_CONFIGS,
         )
+        # Convert <script type="math/tex"> tags to native MathML
+        mathml_pp = MathMLPostprocessor()
+        html_content = mathml_pp.run(html_content)
+
         css_path = self._resolve_css_path()
         colors = self._get_theme_colors()
         full_html = HTML_TEMPLATE.format(
