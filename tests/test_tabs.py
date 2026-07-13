@@ -30,6 +30,35 @@ class TestTabBar(unittest.TestCase):
         bar = TabBar()
         self.assertEqual(bar.get_all_paths(), [])
 
+    def test_update_path_renames_tab(self):
+        bar = TabBar()
+        tab = bar.add_tab("/tmp/old.md", editor=None, preview=None)
+        bar.update_path("/tmp/old.md", "/tmp/new.md")
+        self.assertEqual(tab.file_path, "/tmp/new.md")
+        self.assertEqual(tab.title, "new.md")
+        self.assertIn("/tmp/new.md", bar.get_all_paths())
+        self.assertNotIn("/tmp/old.md", bar.get_all_paths())
+
+    def test_update_path_updates_current_path(self):
+        bar = TabBar()
+        bar.add_tab("/tmp/old.md", editor=None, preview=None)
+        bar.update_path("/tmp/old.md", "/tmp/new.md")
+        self.assertEqual(bar.get_current_path(), "/tmp/new.md")
+
+    def test_update_path_emits_signal(self):
+        bar = TabBar()
+        bar.add_tab("/tmp/old.md", editor=None, preview=None)
+        received = []
+        bar.connect("tab-renamed", lambda _, o, n: received.append((o, n)))
+        bar.update_path("/tmp/old.md", "/tmp/new.md")
+        self.assertEqual(received, [("/tmp/old.md", "/tmp/new.md")])
+
+    def test_update_path_noop_for_missing(self):
+        bar = TabBar()
+        # Should not raise.
+        bar.update_path("/tmp/nonexistent.md", "/tmp/new.md")
+        self.assertEqual(bar.get_all_paths(), [])
+
 
 if __name__ == "__main__":
     unittest.main()

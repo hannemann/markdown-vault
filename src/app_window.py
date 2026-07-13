@@ -102,6 +102,11 @@ class MainWindow(Adw.ApplicationWindow):
         self._vault_tree.connect("file-selected", self._on_file_selected_from_tree)
         self._vault_tree.connect("vault-activated", self._on_vault_activated)
         self._vault_tree.connect("vault-added", self._on_vault_added)
+        self._vault_tree.connect("new-file-requested", self._on_new_file_requested)
+        self._vault_tree.connect("new-folder-requested", self._on_new_folder_requested)
+        self._vault_tree.connect("delete-requested", self._on_delete_requested)
+        self._vault_tree.connect("close-file-requested", self._on_close_file_requested)
+        self._vault_tree.connect("file-renamed", self._on_file_renamed)
         main_paned.set_start_child(self._vault_tree)
         main_paned.set_resize_start_child(True)
         main_paned.set_shrink_start_child(False)
@@ -111,6 +116,7 @@ class MainWindow(Adw.ApplicationWindow):
         self._tab_bar = TabBar()
         self._tab_bar.connect("tab-changed", self._on_tab_changed)
         self._tab_bar.connect("tab-closed", self._on_tab_closed)
+        self._tab_bar.connect("tab-renamed", self._on_tab_renamed)
         centre.append(self._tab_bar)
 
         self._content_stack = Gtk.Stack()
@@ -748,6 +754,157 @@ class MainWindow(Adw.ApplicationWindow):
         if vault and vault != self._active_vault:
             self._switch_vault(vault)
         self._open_file(file_path)
+
+    # ── Vault tree file operations ───────────────────────────────
+
+    def _on_new_file_requested(self, _tree, parent_dir: str) -> None:
+        """Handle 'New File' from the vault tree context menu."""
+        dialog = Adw.AlertDialog(heading="New File", body="File name:")
+        dialog.add_response("cancel", "Cancel")
+        dialog.add_response("create", "Create")
+        dialog.set_response_appearance("create", Adw.ResponseAppearance.SUGGESTED)
+        dialog.set_default_response("create")
+        dialog.set_close_response("cancel")
+
+        entry = Gtk.Entry(placeholder_text="e.g. My Note.md")
+        entry.set_activates_default(True)
+        dialog.set_extra_child(entry)
+
+        dialog.connect("response", self._on_new_file_response, entry, parent_dir)
+        dialog.present(self)
+
+    def _on_new_folder_requested(self, _tree, parent_dir: str) -> None:
+        """Handle 'New Folder' from the vault tree context menu."""
+        dialog = Adw.AlertDialog(heading="New Folder", body="Folder name:")
+        dialog.add_response("cancel", "Cancel")
+        dialog.add_response("create", "Create")
+        dialog.set_response_appearance("create", Adw.ResponseAppearance.SUGGESTED)
+        dialog.set_default_response("create")
+        dialog.set_close_response("cancel")
+
+        entry = Gtk.Entry(placeholder_text="e.g. My Folder")
+        entry.set_activates_default(True)
+        dialog.set_extra_child(entry)
+
+        dialog.connect("response", self._on_new_folder_response, entry, parent_dir)
+        dialog.present(self)
+
+    def _on_new_folder_response(self, dialog, response, entry, parent_dir):
+        """Handle the new-folder dialog response."""
+        if response != "create":
+            return
+        name = entry.get_text().strip()
+        if not name:
+            return
+        folder_path = os.path.join(parent_dir, name)
+        try:
+            os.mkdir(folder_path)
+        except OSError:
+            return
+        self._vault_tree.refresh()
+
+    def _on_delete_requested(self, _tree, path: str) -> None:
+        """Handle 'Delete' from the vault tree context menu."""
+        name = Path(path).name
+        is_dir = Path(path).is_dir()
+
+        if is_dir:
+            # Count contents for the warning.
+            try:
+                count = sum(1 for _ in Path(path).rglob("*"))
+            except PermissionError:
+                count = -1
+            if count > 0:
+                body = (
+                    f"Delete \"{name}\" and all {count} contained items? "
+                    "This cannot be undone."
+                )
+            else:
+                body = f"Delete empty folder \"{name}\"?"
+        else:
+            body = f"Delete \"{name}\"?"
+
+        dialog = Adw.AlertDialog(heading="Delete?", body=body)
+        dialog.add_response("cancel", "Cancel")
+        dialog.add_response("delete", "Delete")
+        dialog.set_response_appearance("delete", Adw.ResponseAppearance.DESTRUCTIVE)
+        dialog.set_default_response("cancel")
+        dialog.set_close_response("cancel")
+
+        dialog.connect("response", self._on_delete_response, path)
+        dialog.present(self)
+
+    def _on_delete_response(self, dialog, response, path):
+        """Handle the delete confirmation response."""
+        if response != "delete":
+            return
+        is_dir = Path(path).is_dir()
+
+        # Close any open tabs for files under this path.
+        if is_dir:
+            for tab_path in list(self._tab_bar.get_all_paths()):
+                if tab_path == path or tab_path.startswith(path + os.sep):
+                    self._tab_bar.close_tab(tab_path)
+        else:
+            if path in self._tab_bar.get_all_paths():
+                self._tab_bar.close_tab(path)
+
+        # Remove from MRU.
+        self.mru.remove(path)
+        if is_dir:
+            for tab_path in list(self.mru.tabs):
+                if tab_path == path or tab_path.startswith(path + os.sep):
+                    self.mru.remove(tab_path)
+
+        # Remove from nav history.
+        self._nav_history = [
+            p for p in self._nav_history
+            if p != path and not (is_dir and p.startswith(path + os.sep))
+        ]
+        self._nav_pos = min(self._nav_pos, len(self._nav_history) - 1)
+
+        # Delete from filesystem.
+        try:
+            if is_dir:
+                import shutil
+                shutil.rmtree(path)
+            else:
+                os.remove(path)
+        except OSError:
+            return
+
+        self._vault_tree.refresh()
+
+    def _on_close_file_requested(self, _tree, file_path: str) -> None:
+        """Handle 'Close File' from the vault tree context menu."""
+        if file_path in self._tab_bar.get_all_paths():
+            self._tab_bar.close_tab(file_path)
+
+    def _on_file_renamed(self, _tree, old_path: str, new_path: str) -> None:
+        """Handle file/folder rename from the vault tree."""
+        # Update the tab if open.
+        if old_path in self._tab_bar.get_all_paths():
+            self._tab_bar.update_path(old_path, new_path)
+
+        # Update nav history.
+        self._nav_history = [
+            new_path if p == old_path else p
+            for p in self._nav_history
+        ]
+        self._nav_pos = min(self._nav_pos, len(self._nav_history) - 1)
+
+        # Update MRU.
+        self.mru.remove(old_path)
+        self.mru.push(new_path)
+
+    def _on_tab_renamed(self, _tab_bar, old_path: str, new_path: str) -> None:
+        """Handle tab path change — update the content stack key."""
+        child = self._content_stack.get_child_by_name(old_path)
+        if child:
+            self._content_stack.remove(child)
+            self._content_stack.add_named(child, new_path)
+            if self._tab_bar.get_current_path() == new_path:
+                self._content_stack.set_visible_child_name(new_path)
 
     # ── Navigation history ─────────────────────────────────────────
 

@@ -45,6 +45,7 @@ class TabBar(Gtk.Box):
     __gsignals__ = {
         "tab-changed": (GObject.SIGNAL_RUN_LAST, None, (str,)),
         "tab-closed": (GObject.SIGNAL_RUN_LAST, None, (str,)),
+        "tab-renamed": (GObject.SIGNAL_RUN_LAST, None, (str, str)),
     }
 
     def __init__(self) -> None:
@@ -71,7 +72,6 @@ class TabBar(Gtk.Box):
         If *file_path* is already open, the existing tab is selected
         and no new ``Editor``/``Preview`` pair is created.
         """
-        print(f"DEBUG TabBar.add_tab: file_path={file_path}, existing={file_path in self._tabs}")
         if file_path in self._tabs:
             self.set_active_tab(file_path)
             return self._tabs[file_path]
@@ -128,6 +128,35 @@ class TabBar(Gtk.Box):
     def get_all_paths(self) -> list[str]:
         """Return file paths of all open tabs."""
         return list(self._tabs.keys())
+
+    def update_path(self, old_path: str, new_path: str) -> None:
+        """Rename an open tab from *old_path* to *new_path*.
+
+        Updates the internal dict key, ``Tab`` attributes, the tab
+        widget, and emits ``tab-renamed`` so that the content stack
+        can be updated by the caller.
+        """
+        if old_path not in self._tabs:
+            return
+        tab = self._tabs.pop(old_path)
+        tab.file_path = new_path
+        tab.title = Path(new_path).name
+        self._tabs[new_path] = tab
+
+        # Update _current_path if this was the active tab.
+        if self._current_path == old_path:
+            self._current_path = new_path
+
+        # Update the tab widget label and stash.
+        for child in self._box:
+            if getattr(child, "_file_path", None) == old_path:
+                child._file_path = new_path  # type: ignore[attr-defined]
+                for grandchild in child:
+                    if isinstance(grandchild, Gtk.Label):
+                        grandchild.set_label(tab.title)
+                break
+
+        self.emit("tab-renamed", old_path, new_path)
 
     # ------------------------------------------------------------------
     # Internal helpers
