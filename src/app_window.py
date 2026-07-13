@@ -100,6 +100,8 @@ class MainWindow(Adw.ApplicationWindow):
 
         self._vault_tree = VaultTree()
         self._vault_tree.connect("file-selected", self._on_file_selected_from_tree)
+        self._vault_tree.connect("vault-activated", self._on_vault_activated)
+        self._vault_tree.connect("vault-added", self._on_vault_added)
         main_paned.set_start_child(self._vault_tree)
         main_paned.set_resize_start_child(True)
         main_paned.set_shrink_start_child(False)
@@ -141,29 +143,56 @@ class MainWindow(Adw.ApplicationWindow):
 
         # Restore session: sidebar, tabs, active tab, expanded vaults.
         self._sidebar.set_visible(_ses.get("sidebar_visible", False))
+
+        # Determine active vault and restore its session.
+        self._active_vault = _ses.get("active_vault")
+        if self._active_vault and self._active_vault not in self._vault_tree.get_vault_paths():
+            self._active_vault = None
+        if not self._active_vault:
+            vaults = self._vault_tree.get_vault_paths()
+            if vaults:
+                self._active_vault = vaults[0]
+
+        self._vault_tree.set_active_vault(self._active_vault)
+
+        # Restore tabs for the active vault.
         self._suppress_history = True
-        for tab_data in _ses.get("tabs", []):
-            fp = tab_data.get("path", "")
-            if fp and Path(fp).exists():
-                self._open_file(
-                    fp,
-                    view_mode=tab_data.get("view_mode", "edit"),
-                    split_position=tab_data.get("split_position", 600),
-                    editor_zoom=tab_data.get("editor_zoom", 1.0),
-                    preview_zoom=tab_data.get("preview_zoom", 1.0),
-                )
-        self._suppress_history = False
-        active = _ses.get("active_tab")
-        if active and active in self._tab_bar.get_all_paths():
-            self._tab_bar.set_active_tab(active)
-            self._push_history(active)
-        # Rebuild MRU from session tab order (last in list = most recent).
-        for tab_data in reversed(_ses.get("tabs", [])):
-            fp = tab_data.get("path", "")
-            if fp and fp in self._tab_bar.get_all_paths():
-                self.mru.push(fp)
-        if active and active in self._tab_bar.get_all_paths():
-            self.mru.push(active)
+        if self._active_vault:
+            vault_data = _ses.get("vault_sessions", {}).get(self._active_vault, {})
+            vault_data = session.prune_vault_session(vault_data)
+            for tab_data in vault_data.get("tabs", []):
+                fp = tab_data.get("path", "")
+                if fp and Path(fp).exists():
+                    self._open_file(
+                        fp,
+                        view_mode=tab_data.get("view_mode", "edit"),
+                        split_position=tab_data.get("split_position", 600),
+                        editor_zoom=tab_data.get("editor_zoom", 1.0),
+                        preview_zoom=tab_data.get("preview_zoom", 1.0),
+                    )
+            self._suppress_history = False
+            active_tab = vault_data.get("active_tab")
+            if active_tab and active_tab in self._tab_bar.get_all_paths():
+                self._tab_bar.set_active_tab(active_tab)
+                self._push_history(active_tab)
+            # Restore MRU from session.
+            mru_data = vault_data.get("mru", [])
+            if mru_data:
+                self.mru.clear()
+                for fp in reversed(mru_data):
+                    if fp in self._tab_bar.get_all_paths():
+                        self.mru.push(fp)
+            else:
+                # Fallback: rebuild MRU from tab order.
+                for tab_data in reversed(vault_data.get("tabs", [])):
+                    fp = tab_data.get("path", "")
+                    if fp and fp in self._tab_bar.get_all_paths():
+                        self.mru.push(fp)
+                if active_tab and active_tab in self._tab_bar.get_all_paths():
+                    self.mru.push(active_tab)
+        else:
+            self._suppress_history = False
+
         # Defer expansion so the tree view is fully mapped first.
         expanded = _ses.get("expanded_vaults", [])
         if expanded:
@@ -514,6 +543,84 @@ class MainWindow(Adw.ApplicationWindow):
         self._vault_tree.set_vaults(paths)
         self._sidebar.set_vault_paths(paths)
 
+    # ── Vault switching ──────────────────────────────────────────
+
+    def _find_vault_for_file(self, file_path: str) -> str | None:
+        """Return the vault root that contains *file_path*, or ``None``."""
+        file_parent = str(Path(file_path).parent)
+        for v in self._vault_tree.get_vault_paths():
+            if file_parent == v or file_parent.startswith(v + os.sep):
+                return v
+        return None
+
+    def _switch_vault(self, new_vault: str) -> None:
+        """Switch to *new_vault*, saving the current vault's session first."""
+        if new_vault == self._active_vault:
+            return
+        # Save current vault state.
+        self._save_vault_session()
+        # Close all open tabs.
+        for path in list(self._tab_bar.get_all_paths()):
+            self._tab_bar.close_tab(path)
+        self.mru.clear()
+        self._nav_history.clear()
+        self._nav_pos = -1
+        self._update_nav_buttons()
+        # Switch.
+        self._active_vault = new_vault
+        self._vault_tree.set_active_vault(new_vault)
+        # Restore target vault state.
+        self._restore_vault_session(new_vault)
+
+    def _save_vault_session(self) -> None:
+        """Save the current vault's tab state to the session on disk."""
+        if not self._active_vault:
+            return
+        ses = session.load_session()
+        vault_sessions = ses.get("vault_sessions", {})
+        vault_sessions[self._active_vault] = {
+            "tabs": self._collect_tab_data(),
+            "active_tab": self._tab_bar.get_current_path(),
+            "mru": self.mru.tabs,
+        }
+        alloc = self.get_allocation()
+        session.save_session(
+            width=alloc.width,
+            height=alloc.height,
+            sidebar_visible=self._sidebar.get_visible(),
+            active_vault=self._active_vault,
+            vault_sessions=vault_sessions,
+            expanded_vaults=self._vault_tree.get_expanded_paths(),
+        )
+
+    def _restore_vault_session(self, vault_path: str) -> None:
+        """Restore tabs for *vault_path* from the persisted session."""
+        ses = session.load_session()
+        vault_data = ses.get("vault_sessions", {}).get(vault_path, {})
+        vault_data = session.prune_vault_session(vault_data)
+        self._suppress_history = True
+        for tab_data in vault_data.get("tabs", []):
+            fp = tab_data.get("path", "")
+            if fp and Path(fp).exists():
+                self._open_file(
+                    fp,
+                    view_mode=tab_data.get("view_mode", "edit"),
+                    split_position=tab_data.get("split_position", 600),
+                    editor_zoom=tab_data.get("editor_zoom", 1.0),
+                    preview_zoom=tab_data.get("preview_zoom", 1.0),
+                )
+        self._suppress_history = False
+        active_tab = vault_data.get("active_tab")
+        if active_tab and active_tab in self._tab_bar.get_all_paths():
+            self._tab_bar.set_active_tab(active_tab)
+            self._push_history(active_tab)
+        # Restore MRU.
+        mru_data = vault_data.get("mru", [])
+        if mru_data:
+            for fp in reversed(mru_data):
+                if fp in self._tab_bar.get_all_paths():
+                    self.mru.push(fp)
+
     # ── File opening ───────────────────────────────────────────────
 
     def _open_file(
@@ -584,8 +691,19 @@ class MainWindow(Adw.ApplicationWindow):
     # ── Tab callbacks ──────────────────────────────────────────────
 
     def _on_file_selected_from_tree(self, _tree, file_path: str) -> None:
-        self._active_vault = str(Path(file_path).parent)
+        vault = self._find_vault_for_file(file_path)
+        if vault and vault != self._active_vault:
+            self._switch_vault(vault)
         self._open_file(file_path)
+
+    def _on_vault_activated(self, _tree, vault_path: str) -> None:
+        """Handle double-click on a vault root in the tree."""
+        if vault_path != self._active_vault:
+            self._switch_vault(vault_path)
+
+    def _on_vault_added(self, _tree, vault_path: str) -> None:
+        """Handle a new vault being added."""
+        self._switch_vault(vault_path)
 
     def _on_tab_changed(self, _tab_bar, file_path: str) -> None:
         tab = self._tab_bar.get_current_tab()
@@ -599,12 +717,10 @@ class MainWindow(Adw.ApplicationWindow):
         self._push_history(file_path)
         self.mru.push(file_path)
         # Keep active vault in sync with the open tab.
-        vaults = self._vault_tree.get_vault_paths()
-        file_parent = str(Path(file_path).parent)
-        for v in vaults:
-            if file_parent == v or file_parent.startswith(v + os.sep):
-                self._active_vault = v
-                break
+        vault = self._find_vault_for_file(file_path)
+        if vault and vault != self._active_vault:
+            self._active_vault = vault
+            self._vault_tree.set_active_vault(vault)
 
     def _on_tab_closed(self, _tab_bar, file_path: str) -> None:
         self.mru.remove(file_path)
@@ -616,12 +732,21 @@ class MainWindow(Adw.ApplicationWindow):
             self._sidebar.update_for_file(None)
 
     def _on_sidebar_file_requested(self, _sidebar, file_path: str) -> None:
+        vault = self._find_vault_for_file(file_path)
+        if vault and vault != self._active_vault:
+            self._switch_vault(vault)
         self._open_file(file_path)
 
     def _on_search_result_selected(self, _search_bar, file_path: str) -> None:
+        vault = self._find_vault_for_file(file_path)
+        if vault and vault != self._active_vault:
+            self._switch_vault(vault)
         self._open_file(file_path)
 
     def _on_preview_link_clicked(self, _preview, file_path: str) -> None:
+        vault = self._find_vault_for_file(file_path)
+        if vault and vault != self._active_vault:
+            self._switch_vault(vault)
         self._open_file(file_path)
 
     # ── Navigation history ─────────────────────────────────────────
@@ -843,13 +968,23 @@ class MainWindow(Adw.ApplicationWindow):
 
     def _save_session(self) -> None:
         """Persist the current window state to disk."""
+        # Load existing session to preserve other vaults' state.
+        ses = session.load_session()
+        vault_sessions = ses.get("vault_sessions", {})
+        # Update only the current vault's entry.
+        if self._active_vault:
+            vault_sessions[self._active_vault] = {
+                "tabs": self._collect_tab_data(),
+                "active_tab": self._tab_bar.get_current_path(),
+                "mru": self.mru.tabs,
+            }
         alloc = self.get_allocation()
         session.save_session(
             width=alloc.width,
             height=alloc.height,
             sidebar_visible=self._sidebar.get_visible(),
-            tabs=self._collect_tab_data(),
-            active_tab=self._tab_bar.get_current_path(),
+            active_vault=self._active_vault,
+            vault_sessions=vault_sessions,
             expanded_vaults=self._vault_tree.get_expanded_paths(),
         )
 

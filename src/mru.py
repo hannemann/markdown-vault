@@ -55,6 +55,11 @@ class MRUManager:
             if self._mru_pos >= len(self._mru_tabs):
                 self._mru_pos = max(0, len(self._mru_tabs) - 1)
 
+    def clear(self) -> None:
+        """Reset the MRU list to empty."""
+        self._mru_tabs.clear()
+        self._mru_pos = 0
+
     def next(self) -> str | None:
         """Return the next MRU tab path, skipping missing files.
 

@@ -2,9 +2,12 @@
 
 Saves and restores the full application state (window geometry, open tabs,
 view modes, split positions, sidebar visibility) to a JSON file so that
-restarting the app recreates the exact previous session.
+restoring the app recreates the exact previous session.
 
 Session file: ``~/.config/markdown-vault/session.json``
+
+Per-vault sessions store tabs, active tab, and MRU state separately so
+that switching vaults can save and restore tab groups.
 """
 
 import json
@@ -22,23 +25,24 @@ def save_session(
     width: int,
     height: int,
     sidebar_visible: bool,
-    tabs: list[dict],
-    active_tab: str | None,
+    active_vault: str | None,
+    vault_sessions: dict[str, dict],
     expanded_vaults: list[str] | None = None,
 ) -> None:
     """Write the current session state to disk.
 
-    *tabs* is a list of dicts, each with keys:
-        ``path``, ``view_mode``, ``split_position``
+    *active_vault* is the vault root path currently shown.
+    *vault_sessions* maps vault paths to per-vault state dicts with keys:
+        ``tabs``, ``active_tab``, ``mru``.
     *expanded_vaults* lists the vault directory paths that were expanded.
     """
     config._ensure_config_dir()
     data = {
         "window": {"width": width, "height": height},
         "sidebar_visible": sidebar_visible,
-        "active_tab": active_tab,
-        "tabs": tabs,
+        "active_vault": active_vault,
         "expanded_vaults": expanded_vaults or [],
+        "vault_sessions": vault_sessions,
     }
     try:
         SESSION_FILE.write_text(json.dumps(data, indent=2), encoding="utf-8")
@@ -58,17 +62,74 @@ def load_session() -> dict:
         return _defaults()
     data.setdefault("window", {"width": 1200, "height": 800})
     data.setdefault("sidebar_visible", False)
-    data.setdefault("active_tab", None)
-    data.setdefault("tabs", [])
+    data.setdefault("active_vault", None)
     data.setdefault("expanded_vaults", [])
+    data.setdefault("vault_sessions", {})
+    # Migration: old sessions had top-level "tabs" + "active_tab".
+    _migrate_legacy_session(data)
     return data
+
+
+def prune_vault_session(vault_session: dict) -> dict:
+    """Remove tabs whose files no longer exist on disk.
+
+    Returns a new dict with only existing files.  *active_tab* is cleared
+    if the referenced file is missing.
+    """
+    tabs = [t for t in vault_session.get("tabs", []) if Path(t.get("path", "")).exists()]
+    active_tab = vault_session.get("active_tab")
+    if active_tab and not Path(active_tab).exists():
+        active_tab = None
+    # Preserve MRU entries that still point to existing files.
+    mru = [fp for fp in vault_session.get("mru", []) if Path(fp).exists()]
+    return {"tabs": tabs, "active_tab": active_tab, "mru": mru}
+
+
+def _migrate_legacy_session(data: dict) -> None:
+    """Migrate old top-level tabs into vault_sessions (one-time)."""
+    legacy_tabs = data.get("tabs")
+    if not legacy_tabs:
+        return
+    # Determine the vault from the first tab's path.
+    vaults = config.load_vaults()
+    vault_paths = [v["path"] for v in vaults]
+    legacy_active = data.get("active_tab")
+    vault = None
+    if legacy_active:
+        parent = str(Path(legacy_active).parent)
+        for vp in vault_paths:
+            if parent == vp or parent.startswith(vp + "/"):
+                vault = vp
+                break
+    if not vault and legacy_tabs:
+        fp = legacy_tabs[0].get("path", "")
+        if fp:
+            parent = str(Path(fp).parent)
+            for vp in vault_paths:
+                if parent == vp or parent.startswith(vp + "/"):
+                    vault = vp
+                    break
+    if not vault and vault_paths:
+        vault = vault_paths[0]
+    if vault:
+        # Build MRU list from tab order (last = most recent).
+        mru = [t["path"] for t in reversed(legacy_tabs) if "path" in t]
+        data["vault_sessions"][vault] = {
+            "tabs": legacy_tabs,
+            "active_tab": legacy_active,
+            "mru": mru,
+        }
+        data["active_vault"] = vault
+    # Remove legacy keys.
+    data.pop("tabs", None)
+    data.pop("active_tab", None)
 
 
 def _defaults() -> dict:
     return {
         "window": {"width": 1200, "height": 800},
         "sidebar_visible": False,
-        "active_tab": None,
-        "tabs": [],
+        "active_vault": None,
         "expanded_vaults": [],
+        "vault_sessions": {},
     }

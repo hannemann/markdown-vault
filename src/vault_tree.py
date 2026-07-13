@@ -12,8 +12,9 @@ import gi
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
+gi.require_version("Pango", "1.0")
 
-from gi.repository import Gtk, GLib, GObject
+from gi.repository import Gtk, GLib, GObject, Pango
 
 # Column indices for the TreeStore: name, path, is_dir, icon_name, hint.
 _COL_NAME = 0
@@ -45,15 +46,19 @@ class VaultTree(Gtk.Box):
 
     Signals:
         file-selected(str): Emitted when a ``.md`` file is activated.
+        vault-activated(str): Emitted when a vault root is double-clicked.
     """
 
     __gsignals__ = {
         "file-selected": (GObject.SIGNAL_RUN_LAST, None, (str,)),
+        "vault-activated": (GObject.SIGNAL_RUN_LAST, None, (str,)),
+        "vault-added": (GObject.SIGNAL_RUN_LAST, None, (str,)),
     }
 
     def __init__(self) -> None:
         super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=0)
         self._vault_paths: list[str] = []
+        self._active_vault: str | None = None
 
         # --- Header with title and add-button ---
         header = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
@@ -87,11 +92,18 @@ class VaultTree(Gtk.Box):
         self._tree_view.set_activate_on_single_click(True)
         self._tree_view.connect("row-activated", self._on_row_activated)
 
-        cell = Gtk.CellRendererText()
-        cell.set_property("ellipsize", 3)
+        # Double-click on vault root activates it (separate from single-click files).
+        self._dbl_click = Gtk.GestureClick()
+        self._dbl_click.set_button(1)
+        self._dbl_click.connect("pressed", self._on_double_press)
+        self._tree_view.add_controller(self._dbl_click)
+
+        self._cell_renderer = Gtk.CellRendererText()
+        self._cell_renderer.set_property("ellipsize", 3)
         column = Gtk.TreeViewColumn()
-        column.pack_start(cell, True)
-        column.add_attribute(cell, "text", _COL_NAME)
+        column.pack_start(self._cell_renderer, True)
+        column.add_attribute(self._cell_renderer, "text", _COL_NAME)
+        column.set_cell_data_func(self._cell_renderer, self._cell_data_func)
         self._tree_view.append_column(column)
 
         scrolled = Gtk.ScrolledWindow()
@@ -121,6 +133,12 @@ class VaultTree(Gtk.Box):
         if iter_ is None:
             return None
         return self._store.get_value(iter_, _COL_PATH)
+
+    def set_active_vault(self, vault_path: str | None) -> None:
+        """Set the active vault root and update visual highlighting."""
+        self._active_vault = vault_path
+        # Force redraw of the cell data func for all visible rows.
+        self._tree_view.queue_draw()
 
     def refresh(self) -> None:
         """Rebuild the tree from the current vault paths."""
@@ -170,6 +188,17 @@ class VaultTree(Gtk.Box):
     # Internal helpers
     # ------------------------------------------------------------------
 
+    def _cell_data_func(self, _column, cell, model, iter_, _data) -> None:
+        """Apply bold styling to the active vault root row."""
+        path = model.get_value(iter_, _COL_PATH)
+        is_dir = model.get_value(iter_, _COL_IS_DIR)
+        # A row is a vault root if it's a directory with no parent (top-level).
+        is_vault_root = is_dir and model.iter_parent(iter_) is None
+        if is_vault_root and path == self._active_vault:
+            cell.set_property("weight", Pango.Weight.BOLD)
+        else:
+            cell.set_property("weight", Pango.Weight.NORMAL)
+
     def _populate_directory(self, path: Path, parent_iter) -> None:
         """Recursively add *path* and its children to the tree store."""
         dir_iter = self._store.append(
@@ -197,6 +226,20 @@ class VaultTree(Gtk.Box):
             return
         self.emit("file-selected", self._store.get_value(iter_, _COL_PATH))
 
+    def _on_double_press(self, _gesture, n_press: int, x: float, y: float) -> None:
+        """Handle press: activate vault root only on double-click."""
+        if n_press < 2:
+            return
+        path_info = self._tree_view.get_path_at_pos(int(x), int(y))
+        if path_info is None:
+            return
+        tree_path = path_info[0]
+        iter_ = self._store.get_iter(tree_path)
+        if not self._store.get_value(iter_, _COL_IS_DIR):
+            return
+        if self._store.iter_parent(iter_) is None:
+            self.emit("vault-activated", self._store.get_value(iter_, _COL_PATH))
+
     def _on_add_vault_clicked(self, _btn) -> None:
         """Open a folder chooser dialog."""
         dialog = Gtk.FileDialog()
@@ -218,3 +261,4 @@ class VaultTree(Gtk.Box):
                 from . import config
 
                 config.add_vault(Path(path).name, path)
+                self.emit("vault-added", path)
