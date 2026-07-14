@@ -25,6 +25,7 @@ class SearchBar(Gtk.Box):
 
     __gsignals__ = {
         "file-selected": (GObject.SIGNAL_RUN_LAST, None, (str,)),
+        "close-requested": (GObject.SIGNAL_RUN_LAST, None, ()),
     }
 
     MAX_RESULTS = 50
@@ -33,6 +34,7 @@ class SearchBar(Gtk.Box):
         super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=0)
         self._get_vault_paths = get_vault_paths
         self.set_visible(False)
+        self.set_vexpand(True)
 
         # --- Input row ---
         input_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
@@ -45,7 +47,7 @@ class SearchBar(Gtk.Box):
         self._entry.set_hexpand(True)
         self._entry.set_placeholder_text("Search across all vaults…")
         self._entry.connect("activate", self._on_search)
-        self._entry.connect("stop-search", lambda _e: self.set_visible(False))
+        self._entry.connect("stop-search", lambda _e: self.emit("close-requested"))
         input_box.append(self._entry)
 
         search_btn = Gtk.Button(label="Search")
@@ -54,11 +56,15 @@ class SearchBar(Gtk.Box):
 
         self.append(input_box)
 
+        # --- Separator ---
+        sep = Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL)
+        self.append(sep)
+
         # --- Results ---
-        self._results_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+        self._results_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
         scrolled = Gtk.ScrolledWindow()
         scrolled.set_child(self._results_box)
-        scrolled.set_max_content_height(300)
+        scrolled.set_vexpand(True)
         self.append(scrolled)
 
     # ------------------------------------------------------------------
@@ -115,17 +121,17 @@ class SearchBar(Gtk.Box):
         """Create a clickable widget for a single search result."""
         row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         row.add_css_class("search-result")
-        row.set_margin_start(4)
-        row.set_margin_end(4)
 
         location = Gtk.Label(label=f"{Path(filepath).name}:{line_num}")
         location.add_css_class("dim-label")
+        location.add_css_class("mono")
         location.set_xalign(0)
         row.append(location)
 
         preview = Gtk.Label(label=line_text.strip()[:120])
         preview.set_xalign(0)
         preview.set_ellipsize(3)
+        preview.set_hexpand(True)
         row.append(preview)
 
         gesture = Gtk.GestureClick()

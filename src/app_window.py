@@ -138,17 +138,32 @@ class MainWindow(Adw.ApplicationWindow):
         self._sidebar.connect("file-open-requested", self._on_sidebar_file_requested)
         outer.append(self._sidebar)
 
-        root.append(outer)
-
         self._search_bar = SearchBar(get_vault_paths=self._vault_tree.get_vault_paths)
         self._search_bar.connect("file-selected", self._on_search_result_selected)
-        root.append(self._search_bar)
+        self._search_bar.connect("close-requested", self._on_search_close_requested)
+
+        self._search_paned = Gtk.Paned(orientation=Gtk.Orientation.VERTICAL)
+        self._search_paned.set_wide_handle(True)
+        self._search_paned.set_start_child(outer)
+        self._search_paned.set_resize_start_child(True)
+        self._search_paned.set_shrink_start_child(False)
+        self._search_paned.set_end_child(self._search_bar)
+        self._search_paned.set_resize_end_child(False)
+        self._search_paned.set_shrink_end_child(True)
+
+        root.append(self._search_paned)
 
         self._register_actions()
         self._load_vaults()
 
-        # Restore session: sidebar, tabs, active tab, expanded vaults.
+        # Restore session: sidebar, search, tabs, active tab, expanded vaults.
         self._sidebar.set_visible(_ses.get("sidebar_visible", False))
+        search_pos = _ses.get("search_paned_position", 0)
+        if search_pos > 0:
+            self._search_paned.set_position(search_pos)
+        if _ses.get("search_visible", False):
+            self._search_bar.set_visible(True)
+            self._search_toggle.set_active(True)
 
         # Determine active vault and restore its session.
         self._active_vault = _ses.get("active_vault")
@@ -360,7 +375,7 @@ class MainWindow(Adw.ApplicationWindow):
             view_box.append(btn)
         header.set_title_widget(view_box)
 
-        # Hamburger menu (right side).
+        # Hamburger menu (rightmost).
         menu_btn = Gtk.MenuButton()
         menu_btn.set_icon_name("open-menu-symbolic")
         menu = Gio.Menu()
@@ -375,7 +390,6 @@ class MainWindow(Adw.ApplicationWindow):
         action_section.append("Add Vault", "win.add-vault")
         action_section.append("New File", "win.new-file")
         action_section.append("Toggle Sidebar", "win.toggle-sidebar")
-        action_section.append("Full-Text Search", "win.toggle-search")
         menu.append_section(None, action_section)
 
         prefs_section = Gio.Menu()
@@ -384,6 +398,12 @@ class MainWindow(Adw.ApplicationWindow):
 
         menu_btn.set_menu_model(menu)
         header.pack_end(menu_btn)
+
+        # Search toggle button (left of hamburger).
+        self._search_toggle = Gtk.ToggleButton(icon_name="edit-find-symbolic")
+        self._search_toggle.set_tooltip_text("Full-Text Search (Ctrl+F)")
+        self._search_toggle.connect("toggled", self._on_search_toggled)
+        header.pack_end(self._search_toggle)
 
         return header
 
@@ -597,6 +617,8 @@ class MainWindow(Adw.ApplicationWindow):
             active_vault=self._active_vault,
             vault_sessions=vault_sessions,
             expanded_vaults=self._vault_tree.get_expanded_paths(),
+            search_visible=self._search_bar.get_visible(),
+            search_paned_position=self._search_paned.get_position(),
         )
 
     def _restore_vault_session(self, vault_path: str) -> None:
@@ -1088,7 +1110,20 @@ class MainWindow(Adw.ApplicationWindow):
         self._sidebar.set_visible(not self._sidebar.get_visible())
 
     def _toggle_search(self) -> None:
-        self._search_bar.focus()
+        visible = self._search_bar.get_visible()
+        self._search_bar.set_visible(not visible)
+        self._search_toggle.set_active(not visible)
+        if not visible:
+            self._search_bar.focus()
+
+    def _on_search_toggled(self, btn: Gtk.ToggleButton) -> None:
+        self._search_bar.set_visible(btn.get_active())
+        if btn.get_active():
+            self._search_bar.focus()
+
+    def _on_search_close_requested(self, _search_bar) -> None:
+        self._search_bar.set_visible(False)
+        self._search_toggle.set_active(False)
 
     def _save_current(self) -> None:
         tab = self._tab_bar.get_current_tab()
@@ -1143,6 +1178,8 @@ class MainWindow(Adw.ApplicationWindow):
             active_vault=self._active_vault,
             vault_sessions=vault_sessions,
             expanded_vaults=self._vault_tree.get_expanded_paths(),
+            search_visible=self._search_bar.get_visible(),
+            search_paned_position=self._search_paned.get_position(),
         )
 
     def _on_close_request(self, *_args) -> bool:

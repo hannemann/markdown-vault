@@ -28,6 +28,8 @@ def save_session(
     active_vault: str | None,
     vault_sessions: dict[str, dict],
     expanded_vaults: list[str] | None = None,
+    search_visible: bool = False,
+    search_paned_position: int = 0,
 ) -> None:
     """Write the current session state to disk.
 
@@ -35,6 +37,8 @@ def save_session(
     *vault_sessions* maps vault paths to per-vault state dicts with keys:
         ``tabs``, ``active_tab``, ``mru``.
     *expanded_vaults* lists the vault directory paths that were expanded.
+    *search_visible* whether the search bar is open.
+    *search_paned_position* height of the search results area.
     """
     config._ensure_config_dir()
     data = {
@@ -43,6 +47,8 @@ def save_session(
         "active_vault": active_vault,
         "expanded_vaults": expanded_vaults or [],
         "vault_sessions": vault_sessions,
+        "search_visible": search_visible,
+        "search_paned_position": search_paned_position,
     }
     try:
         SESSION_FILE.write_text(json.dumps(data, indent=2), encoding="utf-8")
@@ -65,6 +71,8 @@ def load_session() -> dict:
     data.setdefault("active_vault", None)
     data.setdefault("expanded_vaults", [])
     data.setdefault("vault_sessions", {})
+    data.setdefault("search_visible", False)
+    data.setdefault("search_paned_position", 0)
     # Migration: old sessions had top-level "tabs" + "active_tab".
     _migrate_legacy_session(data)
     return data
@@ -132,4 +140,6 @@ def _defaults() -> dict:
         "active_vault": None,
         "expanded_vaults": [],
         "vault_sessions": {},
+        "search_visible": False,
+        "search_paned_position": 0,
     }

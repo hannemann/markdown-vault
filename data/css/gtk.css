@@ -42,3 +42,18 @@
 .mru-row.current {
     opacity: 0.6;
 }
+
+/* Search results */
+.search-result {
+    padding: 4px 12px;
+    border-radius: 6px;
+    margin: 0px 8px;
+}
+
+.search-result:hover {
+    background: alpha(@accent_bg_color, 0.12);
+}
+
+.mono {
+    font-family: monospace;
+}
