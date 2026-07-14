@@ -5,6 +5,16 @@ import unittest
 from src.tabs import Tab, TabBar
 
 
+class MockEditor:
+    """Minimal editor mock for testing set_file_path calls."""
+
+    def __init__(self):
+        self.file_path = None
+
+    def set_file_path(self, new_path):
+        self.file_path = new_path
+
+
 class TestTab(unittest.TestCase):
     """Unit tests for the Tab data class."""
 
@@ -58,6 +68,21 @@ class TestTabBar(unittest.TestCase):
         # Should not raise.
         bar.update_path("/tmp/nonexistent.md", "/tmp/new.md")
         self.assertEqual(bar.get_all_paths(), [])
+
+    def test_update_path_calls_editor_set_file_path(self):
+        bar = TabBar()
+        editor = MockEditor()
+        editor.file_path = "/tmp/old.md"
+        bar.add_tab("/tmp/old.md", editor=editor, preview=None)
+        bar.update_path("/tmp/old.md", "/tmp/new.md")
+        self.assertEqual(editor.file_path, "/tmp/new.md")
+
+    def test_update_path_skips_editor_when_none(self):
+        bar = TabBar()
+        tab = bar.add_tab("/tmp/old.md", editor=None, preview=None)
+        # Should not raise.
+        bar.update_path("/tmp/old.md", "/tmp/new.md")
+        self.assertEqual(tab.file_path, "/tmp/new.md")
 
 
 if __name__ == "__main__":

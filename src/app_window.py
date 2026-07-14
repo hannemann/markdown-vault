@@ -927,20 +927,27 @@ class MainWindow(Adw.ApplicationWindow):
 
     def _on_file_renamed(self, _tree, old_path: str, new_path: str) -> None:
         """Handle file/folder rename from the vault tree."""
-        # Update the tab if open.
-        if old_path in self._tab_bar.get_all_paths():
-            self._tab_bar.update_path(old_path, new_path)
+        # Update all open tabs whose path starts with old_path (dir rename).
+        for tab_path in list(self._tab_bar.get_all_paths()):
+            if tab_path == old_path or tab_path.startswith(old_path + os.sep):
+                new_tab_path = new_path + tab_path[len(old_path):]
+                self._tab_bar.update_path(tab_path, new_tab_path)
 
         # Update nav history.
         self._nav_history = [
-            new_path if p == old_path else p
+            new_path + p[len(old_path):]
+            if p == old_path or p.startswith(old_path + os.sep)
+            else p
             for p in self._nav_history
         ]
         self._nav_pos = min(self._nav_pos, len(self._nav_history) - 1)
 
         # Update MRU.
-        self.mru.remove(old_path)
-        self.mru.push(new_path)
+        for tab_path in list(self.mru.tabs):
+            if tab_path == old_path or tab_path.startswith(old_path + os.sep):
+                new_tab_path = new_path + tab_path[len(old_path):]
+                self.mru.remove(tab_path)
+                self.mru.push(new_tab_path)
 
     def _on_tab_renamed(self, _tab_bar, old_path: str, new_path: str) -> None:
         """Handle tab path change — update the content stack key."""

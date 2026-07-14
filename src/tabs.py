@@ -140,6 +140,8 @@ class TabBar(Gtk.Box):
             return
         tab = self._tabs.pop(old_path)
         tab.file_path = new_path
+        if tab.editor:
+            tab.editor.set_file_path(new_path)
         tab.title = Path(new_path).name
         self._tabs[new_path] = tab
 

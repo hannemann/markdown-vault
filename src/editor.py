@@ -79,6 +79,14 @@ class Editor(Gtk.ScrolledWindow):
         """Absolute path of the currently loaded file, or ``None``."""
         return self._file_path
 
+    def set_file_path(self, new_path: str) -> None:
+        """Update the file path without reloading the buffer.
+
+        Called after a file is renamed so that ``save()`` writes to
+        the correct location.
+        """
+        self._file_path = new_path
+
     @property
     def is_modified(self) -> bool:
         """Whether the buffer has unsaved changes."""

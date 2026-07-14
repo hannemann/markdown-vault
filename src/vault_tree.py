@@ -444,6 +444,10 @@ class VaultTree(Gtk.Box):
         parent_dir = str(Path(old_path).parent)
         new_path = os.path.join(parent_dir, new_name)
 
+        # Reject if target already exists.
+        if Path(new_path).exists():
+            return
+
         # Perform filesystem rename.
         try:
             os.rename(old_path, new_path)
