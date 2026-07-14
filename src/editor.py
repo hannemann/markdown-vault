@@ -223,3 +223,13 @@ class Editor(Gtk.ScrolledWindow):
         scheme = sm.get_scheme(scheme_id)
         if scheme:
             self._buffer.set_style_scheme(scheme)
+
+    # ------------------------------------------------------------------
+    # Lifecycle
+    # ------------------------------------------------------------------
+
+    def do_dispose(self) -> None:
+        if self._debounce_id is not None:
+            GLib.source_remove(self._debounce_id)
+            self._debounce_id = None
+        Gtk.ScrolledWindow.do_dispose(self)

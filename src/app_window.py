@@ -627,10 +627,9 @@ class MainWindow(Adw.ApplicationWindow):
             "active_tab": self._tab_bar.get_current_path(),
             "mru": self.mru.tabs,
         }
-        alloc = self.get_allocation()
         session.save_session(
-            width=alloc.width,
-            height=alloc.height,
+            width=self.get_width(),
+            height=self.get_height(),
             sidebar_visible=self._sidebar.get_visible(),
             active_vault=self._active_vault,
             vault_sessions=vault_sessions,
@@ -911,11 +910,16 @@ class MainWindow(Adw.ApplicationWindow):
                     self.mru.remove(tab_path)
 
         # Remove from nav history.
+        old_history = self._nav_history
         self._nav_history = [
-            p for p in self._nav_history
+            p for p in old_history
             if p != path and not (is_dir and p.startswith(path + os.sep))
         ]
-        self._nav_pos = min(self._nav_pos, len(self._nav_history) - 1)
+        removed_before = sum(
+            1 for p in old_history[:self._nav_pos]
+            if p == path or (is_dir and p.startswith(path + os.sep))
+        )
+        self._nav_pos = max(0, self._nav_pos - removed_before)
 
         # Delete from filesystem.
         try:
@@ -943,13 +947,14 @@ class MainWindow(Adw.ApplicationWindow):
                 self._tab_bar.update_path(tab_path, new_tab_path)
 
         # Update nav history.
+        old_history = self._nav_history
         self._nav_history = [
             new_path + p[len(old_path):]
             if p == old_path or p.startswith(old_path + os.sep)
             else p
-            for p in self._nav_history
+            for p in old_history
         ]
-        self._nav_pos = min(self._nav_pos, len(self._nav_history) - 1)
+        # _nav_pos doesn't change during rename — entries are replaced, not removed.
 
         # Update MRU.
         for tab_path in list(self.mru.tabs):
@@ -1214,10 +1219,9 @@ class MainWindow(Adw.ApplicationWindow):
                 "active_tab": self._tab_bar.get_current_path(),
                 "mru": self.mru.tabs,
             }
-        alloc = self.get_allocation()
         session.save_session(
-            width=alloc.width,
-            height=alloc.height,
+            width=self.get_width(),
+            height=self.get_height(),
             sidebar_visible=self._sidebar.get_visible(),
             active_vault=self._active_vault,
             vault_sessions=vault_sessions,
@@ -1315,8 +1319,7 @@ class MainWindow(Adw.ApplicationWindow):
         if not tab.preview.get_visible():
             return False
         ox, oy = self._widget_origin_in_stack(tab.preview)
-        a = tab.preview.get_allocation()
-        return ox <= px < ox + a.width and oy <= py < oy + a.height
+        return ox <= px < ox + tab.preview.get_width() and oy <= py < oy + tab.preview.get_height()
 
     def _zoom_active(self, direction: int) -> None:
         """Zoom the widget under the mouse pointer (keyboard shortcut)."""

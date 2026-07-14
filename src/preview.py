@@ -326,7 +326,7 @@ class Preview(Gtk.ScrolledWindow):
             content=html_content,
             **colors,
         )
-        base_uri = f"file://{base_dir}/" if base_dir else None
+        base_uri = GLib.filename_to_uri(base_dir + "/") if base_dir else None
         self._web_view.load_html(full_html, base_uri)
 
     def scroll_to_line(self, line: int, text: str) -> None:
