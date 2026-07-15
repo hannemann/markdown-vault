@@ -196,6 +196,13 @@ python3 -m unittest discover -s tests -v
 
 ## Future Features
 
+- **Vault Directory Watching (inotify)**
+  - Monitor vault directories for external file changes (create/delete/rename/modify)
+  - Auto-reload affected tabs, update vault tree, refresh search index
+  - Use `Gio.FileMonitor` (GLib abstraction over inotify/kqueue/FSEvents) for cross-platform support
+  - Debounce rapid changes; batch updates to UI thread via `GLib.idle_add`
+  - Handle: new .md files → appear in tree; deleted files → close tabs; renamed → update paths; modified externally → prompt reload
+
 - **Integration & E2E Tests**
   - *Integration*: pytest + Xvfb (headless Display) — Widget-API-Tests für Tab-Handling, Editor↔Preview-Sync, Split-View, Vault-Tree-Expansion, Session-Restore
   - *E2E*: pytest + dogtail/pyatspi (AT-SPI Accessibility) — echte Tastatur/Maus-Events via Accessibility-Bus
