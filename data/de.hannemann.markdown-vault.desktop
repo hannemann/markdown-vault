@@ -1,7 +1,7 @@
 [Desktop Entry]
 Name=Markdown Vault
 Comment=Edit and preview Markdown files in vaults
-Exec=markdown-vault
+Exec=/home/hannemann/src/markdown-vault/bin/markdown-vault %F
 Icon=de.hannemann.markdown-vault
 Terminal=false
 Type=Application
