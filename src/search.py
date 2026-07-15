@@ -15,6 +15,8 @@ gi.require_version("Adw", "1")
 
 from gi.repository import Gtk, GObject
 
+from . import search_logic
+
 
 class SearchBar(Gtk.Box):
     """Bottom search bar with a ``Gtk.SearchEntry`` and result list.
@@ -98,22 +100,10 @@ class SearchBar(Gtk.Box):
 
     def _search_vaults(self, query: str) -> list[tuple[str, int, str]]:
         """Return ``(filepath, line_number, line_text)`` matches."""
-        results: list[tuple[str, int, str]] = []
-        query_lower = query.lower()
-        for vault_path in self._get_vault_paths():
-            for root, _dirs, files in os.walk(vault_path):
-                for fname in files:
-                    if not fname.endswith(".md"):
-                        continue
-                    fpath = os.path.join(root, fname)
-                    try:
-                        with open(fpath, "r", encoding="utf-8") as fh:
-                            for i, line in enumerate(fh, 1):
-                                if query_lower in line.lower():
-                                    results.append((fpath, i, line))
-                    except OSError:
-                        continue
-        return results
+        vault_paths = self._get_vault_paths()
+        if not vault_paths:
+            return []
+        return search_logic.search_vaults(query, vault_paths, self.MAX_RESULTS)
 
     def _build_result_row(
         self, filepath: str, line_num: int, line_text: str

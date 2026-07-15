@@ -31,6 +31,8 @@ from .markdown_help import MarkdownHelpOverlay
 from . import config
 from . import session
 from . import mru
+from . import history
+from . import path_utils
 
 
 def _load_gtk_css() -> None:
@@ -84,9 +86,7 @@ class MainWindow(Adw.ApplicationWindow):
         self.mru = mru.MRUManager()
 
         # Navigation history (browser-style back/forward).
-        self._nav_history: list[str] = []
-        self._nav_pos: int = -1
-        self._suppress_history: bool = False
+        self._nav_history = history.NavHistory()
 
         # Load session for window geometry.
         _ses = session.load_session()
@@ -204,7 +204,7 @@ class MainWindow(Adw.ApplicationWindow):
         self._vault_tree.set_active_vault(self._active_vault)
 
         # Restore tabs for the active vault.
-        self._suppress_history = True
+        self._nav_history.suppress = True
         if self._active_vault:
             vault_data = _ses.get("vault_sessions", {}).get(self._active_vault, {})
             vault_data = session.prune_vault_session(vault_data)
@@ -218,11 +218,11 @@ class MainWindow(Adw.ApplicationWindow):
                         editor_zoom=tab_data.get("editor_zoom", 1.0),
                         preview_zoom=tab_data.get("preview_zoom", 1.0),
                     )
-            self._suppress_history = False
-            active_tab = vault_data.get("active_tab")
-            if active_tab and active_tab in self._tab_bar.get_all_paths():
-                self._tab_bar.set_active_tab(active_tab)
-                self._push_history(active_tab)
+        self._nav_history.suppress = False
+        active_tab = vault_data.get("active_tab")
+        if active_tab and active_tab in self._tab_bar.get_all_paths():
+            self._tab_bar.set_active_tab(active_tab)
+            self._push_history(active_tab)
             # Restore MRU from session.
             mru_data = vault_data.get("mru", [])
             if mru_data:
@@ -239,7 +239,7 @@ class MainWindow(Adw.ApplicationWindow):
                 if active_tab and active_tab in self._tab_bar.get_all_paths():
                     self.mru.push(active_tab)
         else:
-            self._suppress_history = False
+            self._nav_history.suppress = False
 
         # Defer expansion so the tree view is fully mapped first.
         expanded = _ses.get("expanded_vaults", [])
@@ -555,16 +555,16 @@ class MainWindow(Adw.ApplicationWindow):
         tab = self._tab_bar.get_current_tab()
         if tab and tab.editor.file_path:
             file_parent = str(Path(tab.editor.file_path).parent)
-            for v in vaults:
-                if file_parent == v or file_parent.startswith(v + os.sep):
-                    return v
+            result = path_utils.find_vault_for_path(file_parent, vaults)
+            if result:
+                return result
 
         # 2. Derive from vault tree selection.
         selected = self._vault_tree.get_selected_path()
         if selected:
-            for v in vaults:
-                if selected == v or selected.startswith(v + os.sep):
-                    return v
+            result = path_utils.find_vault_for_path(selected, vaults)
+            if result:
+                return result
 
         # 3. Fallback to stored active vault if valid.
         if self._active_vault and self._active_vault in vaults:
@@ -630,11 +630,7 @@ class MainWindow(Adw.ApplicationWindow):
 
     def _find_vault_for_file(self, file_path: str) -> str | None:
         """Return the vault root that contains *file_path*, or ``None``."""
-        file_parent = str(Path(file_path).parent)
-        for v in self._vault_tree.get_vault_paths():
-            if file_parent == v or file_parent.startswith(v + os.sep):
-                return v
-        return None
+        return path_utils.find_vault_for_path(file_path, self._vault_tree.get_vault_paths())
 
     def _switch_vault(self, new_vault: str) -> None:
         """Switch to *new_vault*, saving the current vault's session first."""
@@ -647,7 +643,6 @@ class MainWindow(Adw.ApplicationWindow):
             self._tab_bar.close_tab(path)
         self.mru.clear()
         self._nav_history.clear()
-        self._nav_pos = -1
         self._update_nav_buttons()
         # Switch.
         self._active_vault = new_vault
@@ -684,7 +679,7 @@ class MainWindow(Adw.ApplicationWindow):
         ses = session.load_session()
         vault_data = ses.get("vault_sessions", {}).get(vault_path, {})
         vault_data = session.prune_vault_session(vault_data)
-        self._suppress_history = True
+        self._nav_history.suppress = True
         for tab_data in vault_data.get("tabs", []):
             fp = tab_data.get("path", "")
             if fp and Path(fp).exists():
@@ -695,7 +690,7 @@ class MainWindow(Adw.ApplicationWindow):
                     editor_zoom=tab_data.get("editor_zoom", 1.0),
                     preview_zoom=tab_data.get("preview_zoom", 1.0),
                 )
-        self._suppress_history = False
+        self._nav_history.suppress = False
         active_tab = vault_data.get("active_tab")
         if active_tab and active_tab in self._tab_bar.get_all_paths():
             self._tab_bar.set_active_tab(active_tab)
@@ -963,16 +958,7 @@ class MainWindow(Adw.ApplicationWindow):
                     self.mru.remove(tab_path)
 
         # Remove from nav history.
-        old_history = self._nav_history
-        self._nav_history = [
-            p for p in old_history
-            if p != path and not (is_dir and p.startswith(path + os.sep))
-        ]
-        removed_before = sum(
-            1 for p in old_history[:self._nav_pos]
-            if p == path or (is_dir and p.startswith(path + os.sep))
-        )
-        self._nav_pos = max(0, self._nav_pos - removed_before)
+        self._nav_history.remove_path(path, is_dir)
 
         # Delete from filesystem.
         try:
@@ -1000,14 +986,7 @@ class MainWindow(Adw.ApplicationWindow):
                 self._tab_bar.update_path(tab_path, new_tab_path)
 
         # Update nav history.
-        old_history = self._nav_history
-        self._nav_history = [
-            new_path + p[len(old_path):]
-            if p == old_path or p.startswith(old_path + os.sep)
-            else p
-            for p in old_history
-        ]
-        # _nav_pos doesn't change during rename — entries are replaced, not removed.
+        self._nav_history.remap_paths(old_path, new_path)
 
         # Update MRU.
         for tab_path in list(self.mru.tabs):
@@ -1038,45 +1017,26 @@ class MainWindow(Adw.ApplicationWindow):
         Consecutive duplicates are collapsed and any forward history is
         discarded, matching standard browser behaviour.
         """
-        if self._suppress_history:
-            return
-        # Don't push if we're already at this position.
-        if (self._nav_pos >= 0
-                and self._nav_history[self._nav_pos] == file_path):
-            return
-        # Truncate forward history.
-        self._nav_history = self._nav_history[: self._nav_pos + 1]
-        self._nav_history.append(file_path)
-        self._nav_pos = len(self._nav_history) - 1
+        self._nav_history.push(file_path)
         self._update_nav_buttons()
 
     def _nav_back(self) -> None:
         """Navigate to the previous entry in history, skipping missing files."""
-        while self._nav_pos > 0:
-            self._nav_pos -= 1
-            file_path = self._nav_history[self._nav_pos]
-            if Path(file_path).exists():
-                self._open_file(file_path, _from_nav=True)
-                self._update_nav_buttons()
-                return
+        file_path = self._nav_history.back()
+        if file_path is not None:
+            self._open_file(file_path, _from_nav=True)
         self._update_nav_buttons()
 
     def _nav_forward(self) -> None:
         """Navigate to the next entry in history, skipping missing files."""
-        while self._nav_pos < len(self._nav_history) - 1:
-            self._nav_pos += 1
-            file_path = self._nav_history[self._nav_pos]
-            if Path(file_path).exists():
-                self._open_file(file_path, _from_nav=True)
-                self._update_nav_buttons()
-                return
+        file_path = self._nav_history.forward()
+        if file_path is not None:
+            self._open_file(file_path, _from_nav=True)
         self._update_nav_buttons()
 
     def _update_nav_buttons(self) -> None:
-        self._back_btn.set_sensitive(self._nav_pos > 0)
-        self._forward_btn.set_sensitive(
-            self._nav_pos < len(self._nav_history) - 1,
-        )
+        self._back_btn.set_sensitive(self._nav_history.can_go_back())
+        self._forward_btn.set_sensitive(self._nav_history.can_go_forward())
 
     def _next_tab(self) -> None:
         if self._settings.get("tab_switch_mode", "mru") == "mru":

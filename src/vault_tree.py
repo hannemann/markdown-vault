@@ -17,6 +17,8 @@ gi.require_version("Pango", "1.0")
 
 from gi.repository import Gtk, GLib, GObject, Pango, Gio, Gdk
 
+from . import validation
+
 logger = logging.getLogger(__name__)
 
 # Column indices for the TreeStore: name, path, is_dir, icon_name, hint.
@@ -435,34 +437,31 @@ class VaultTree(Gtk.Box):
         old_name = self._store.get_value(iter_, _COL_NAME)
         is_dir = self._store.get_value(iter_, _COL_IS_DIR)
 
-        # Don't allow renaming vault roots.
-        if is_dir and old_path in self._vault_paths:
-            return
-
-        # Validate: no path separators.
-        if "/" in new_name or os.sep in new_name:
-            return
-
-        # Check for duplicate names in the same parent directory.
+        # Collect sibling names for validation.
+        sibling_names = []
         parent_iter = self._store.iter_parent(iter_)
         if parent_iter:
             child = self._store.iter_children(parent_iter)
             while child:
                 if child != iter_:
-                    sibling_name = self._store.get_value(child, _COL_NAME)
-                    if sibling_name.lower() == new_name.lower():
-                        return  # Duplicate name — reject.
+                    sibling_names.append(self._store.get_value(child, _COL_NAME))
                 child = self._store.iter_next(child)
 
-        if new_name == old_name:
-            return  # No change.
+        is_vault_root = is_dir and old_path in self._vault_paths
+        target_exists = Path(old_path).parent.joinpath(new_name).exists()
+
+        error = validation.validate_rename(
+            new_name=new_name,
+            old_name=old_name,
+            sibling_names=sibling_names,
+            is_vault_root=is_vault_root,
+            target_exists=target_exists,
+        )
+        if error:
+            return
 
         parent_dir = str(Path(old_path).parent)
         new_path = os.path.join(parent_dir, new_name)
-
-        # Reject if target already exists.
-        if Path(new_path).exists():
-            return
 
         # Perform filesystem rename.
         try:
@@ -569,26 +568,14 @@ class VaultTree(Gtk.Box):
             return False  # Can only drop on directories.
         target_dir = self._store.get_value(target_iter, _COL_PATH)
 
-        # Don't drop on self.
-        if source_path == target_dir:
-            return False
-
-        # Don't drop a directory onto its own child.
-        if target_dir.startswith(source_path + os.sep):
-            return False
-
-        # Don't drop on the same parent.
-        source_parent = str(Path(source_path).parent)
-        if source_parent == target_dir:
+        # Validate the drop operation.
+        err = validation.validate_drop(source_path, target_dir, True)
+        if err is not None:
             return False
 
         # Perform the move.
         source_name = Path(source_path).name
         dest_path = os.path.join(target_dir, source_name)
-
-        # Check for name collision.
-        if Path(dest_path).exists():
-            return False
 
         try:
             import shutil
