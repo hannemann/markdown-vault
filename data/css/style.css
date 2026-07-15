@@ -238,59 +238,6 @@ body {
     color: var(--accent);
 }
 
-/* Table styles (existing) */
-.markdown-body table {
-    border-collapse: collapse;
-    width: 100%;
-    margin-bottom: 16px;
-}
-    font-family: "Monaco", "Menlo", "Ubuntu Mono", monospace;
-    font-size: 14px;
-}
-
-.heading {
-    font-weight: 600;
-    font-size: 14px;
-}
-
-.tab {
-    padding: 4px 12px;
-    border-radius: 6px;
-    border: 1px solid transparent;
-}
-
-.tab.active {
-    background: color-mix(in srgb, var(--accent_bg_color) 30%, transparent);
-    border-color: var(--accent_color);
-}
-
-.tab:hover {
-    background: color-mix(in srgb, var(--card_bg_color) 70%, transparent);
-}
-
-.search-result {
-    padding: 6px 8px;
-    border-radius: 6px;
-}
-
-.search-result:hover {
-    background: var(--card_bg_color);
-}
-
-.outline-item {
-    padding: 2px 8px;
-    border-radius: 4px;
-}
-
-.outline-item:hover {
-    background: var(--card_bg_color);
-}
-
-.mono {
-    font-family: "Monaco", "Menlo", "Ubuntu Mono", monospace;
-    font-size: 12px;
-}
-
 /* ── MathML ─────────────────────────────────────────────────────── */
 
 .markdown-body math {

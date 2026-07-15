@@ -47,8 +47,8 @@ HTML_TEMPLATE = """\
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
 :root {{ --bg: {bg_color}; --fg: {fg_color}; --accent: {accent_color}; --dim: {dim_color}; --card-bg: {card_bg_color}; --borders: {borders_color}; }}
+{css_content}
 </style>
-<link rel="stylesheet" href="file://{css_path}">
 </head>
 <body>
 <div class="markdown-body">
@@ -212,7 +212,7 @@ class Preview(Gtk.ScrolledWindow):
 
         web_settings = self._web_view.get_settings()
         web_settings.set_enable_javascript(True)
-        web_settings.set_allow_file_access_from_file_urls(True)
+        web_settings.set_allow_file_access_from_file_urls(False)
 
         self._web_view.connect("decide-policy", self._on_decide_policy)
 
@@ -319,10 +319,10 @@ class Preview(Gtk.ScrolledWindow):
         mathml_pp = MathMLPostprocessor()
         html_content = mathml_pp.run(html_content)
 
-        css_path = self._resolve_css_path()
+        css_content = self._load_css_content()
         colors = self._get_theme_colors()
         full_html = HTML_TEMPLATE.format(
-            css_path=css_path,
+            css_content=css_content,
             content=html_content,
             **colors,
         )
@@ -391,14 +391,16 @@ class Preview(Gtk.ScrolledWindow):
     # Internal
     # ------------------------------------------------------------------
 
-    def _resolve_css_path(self) -> str:
-        """Return the absolute path to the stylesheet."""
+    def _load_css_content(self) -> str:
+        """Load the CSS file content for inline embedding."""
         if self._css_path:
-            return self._css_path
+            with open(self._css_path, "r") as f:
+                return f.read()
         # Fall back to the installed data directory.
         try:
             import importlib.resources
 
-            return str(importlib.resources.files("data").joinpath("css/style.css"))
+            css_file = importlib.resources.files("data").joinpath("css/style.css")
+            return css_file.read_text(encoding="utf-8")
         except Exception:
             return ""

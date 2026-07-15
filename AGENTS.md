@@ -181,7 +181,7 @@ python3 -m unittest discover -s tests -v
 - On Flatpak, file access is sandboxed — use `org.freedesktop.portal` for file chooser.
 - GtkSourceView 5 renamed `begin_not_undoable_action` → `begin_irreversible_action`.
 - `editor.file_path` is a `str`, not `Path` — use `Path(editor.file_path).parent` for directory.
-- Kill all existing app instances before starting a new one (`pkill -f "python3 -m src.main" || true`). Duplicate instances cause confusing state.
+- Kill all existing app instances before starting a new one: Immer `./scripts/test-app.sh` verwenden — nie manuell `pkill` oder `killall` (läuft in Timeout). Duplicate instances cause confusing state.
 - Shift+Tab generates `Gdk.KEY_ISO_Left_Tab`, not `Gdk.KEY_Tab`. Always check for both keyvals.
 
 ## Future Features
