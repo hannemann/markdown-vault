@@ -180,6 +180,12 @@ python3 -m unittest discover -s tests -v
 ## Gotchas
 
 - WebKitGTK requires the main thread for JS evaluation — use `GLib.idle_add()` for WebView calls.
+- **WebKitGTK 6.0 quirks** (discovered during preview scroll-position work):
+  - `Gtk.ScrolledWindow` adjustments are **ignored** by WebView — WebView scrolls internally.
+  - `WebKit.WebView.get_hadjustment()` does **not exist** in Python bindings.
+  - `evaluate_javascript_finish()` returns `JavaScriptCore.Value` (JSCValue), **not** `GLib.Variant`. Use `result.to_string()` to get the string, then `json.loads()`.
+  - **DOM update over full reload**: After the initial `load_html()`, update content via `evaluate_javascript` setting `.innerHTML` (base64-encoded to avoid escaping issues). This avoids full document reload and natively preserves scroll position — no capture/restore dance needed.
+  - CSS theme variables can be updated at runtime via `document.documentElement.style.setProperty()`.
 - GtkSourceView needs `gi.require_version("GtkSource", "5")` — version 4 is for GTK3.
 - `vaults.yaml` must never contain duplicate vault paths; deduplicate on load.
 - On Flatpak, file access is sandboxed — use `org.freedesktop.portal` for file chooser.

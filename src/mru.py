@@ -8,7 +8,7 @@ Provides:
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING, Callable
+from typing import Callable
 
 import gi
 
@@ -16,9 +16,6 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 
 from gi.repository import Gtk, Adw, Gdk
-
-if TYPE_CHECKING:
-    pass
 
 
 class MRUManager:

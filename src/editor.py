@@ -136,10 +136,6 @@ class Editor(Gtk.ScrolledWindow):
             logger.warning("Failed to save %s: %s", self._file_path, exc)
             return False
 
-    def focus(self) -> None:
-        """Move keyboard focus to the text view."""
-        self._view.grab_focus()
-
     def scroll_to_line(self, line: int) -> None:
         """Scroll the view to *line* (0-based) and place the cursor there."""
         _ok, iter = self._buffer.get_iter_at_line(line)

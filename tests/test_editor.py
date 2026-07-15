@@ -24,7 +24,7 @@ class TestEditorModuleStructure(unittest.TestCase):
     def test_editor_has_expected_methods_in_source(self):
         src = Path(__file__).resolve().parent.parent / "src" / "editor.py"
         source = src.read_text(encoding="utf-8")
-        for method in ("open_file", "save", "get_text", "focus"):
+        for method in ("open_file", "save", "get_text"):
             self.assertIn(f"def {method}", source)
 
 

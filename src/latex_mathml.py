@@ -171,14 +171,6 @@ _OPERATOR_SYMBOLS = {
     "\\quad", "\\qquad",
 }
 
-_COMMANDS_WITH_ARGS = {
-    "frac", "cfrac", "dfrac", "tfrac",
-    "sqrt",
-    "mathbf", "mathrm", "mathcal", "mathbb", "mathfrak",
-    "text", "operatorname",
-    "overline", "underline", "hat", "bar", "vec", "dot",
-    "binom", "dbinom", "tbinom",
-}
 
 # Commands that take exactly 1 argument and render as upright operator name
 _OPERATOR_NAMES = {

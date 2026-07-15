@@ -24,7 +24,7 @@ _COL_NAME = 0
 _COL_PATH = 1
 _COL_IS_DIR = 2
 _COL_ICON = 3
-_COL_HINT = 4
+_COL_HINT = 4  # written but not read — reserved for future use
 
 FILE_ICON = "text-x-generic-symbolic"
 FOLDER_ICON = "folder-symbolic"

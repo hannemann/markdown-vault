@@ -59,8 +59,6 @@ def _make_theme_handler(scheme: int):
 
 
 _ZOOM_STEP = 0.1
-_ZOOM_MIN = 0.25
-_ZOOM_MAX = 5.0
 
 
 class MainWindow(Adw.ApplicationWindow):

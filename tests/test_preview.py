@@ -6,7 +6,7 @@ from src.preview import Preview, HTML_TEMPLATE, MARKDOWN_EXTENSIONS
 
 
 _TEMPLATE_KWARGS = dict(
-    css_path="/style.css",
+    css_content=".markdown-body { color: red; }",
     content="<p>Hi</p>",
     bg_color="#ffffff",
     fg_color="#000000",
@@ -21,7 +21,7 @@ class TestHtmlTemplate(unittest.TestCase):
     """Verify the HTML template structure."""
 
     def test_template_contains_markers(self):
-        self.assertIn("{css_path}", HTML_TEMPLATE)
+        self.assertIn("{css_content}", HTML_TEMPLATE)
         self.assertIn("{content}", HTML_TEMPLATE)
 
     def test_template_is_valid_html(self):
