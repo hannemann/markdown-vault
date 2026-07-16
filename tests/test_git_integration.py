@@ -47,6 +47,30 @@ class TestGetStatus(_GitRepoMixin, unittest.TestCase):
         self.assertEqual(len(status), 1)
         self.assertEqual(status[0]["path"], "new.md")
 
+    def test_renamed_file(self):
+        """Renamed file shows as R with new path."""
+        fp = Path(self._tmpdir) / "old.md"
+        fp.write_text("content")
+        os.system(f"git -C {self._tmpdir} add old.md >/dev/null 2>&1")
+        os.system(f"git -C {self._tmpdir} commit -m 'init' >/dev/null 2>&1")
+        os.system(f"git -C {self._tmpdir} mv old.md new.md >/dev/null 2>&1")
+        status = get_status(self._tmpdir)
+        self.assertEqual(len(status), 1)
+        self.assertEqual(status[0]["status"], "R")
+        self.assertEqual(status[0]["path"], "new.md")
+
+    def test_non_ascii_path(self):
+        """Non-ASCII filename is returned unquoted."""
+        fp = Path(self._tmpdir) / "Müller.md"
+        fp.write_text("content")
+        os.system(f"git -C {self._tmpdir} add 'Müller.md' >/dev/null 2>&1")
+        os.system(f"git -C {self._tmpdir} commit -m 'init' >/dev/null 2>&1")
+        fp.write_text("modified")
+        status = get_status(self._tmpdir)
+        self.assertEqual(len(status), 1)
+        self.assertEqual(status[0]["path"], "Müller.md")
+        self.assertNotIn("\\", status[0]["path"])
+
     def test_non_repo_returns_empty(self):
         self.assertEqual(get_status("/tmp"), [])
 

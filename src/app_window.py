@@ -564,14 +564,14 @@ class MainWindow(Adw.ApplicationWindow):
         tab = self._tab_bar.get_current_tab()
         if tab and tab.editor.file_path:
             file_parent = str(Path(tab.editor.file_path).parent)
-            result = path_utils.find_vault_for_path(file_parent, vaults)
+            result = path_utils.find_vault_for_dir(file_parent, vaults)
             if result:
                 return result
 
         # 2. Derive from vault tree selection.
         selected = self._vault_tree.get_selected_path()
         if selected:
-            result = path_utils.find_vault_for_path(selected, vaults)
+            result = path_utils.find_vault_for_dir(selected, vaults)
             if result:
                 return result
 
@@ -622,7 +622,8 @@ class MainWindow(Adw.ApplicationWindow):
         file_path = os.path.join(default_dir, name)
         try:
             Path(file_path).touch()
-        except OSError:
+        except OSError as e:
+            self._show_error("Create Failed", str(e))
             return
         self._vault_tree.refresh()
         self._open_file(file_path)
@@ -641,7 +642,8 @@ class MainWindow(Adw.ApplicationWindow):
 
     def _find_vault_for_file(self, file_path: str) -> str | None:
         """Return the vault root that contains *file_path*, or ``None``."""
-        return path_utils.find_vault_for_path(file_path, self._vault_tree.get_vault_paths())
+        file_parent = str(Path(file_path).parent)
+        return path_utils.find_vault_for_dir(file_parent, self._vault_tree.get_vault_paths())
 
     def _switch_vault(self, new_vault: str) -> None:
         """Switch to *new_vault*, saving the current vault's session first."""
@@ -857,14 +859,12 @@ class MainWindow(Adw.ApplicationWindow):
             self._active_vault = vault
             self._vault_tree.set_active_vault(vault)
 
-    def _on_editor_modified(self, _editor, dirty: bool) -> None:
+    def _on_editor_modified(self, editor: Editor, dirty: bool) -> None:
         """Update the italic indicator on the tab for *dirty*."""
         logging.debug("_on_editor_modified: path=%s dirty=%s",
-                      self._tab_bar.get_current_path(), dirty)
-        self._tab_bar._set_tab_unmodified(
-            self._tab_bar.get_current_path() or "",
-            dirty,
-        )
+                      editor.file_path, dirty)
+        if editor.file_path:
+            self._tab_bar._set_tab_unmodified(editor.file_path, dirty)
 
     def _on_tab_closed(self, _tab_bar, file_path: str) -> None:
         self.mru.remove(file_path)
@@ -950,9 +950,16 @@ class MainWindow(Adw.ApplicationWindow):
         folder_path = os.path.join(parent_dir, name)
         try:
             os.mkdir(folder_path)
-        except OSError:
+        except OSError as e:
+            self._show_error("Create Failed", str(e))
             return
         self._vault_tree.refresh()
+
+    def _show_error(self, heading: str, body: str) -> None:
+        """Show an error dialog with the given message."""
+        dialog = Adw.AlertDialog(heading=heading, body=body)
+        dialog.add_response("ok", "OK")
+        dialog.present(self)
 
     def _on_delete_requested(self, _tree, path: str) -> None:
         """Handle 'Delete' from the vault tree context menu."""
@@ -986,12 +993,27 @@ class MainWindow(Adw.ApplicationWindow):
         dialog.present(self)
 
     def _on_delete_response(self, dialog, response, path):
-        """Handle the delete confirmation response."""
+        """Handle the delete confirmation response.
+
+        Attempts filesystem delete FIRST, only cleans up UI state on success.
+        Shows error dialog on failure.
+        """
         if response != "delete":
             return
         is_dir = Path(path).is_dir()
 
-        # Close any open tabs for files under this path.
+        # 1. Attempt filesystem delete FIRST
+        try:
+            if is_dir:
+                import shutil
+                shutil.rmtree(path)
+            else:
+                os.remove(path)
+        except OSError as e:
+            self._show_error("Delete Failed", str(e))
+            return
+
+        # 2. Only on success: close tabs, remove from MRU/history, refresh tree
         if is_dir:
             for tab_path in list(self._tab_bar.get_all_paths()):
                 if tab_path == path or tab_path.startswith(path + os.sep):
@@ -1009,16 +1031,6 @@ class MainWindow(Adw.ApplicationWindow):
 
         # Remove from nav history.
         self._nav_history.remove_path(path, is_dir)
-
-        # Delete from filesystem.
-        try:
-            if is_dir:
-                import shutil
-                shutil.rmtree(path)
-            else:
-                os.remove(path)
-        except OSError:
-            return
 
         self._vault_tree.refresh()
 
@@ -1039,12 +1051,11 @@ class MainWindow(Adw.ApplicationWindow):
         # Update nav history.
         self._nav_history.remap_paths(old_path, new_path)
 
-        # Update MRU.
+        # Update MRU — use in-place rename to preserve order.
         for tab_path in list(self.mru.tabs):
             if tab_path == old_path or tab_path.startswith(old_path + os.sep):
                 new_tab_path = new_path + tab_path[len(old_path):]
-                self.mru.remove(tab_path)
-                self.mru.push(new_tab_path)
+                self.mru.rename(tab_path, new_tab_path)
 
     def _on_tab_renamed(self, _tab_bar, old_path: str, new_path: str) -> None:
         """Handle tab path change — update the content stack key."""

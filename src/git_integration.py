@@ -40,18 +40,34 @@ def get_status(path: str | Path) -> list[dict[str, str]]:
     """Return porcelain status entries for the working tree.
 
     Each entry is ``{"status": str, "path": str}`` where *status* is the
-    two-character code from ``git status --porcelain``.
+    two-character code from ``git status --porcelain`` (e.g. ``"M "``,
+    ``"??"``, ``"R "``).  For renames, only the new path is returned.
     """
-    code, stdout, _ = _run_git(["status", "--porcelain"], cwd=path)
+    code, stdout, _ = _run_git(
+        ["-c", "core.quotepath=false", "status", "--porcelain", "-z"],
+        cwd=path,
+    )
     if code != 0:
         return []
     entries: list[dict[str, str]] = []
-    for line in stdout.strip().splitlines():
-        if len(line) >= 3:
-            entries.append({
-                "status": line[:2].strip(),
-                "path": line[3:],
-            })
+    # NUL-separated output. Each entry: "XY path\0"
+    # For renames (status starts with R), there are two entries:
+    # "R  new_path\0" followed by "   old_path\0"
+    parts = stdout.split('\0')
+    i = 0
+    while i < len(parts) - 1:  # -1 because split leaves trailing empty string
+        entry = parts[i]
+        if not entry:
+            i += 1
+            continue
+        if len(entry) >= 3:
+            status = entry[:2]  # Keep both chars (e.g., "M ", "??", "R ")
+            filepath = entry[3:]  # Skip "XY "
+            # If this is a rename, the NEXT part is the old path - skip it
+            if status.startswith('R'):
+                i += 1  # skip the old path entry
+            entries.append({"status": status.strip(), "path": filepath})
+        i += 1
     return entries
 
 

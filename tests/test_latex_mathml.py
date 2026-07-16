@@ -232,6 +232,55 @@ class TestMathMLRendering(unittest.TestCase):
         self.assertIn("<msqrt>", result)
         self.assertIn("<mfrac>", result)
 
+    def test_xml_escaping_less_than(self):
+        result = latex_to_mathml("a < b", inline=True)
+        self.assertIn("<", result)
+        self.assertNotIn("<mo><</mo>", result)
+
+    def test_xml_escaping_greater_than(self):
+        result = latex_to_mathml("a > b", inline=True)
+        self.assertIn(">", result)
+        self.assertNotIn("<mo>></mo>", result)
+
+    def test_xml_escaping_ampersand(self):
+        result = latex_to_mathml("a & b", inline=True)
+        self.assertIn("&", result)
+        self.assertNotIn("<mtext>&</mtext>", result)
+
+    def test_xml_escaping_in_text(self):
+        result = latex_to_mathml("\\text{a & b <tag>}", inline=True)
+        self.assertIn("&", result)
+        self.assertIn("<", result)
+        self.assertIn(">", result)
+
+    def test_xml_escaping_in_variable(self):
+        result = latex_to_mathml("x < y", inline=True)
+        self.assertIn("<", result)
+
+    def test_single_token_fraction(self):
+        # Single-character args (braced form is standard LaTeX; single-char without braces works for digits)
+        result = latex_to_mathml("\\frac{1}{2}", inline=True)
+        self.assertIn("<mfrac>", result)
+        self.assertIn("<mn>1</mn>", result)
+        self.assertIn("<mn>2</mn>", result)
+
+    def test_single_token_sqrt(self):
+        result = latex_to_mathml("\\sqrt{2}", inline=True)
+        self.assertIn("<msqrt>", result)
+        self.assertIn("<mn>2</mn>", result)
+
+    def test_single_token_binom(self):
+        result = latex_to_mathml("\\binom{3}{4}", inline=True)
+        self.assertIn("<mfrac>", result)
+        self.assertIn("<mn>3</mn>", result)
+        self.assertIn("<mn>4</mn>", result)
+
+    def test_single_token_sqrt_n(self):
+        result = latex_to_mathml("\\sqrt[3]{x}", inline=True)
+        self.assertIn("<mroot>", result)
+        self.assertIn("<mn>3</mn>", result)
+        self.assertIn("<mi>x</mi>", result)
+
 
 # ---------------------------------------------------------------------------
 # Postprocessor tests

@@ -31,12 +31,27 @@ import unicodedata
 _HEADING_RE = re.compile(r"^(#{1,6})\s+(.+)$", re.MULTILINE)
 
 
-def _heading_to_slug(heading: str) -> str:
-    """Convert a heading text to a slug matching the toc extension's output."""
+def _heading_to_slug(heading: str, seen: dict[str, int] | None = None) -> str:
+    """Convert a heading text to a slug matching the toc extension's output.
+
+    The toc extension lowercases, removes punctuation, replaces spaces with
+    hyphens, and appends _1, _2 for duplicates.
+    """
     value = unicodedata.normalize("NFKD", heading)
     value = re.sub(r"[^\w\s-]", "", value).strip()
     value = re.sub(r"[-\s]+", "-", value)
-    return value.lower()
+    base_slug = value.lower()
+
+    if seen is not None:
+        count = seen.get(base_slug, 0)
+        if count > 0:
+            slug = f"{base_slug}_{count}"
+        else:
+            slug = base_slug
+        seen[base_slug] = count + 1
+        return slug
+
+    return base_slug
 
 
 HTML_TEMPLATE = """\
@@ -256,7 +271,10 @@ class Preview(Gtk.ScrolledWindow):
     # ------------------------------------------------------------------
 
     def _on_decide_policy(self, _web_view, decision, decision_type):
-        """Intercept link clicks and resolve wikilinks to .md files."""
+        """Intercept link clicks and resolve wikilinks to .md files.
+
+        External links (http(s)://, mailto:) are opened in the default browser.
+        """
         if decision_type != WebKit.PolicyDecisionType.NAVIGATION_ACTION:
             return False
 
@@ -264,9 +282,14 @@ class Preview(Gtk.ScrolledWindow):
         request = nav_action.get_request()
         uri = request.get_uri()
 
-        # Only handle file:// and relative links
         if not uri:
             return False
+
+        # Explicitly handle external links - open in default browser
+        if uri.startswith(("http://", "https://", "mailto:")):
+            decision.ignore()
+            GLib.idle_add(Gtk.show_uri, self.get_root(), uri, Gdk.CURRENT_TIME)
+            return True
 
         # Strip file:// prefix if present
         path_str = uri
@@ -372,17 +395,21 @@ class Preview(Gtk.ScrolledWindow):
         JavaScript to scroll the matching element into view.
         """
         # Find the nearest heading at or before the target line.
-        target_heading = None
+        # Track seen slugs to match toc extension's duplicate handling.
+        seen: dict[str, int] = {}
+        target_slug = None
         for m in _HEADING_RE.finditer(text):
             heading_line = text[:m.start()].count("\n")
+            heading_text = m.group(2)
+            # Compute slug and update counter (matches toc behavior)
+            slug = _heading_to_slug(heading_text, seen)
             if heading_line <= line:
-                target_heading = m.group(2)
+                target_slug = slug
             else:
                 break
-        if not target_heading:
+        if not target_slug:
             return
-        slug = _heading_to_slug(target_heading)
-        js = f'document.getElementById("{slug}")?.scrollIntoView({{behavior:"smooth",block:"start"}});'
+        js = f'document.getElementById("{target_slug}")?.scrollIntoView({{behavior:"smooth",block:"start"}});'
         GLib.idle_add(
             self._web_view.evaluate_javascript,
             js, -1, None, None, None, None,

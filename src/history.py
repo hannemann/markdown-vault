@@ -70,11 +70,13 @@ class NavHistory:
         Returns the file path if a valid previous entry was found,
         otherwise ``None``.
         """
+        original_pos = self._pos
         while self._pos > 0:
             self._pos -= 1
             file_path = self._history[self._pos]
             if Path(file_path).exists():
                 return file_path
+        self._pos = original_pos
         return None
 
     def forward(self) -> str | None:
@@ -83,11 +85,13 @@ class NavHistory:
         Returns the file path if a valid next entry was found,
         otherwise ``None``.
         """
+        original_pos = self._pos
         while self._pos < len(self._history) - 1:
             self._pos += 1
             file_path = self._history[self._pos]
             if Path(file_path).exists():
                 return file_path
+        self._pos = original_pos
         return None
 
     def remove_path(self, path: str, is_dir: bool = False) -> None:

@@ -92,12 +92,17 @@ def prune_vault_session(vault_session: dict) -> dict:
     Returns a new dict with only existing files.  *active_tab* is cleared
     if the referenced file is missing.
     """
-    tabs = [t for t in vault_session.get("tabs", []) if Path(t.get("path", "")).exists()]
+    tabs = [
+        t for t in vault_session.get("tabs", [])
+        if t.get("path") and Path(t["path"]).exists()
+    ]
     active_tab = vault_session.get("active_tab")
-    if active_tab and not Path(active_tab).exists():
+    if active_tab and Path(active_tab).exists():
+        pass  # keep it
+    else:
         active_tab = None
     # Preserve MRU entries that still point to existing files.
-    mru = [fp for fp in vault_session.get("mru", []) if Path(fp).exists()]
+    mru = [fp for fp in vault_session.get("mru", []) if fp and Path(fp).exists()]
     return {"tabs": tabs, "active_tab": active_tab, "mru": mru}
 
 

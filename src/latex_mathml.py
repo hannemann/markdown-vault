@@ -8,6 +8,7 @@ to native MathML that WebKitGTK renders without JavaScript.
 
 from __future__ import annotations
 
+import html
 import re
 from enum import Enum, auto
 from typing import NamedTuple
@@ -325,13 +326,18 @@ class _Parser:
     def __init__(self, tokens: list[Token]):
         self._tokens = tokens
         self._pos = 0
+        self._token_buffer: list[Token] = []
 
     def _peek(self) -> Token | None:
+        if self._token_buffer:
+            return self._token_buffer[-1]
         if self._pos < len(self._tokens):
             return self._tokens[self._pos]
         return None
 
     def _advance(self) -> Token | None:
+        if self._token_buffer:
+            return self._token_buffer.pop()
         tok = self._peek()
         if tok is not None:
             self._pos += 1
@@ -342,13 +348,46 @@ class _Parser:
             self._pos += 1
 
     def _parse_group(self) -> ASTNode:
-        """Parse a {…} group into a GROUP node."""
-        self._advance()  # consume {
-        children = []
-        while self._peek() and self._peek().type != TokenType.GROUP_CLOSE:
-            children.append(self._parse_element())
-        self._advance()  # consume }
-        return ASTNode(NodeType.GROUP, children)
+        """Parse a {…} group into a GROUP node, or a single token if no brace."""
+        self._skip_spaces()
+        if self._peek() and self._peek().type == TokenType.GROUP_OPEN:
+            self._advance()  # consume {
+            children = []
+            while self._peek() and self._peek().type != TokenType.GROUP_CLOSE:
+                children.append(self._parse_element())
+            self._advance()  # consume }
+            return ASTNode(NodeType.GROUP, children)
+        # Single token argument (e.g., \frac12 -> numerator=1)
+        return self._parse_single_token_argument()
+
+    def _parse_single_token_argument(self) -> ASTNode:
+        """Parse a single token as argument, splitting multi-digit numbers."""
+        self._skip_spaces()
+        tok = self._peek()
+        if tok is None:
+            return ASTNode(NodeType.EXPRESSION, [])
+        
+        if tok.type == TokenType.GROUP_OPEN:
+            return self._parse_group()
+        
+        self._advance()
+        
+        if tok.type == TokenType.NUMBER and len(tok.value) > 1:
+            # LaTeX \frac12 -> two single-digit args; split "12" -> "1", "2"
+            first_digit = tok.value[0]
+            rest = tok.value[1:]
+            # Push rest back as a new NUMBER token
+            self._token_buffer.insert(0, Token(TokenType.NUMBER, rest))
+            return ASTNode(NodeType.NUMBER, [], first_digit)
+        
+        if tok.type == TokenType.VARIABLE:
+            return ASTNode(NodeType.VARIABLE, [], tok.value)
+        
+        if tok.type == TokenType.NUMBER:
+            return ASTNode(NodeType.NUMBER, [], tok.value)
+        
+        if tok.type == TokenType.OPERATOR:
+            return ASTNode(NodeType.OPERATOR, [], tok.value)
 
     def _parse_optional_group(self) -> ASTNode | None:
         """Parse an optional [...] argument, or return None if not present."""
@@ -648,31 +687,31 @@ def _render_node(node: ASTNode, inline: bool = True) -> str:
         return "".join(_render_node(c, inline) for c in node.children)
 
     if node.type == NodeType.VARIABLE:
-        return f"<mi>{node.value}</mi>"
+        return f"<mi>{html.escape(node.value)}</mi>"
 
     if node.type == NodeType.NUMBER:
-        return f"<mn>{node.value}</mn>"
+        return f"<mn>{html.escape(node.value)}</mn>"
 
     if node.type == NodeType.OPERATOR:
         if node.value in ("(", ")", "[", "]"):
-            return f'<mo stretchy="false">{node.value}</mo>'
-        return f"<mo>{node.value}</mo>"
+            return f'<mo stretchy="false">{html.escape(node.value)}</mo>'
+        return f"<mo>{html.escape(node.value)}</mo>"
 
     if node.type == NodeType.STRETCHY:
-        return f'<mo stretchy="true">{node.value}</mo>'
+        return f'<mo stretchy="true">{html.escape(node.value)}</mo>'
 
     if node.type == NodeType.SYMBOL:
         char = _symbol_to_char(node.value)
         # Operators/specials render as <mo>, identifiers as <mi>
         if node.value in _OPERATOR_SYMBOLS:
-            return f"<mo>{char}</mo>"
-        return f"<mi>{char}</mi>"
+            return f"<mo>{html.escape(char)}</mo>"
+        return f"<mi>{html.escape(char)}</mi>"
 
     if node.type == NodeType.TEXT:
         # Operator names (exp, sin, cos, …) → upright <mi>
         if node.value in _OPERATOR_NAMES:
-            return f'<mi mathvariant="normal">{node.value}</mi>'
-        return f"<mtext>{node.value}</mtext>"
+            return f'<mi mathvariant="normal">{html.escape(node.value)}</mi>'
+        return f"<mtext>{html.escape(node.value)}</mtext>"
 
     if node.type == NodeType.GROUP:
         return "".join(_render_node(c, inline) for c in node.children)

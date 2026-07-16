@@ -211,6 +211,33 @@ class TestMRUManager(unittest.TestCase):
     def test_tabs_empty(self):
         self.assertEqual(self.mru.tabs, [])
 
+    # ── rename ───────────────────────────────────────────────────────
+
+    def test_rename_preserves_index_and_pos(self):
+        self.mru.push(self._path(0))
+        self.mru.push(self._path(1))
+        self.mru.push(self._path(2))
+        # MRU = [c, b, a], pos=0
+        self.mru.next()  # pos=1 (b)
+        new_path = "/tmp/z.md"
+        self.mru.rename(self._path(1), new_path)
+        self.assertEqual(self.mru.tabs, [self._path(2), new_path, self._path(0)])
+        self.assertEqual(self.mru.pos, 1)
+
+    def test_rename_current_preserves_pos_zero(self):
+        self.mru.push(self._path(0))
+        self.mru.push(self._path(1))
+        # MRU = [b, a], pos=0 (b)
+        new_path = "/tmp/z.md"
+        self.mru.rename(self._path(1), new_path)
+        self.assertEqual(self.mru.tabs, [new_path, self._path(0)])
+        self.assertEqual(self.mru.pos, 0)
+
+    def test_rename_nonexistent_is_noop(self):
+        self.mru.push(self._path(0))
+        self.mru.rename("/nonexistent.md", "/tmp/z.md")
+        self.assertEqual(self.mru.tabs, [self._path(0)])
+
 
 class TestMRUSwitcherStructure(unittest.TestCase):
     """Structural tests for the MRUSwitcher GTK widget."""

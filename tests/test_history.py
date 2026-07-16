@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 
 from src.history import NavHistory
-from src.path_utils import find_vault_for_path
+from src.path_utils import find_vault_for_path, find_vault_for_dir
 
 
 class TestNavHistory(unittest.TestCase):
@@ -112,6 +112,52 @@ class TestNavHistory(unittest.TestCase):
         h.back()  # to missing
         h.back()  # to a
         self.assertEqual(h.forward(), self._path(1))  # skips missing
+
+    def test_back_restores_pos_on_failure(self):
+        """If back() returns None, _pos should be restored to original."""
+        h = NavHistory()
+        missing = "/nonexistent/missing.md"
+        h.push(self._path(0))
+        h.push(missing)
+        # pos=1 (at missing)
+        result = h.back()  # should skip missing, go to a.md (pos=0)
+        self.assertEqual(result, self._path(0))
+        # Now at pos=0, back() should return None and pos should stay 0
+        result2 = h.back()
+        self.assertIsNone(result2)
+        self.assertEqual(h.pos, 0)
+
+    def test_back_restores_pos_when_all_missing(self):
+        """If back() finds NO valid entries, _pos should be restored to original."""
+        h = NavHistory()
+        missing1 = "/nonexistent/missing1.md"
+        missing2 = "/nonexistent/missing2.md"
+        h.push(missing1)
+        h.push(missing2)
+        # pos=1 (at missing2)
+        # back() goes to pos=0 (missing1) -> doesn't exist -> loop exits, returns None
+        # BUG: pos is now 0 (pointing to missing1), should be restored to 1
+        result = h.back()
+        self.assertIsNone(result)
+        self.assertEqual(h.pos, 1)  # Should be restored to original position
+
+    def test_forward_restores_pos_on_failure(self):
+        """If forward() returns None, _pos should be restored to original."""
+        h = NavHistory()
+        missing = "/nonexistent/missing.md"
+        h.push(self._path(0))
+        h.push(missing)
+        h.push(self._path(1))
+        h.back()  # to missing (pos=1)
+        h.back()  # to a (pos=0)
+        # Now forward() should skip missing and go to b (pos=2)
+        result = h.forward()
+        self.assertEqual(result, self._path(1))
+        self.assertEqual(h.pos, 2)
+        # forward() again should return None and pos should stay at 2
+        result2 = h.forward()
+        self.assertIsNone(result2)
+        self.assertEqual(h.pos, 2)
 
     # ── can_go_back / can_go_forward ────────────────────────────────
 
@@ -284,6 +330,34 @@ class TestFindVaultForPath(unittest.TestCase):
         Path(target).write_text("")
         result = find_vault_for_path(target, [str(other)])
         self.assertIsNone(result)
+
+    # ── find_vault_for_dir (new contract) ───────────────────────────
+
+    def test_find_vault_for_dir_exact(self):
+        result = find_vault_for_dir(str(self._vault), [str(self._vault)])
+        self.assertEqual(result, str(self._vault))
+
+    def test_find_vault_for_dir_subdirectory(self):
+        subdir = self._vault / "Sub" / "Deep"
+        subdir.mkdir(parents=True, exist_ok=True)
+        result = find_vault_for_dir(str(subdir), [str(self._vault)])
+        self.assertEqual(result, str(self._vault))
+
+    def test_find_vault_for_dir_no_match(self):
+        result = find_vault_for_dir("/nonexistent", [str(self._vault)])
+        self.assertIsNone(result)
+
+    def test_find_vault_for_dir_vault_root_file(self):
+        """A file directly in vault root: parent = vault root."""
+        result = find_vault_for_dir(str(self._vault), [str(self._vault)])
+        self.assertEqual(result, str(self._vault))
+
+    def test_find_vault_for_dir_multiple_vaults(self):
+        other = Path(self._tmp) / "other"
+        other.mkdir()
+        (other / "note.md").write_text("# Note")
+        result = find_vault_for_dir(str(self._vault), [str(other), str(self._vault)])
+        self.assertEqual(result, str(self._vault))
 
 
 if __name__ == "__main__":

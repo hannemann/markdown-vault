@@ -182,6 +182,38 @@ class TestPruneVaultSession(_TempSessionMixin, unittest.TestCase):
         self.assertEqual(len(pruned["tabs"]), 1)
         self.assertEqual(pruned["active_tab"], str(existing))
 
+    def test_prune_handles_empty_path(self):
+        """Empty string path should be treated as missing."""
+        vault_session = {
+            "tabs": [
+                {"path": "", "view_mode": "edit"},
+                {"path": str(Path(self._tmpdir) / "note.md"), "view_mode": "edit"},
+            ],
+            "active_tab": "",
+            "mru": ["", str(Path(self._tmpdir) / "note.md")],
+        }
+        Path(self._tmpdir, "note.md").touch()
+        pruned = _ses.prune_vault_session(vault_session)
+        self.assertEqual(len(pruned["tabs"]), 1)
+        self.assertEqual(pruned["tabs"][0]["path"], str(Path(self._tmpdir) / "note.md"))
+        self.assertIsNone(pruned["active_tab"])  # Empty active_tab is cleared
+        self.assertEqual(pruned["mru"], [str(Path(self._tmpdir) / "note.md")])
+
+    def test_prune_handles_missing_path_key(self):
+        """Tab with no path key should be removed."""
+        vault_session = {
+            "tabs": [
+                {"view_mode": "edit"},  # no path key
+                {"path": str(Path(self._tmpdir) / "note.md"), "view_mode": "edit"},
+            ],
+            "active_tab": str(Path(self._tmpdir) / "note.md"),
+            "mru": [str(Path(self._tmpdir) / "note.md")],
+        }
+        Path(self._tmpdir, "note.md").touch()
+        pruned = _ses.prune_vault_session(vault_session)
+        self.assertEqual(len(pruned["tabs"]), 1)
+        self.assertEqual(pruned["tabs"][0]["path"], str(Path(self._tmpdir) / "note.md"))
+
 
 class TestLegacyMigration(_TempSessionMixin, unittest.TestCase):
     """Verify old-style sessions are migrated."""

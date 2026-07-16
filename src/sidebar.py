@@ -112,26 +112,52 @@ class Sidebar(Gtk.Box):
     # ------------------------------------------------------------------
 
     def _refresh_outline(self, text: str) -> None:
-        """Populate the outline list from Markdown headings in *text*."""
+        """Populate the outline list from Markdown headings in *text*.
+
+        Skips headings that appear inside fenced code blocks (``` or ~~~).
+        """
         self._clear_list(self._outline_list["list"])
         if not text:
             return
-        for match in _HEADING_RE.finditer(text):
-            level = len(match.group(1))
-            heading = match.group(2)
-            # Calculate 0-based line number from character offset.
-            line = text[:match.start()].count("\n")
-            label = Gtk.Label(label=f"{'  ' * (level - 1)}\u25cf {heading}")
-            label.set_xalign(0)
-            label.add_css_class("outline-item")
-            label.set_size_request(-1, 28)
-            gesture = Gtk.GestureClick()
-            gesture.connect(
-                "released",
-                lambda _g, _n, _x, _y, ln=line: self.emit("outline-clicked", ln),
-            )
-            label.add_controller(gesture)
-            self._outline_list["list"].append(label)
+
+        in_fence = False
+        fence_char = None
+        fence_indent = 0
+
+        # Single pass through lines to track fence state
+        lines = text.split('\n')
+        for line_num, line in enumerate(lines):
+            stripped = line.lstrip()
+            indent = len(line) - len(stripped)
+
+            # Check for fence start/end
+            if stripped.startswith('```') or stripped.startswith('~~~'):
+                if not in_fence:
+                    in_fence = True
+                    fence_char = stripped[0]
+                    fence_indent = indent
+                elif stripped[0] == fence_char and indent == fence_indent:
+                    in_fence = False
+                    fence_char = None
+                    fence_indent = 0
+
+            # Check for heading
+            if not in_fence:
+                match = _HEADING_RE.match(line)
+                if match:
+                    level = len(match.group(1))
+                    heading = match.group(2)
+                    label = Gtk.Label(label=f"{'  ' * (level - 1)}\u25cf {heading}")
+                    label.set_xalign(0)
+                    label.add_css_class("outline-item")
+                    label.set_size_request(-1, 28)
+                    gesture = Gtk.GestureClick()
+                    gesture.connect(
+                        "released",
+                        lambda _g, _n, _x, _y, ln=line_num: self.emit("outline-clicked", ln),
+                    )
+                    label.add_controller(gesture)
+                    self._outline_list["list"].append(label)
 
     # ------------------------------------------------------------------
     # Backlinks

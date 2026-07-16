@@ -57,6 +57,13 @@ class MRUManager:
         self._mru_tabs.clear()
         self._mru_pos = 0
 
+    def rename(self, old_path: str, new_path: str) -> None:
+        """Replace *old_path* with *new_path* in-place, preserving index and _mru_pos."""
+        if old_path in self._mru_tabs:
+            idx = self._mru_tabs.index(old_path)
+            self._mru_tabs[idx] = new_path
+            # _mru_pos unchanged since we replace at same index
+
     def next(self) -> str | None:
         """Return the next MRU tab path, skipping missing files.
 
