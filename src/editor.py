@@ -27,9 +27,9 @@ class Editor(Gtk.ScrolledWindow):
     """
 
     __gsignals__ = {
-        "file-changed": (GObject.SIGNAL_RUN_LAST, None, (str,)),
-        "modified-changed": (GObject.SIGNAL_RUN_LAST, None, (bool,)),
-        "text-changed": (GObject.SIGNAL_RUN_LAST, None, ()),
+        "file-changed": (GObject.SignalFlags.RUN_LAST, None, (str,)),
+        "modified-changed": (GObject.SignalFlags.RUN_LAST, None, (bool,)),
+        "text-changed": (GObject.SignalFlags.RUN_LAST, None, ()),
     }
 
     def __init__(self, base_font_size: int = 14, tab_width: int = 4,

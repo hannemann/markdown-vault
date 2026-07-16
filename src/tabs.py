@@ -26,12 +26,25 @@ class Tab:
         view_mode: Current view mode (``"edit"``, ``"render"``, ``"split"``).
     """
 
-    def __init__(self, file_path: str, title: str, editor, preview) -> None:
+    def __init__(self, file_path: str, title: str, editor, preview, banner=None) -> None:
         self.file_path = file_path
         self.title = title
         self.editor = editor
         self.preview = preview
         self.view_mode = "edit"
+        self.banner = banner
+
+    def reload_editor(self, file_path: str) -> None:
+        """Reload editor content from disk."""
+        try:
+            new_text = Path(file_path).read_text(encoding="utf-8")
+            start = self.editor._buffer.get_start_iter()
+            end = self.editor._buffer.get_end_iter()
+            self.editor._buffer.delete(start, end)
+            self.editor._buffer.insert(start, new_text)
+            self.editor._buffer.set_modified(False)
+        except OSError:
+            pass
 
 
 class TabBar(Gtk.Box):
@@ -43,9 +56,9 @@ class TabBar(Gtk.Box):
     """
 
     __gsignals__ = {
-        "tab-changed": (GObject.SIGNAL_RUN_LAST, None, (str,)),
-        "tab-closed": (GObject.SIGNAL_RUN_LAST, None, (str,)),
-        "tab-renamed": (GObject.SIGNAL_RUN_LAST, None, (str, str)),
+        "tab-changed": (GObject.SignalFlags.RUN_LAST, None, (str,)),
+        "tab-closed": (GObject.SignalFlags.RUN_LAST, None, (str,)),
+        "tab-renamed": (GObject.SignalFlags.RUN_LAST, None, (str, str)),
     }
 
     def __init__(self) -> None:
@@ -66,7 +79,7 @@ class TabBar(Gtk.Box):
     # Public API
     # ------------------------------------------------------------------
 
-    def add_tab(self, file_path: str, editor, preview) -> Tab:
+    def add_tab(self, file_path: str, editor, preview, banner=None) -> Tab:
         """Register a new tab or activate an existing one.
 
         If *file_path* is already open, the existing tab is selected
@@ -77,7 +90,7 @@ class TabBar(Gtk.Box):
             return self._tabs[file_path]
 
         title = Path(file_path).name
-        tab = Tab(file_path, title, editor, preview)
+        tab = Tab(file_path, title, editor, preview, banner=banner)
         self._tabs[file_path] = tab
 
         tab_widget = self._build_tab_widget(file_path, title)
@@ -228,3 +241,14 @@ class TabBar(Gtk.Box):
                 child.add_css_class("tab-unmodified")
             else:
                 child.remove_css_class("tab-unmodified")
+
+    def set_tab_warning(self, file_path: str, active: bool) -> None:
+        """Add/remove warning highlight on the tab for *file_path*."""
+        for child in self._box:
+            fp = getattr(child, "_file_path", None)
+            if fp is None or fp != file_path:
+                continue
+            if active:
+                child.add_css_class("warning")
+            else:
+                child.remove_css_class("warning")

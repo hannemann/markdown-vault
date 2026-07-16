@@ -35,8 +35,8 @@ class Sidebar(Gtk.Box):
     """
 
     __gsignals__ = {
-        "file-open-requested": (GObject.SIGNAL_RUN_LAST, None, (str,)),
-        "outline-clicked": (GObject.SIGNAL_RUN_LAST, None, (int,)),
+        "file-open-requested": (GObject.SignalFlags.RUN_LAST, None, (str,)),
+        "outline-clicked": (GObject.SignalFlags.RUN_LAST, None, (int,)),
     }
 
     def __init__(self) -> None:

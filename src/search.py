@@ -26,8 +26,8 @@ class SearchBar(Gtk.Box):
     """
 
     __gsignals__ = {
-        "file-selected": (GObject.SIGNAL_RUN_LAST, None, (str, int)),
-        "close-requested": (GObject.SIGNAL_RUN_LAST, None, ()),
+        "file-selected": (GObject.SignalFlags.RUN_LAST, None, (str, int)),
+        "close-requested": (GObject.SignalFlags.RUN_LAST, None, ()),
     }
 
     MAX_RESULTS = 50

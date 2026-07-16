@@ -33,6 +33,7 @@ from . import session
 from . import mru
 from . import history
 from . import path_utils
+from . import vault_monitor
 
 
 def _load_gtk_css() -> None:
@@ -115,6 +116,12 @@ class MainWindow(Adw.ApplicationWindow):
         self._vault_tree.connect("delete-requested", self._on_delete_requested)
         self._vault_tree.connect("close-file-requested", self._on_close_file_requested)
         self._vault_tree.connect("file-renamed", self._on_file_renamed)
+
+        self._vault_monitor = vault_monitor.VaultMonitor()
+        self._vault_monitor.connect("external-file-created", self._on_monitor_file_created)
+        self._vault_monitor.connect("external-file-deleted", self._on_monitor_file_deleted)
+        self._vault_monitor.connect("external-file-moved", self._on_monitor_file_moved)
+        self._vault_monitor.connect("external-content-changed", self._on_monitor_content_changed)
         self._main_paned.set_start_child(self._vault_tree)
         self._main_paned.set_resize_start_child(False)
         self._main_paned.set_shrink_start_child(False)
@@ -582,7 +589,7 @@ class MainWindow(Adw.ApplicationWindow):
                 body="Add a vault directory first before creating files.",
             )
             dialog.add_response("ok", "OK")
-            dialog.present(self)
+            dialog.present()
             return
 
         default_dir = self._resolve_active_vault()
@@ -624,6 +631,7 @@ class MainWindow(Adw.ApplicationWindow):
         vaults = config.load_vaults()
         paths = [v["path"] for v in vaults]
         self._vault_tree.set_vaults(paths)
+        self._vault_monitor.set_vaults(paths)
         self._sidebar.set_vault_paths(paths)
 
     # ── Vault switching ──────────────────────────────────────────
@@ -752,11 +760,49 @@ class MainWindow(Adw.ApplicationWindow):
         split.set_end_child(preview)
         split.set_position(split_position)
 
+        banner_icon = Gtk.Image.new_from_icon_name("dialog-warning-symbolic")
+        banner_icon.set_margin_end(6)
+
+        banner_label = Gtk.Label()
+        banner_label.set_xalign(0)
+        banner_label.set_hexpand(True)
+        banner_label.set_margin_end(6)
+
+        reload_btn = Gtk.Button(label="Reload")
+        dismiss_btn = Gtk.Button(label="Dismiss")
+        dismiss_btn.add_css_class("flat")
+
+        banner_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        banner_box.set_margin_top(2)
+        banner_box.set_margin_bottom(2)
+        banner_box.set_margin_start(6)
+        banner_box.set_margin_end(6)
+        banner_box.append(banner_icon)
+        banner_box.append(banner_label)
+        banner_box.append(dismiss_btn)
+        banner_box.append(reload_btn)
+        banner_box.add_css_class("external-change-banner")
+        banner_box.add_css_class("warning")
+
+        banner_revealer = Gtk.Revealer()
+        banner_revealer.set_child(banner_box)
+        banner_revealer.set_transition_type(Gtk.RevealerTransitionType.SLIDE_DOWN)
+
+        wrapper = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+        wrapper.append(banner_revealer)
+        wrapper.append(split)
+
         editor.connect("text-changed", self._on_editor_text_changed)
 
-        self._content_stack.add_named(split, file_path)
+        self._content_stack.add_named(wrapper, file_path)
 
-        tab = self._tab_bar.add_tab(file_path, editor, preview)
+        # Connect banner buttons
+        file_path_ref = file_path
+        reload_btn.connect("clicked", lambda _: self._on_banner_reload(file_path_ref))
+        dismiss_btn.connect("clicked", lambda _: self._on_banner_dismiss(file_path_ref))
+
+        tab = self._tab_bar.add_tab(file_path, editor, preview, banner=banner_revealer)
+        tab._banner_label = banner_label
         tab.view_mode = view_mode
 
         # Mark unsaved tabs with italic styling.
@@ -1236,6 +1282,7 @@ class MainWindow(Adw.ApplicationWindow):
     def _save_current(self) -> None:
         tab = self._tab_bar.get_current_tab()
         if tab:
+            self._vault_monitor.skip_next_event(tab.editor.file_path)
             tab.editor.save()
 
     def _close_current_tab(self) -> None:
@@ -1316,6 +1363,7 @@ class MainWindow(Adw.ApplicationWindow):
         for path in self._tab_bar.get_all_paths():
             tab = self._tab_bar.get_tab(path)
             if tab and tab.editor.is_modified:
+                self._vault_monitor.skip_next_event(tab.editor.file_path)
                 tab.editor.save()
         return True  # Keep the GLib timeout running.
 
@@ -1428,3 +1476,62 @@ class MainWindow(Adw.ApplicationWindow):
                 tab.editor.zoom_factor + direction * _ZOOM_STEP, 2,
             )
         return True
+
+    # ── External file changes ──────────────────────────────────────
+
+    def _on_external_content_changed(self, file_path: str) -> None:
+        """Called when an external change is detected for an open file."""
+        if file_path not in self._tab_bar.get_all_paths():
+            return
+        tab = self._tab_bar.get_tab(file_path)
+        if tab and tab.banner:
+            name = Path(file_path).name
+            tab._banner_label.set_text(f"\"{name}\" was modified externally.")
+            tab.banner.set_reveal_child(True)
+            self._tab_bar.set_tab_warning(file_path, True)
+
+    def _on_banner_reload(self, file_path: str) -> None:
+        """Reload content and hide banner."""
+        tab = self._tab_bar.get_tab(file_path)
+        if not tab:
+            return
+        tab.reload_editor(file_path)
+        tab.preview.update_from_text(
+            tab.editor.get_text(),
+            str(Path(tab.editor.file_path).parent) if tab.editor.file_path else "",
+        )
+        tab.banner.set_reveal_child(False)
+        self._tab_bar.set_tab_warning(file_path, False)
+
+    def _on_banner_dismiss(self, file_path: str) -> None:
+        """Hide banner without reloading."""
+        tab = self._tab_bar.get_tab(file_path)
+        if tab and tab.banner:
+            tab.banner.set_reveal_child(False)
+            self._tab_bar.set_tab_warning(file_path, False)
+
+    # ── VaultMonitor signal handlers ───────────────────────────────
+
+    def _on_monitor_file_created(self, vault_path: str, file_path: str) -> None:
+        """Handle file created event from VaultMonitor."""
+        self._vault_tree._handle_file_created(vault_path, file_path)
+
+    def _on_monitor_file_deleted(self, vault_path: str, file_path: str) -> None:
+        """Handle file deleted event from VaultMonitor."""
+        # Also close tab if file is open
+        if file_path in self._tab_bar.get_all_paths():
+            self._tab_bar.close_tab(file_path)
+        self._vault_tree._handle_file_deleted(file_path)
+
+    def _on_monitor_file_moved(self, vault_path: str, file_path: str, other_path: str) -> None:
+        """Handle file moved event from VaultMonitor."""
+        self._vault_tree._handle_file_moved(other_path, vault_path, file_path)
+
+    def _on_monitor_content_changed(self, vault_path: str, file_path: str) -> None:
+        """Handle content-changed event from VaultMonitor."""
+        self._on_external_content_changed(file_path)
+
+    # ── AppWindow alias (for tests) ────────────────────────────────
+
+
+AppWindow = MainWindow

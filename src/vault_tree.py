@@ -61,14 +61,14 @@ class VaultTree(Gtk.Box):
     """
 
     __gsignals__ = {
-        "file-selected": (GObject.SIGNAL_RUN_LAST, None, (str,)),
-        "vault-activated": (GObject.SIGNAL_RUN_LAST, None, (str,)),
-        "vault-added": (GObject.SIGNAL_RUN_LAST, None, (str,)),
-        "new-file-requested": (GObject.SIGNAL_RUN_LAST, None, (str,)),
-        "new-folder-requested": (GObject.SIGNAL_RUN_LAST, None, (str,)),
-        "delete-requested": (GObject.SIGNAL_RUN_LAST, None, (str,)),
-        "close-file-requested": (GObject.SIGNAL_RUN_LAST, None, (str,)),
-        "file-renamed": (GObject.SIGNAL_RUN_LAST, None, (str, str)),
+        "file-selected": (GObject.SignalFlags.RUN_LAST, None, (str,)),
+        "vault-activated": (GObject.SignalFlags.RUN_LAST, None, (str,)),
+        "vault-added": (GObject.SignalFlags.RUN_LAST, None, (str,)),
+        "new-file-requested": (GObject.SignalFlags.RUN_LAST, None, (str,)),
+        "new-folder-requested": (GObject.SignalFlags.RUN_LAST, None, (str,)),
+        "delete-requested": (GObject.SignalFlags.RUN_LAST, None, (str,)),
+        "close-file-requested": (GObject.SignalFlags.RUN_LAST, None, (str,)),
+        "file-renamed": (GObject.SignalFlags.RUN_LAST, None, (str, str)),
     }
 
     def __init__(self) -> None:
@@ -610,6 +610,145 @@ class VaultTree(Gtk.Box):
             return
         if self._store.iter_parent(iter_) is None:
             self.emit("vault-activated", self._store.get_value(iter_, _COL_PATH))
+
+    def _handle_file_created(self, vault_or_parent: str, file_path: str) -> None:
+        """Handle a newly created file by adding it to the tree.
+
+        Args:
+            vault_or_parent: Vault root or parent directory path
+            file_path: Full path of the new file
+        """
+        self._do_handle_file_created(vault_or_parent, file_path)
+
+    def _do_handle_file_created(self, vault_or_parent: str, file_path: str) -> bool:
+        """Add the file node to the tree store."""
+        if not file_path.endswith(".md"):
+            return False
+
+        file_name = Path(file_path).name
+        parent_path = str(Path(file_path).parent)
+
+        # Check if already in tree (dedup)
+        iter_ = self._store.get_iter_first()
+        existing = self._find_iter_for_path(iter_, file_path)
+        if existing is not None:
+            return False
+
+        # Find or create parent directory node
+        parent_iter = self._find_or_create_parent(parent_path, vault_or_parent)
+        if parent_iter is None:
+            return False
+
+        self._store.append(
+            parent_iter,
+            [file_name, file_path, False, FILE_ICON, "markdown"],
+        )
+        return False
+
+    def _find_or_create_parent(self, parent_path: str, vault_or_parent: str):
+        """Find existing parent iter or create intermediate directory nodes."""
+        parts = Path(parent_path).parts
+
+        # Try to find existing parent first
+        iter_ = self._store.get_iter_first()
+        result = self._find_iter_for_path(iter_, parent_path)
+        if result is not None:
+            return result
+
+        # Find the vault root that contains this parent_path
+        vault_path = None
+        for vp in self._vault_paths:
+            if parent_path.startswith(vp + os.sep) or parent_path == vp:
+                vault_path = vp
+                break
+        if vault_path is None:
+            return None
+
+        vault_parts = Path(vault_path).parts
+        anchor_iter = self._find_iter_for_path(self._store.get_iter_first(), vault_path)
+        if anchor_iter is None:
+            return None
+
+        current_iter = anchor_iter
+        current_depth = len(vault_parts)
+
+        # Walk through remaining parts to create intermediate dirs
+        for i in range(current_depth, len(parts)):
+            dir_name = parts[i]
+            dir_path = os.path.join(*parts[:i + 1])
+
+            # Check if child already exists
+            child = self._store.iter_children(current_iter)
+            found = False
+            while child:
+                if self._store.get_value(child, _COL_PATH) == dir_path:
+                    current_iter = child
+                    found = True
+                    break
+                child = self._store.iter_next(child)
+
+            if not found:
+                current_iter = self._store.append(
+                    current_iter,
+                    [dir_name, dir_path, True, FOLDER_ICON, ""],
+                )
+
+        return current_iter
+
+    def _handle_file_deleted(self, file_path: str) -> None:
+        """Handle a deleted file by removing it from the tree.
+
+        Args:
+            file_path: Full path of the deleted file
+        """
+        self._do_handle_file_deleted(file_path)
+
+    def _do_handle_file_deleted(self, file_path: str) -> bool:
+        """Remove the file node from the tree store."""
+        iter_ = self._store.get_iter_first()
+        to_remove = self._find_iter_for_path(iter_, file_path)
+        if to_remove is not None:
+            self._store.remove(to_remove)
+        return False
+
+    def _handle_file_moved(self, old_path: str, new_parent: str, new_path: str) -> None:
+        """Handle a moved file by updating its path in the tree.
+
+        Args:
+            old_path: Previous full path of the file
+            new_parent: New parent directory path
+            new_path: New full path of the file
+        """
+        self._do_handle_file_moved(old_path, new_parent, new_path)
+
+    def _do_handle_file_moved(self, old_path: str, new_parent: str, new_path: str) -> bool:
+        """Update the file node path in the tree store."""
+        # Find and remove old node
+        iter_ = self._store.get_iter_first()
+        to_remove = self._find_iter_for_path(iter_, old_path)
+        if to_remove is None:
+            return False
+
+        # Check new parent exists in tree
+        parent_iter = self._find_iter_for_path(self._store.get_iter_first(), new_parent)
+        if parent_iter is None:
+            return False
+
+        # Remove old node
+        old_iter = to_remove
+        file_name = Path(new_path).name
+
+        # Insert at the same position (before the old iter)
+        new_iter = self._store.insert_before(None, old_iter)
+        self._store.set_value(new_iter, _COL_NAME, file_name)
+        self._store.set_value(new_iter, _COL_PATH, new_path)
+        self._store.set_value(new_iter, _COL_IS_DIR, False)
+        self._store.set_value(new_iter, _COL_ICON, FILE_ICON)
+        self._store.set_value(new_iter, _COL_HINT, "markdown")
+
+        # Remove the old iter
+        self._store.remove(old_iter)
+        return False
 
     def _on_add_vault_clicked(self, _btn) -> None:
         """Open a folder chooser dialog."""

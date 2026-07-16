@@ -56,7 +56,7 @@ class PreferencesDialog(Adw.PreferencesDialog):
     """
 
     __gsignals__ = {
-        "settings-changed": (GObject.SIGNAL_RUN_LAST, None, ()),
+        "settings-changed": (GObject.SignalFlags.RUN_LAST, None, ()),
     }
 
     def __init__(self) -> None:
