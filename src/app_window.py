@@ -1092,6 +1092,16 @@ class MainWindow(Adw.ApplicationWindow):
         if tab:
             self._tab_bar._set_tab_unmodified(new_path, tab.editor.is_modified)
 
+        # Defer view-mode and preview update so the stack re-layout completes first.
+        def _deferred():
+            t = self._tab_bar.get_tab(new_path)
+            if t:
+                t.preview.reset()
+                self._apply_view_mode()
+                self._refresh_preview()
+            return False
+        GLib.idle_add(_deferred)
+
     # ── Navigation history ─────────────────────────────────────────
 
     def _push_history(self, file_path: str) -> None:
@@ -1561,6 +1571,8 @@ class MainWindow(Adw.ApplicationWindow):
     def _on_monitor_file_created(self, vault_path: str, file_path: str) -> None:
         """Handle file created event from VaultMonitor."""
         self._vault_tree._handle_file_created(vault_path, file_path)
+        if not file_path.endswith(".md"):
+            return
         try:
             text = Path(file_path).read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError):
@@ -1569,16 +1581,36 @@ class MainWindow(Adw.ApplicationWindow):
 
     def _on_monitor_file_deleted(self, vault_path: str, file_path: str) -> None:
         """Handle file deleted event from VaultMonitor."""
+        self._vault_tree._handle_file_deleted(file_path)
+        if not file_path.endswith(".md"):
+            return
         self._backlink_index.remove_file(file_path)
         # Also close tab if file is open
         if file_path in self._tab_bar.get_all_paths():
             self._tab_bar.close_tab(file_path)
-        self._vault_tree._handle_file_deleted(file_path)
 
-    def _on_monitor_file_moved(self, vault_path: str, file_path: str, other_path: str) -> None:
-        """Handle file moved event from VaultMonitor."""
-        self._backlink_index.rename_file(file_path, other_path)
-        self._vault_tree._handle_file_moved(other_path, vault_path, file_path)
+    def _on_monitor_file_moved(self, vault_path: str, file_path: str,
+                               other_path: str | None = None) -> None:
+        """Handle file moved event from VaultMonitor.
+
+        Convention: file_path = new path, other_path = old path.
+        When other_path is None, the file came from outside (MOVED_IN).
+        """
+        if other_path:
+            self._backlink_index.rename_file(other_path, file_path)
+            new_parent = str(Path(file_path).parent)
+            self._vault_tree._handle_file_moved(other_path, new_parent, file_path)
+            # Update tab if file is open
+            if other_path in self._tab_bar.get_all_paths():
+                self._tab_bar.update_path(other_path, file_path)
+        else:
+            self._vault_tree._handle_file_created(vault_path, file_path)
+            if file_path.endswith(".md"):
+                try:
+                    text = Path(file_path).read_text(encoding="utf-8")
+                except (OSError, UnicodeDecodeError):
+                    text = ""
+                self._backlink_index.update_file(file_path, text)
 
     def _on_monitor_content_changed(self, vault_path: str, file_path: str) -> None:
         """Handle content-changed event from VaultMonitor."""

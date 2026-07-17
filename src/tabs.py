@@ -5,6 +5,7 @@ Provides a ``Tab`` data class and a ``TabBar`` widget that owns one
 each tab retains its own buffer state and scroll position.
 """
 
+import logging
 from pathlib import Path
 
 import gi
@@ -13,6 +14,8 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 
 from gi.repository import Gtk, GObject
+
+logger = logging.getLogger(__name__)
 
 
 class Tab:
@@ -44,7 +47,7 @@ class Tab:
             self.editor._buffer.insert(start, new_text)
             self.editor._buffer.set_modified(False)
         except OSError:
-            pass
+            logger.warning("Could not reload editor from %s", file_path, exc_info=True)
 
 
 class TabBar(Gtk.Box):
@@ -197,14 +200,14 @@ class TabBar(Gtk.Box):
         close_btn.set_size_request(24, 24)
         close_btn.set_tooltip_text("Close tab")
         close_btn.connect(
-            "clicked", lambda _btn, fp=file_path: self.close_tab(fp)
+            "clicked", lambda _btn, cw=container: self.close_tab(cw._file_path)
         )
         container.append(close_btn)
 
         gesture = Gtk.GestureClick()
         gesture.connect(
             "released",
-            lambda _g, _n, _x, _y, fp=file_path: self.set_active_tab(fp),
+            lambda _g, _n, _x, _y, cw=container: self.set_active_tab(cw._file_path),
         )
         container.add_controller(gesture)
 

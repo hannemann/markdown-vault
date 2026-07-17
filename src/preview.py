@@ -258,6 +258,11 @@ class Preview(Gtk.ScrolledWindow):
         self._zoom_level = max(0.25, min(5.0, level))
         self._web_view.set_zoom_level(self._zoom_level)
 
+    def reset(self) -> None:
+        """Force a full HTML reload on the next ``update_from_text`` call."""
+        self._loaded = False
+        self._last_html_hash = ""
+
     # ------------------------------------------------------------------
     # Vault paths (for wikilink resolution)
     # ------------------------------------------------------------------

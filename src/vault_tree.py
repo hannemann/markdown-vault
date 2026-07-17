@@ -627,10 +627,7 @@ class VaultTree(Gtk.Box):
         self._do_handle_file_created(vault_or_parent, file_path)
 
     def _do_handle_file_created(self, vault_or_parent: str, file_path: str) -> bool:
-        """Add the file node to the tree store."""
-        if not file_path.endswith(".md"):
-            return False
-
+        """Add the file or directory node to the tree store."""
         file_name = Path(file_path).name
         parent_path = str(Path(file_path).parent)
 
@@ -645,10 +642,19 @@ class VaultTree(Gtk.Box):
         if parent_iter is None:
             return False
 
-        self._store.append(
-            parent_iter,
-            [file_name, file_path, False, FILE_ICON, "markdown"],
-        )
+        is_dir = os.path.isdir(file_path) if file_path else False
+        if is_dir:
+            self._store.append(
+                parent_iter,
+                [file_name, file_path, True, FOLDER_ICON, ""],
+            )
+        else:
+            if not file_path.endswith(".md"):
+                return False
+            self._store.append(
+                parent_iter,
+                [file_name, file_path, False, FILE_ICON, "markdown"],
+            )
         return False
 
     def _find_or_create_parent(self, parent_path: str, vault_or_parent: str):
@@ -710,11 +716,20 @@ class VaultTree(Gtk.Box):
         self._do_handle_file_deleted(file_path)
 
     def _do_handle_file_deleted(self, file_path: str) -> bool:
-        """Remove the file node from the tree store."""
+        """Remove the file or directory node from the tree store."""
         iter_ = self._store.get_iter_first()
         to_remove = self._find_iter_for_path(iter_, file_path)
         if to_remove is not None:
+            parent = self._store.iter_parent(to_remove)
             self._store.remove(to_remove)
+            # Clean up empty parent directories
+            while parent is not None:
+                if self._store.iter_n_children(parent) == 0:
+                    grandparent = self._store.iter_parent(parent)
+                    self._store.remove(parent)
+                    parent = grandparent
+                else:
+                    break
         return False
 
     def _handle_file_moved(self, old_path: str, new_parent: str, new_path: str) -> None:
@@ -740,17 +755,13 @@ class VaultTree(Gtk.Box):
         if parent_iter is None:
             return False
 
-        # Remove old node
         old_iter = to_remove
         file_name = Path(new_path).name
 
-        # Insert at the same position (before the old iter)
-        new_iter = self._store.insert_before(None, old_iter)
-        self._store.set_value(new_iter, _COL_NAME, file_name)
-        self._store.set_value(new_iter, _COL_PATH, new_path)
-        self._store.set_value(new_iter, _COL_IS_DIR, False)
-        self._store.set_value(new_iter, _COL_ICON, FILE_ICON)
-        self._store.set_value(new_iter, _COL_HINT, "markdown")
+        # Insert under the new parent
+        new_iter = self._store.append(parent_iter, [
+            file_name, new_path, False, FILE_ICON, "markdown",
+        ])
 
         # Remove the old iter
         self._store.remove(old_iter)

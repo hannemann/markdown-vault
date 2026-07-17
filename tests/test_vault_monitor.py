@@ -6,12 +6,20 @@ Tests die Basis-Funktionalität des VaultMonitors:
 - set_vaults([]) entfernt Monitore
 - Non-existent paths werden ignoriert
 - Keine Duplikate beim erneuten set_vaults
+- N.1: Subdirectories werden rekursiv überwacht
 """
 
 import os
 import sys
 import unittest
 from unittest.mock import MagicMock, patch
+
+# Gio.FileMonitorEvent constants
+_CRE = 3
+_DEL = 2
+_HINT = 1
+_MOI = 9
+_MOO = 10
 
 
 def _make_mock_gio():
@@ -24,7 +32,44 @@ def _make_mock_gio():
         return mock_file
 
     mock_gio.File.new_for_path.side_effect = make_file
+    FileMonitorFlags = type("FileMonitorFlags", (), {"WATCH_MOVES": 8})
+    mock_gio.FileMonitorFlags = FileMonitorFlags
+    mock_gio.FileMonitorEvent = MagicMock()
+    mock_gio.FileMonitorEvent.CREATED = _CRE
+    mock_gio.FileMonitorEvent.DELETED = _DEL
+    mock_gio.FileMonitorEvent.CHANGES_DONE_HINT = _HINT
+    mock_gio.FileMonitorEvent.MOVED_IN = _MOI
+    mock_gio.FileMonitorEvent.MOVED_OUT = _MOO
     return mock_gio
+
+
+def _make_mock_glib():
+    mock_glib = MagicMock()
+
+    def fake_timeout_add(interval, func):
+        func()
+        return 1
+
+    mock_glib.timeout_add.side_effect = fake_timeout_add
+    return mock_glib
+
+
+def _make_mock_file(path):
+    mock_file = MagicMock()
+    mock_file.get_path.return_value = path
+    return mock_file
+
+
+def _load_monitor(mock_gio, mock_glib):
+    """Lädt vault_monitor mit gemoddetem Gio/GLib neu."""
+    for mod in list(sys.modules.keys()):
+        if mod == "src.vault_monitor" or mod.startswith("src.vault_monitor."):
+            del sys.modules[mod]
+    import gi.repository
+    gi.repository.Gio = mock_gio
+    gi.repository.GLib = mock_glib
+    import src.vault_monitor
+    return src.vault_monitor
 
 
 class TestVaultMonitorInit(unittest.TestCase):
@@ -158,6 +203,109 @@ class TestVaultMonitorSetVaults(unittest.TestCase):
 
                 self.assertIn("/tmp/existing", monitor._monitors)
                 self.assertNotIn("/nonexistent/path", monitor._monitors)
+
+
+class TestVaultMonitorSubdirectories(unittest.TestCase):
+    """N.1: _start_monitor must create monitors for subdirectories."""
+
+    def _create_monitor(self, vault_path="/tmp/vault"):
+        mock_gio = _make_mock_gio()
+        mock_glib = _make_mock_glib()
+        with patch("src.vault_monitor.os.path.isdir", return_value=True):
+            mod = _load_monitor(mock_gio, mock_glib)
+            monitor = mod.VaultMonitor()
+            monitor.set_vaults([vault_path])
+            return monitor, mock_gio
+
+    def test_start_monitor_creates_child_monitors(self):
+        """When vault has subdirs, monitors must be created for each."""
+        mock_gio = _make_mock_gio()
+        mock_glib = _make_mock_glib()
+
+        def isdir_side_effect(path):
+            return path in (
+                "/tmp/vault",
+                "/tmp/vault/subdir1",
+                "/tmp/vault/subdir1/subdir2",
+            )
+
+        def listdir_side_effect(path):
+            if path == "/tmp/vault":
+                return ["subdir1", "file.md"]
+            if path == "/tmp/vault/subdir1":
+                return ["subdir2", "note.md"]
+            if path == "/tmp/vault/subdir1/subdir2":
+                return ["deep.md"]
+            return []
+
+        with patch("src.vault_monitor.os.path.isdir", side_effect=isdir_side_effect):
+            with patch("src.vault_monitor.os.listdir", side_effect=listdir_side_effect):
+                mod = _load_monitor(mock_gio, mock_glib)
+                monitor = mod.VaultMonitor()
+                monitor.set_vaults(["/tmp/vault"])
+
+        created_paths = [
+            c[0][0] for c in mock_gio.File.new_for_path.call_args_list
+        ]
+        self.assertIn("/tmp/vault", created_paths)
+        self.assertIn("/tmp/vault/subdir1", created_paths)
+        self.assertIn("/tmp/vault/subdir1/subdir2", created_paths)
+
+    def test_hidden_directories_are_skipped(self):
+        """Directories starting with . must not get monitors."""
+        mock_gio = _make_mock_gio()
+        mock_glib = _make_mock_glib()
+
+        def isdir_side_effect(path):
+            return path in (
+                "/tmp/vault",
+                "/tmp/vault/.git",
+                "/tmp/vault/.hidden",
+                "/tmp/vault/subdir",
+            )
+
+        def listdir_side_effect(path):
+            if path == "/tmp/vault":
+                return [".git", ".hidden", "subdir"]
+            if path == "/tmp/vault/subdir":
+                return []
+            return []
+
+        with patch("src.vault_monitor.os.path.isdir", side_effect=isdir_side_effect):
+            with patch("src.vault_monitor.os.listdir", side_effect=listdir_side_effect):
+                mod = _load_monitor(mock_gio, mock_glib)
+                monitor = mod.VaultMonitor()
+                monitor.set_vaults(["/tmp/vault"])
+
+        created_paths = [
+            c[0][0] for c in mock_gio.File.new_for_path.call_args_list
+        ]
+        self.assertIn("/tmp/vault", created_paths)
+        self.assertIn("/tmp/vault/subdir", created_paths)
+        self.assertNotIn("/tmp/vault/.git", created_paths)
+        self.assertNotIn("/tmp/vault/.hidden", created_paths)
+
+    def test_child_monitor_catches_nested_file_events(self):
+        """Events from files in subdirectories must be forwarded."""
+        mock_gio = _make_mock_gio()
+        mock_glib = _make_mock_glib()
+
+        with patch("src.vault_monitor.os.path.isdir", return_value=True):
+            mod = _load_monitor(mock_gio, mock_glib)
+            monitor = mod.VaultMonitor()
+            monitor.set_vaults(["/tmp/vault"])
+
+        received = []
+        monitor.connect("external-file-created", lambda *args: received.append(args))
+
+        child_monitor = MagicMock()
+        monitor._monitors["/tmp/vault/subdir"] = child_monitor
+
+        mock_file = _make_mock_file("/tmp/vault/subdir/note.md")
+        monitor._on_monitor_event(child_monitor, mock_file, None, _CRE)
+
+        self.assertEqual(len(received), 1)
+        self.assertEqual(received[0][1], "/tmp/vault/subdir/note.md")
 
 
 if __name__ == "__main__":

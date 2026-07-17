@@ -1,9 +1,12 @@
-"""Tests for VaultMonitor — Phase 2: Event-Filterung und -Weiterleitung.
+"""Tests for VaultMonitor — Event-Filterung und -Weiterleitung.
 
 Tests:
 - Nur .md Events werden weitergeleitet
 - .txt, .hidden.md, directories werden ignoriert
 - Alle Event-Typen werden korrekt emittiert
+- N.2: RENAMED events (same-dir rename) werden nicht gedroppt
+- N.3: MOVED_IN ohne other_file ruft Callback mit 2 Args
+- N.4: Callback-Exceptions werden geloggt statt verschluckt
 """
 
 import gi
@@ -17,6 +20,7 @@ from unittest.mock import MagicMock, patch
 _CRE = 3
 _DEL = 2
 _HINT = 1
+_RENAMED = 8
 _MOI = 9
 _MOO = 10
 
@@ -39,6 +43,7 @@ def _make_mock_gio():
     mock_gio.FileMonitorEvent.CREATED = _CRE
     mock_gio.FileMonitorEvent.DELETED = _DEL
     mock_gio.FileMonitorEvent.CHANGES_DONE_HINT = _HINT
+    mock_gio.FileMonitorEvent.RENAMED = _RENAMED
     mock_gio.FileMonitorEvent.MOVED_IN = _MOI
     mock_gio.FileMonitorEvent.MOVED_OUT = _MOO
     return mock_gio
@@ -236,6 +241,110 @@ class TestVaultMonitorEventTypeMapping(unittest.TestCase):
         self.assertEqual(len(received), 1)
         self.assertEqual(received[0][0], "/tmp/testvault")
         self.assertEqual(received[0][1], "/tmp/testvault/test.md")
+
+
+_RENAMED = 8
+
+
+class TestN2_RenamedEvent(unittest.TestCase):
+    """N.2: RENAMED events (same-dir rename) must not be dropped."""
+
+    def _create_monitor(self):
+        mock_gio = _make_mock_gio()
+        mock_glib = _make_mock_glib()
+        with patch("src.vault_monitor.os.path.isdir", return_value=True):
+            mod = _load_monitor(mock_gio, mock_glib)
+            monitor = mod.VaultMonitor()
+            monitor.set_vaults(["/tmp/testvault"])
+            return monitor
+
+    def test_renamed_event_maps_to_moved(self):
+        """RENAMED must be recognized in _EVENT_MAP."""
+        monitor = self._create_monitor()
+        self.assertIn("moved", monitor._EVENT_MAP.values())
+
+    def test_renamed_event_emits_file_moved_signal(self):
+        """RENAMED event must trigger the external-file-moved callback.
+
+        Gio gives file=old, other=new for RENAMED — our callback expects
+        file=new, other=old (matching MOVED_IN convention).
+        """
+        monitor = self._create_monitor()
+        received = []
+        monitor.connect("external-file-moved", lambda *args: received.append(args))
+
+        mock_old = _make_mock_file("/tmp/testvault/old.md")
+        mock_new = _make_mock_file("/tmp/testvault/new.md")
+        mock_monitor = list(monitor._monitors.values())[0]
+        # Gio: file=old, other=new
+        monitor._on_monitor_event(mock_monitor, mock_old, mock_new, _RENAMED)
+
+        self.assertEqual(len(received), 1)
+        self.assertEqual(received[0][1], "/tmp/testvault/new.md")
+        self.assertEqual(received[0][2], "/tmp/testvault/old.md")
+
+    def test_renamed_non_md_is_ignored(self):
+        """RENAMED for .txt files must be filtered out."""
+        monitor = self._create_monitor()
+        received = []
+        monitor.connect("external-file-moved", lambda *args: received.append(args))
+
+        mock_old = _make_mock_file("/tmp/testvault/old.txt")
+        mock_new = _make_mock_file("/tmp/testvault/new.txt")
+        mock_monitor = list(monitor._monitors.values())[0]
+        monitor._on_monitor_event(mock_monitor, mock_new, mock_old, _RENAMED)
+
+        self.assertEqual(len(received), 0)
+
+
+class TestN3_MovedInWithoutOtherFile(unittest.TestCase):
+    """N.3: MOVED_IN with other_file=None must not raise TypeError."""
+
+    def test_moved_in_with_none_other_calls_callback_with_two_args(self):
+        """When other_file is None, callback must receive (vault, file_path)."""
+        mock_gio = _make_mock_gio()
+        mock_glib = _make_mock_glib()
+        with patch("src.vault_monitor.os.path.isdir", return_value=True):
+            mod = _load_monitor(mock_gio, mock_glib)
+            monitor = mod.VaultMonitor()
+            monitor.set_vaults(["/tmp/testvault"])
+
+        received = []
+        monitor.connect("external-file-moved", lambda *args: received.append(args))
+
+        mock_file = _make_mock_file("/tmp/testvault/incoming.md")
+        mock_monitor = list(monitor._monitors.values())[0]
+        monitor._on_monitor_event(mock_monitor, mock_file, None, _MOI)
+
+        self.assertEqual(len(received), 1)
+        self.assertEqual(received[0][0], "/tmp/testvault")
+        self.assertEqual(received[0][1], "/tmp/testvault/incoming.md")
+
+
+class TestN4_CallbackExceptionLogging(unittest.TestCase):
+    """N.4: Callback exceptions must be logged, not silently swallowed."""
+
+    def test_callback_exception_is_logged(self):
+        """When a callback raises, the exception must be logged."""
+        mock_gio = _make_mock_gio()
+        mock_glib = _make_mock_glib()
+        with patch("src.vault_monitor.os.path.isdir", return_value=True):
+            mod = _load_monitor(mock_gio, mock_glib)
+            monitor = mod.VaultMonitor()
+            monitor.set_vaults(["/tmp/testvault"])
+
+        def bad_callback(*args):
+            raise RuntimeError("boom")
+
+        monitor.connect("external-file-created", bad_callback)
+
+        mock_file = _make_mock_file("/tmp/testvault/new.md")
+        mock_monitor = list(monitor._monitors.values())[0]
+
+        with self.assertLogs(level="WARNING") as cm:
+            monitor._on_monitor_event(mock_monitor, mock_file, None, _CRE)
+
+        self.assertTrue(any("boom" in msg for msg in cm.output))
 
 
 if __name__ == "__main__":

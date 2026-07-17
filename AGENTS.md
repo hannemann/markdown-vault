@@ -61,16 +61,25 @@ src/
   main.py              — entry point, AdwApplication setup
   app_window.py        — main window, three-panel layout
   vault_tree.py        — left panel: file tree for vaults
+  vault_monitor.py     — Gio.FileMonitor wrapper for external change detection
   editor.py            — text editor widget (GtkSourceView 5)
   preview.py           — WebView-based Markdown renderer
   tabs.py              — tab management for open files
   sidebar.py           — right sidebar (outline, backlinks, git, details)
   search.py            — bottom bar: full-text search across vaults
+  search_logic.py      — search worker (runs in daemon thread)
   git_integration.py   — git status, diff, commit
   tags.py              — [[wikilink]] parsing, backlinks
+  backlink_index.py    — O(1) backlink lookup, built on startup
   config.py            — vaults.yaml reader/writer + settings
   session.py           — session persistence (JSON)
   preferences.py       — Adw.PreferencesDialog
+  mru.py               — MRU tab switcher (Ctrl+Tab)
+  history.py           — navigation history (back/forward)
+  path_utils.py        — vault path resolution helpers
+  validation.py        — input validation utilities
+  latex_mathml.py      — LaTeX → MathML converter (no JS/CDN)
+  markdown_help.py     — keyboard shortcuts overlay
 data/
   de.hannemann.markdown-vault.desktop
   de.hannemann.markdown-vault.metainfo.xml
@@ -83,12 +92,24 @@ tests/
   test_config.py
   test_tags.py
   test_search.py
+  test_search_logic.py
+  test_search_logic_extended.py
   test_session.py
   test_preferences.py
   test_editor.py
   test_preview.py
   test_git_integration.py
   test_tabs.py
+  test_vault_monitor.py          — unit tests for VaultMonitor
+  test_vault_monitor_events.py   — event type mapping, filtering, N.1–N.4
+  test_vault_tree_monitoring.py  — tree handler tests for create/delete/move
+  test_backlink_index.py
+  test_mru.py
+  test_history.py
+  test_validation.py
+  test_latex_mathml.py
+  test_external_changes.py       — integration tests for external file changes
+  test_sidebar.py
 meson.build            — build system
 ```
 
@@ -151,6 +172,9 @@ python3 -m unittest discover -s tests -v
 - Vault config YAML keys are case-sensitive, paths are absolute.
 - Git features must gracefully handle repos without git initialized.
 - Images in Markdown: support `![alt](path)` with both relative and absolute paths.
+- **Test-driven development**: Always write failing tests first, then implement the fix. Run tests to verify they fail, then implement the minimal code to make them pass. Never commit code without corresponding tests.
+- **Test organization**: Add tests to existing test files grouped by topic (e.g. vault_monitor events → `test_vault_monitor_events.py`). Do not create new test files with arbitrary context names — distribute into the files that already cover the module under test. When in doubt, ask.
+- **Error handling**: Never use bare `except Exception: pass` — always log the exception at a minimum. Use `logging.warning()` or `logging.error()` with exc_info=True so errors are visible and debuggable.
 
 ## MRU Tab Switcher (Ctrl+Tab / Ctrl+Shift+Tab)
 
@@ -178,15 +202,20 @@ python3 -m unittest discover -s tests -v
 - `editor.file_path` is a `str`, not `Path` — use `Path(editor.file_path).parent` for directory.
 - Kill all existing app instances before starting a new one: Immer `./scripts/test-app.sh` verwenden — nie manuell `pkill` oder `killall` (läuft in Timeout). Duplicate instances cause confusing state.
 - Shift+Tab generates `Gdk.KEY_ISO_Left_Tab`, not `Gdk.KEY_Tab`. Always check for both keyvals.
+- **Gtk.Stack remove/add destroys WebView DOM**: When a tab is renamed externally, `_on_tab_renamed` removes and re-adds the content stack child. This destroys the WebView's rendered DOM, but `_loaded` and `_last_html_hash` remain stale. Always call `preview.reset()` before `_refresh_preview()` after stack manipulation.
+- **Tab button closures capture file_path**: Close buttons and click gestures in `TabBar._build_tab_widget` must read `_file_path` from the container widget at click time, not capture `file_path` at creation time. After `update_path()`, the old capture points to a dead path.
+- **`mkdir -p` race**: A newly created subdirectory's CREATED event fires before monitors exist for its children. After `_start_monitor()` on a new dir, scan existing children with `os.listdir()` and emit CREATED signals for each so the tree picks them up.
+- **RENAMED convention**: `Gio.FileMonitorEvent.RENAMED` sets `file=old, other=new` — the **opposite** of `MOVED_IN` (`file=new, other=old`). Always swap in `_on_monitor_event` before emitting.
+- **VaultMonitor directory events**: `os.path.isdir()` must check real filesystem, not `_is_valid_md_dir()` which only validates the name. Directories must pass through to signal emission (don't `return` early after managing child monitors).
 
 ## Future Features
 
-- **Vault Directory Watching (inotify)**
-  - Monitor vault directories for external file changes (create/delete/rename/modify)
-  - Auto-reload affected tabs, update vault tree, refresh search index
-  - Use `Gio.FileMonitor` (GLib abstraction over inotify/kqueue/FSEvents) for cross-platform support
-  - Debounce rapid changes; batch updates to UI thread via `GLib.idle_add`
-  - Handle: new .md files → appear in tree; deleted files → close tabs; renamed → update paths; modified externally → prompt reload
+- **Vault Directory Watching (inotify)** ✓ implemented
+  - `VaultMonitor` in `src/vault_monitor.py`: `Gio.FileMonitor` per vault + recursive subdirs
+  - Events: `created`, `deleted`, `moved`, `renamed`, `changed` (with debounce)
+  - External changes: new files → tree + backlink; deleted files → close tabs; renamed/moved → update paths + tabs; modified → content-changed banner
+  - `mkdir -p` race: after `_start_monitor()`, scan existing children and emit signals
+  - Skip mechanism: ref-counted `_skip_paths` dict for user-initiated operations
 
 - **Integration & E2E Tests**
   - *Integration*: pytest + Xvfb (headless Display) — Widget-API-Tests für Tab-Handling, Editor↔Preview-Sync, Split-View, Vault-Tree-Expansion, Session-Restore

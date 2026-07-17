@@ -4,6 +4,7 @@ Monitors vault directories for file changes (created, deleted, moved, changed).
 Only monitors .md files. Uses CHANGES_DONE_HINT for content-changed events.
 """
 
+import logging
 import os
 from pathlib import Path
 
@@ -11,6 +12,8 @@ import gi
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 from gi.repository import Gio, GLib
+
+logger = logging.getLogger(__name__)
 
 
 def _is_valid_md_file(file_path, other_file_path=None):
@@ -127,6 +130,7 @@ class VaultMonitor:
             Gio.FileMonitorEvent.CHANGES_DONE_HINT: "changed",
             Gio.FileMonitorEvent.CREATED: "created",
             Gio.FileMonitorEvent.DELETED: "deleted",
+            Gio.FileMonitorEvent.RENAMED: "renamed",
             Gio.FileMonitorEvent.MOVED_IN: "moved",
             Gio.FileMonitorEvent.MOVED_OUT: "moved",
         }
@@ -136,6 +140,7 @@ class VaultMonitor:
             "created": "external-file-created",
             "deleted": "external-file-deleted",
             "moved": "external-file-moved",
+            "renamed": "external-file-moved",
             "changed": "external-content-changed",
         }
 
@@ -178,6 +183,9 @@ class VaultMonitor:
     def _start_monitor(self, vault_path):
         """Startet einen FileMonitor fuer ein Vault-Verzeichnis.
 
+        Rekursiv: erstellt Monitore fuer alle Unterverzeichnisse
+        (ausser versteckten, die mit . beginnen).
+
         Args:
             vault_path: Absoluter Pfad zum Vault-Verzeichnis
         """
@@ -190,8 +198,16 @@ class VaultMonitor:
             monitor.connect("changed", self._on_monitor_event)
             self._monitors[vault_path] = monitor
         except GLib.Error:
-            # Gio.FileMonitor kann nicht erstellt werden → ignorieren
-            pass
+            return
+
+        # Rekursiv Unterverzeichnisse monitorieren
+        try:
+            for entry in os.listdir(vault_path):
+                child = os.path.join(vault_path, entry)
+                if os.path.isdir(child) and not entry.startswith("."):
+                    self._start_monitor(child)
+        except OSError:
+            logger.warning("Could not list subdirs of %s", vault_path, exc_info=True)
 
     def _stop_monitor(self, vault_path):
         """Entfernt einen FileMonitor.
@@ -245,8 +261,41 @@ class VaultMonitor:
         if mapped_type is None:
             return
 
-        if mapped_type in ("created", "deleted", "moved"):
-            if not _is_valid_md_file(file, other_file):
+        # Detect directories for child-monitor management + tree updates
+        if hasattr(file, "get_path"):
+            fpath = file.get_path()
+        else:
+            fpath = str(file)
+        is_dir = os.path.isdir(fpath) if fpath else False
+
+        vault_path = self._get_vault_path(monitor)
+
+        # Handle directory events: attach/detach child monitors
+        if is_dir and mapped_type in ("created", "deleted", "moved", "renamed"):
+            if mapped_type == "created":
+                self._start_monitor(fpath)
+                # Signal existing subdirs so tree adds them (mkdir -p race)
+                if vault_path is not None:
+                    try:
+                        for entry in os.listdir(fpath):
+                            child = os.path.join(fpath, entry)
+                            if os.path.isdir(child) and not entry.startswith("."):
+                                self._emit_event(vault_path, child, None, "created")
+                    except OSError:
+                        logger.warning("Could not list subdirs of %s", fpath, exc_info=True)
+            elif mapped_type == "deleted":
+                self._stop_monitor(fpath)
+            elif mapped_type == "renamed" and other_file is not None:
+                old = fpath
+                new = (other_file.get_path()
+                       if hasattr(other_file, "get_path")
+                       else str(other_file))
+                self._stop_monitor(old)
+                self._start_monitor(new)
+
+        # Filter: .md files and directories pass; everything else is ignored
+        if mapped_type in ("created", "deleted", "moved", "renamed"):
+            if not is_dir and not _is_valid_md_file(file, other_file):
                 return
         elif mapped_type == "changed":
             if not _is_valid_md_file(file):
@@ -259,7 +308,6 @@ class VaultMonitor:
         if not signal_name:
             return
 
-        vault_path = self._get_vault_path(monitor)
         if vault_path is None:
             return
 
@@ -274,6 +322,10 @@ class VaultMonitor:
                 other_path = other_file.get_path()
             else:
                 other_path = str(other_file)
+
+        # RENAMED: Gio gives file=old, other=new — swap to match our convention
+        if mapped_type == "renamed":
+            file_path, other_path = other_path, file_path
 
         event_key = f"{vault_path}:{file_path}:{mapped_type}"
         self._debounce_event(event_key, vault_path, file_path, other_path, mapped_type)
@@ -352,7 +404,7 @@ class VaultMonitor:
         if not signal_name:
             return
 
-        if event_type == "moved" and other_path is not None:
+        if event_type in ("moved", "renamed") and other_path is not None:
             if file_path in self._skip_paths or other_path in self._skip_paths:
                 self._decrement_skip(file_path)
                 self._decrement_skip(other_path)
@@ -364,9 +416,9 @@ class VaultMonitor:
         for (sig, cb), callback in self._callbacks.items():
             if sig == signal_name:
                 try:
-                    if event_type == "moved" and other_path is not None:
+                    if event_type in ("moved", "renamed"):
                         callback(vault_path, file_path, other_path)
                     else:
                         callback(vault_path, file_path)
                 except Exception:
-                    pass
+                    logger.warning("VaultMonitor callback error", exc_info=True)
