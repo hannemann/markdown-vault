@@ -606,19 +606,23 @@ class MainWindow(Adw.ApplicationWindow):
 
         default_dir = self._resolve_active_vault()
 
-        dialog = Adw.AlertDialog(heading="New File", body="File name:")
+        dialog = Adw.AlertDialog(heading="New File", body="File name (.md is added automatically):")
         dialog.add_response("cancel", "Cancel")
         dialog.add_response("create", "Create")
         dialog.set_response_appearance("create", Adw.ResponseAppearance.SUGGESTED)
         dialog.set_default_response("create")
         dialog.set_close_response("cancel")
 
-        entry = Gtk.Entry(placeholder_text="e.g. My Note.md")
+        entry = Gtk.Entry(placeholder_text="e.g. My Note")
         entry.set_activates_default(True)
         dialog.set_extra_child(entry)
 
+        def _focus_entry():
+            entry.grab_focus_without_selecting()
+            return False  # do not repeat
         dialog.connect("response", self._on_new_file_response, entry, default_dir)
         dialog.present(self)
+        GLib.idle_add(_focus_entry)
 
     def _on_new_file_response(self, dialog, response, entry, default_dir):
         """Handle the new-file dialog response."""
@@ -923,19 +927,23 @@ class MainWindow(Adw.ApplicationWindow):
 
     def _on_new_file_requested(self, _tree, parent_dir: str) -> None:
         """Handle 'New File' from the vault tree context menu."""
-        dialog = Adw.AlertDialog(heading="New File", body="File name:")
+        dialog = Adw.AlertDialog(heading="New File", body="File name (.md is added automatically):")
         dialog.add_response("cancel", "Cancel")
         dialog.add_response("create", "Create")
         dialog.set_response_appearance("create", Adw.ResponseAppearance.SUGGESTED)
         dialog.set_default_response("create")
         dialog.set_close_response("cancel")
 
-        entry = Gtk.Entry(placeholder_text="e.g. My Note.md")
+        entry = Gtk.Entry(placeholder_text="e.g. My Note")
         entry.set_activates_default(True)
         dialog.set_extra_child(entry)
 
+        def _focus_entry():
+            entry.grab_focus_without_selecting()
+            return False  # do not repeat
         dialog.connect("response", self._on_new_file_response, entry, parent_dir)
         dialog.present(self)
+        GLib.idle_add(_focus_entry)
 
     def _on_new_folder_requested(self, _tree, parent_dir: str) -> None:
         """Handle 'New Folder' from the vault tree context menu."""
