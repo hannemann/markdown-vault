@@ -252,5 +252,49 @@ class TestVaultTreeHandleFileMoved(unittest.TestCase):
         self.tree._handle_file_moved(old_path, "/nonexistent", "/nonexistent/file.md")
 
 
+class TestVaultTreeDeleteShortcut(unittest.TestCase):
+    """DEL Shortcut: emit delete-requested für ausgewähltes Element."""
+
+    def setUp(self):
+        self._tmpdir = Path(tempfile.mkdtemp())
+        mock_gio = _make_mock_gio()
+        mod = _load_vaulttree(mock_gio)
+        VaultTree = mod.VaultTree
+        self.tree = VaultTree()
+
+        self.vault_path = str(self._tmpdir / "testvault")
+        Path(self.vault_path).mkdir(exist_ok=True)
+        (Path(self.vault_path) / "file.md").touch()
+        self.tree.set_vaults([self.vault_path])
+
+    def tearDown(self):
+        shutil.rmtree(self._tmpdir, ignore_errors=True)
+
+    def test_delete_shortcut_no_selection_noop(self):
+        """Keine Auswahl → kein Signal."""
+        emitted = []
+        self.tree.connect("delete-requested", lambda _, p: emitted.append(p))
+        self.tree._on_delete_shortcut()
+        self.assertEqual(emitted, [])
+
+    def test_delete_shortcut_vault_root_blocked(self):
+        """Vault-Root darf nicht gelöscht werden."""
+        emitted = []
+        self.tree.connect("delete-requested", lambda _, p: emitted.append(p))
+        # Simuliere Auswahl des Vault-Roots
+        with unittest.mock.patch.object(self.tree, "get_selected_path", return_value=self.vault_path):
+            self.tree._on_delete_shortcut()
+        self.assertEqual(emitted, [])
+
+    def test_delete_shortcut_emits_signal(self):
+        """Datei ausgewählt → delete-requested wird emittiert."""
+        file_path = str(Path(self.vault_path) / "file.md")
+        emitted = []
+        self.tree.connect("delete-requested", lambda _, p: emitted.append(p))
+        with unittest.mock.patch.object(self.tree, "get_selected_path", return_value=file_path):
+            self.tree._on_delete_shortcut()
+        self.assertEqual(emitted, [file_path])
+
+
 if __name__ == "__main__":
     unittest.main()

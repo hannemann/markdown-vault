@@ -218,6 +218,7 @@ class VaultMonitor:
         Covers both the mkdir-p race (new dir already has children when
         its CREATED event fires) and directory rename (new dir already
         contains files that the tree must pick up).
+        Recurses into subdirectories and starts monitors for them.
         """
         if vault_path is None:
             return
@@ -230,6 +231,8 @@ class VaultMonitor:
                     continue
                 if os.path.isdir(child):
                     self._emit_event(vault_path, child, None, "created")
+                    self._start_monitor(child)
+                    self._emit_existing_entries(vault_path, child)
                 elif entry.endswith(".md"):
                     self._emit_event(vault_path, child, None, "created")
         except OSError:

@@ -636,8 +636,23 @@ class MainWindow(Adw.ApplicationWindow):
         if not name.endswith(".md"):
             name += ".md"
         file_path = os.path.join(default_dir, name)
-        self._vault_monitor.skip_next_event(file_path)
-        self._vault_monitor.skip_next_event(file_path)
+
+        # Create intermediate directories if name contains path separators.
+        parent = str(Path(file_path).parent)
+        if parent != default_dir:
+            try:
+                os.makedirs(parent, exist_ok=True)
+                self._vault_monitor.skip_next_event(parent)
+            except OSError as e:
+                self._show_error("Create Failed", str(e))
+                return
+            # _emit_existing_entries fires 1 CREATED for the file when the
+            # new directory monitor starts — only 1 skip needed.
+            self._vault_monitor.skip_next_event(file_path)
+        else:
+            # touch() fires created + changed on existing monitor — need 2.
+            self._vault_monitor.skip_next_event(file_path)
+            self._vault_monitor.skip_next_event(file_path)
         try:
             Path(file_path).touch()
         except OSError as e:
@@ -962,8 +977,12 @@ class MainWindow(Adw.ApplicationWindow):
         entry.set_activates_default(True)
         dialog.set_extra_child(entry)
 
+        def _focus_entry():
+            entry.grab_focus_without_selecting()
+            return False
         dialog.connect("response", self._on_new_folder_response, entry, parent_dir)
         dialog.present(self)
+        GLib.idle_add(_focus_entry)
 
     def _on_new_folder_response(self, dialog, response, entry, parent_dir):
         """Handle the new-folder dialog response."""

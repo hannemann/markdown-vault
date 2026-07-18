@@ -131,6 +131,13 @@ class VaultTree(Gtk.Box):
         action = Gtk.CallbackAction.new(lambda *_: self._start_rename())
         shortcut = Gtk.Shortcut.new(trigger, action)
         self._shortcut_ctrl.add_shortcut(shortcut)
+
+        # Delete shortcut.
+        trigger_del = Gtk.ShortcutTrigger.parse_string("Delete")
+        action_del = Gtk.CallbackAction.new(lambda *_: self._on_delete_shortcut())
+        shortcut_del = Gtk.Shortcut.new(trigger_del, action_del)
+        self._shortcut_ctrl.add_shortcut(shortcut_del)
+
         self._tree_view.add_controller(self._shortcut_ctrl)
 
         # Cell renderers: icon + text.
@@ -268,6 +275,15 @@ class VaultTree(Gtk.Box):
                 cell.set_property("cell-background-rgba", rgba)
         else:
             cell.set_property("cell-background-rgba", None)
+
+    def _on_delete_shortcut(self) -> None:
+        """Handle Delete key: emit delete-requested for the selected item."""
+        path = self.get_selected_path()
+        if not path:
+            return
+        if path in self._vault_paths:
+            return
+        self.emit("delete-requested", path)
 
     def _on_right_click(self, _gesture, n_press: int, x: float, y: float) -> None:
         """Show context menu on right-click."""
