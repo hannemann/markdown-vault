@@ -69,6 +69,7 @@ class VaultTree(Gtk.Box):
         "delete-requested": (GObject.SignalFlags.RUN_LAST, None, (str,)),
         "close-file-requested": (GObject.SignalFlags.RUN_LAST, None, (str,)),
         "file-renamed": (GObject.SignalFlags.RUN_LAST, None, (str, str)),
+        "focus-current-file": (GObject.SignalFlags.RUN_LAST, None, ()),
     }
 
     def __init__(self) -> None:
@@ -91,6 +92,13 @@ class VaultTree(Gtk.Box):
         title.set_xalign(0)
         title.set_hexpand(True)
         header.append(title)
+
+        focus_btn = Gtk.Button(icon_name="find-location-symbolic")
+        focus_btn.add_css_class("flat")
+        focus_btn.add_css_class("circular")
+        focus_btn.set_tooltip_text("Focus current file in tree")
+        focus_btn.connect("clicked", self._on_focus_clicked)
+        header.append(focus_btn)
 
         add_btn = Gtk.Button(icon_name="list-add-symbolic")
         add_btn.add_css_class("flat")
@@ -206,6 +214,16 @@ class VaultTree(Gtk.Box):
         # Force redraw of the cell data func for all visible rows.
         self._tree_view.queue_draw()
 
+    def focus_file(self, file_path: str) -> None:
+        """Select and scroll to *file_path* in the tree, expanding parents."""
+        iter_ = self._find_iter(file_path)
+        if iter_ is None:
+            return
+        self._expand_parents(iter_)
+        tree_path = self._store.get_path(iter_)
+        self._tree_view.get_selection().select_path(tree_path)
+        self._tree_view.scroll_to_cell(tree_path, None, True, 0.5, 0.0)
+
     def refresh(self) -> None:
         """Rebuild the tree from the current vault paths, preserving expansion."""
         expanded = self.get_expanded_paths()
@@ -256,6 +274,31 @@ class VaultTree(Gtk.Box):
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
+
+    def _find_iter(self, target_path: str):
+        """Walk the TreeStore to find the iter for *target_path*, or None."""
+        def _walk(iter_):
+            while iter_:
+                if self._store.get_value(iter_, _COL_PATH) == target_path:
+                    return iter_
+                child = self._store.iter_children(iter_)
+                if child:
+                    result = _walk(child)
+                    if result is not None:
+                        return result
+                iter_ = self._store.iter_next(iter_)
+        first = self._store.get_iter_first()
+        if first is None:
+            return None
+        return _walk(first)
+
+    def _expand_parents(self, iter_) -> None:
+        """Expand all parent directories of *iter_* so the row is visible."""
+        parent = self._store.iter_parent(iter_)
+        while parent is not None:
+            tree_path = self._store.get_path(parent)
+            self._tree_view.expand_row(tree_path, False)
+            parent = self._store.iter_parent(parent)
 
     def _cell_data_func(self, _column, cell, model, iter_, _data) -> None:
         """Apply bold styling to active vault root and highlight drop target."""
@@ -785,6 +828,10 @@ class VaultTree(Gtk.Box):
         # Remove the old iter
         self._store.remove(old_iter)
         return False
+
+    def _on_focus_clicked(self, _btn) -> None:
+        """Emit focus-current-file so the app can call focus_file()."""
+        self.emit("focus-current-file")
 
     def _on_add_vault_clicked(self, _btn) -> None:
         """Open a folder chooser dialog."""

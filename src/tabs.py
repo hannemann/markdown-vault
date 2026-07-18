@@ -80,11 +80,11 @@ class TabBar(Gtk.Box):
         self._box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
         self._box.add_css_class("tab-bar")
 
-        scrolled = Gtk.ScrolledWindow()
-        scrolled.set_child(self._box)
-        scrolled.set_hexpand(True)
-        scrolled.set_policy(Gtk.PolicyType.EXTERNAL, Gtk.PolicyType.NEVER)
-        self.append(scrolled)
+        self._scrolled = Gtk.ScrolledWindow()
+        self._scrolled.set_child(self._box)
+        self._scrolled.set_hexpand(True)
+        self._scrolled.set_policy(Gtk.PolicyType.EXTERNAL, Gtk.PolicyType.NEVER)
+        self.append(self._scrolled)
 
         self._setup_actions()
 
@@ -191,6 +191,7 @@ class TabBar(Gtk.Box):
             return
         self._current_path = file_path
         self._update_tab_styles()
+        self._scroll_to_active_tab()
         self.emit("tab-changed", file_path)
 
     def close_tab(self, file_path: str) -> None:
@@ -394,6 +395,18 @@ class TabBar(Gtk.Box):
                 child.add_css_class("active")
             else:
                 child.remove_css_class("active")
+
+    def _scroll_to_active_tab(self) -> None:
+        """Scroll the tab bar so the active tab widget is visible."""
+        for child in self._box:
+            fp = getattr(child, "_file_path", None)
+            if fp == self._current_path:
+                adj = self._scrolled.get_hadjustment()
+                alloc = child.get_allocation()
+                page_size = adj.get_page_size()
+                new_val = alloc.x + alloc.width / 2 - page_size / 2
+                adj.set_value(max(0, new_val))
+                return
 
     def _set_tab_unmodified(self, file_path: str, dirty: bool) -> None:
         """Add/remove the ``tab-unmodified`` CSS class to mark unsaved tabs."""

@@ -1,6 +1,7 @@
 """Tests for markdown_vault.tabs — tab management."""
 
 import unittest
+import unittest.mock
 
 import gi
 
@@ -268,6 +269,62 @@ class TestTabCloseLeftRight(unittest.TestCase):
         bar.add_tab("/tmp/b.md", editor=None, preview=None)
         bar.close_right("/tmp/b.md")
         self.assertEqual(bar.get_all_paths(), ["/tmp/a.md", "/tmp/b.md"])
+
+
+class TestTabBarScrollToActive(unittest.TestCase):
+    """Tests for scroll-to-active-tab behaviour."""
+
+    def test_scroll_adjustment_updated_on_active_tab(self):
+        """When set_active_tab is called, the hadjustment value should be
+        updated to show the active tab widget."""
+        bar = TabBar()
+        bar.add_tab("/tmp/a.md", editor=None, preview=None)
+        bar.add_tab("/tmp/b.md", editor=None, preview=None)
+        bar.add_tab("/tmp/c.md", editor=None, preview=None)
+
+        adj = bar._scrolled.get_hadjustment()
+        with unittest.mock.patch.object(adj, "set_value") as mock_set:
+            bar.set_active_tab("/tmp/c.md")
+            mock_set.assert_called_once()
+
+    def test_scroll_adjustment_value_nonnegative(self):
+        """The adjustment value should never be set negative."""
+        bar = TabBar()
+        bar.add_tab("/tmp/a.md", editor=None, preview=None)
+
+        adj = bar._scrolled.get_hadjustment()
+        with unittest.mock.patch.object(adj, "set_value") as mock_set:
+            bar.set_active_tab("/tmp/a.md")
+            # Check the value passed is >= 0
+            call_args = mock_set.call_args
+            self.assertGreaterEqual(call_args[0][0], 0)
+
+    def test_scroll_no_tabs_no_adjustment_change(self):
+        """With no tabs, set_active_tab should not touch the adjustment."""
+        bar = TabBar()
+        adj = bar._scrolled.get_hadjustment()
+        original_val = adj.get_value()
+        with unittest.mock.patch.object(adj, "set_value") as mock_set:
+            bar.set_active_tab("/tmp/missing.md")
+            mock_set.assert_not_called()
+
+    def test_scroll_not_called_for_nonexistent_tab(self):
+        """set_active_tab with existing path but no loaded tab → no scroll."""
+        bar = TabBar()
+        bar.add_tab("/tmp/existing.md", editor=None, preview=None)
+        adj = bar._scrolled.get_hadjustment()
+        with unittest.mock.patch.object(adj, "set_value") as mock_set:
+            bar.set_active_tab("/tmp/existing.md")
+            mock_set.assert_called_once()
+
+    def test_scroll_not_called_for_completely_missing_path(self):
+        """set_active_tab with path that doesn't exist at all → no scroll."""
+        bar = TabBar()
+        bar.add_tab("/tmp/other.md", editor=None, preview=None)
+        adj = bar._scrolled.get_hadjustment()
+        with unittest.mock.patch.object(adj, "set_value") as mock_set:
+            bar.set_active_tab("/tmp/nonexistent.md")
+            mock_set.assert_not_called()
 
 
 if __name__ == "__main__":

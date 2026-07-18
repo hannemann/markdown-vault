@@ -119,6 +119,7 @@ class MainWindow(Adw.ApplicationWindow):
         self._vault_tree.connect("delete-requested", self._on_delete_requested)
         self._vault_tree.connect("close-file-requested", self._on_close_file_requested)
         self._vault_tree.connect("file-renamed", self._on_file_renamed)
+        self._vault_tree.connect("focus-current-file", self._on_focus_current_file_clicked)
 
         self._vault_monitor = vault_monitor.VaultMonitor()
         self._vault_monitor.connect("external-file-created", self._on_monitor_file_created)
@@ -1103,6 +1104,12 @@ class MainWindow(Adw.ApplicationWindow):
             if tab_path == old_path or tab_path.startswith(old_path + os.sep):
                 new_tab_path = new_path + tab_path[len(old_path):]
                 self.mru.rename(tab_path, new_tab_path)
+
+    def _on_focus_current_file_clicked(self, _tree) -> None:
+        """Focus the current file in the vault tree."""
+        current_path = self._tab_bar.get_current_path()
+        if current_path:
+            self._vault_tree.focus_file(current_path)
 
     def _on_tab_renamed(self, _tab_bar, old_path: str, new_path: str) -> None:
         """Handle tab path change — update the content stack key."""
