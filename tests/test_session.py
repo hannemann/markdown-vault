@@ -6,8 +6,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-import src.session as _ses
-import src.config as _cfg
+import markdown_vault.session as _ses
+import markdown_vault.config as _cfg
 
 
 class _TempSessionMixin:

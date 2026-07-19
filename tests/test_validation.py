@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from src.validation import validate_rename, validate_drop
+from markdown_vault.validation import validate_rename, validate_drop
 
 
 class TestValidateRename(unittest.TestCase):

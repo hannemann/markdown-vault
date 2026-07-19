@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from src.search_logic import search_vaults
+from markdown_vault.search_logic import search_vaults
 
 
 class TestSearchVaults(unittest.TestCase):

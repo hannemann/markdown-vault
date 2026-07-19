@@ -69,7 +69,7 @@ def _load_monitor(mock_gio, mock_glib):
     """Lädt vault_monitor mit gemoddetem Gio/GLib neu."""
     # Gio aus vault_monitor entfernen
     for mod in list(sys.modules.keys()):
-        if mod == 'src.vault_monitor' or mod.startswith('src.vault_monitor.'):
+        if mod == 'markdown_vault.vault_monitor' or mod.startswith('markdown_vault.vault_monitor.'):
             del sys.modules[mod]
 
     # gi.repository.Gio direkt patchen
@@ -77,8 +77,8 @@ def _load_monitor(mock_gio, mock_glib):
     gi.repository.Gio = mock_gio
     gi.repository.GLib = mock_glib
 
-    import src.vault_monitor
-    return src.vault_monitor
+    import markdown_vault.vault_monitor
+    return markdown_vault.vault_monitor
 
 
 class TestVaultMonitorFiltering(unittest.TestCase):
@@ -88,7 +88,7 @@ class TestVaultMonitorFiltering(unittest.TestCase):
         mock_gio = _make_mock_gio()
         mock_glib = _make_mock_glib()
 
-        with patch("src.vault_monitor.os.path.isdir", return_value=True):
+        with patch("markdown_vault.vault_monitor.os.path.isdir", return_value=True):
             mod = _load_monitor(mock_gio, mock_glib)
             VaultMonitor = mod.VaultMonitor
             monitor = VaultMonitor()
@@ -185,7 +185,7 @@ class TestVaultMonitorEventTypeMapping(unittest.TestCase):
         mock_gio = _make_mock_gio()
         mock_glib = _make_mock_glib()
 
-        with patch("src.vault_monitor.os.path.isdir", return_value=True):
+        with patch("markdown_vault.vault_monitor.os.path.isdir", return_value=True):
             mod = _load_monitor(mock_gio, mock_glib)
             VaultMonitor = mod.VaultMonitor
             monitor = VaultMonitor()
@@ -252,7 +252,7 @@ class TestN2_RenamedEvent(unittest.TestCase):
     def _create_monitor(self):
         mock_gio = _make_mock_gio()
         mock_glib = _make_mock_glib()
-        with patch("src.vault_monitor.os.path.isdir", return_value=True):
+        with patch("markdown_vault.vault_monitor.os.path.isdir", return_value=True):
             mod = _load_monitor(mock_gio, mock_glib)
             monitor = mod.VaultMonitor()
             monitor.set_vaults(["/tmp/testvault"])
@@ -304,7 +304,7 @@ class TestN3_MovedInWithoutOtherFile(unittest.TestCase):
         """When other_file is None, callback must receive (vault, file_path)."""
         mock_gio = _make_mock_gio()
         mock_glib = _make_mock_glib()
-        with patch("src.vault_monitor.os.path.isdir", return_value=True):
+        with patch("markdown_vault.vault_monitor.os.path.isdir", return_value=True):
             mod = _load_monitor(mock_gio, mock_glib)
             monitor = mod.VaultMonitor()
             monitor.set_vaults(["/tmp/testvault"])
@@ -328,7 +328,7 @@ class TestN4_CallbackExceptionLogging(unittest.TestCase):
         """When a callback raises, the exception must be logged."""
         mock_gio = _make_mock_gio()
         mock_glib = _make_mock_glib()
-        with patch("src.vault_monitor.os.path.isdir", return_value=True):
+        with patch("markdown_vault.vault_monitor.os.path.isdir", return_value=True):
             mod = _load_monitor(mock_gio, mock_glib)
             monitor = mod.VaultMonitor()
             monitor.set_vaults(["/tmp/testvault"])

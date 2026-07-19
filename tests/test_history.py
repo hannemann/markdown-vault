@@ -4,8 +4,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from src.history import NavHistory
-from src.path_utils import find_vault_for_path, find_vault_for_dir
+from markdown_vault.history import NavHistory
+from markdown_vault.path_utils import find_vault_for_path, find_vault_for_dir
 
 
 class TestNavHistory(unittest.TestCase):

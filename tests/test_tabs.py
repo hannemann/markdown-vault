@@ -8,7 +8,7 @@ import gi
 gi.require_version("Gtk", "4.0")
 from gi.repository import Gtk
 
-from src.tabs import Tab, TabBar
+from markdown_vault.tabs import Tab, TabBar
 
 
 class MockEditor:

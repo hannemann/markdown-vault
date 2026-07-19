@@ -3,7 +3,7 @@
 import unittest
 from unittest.mock import patch
 
-from src.latex_mathml import (
+from markdown_vault.latex_mathml import (
     tokenize,
     Token,
     TokenType,
@@ -374,7 +374,7 @@ class TestMathIntegration(unittest.TestCase):
 
     def test_inline_math_in_markdown(self):
         import markdown
-        from src.preview import MARKDOWN_EXTENSIONS, EXTENSION_CONFIGS
+        from markdown_vault.preview import MARKDOWN_EXTENSIONS, EXTENSION_CONFIGS
         text = "Die Formel $E = mc^2$ ist berühmt."
         result = markdown.markdown(
             text,
@@ -388,7 +388,7 @@ class TestMathIntegration(unittest.TestCase):
 
     def test_block_math_in_markdown(self):
         import markdown
-        from src.preview import MARKDOWN_EXTENSIONS, EXTENSION_CONFIGS
+        from markdown_vault.preview import MARKDOWN_EXTENSIONS, EXTENSION_CONFIGS
         text = "$$\n\\sum_{i=1}^{n} i = \\frac{n(n+1)}{2}\n$$"
         result = markdown.markdown(
             text,

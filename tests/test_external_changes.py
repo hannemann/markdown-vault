@@ -16,7 +16,7 @@ class TestExternalChangesBanner(unittest.TestCase):
 
     def _make_app_window(self):
         with patch('gi.repository.Adw.Application') as mock_app:
-            from src.app_window import MainWindow
+            from markdown_vault.app_window import MainWindow
             win = MagicMock()
             win._on_external_content_changed = MainWindow._on_external_content_changed.__get__(win, type(win))
             win._on_banner_reload = MainWindow._on_banner_reload.__get__(win, type(win))

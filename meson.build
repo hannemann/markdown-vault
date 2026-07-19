@@ -11,10 +11,10 @@ project(
 i18n = import('i18n')
 gnome = import('gnome')
 
-subdir('data')
-subdir('src')
+subdir('src/bin')
+subdir('src/lib/python3.13/site-packages')
+subdir('src/share/markdown-vault')
 
 gnome.post_install(
-  gtk_update_icon_cache: true,
   update_desktop_database: true,
 )

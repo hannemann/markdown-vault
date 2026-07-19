@@ -34,12 +34,12 @@ def _make_mock_gio():
 def _load_vaulttree(mock_gio):
     """Lädt vault_tree mit gemoddetem Gio."""
     for mod in list(sys.modules.keys()):
-        if mod == 'src.vault_tree' or mod.startswith('src.vault_tree.'):
+        if mod == 'markdown_vault.vault_tree' or mod.startswith('markdown_vault.vault_tree.'):
             del sys.modules[mod]
     import gi.repository
     gi.repository.Gio = mock_gio
-    import src.vault_tree
-    return src.vault_tree
+    import markdown_vault.vault_tree
+    return markdown_vault.vault_tree
 
 
 class TestVaultTreeHandleFileCreated(unittest.TestCase):

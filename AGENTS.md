@@ -58,60 +58,55 @@ Markdown Vault — a GNOME desktop app for editing and previewing Markdown files
 
 ```
 src/
-  main.py              — entry point, AdwApplication setup
-  app_window.py        — main window, three-panel layout
-  vault_tree.py        — left panel: file tree for vaults
-  vault_monitor.py     — Gio.FileMonitor wrapper for external change detection
-  editor.py            — text editor widget (GtkSourceView 5)
-  preview.py           — WebView-based Markdown renderer
-  tabs.py              — tab management for open files
-  sidebar.py           — right sidebar (outline, backlinks, git, details)
-  search.py            — bottom bar: full-text search across vaults
-  search_logic.py      — search worker (runs in daemon thread)
-  git_integration.py   — git status, diff, commit
-  tags.py              — [[wikilink]] parsing, backlinks
-  backlink_index.py    — O(1) backlink lookup, built on startup
-  config.py            — vaults.yaml reader/writer + settings
-  session.py           — session persistence (JSON)
-  preferences.py       — Adw.PreferencesDialog
-  mru.py               — MRU tab switcher (Ctrl+Tab)
-  history.py           — navigation history (back/forward)
-  path_utils.py        — vault path resolution helpers
-  validation.py        — input validation utilities
-  latex_mathml.py      — LaTeX → MathML converter (no JS/CDN)
-  markdown_help.py     — keyboard shortcuts overlay
-data/
-  de.hannemann.markdown-vault.desktop
-  de.hannemann.markdown-vault.metainfo.xml
-  de.hannemann.markdown-vault.gresource.xml
-  icons/
-  css/
-    style.css          — WebView styling for rendered Markdown
-  de.hannemann.markdown-vault.yml  — Flatpak manifest
-tests/
-  test_config.py
-  test_tags.py
-  test_search.py
-  test_search_logic.py
-  test_search_logic_extended.py
-  test_session.py
-  test_preferences.py
-  test_editor.py
-  test_preview.py
-  test_git_integration.py
-  test_tabs.py
-  test_vault_monitor.py          — unit tests for VaultMonitor
-  test_vault_monitor_events.py   — event type mapping, filtering, N.1–N.4
-  test_vault_tree_monitoring.py  — tree handler tests for create/delete/move
-  test_backlink_index.py
-  test_mru.py
-  test_history.py
-  test_validation.py
-  test_latex_mathml.py
-  test_external_changes.py       — integration tests for external file changes
-  test_sidebar.py
-meson.build            — build system
+  bin/markdown-vault          — launcher script (shell wrapper, python3 -m markdown_vault.main)
+  lib/python3.13/site-packages/markdown_vault/
+    __init__.py               — package marker
+    __main__.py               — entry point (python3 -m markdown_vault)
+    main.py                   — AdwApplication setup
+    app_window.py             — main window, three-panel layout
+    vault_tree.py             — left panel: file tree for vaults
+    vault_monitor.py          — Gio.FileMonitor wrapper for external change detection
+    editor.py                 — text editor widget (GtkSourceView 5)
+    preview.py                — WebView-based Markdown renderer
+    tabs.py                   — tab management for open files
+    sidebar.py                — right sidebar (outline, backlinks, git, details)
+    search.py                 — bottom bar: full-text search across vaults
+    search_logic.py           — search worker (runs in daemon thread)
+    git_integration.py        — git status, diff, commit
+    tags.py                   — [[wikilink]] parsing, backlinks
+    backlink_index.py         — O(1) backlink lookup, built on startup
+    config.py                 — vaults.yaml reader/writer + settings
+    session.py                — session persistence (JSON)
+    preferences.py            — Adw.PreferencesDialog
+    mru.py                    — MRU tab switcher (Ctrl+Tab)
+    history.py                — navigation history (back/forward)
+    path_utils.py             — vault path resolution helpers
+    validation.py             — input validation utilities
+    latex_mathml.py           — LaTeX → MathML converter (no JS/CDN)
+    markdown_help.py          — keyboard shortcuts overlay
+    css/
+      style.css               — WebView styling for rendered Markdown
+      gtk.css                 — GTK CSS for tab bar and widgets
+    meson.build               — Python package build rules
+  share/markdown-vault/
+    css/style.css             — CSS (Kopie für Flatpak-Resource-Bundle)
+    css/gtk.css
+    icons/hicolor/            — icon theme
+    de.hannemann.markdown-vault.desktop
+    de.hannemann.markdown-vault.metainfo.xml
+    de.hannemann.markdown-vault.gresource.xml
+    de.hannemann.markdown-vault.yml  — Flatpak manifest
+    meson.build               — Data files build rules
+meson.build            — top-level build system
+tests/                   — unit tests (unittest)
 ```
+
+**Installations-Pfade:**
+- **Binaries:** `~/.local/bin/` (user) oder `/usr/bin/` (system)
+- **Python-Code:** `~/.local/lib/python3.13/site-packages/markdown_vault/` oder `/usr/lib/python3.X/site-packages/markdown_vault/`
+- **Data-Files:** `~/.local/share/markdown-vault/` oder `/usr/share/markdown-vault/`
+- **Config:** `~/.config/markdown-vault/` (identisch für alle Installationen)
+- **State/Logs:** `~/.local/state/markdown-vault/` (identisch für alle Installationen)
 
 ## Dev commands
 
@@ -124,6 +119,12 @@ killall markdown-vault
 
 # Falls App hängt und nicht auf SIGTERM reagiert:
 killall -9 markdown-vault
+
+# Lokale Tests (vom Projekt-Root)
+PYTHONPATH=src/lib/python3.13/site-packages python3 -m unittest discover -s tests -v
+
+# Oder mit make
+make test
 ```
 
 ```bash
@@ -177,6 +178,7 @@ python3 -m unittest discover -s tests -v
 - **Error handling**: Never use bare `except Exception: pass` — always log the exception at a minimum. Use `logging.warning()` or `logging.error()` with exc_info=True so errors are visible and debuggable.
 - **Logging**: Every module MUST use the standard `logging` module. Add `import logging` and `logger = logging.getLogger(__name__)` at the top of each file. Use `logger.debug()`/`logger.info()`/`logger.warning()`/`logger.error()` — NEVER use `print()` or any other ad-hoc output for diagnostics. Every `except` block must log at minimum with `exc_info=True`. Log level is configurable via `settings.loglevel` (debug/info/warning/error), effective after restart.
 - **Temp files**: NEVER use the system `/tmp` directory. Use the local `./tmp/` directory instead. The system `/tmp` is shared, unpredictable, and cleaned up by the OS. Local `./tmp/` is project-scoped and ignored by `.gitignore`, so it stays fully under your control.
+- **NEVER commit without explicit user request**: NEVER run `git commit` unless the user explicitly asks for it. Not after editing files, not after testing, not ever. The user will say "commit" when ready.
 
 ## MRU Tab Switcher (Ctrl+Tab / Ctrl+Shift+Tab)
 

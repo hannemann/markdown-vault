@@ -1,13 +1,14 @@
 SHELL := /bin/bash
-.PHONY: download-wheels build-flatpak bundle install-flatpak run-flatpak test-flatpak clean clean-build clean-cache
+.PHONY: download-wheels build-flatpak bundle install-flatpak run-flatpak test-flatpak clean clean-build clean-cache build install uninstall clean-local run test
 
-WHEEL_DIR := data
+WHEEL_DIR := src/share/markdown-vault
 FLATPAK_MANIFEST := $(WHEEL_DIR)/de.hannemann.markdown-vault.yml
 BUILD_DIR := build-dir
 CACHE_DIR := .flatpak-builder
 REPO_DIR := repo
 BUNDLE_FILE := markdown-vault.flatpak
 APP_ID := de.hannemann.markdown-vault
+PYTHONPATH_DIR := src/lib/python3.13/site-packages
 
 download-wheels:
 	@echo "=> Downloading Python wheels from PyPI..."
@@ -44,6 +45,25 @@ uninstall-flatpak:
 	@echo "=> Uninstalling Flatpak..."
 	flatpak remove --noninteractive $(APP_ID)
 
+build:
+	@echo "=> Building with Meson..."
+	meson setup --prefix=$$HOME/.local builddir && meson compile -C builddir
+
+install: build
+	@echo "=> Installing locally..."
+	meson install -C builddir
+
+uninstall:
+	@echo "=> Uninstalling locally..."
+	ninja -C builddir uninstall
+
+clean-local:
+	@echo "=> Cleaning local build..."
+	rm -rf builddir
+
+run:
+	$$HOME/.local/bin/markdown-vault
+
 run-flatpak:
 	flatpak run $(APP_ID)
 
@@ -54,6 +74,10 @@ import pygments; print('pygments:', pygments.__version__); \
 import yaml; print('yaml:', yaml.__version__); \
 import markdown; print('markdown:', markdown.__version__); \
 import pymdownx; print('pymdownx: OK')"
+
+test:
+	@echo "=> Running tests..."
+	PYTHONPATH=$(PYTHONPATH_DIR) python3 -m unittest discover -s tests -v
 
 clean-build:
 	@echo "=> Removing build directory..."

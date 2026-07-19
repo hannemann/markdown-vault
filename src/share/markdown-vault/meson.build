@@ -1,4 +1,5 @@
-i18n = import('i18n')
+subdir('css')
+subdir('icons')
 
 install_data(
   'de.hannemann.markdown-vault.desktop',
@@ -11,9 +12,11 @@ install_data(
 )
 
 install_data(
-  'markdown-vault',
-  install_dir: get_option('bindir'),
+  'de.hannemann.markdown-vault.gresource.xml',
+  install_dir: get_option('datadir') / 'markdown-vault',
 )
 
-subdir('icons')
-subdir('css')
+install_data(
+  'de.hannemann.markdown-vault.yml',
+  install_dir: get_option('datadir') / 'markdown-vault',
+)

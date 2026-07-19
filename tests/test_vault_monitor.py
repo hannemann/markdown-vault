@@ -64,28 +64,28 @@ def _make_mock_file(path):
 def _load_monitor(mock_gio, mock_glib):
     """Lädt vault_monitor mit gemoddetem Gio/GLib neu."""
     for mod in list(sys.modules.keys()):
-        if mod == "src.vault_monitor" or mod.startswith("src.vault_monitor."):
+        if mod == "markdown_vault.vault_monitor" or mod.startswith("markdown_vault.vault_monitor."):
             del sys.modules[mod]
     import gi.repository
     gi.repository.Gio = mock_gio
     gi.repository.GLib = mock_glib
-    import src.vault_monitor
-    return src.vault_monitor
+    import markdown_vault.vault_monitor
+    return markdown_vault.vault_monitor
 
 
 class TestVaultMonitorInit(unittest.TestCase):
     """Phase 1: VaultMonitor Initialisierung."""
 
     def test_init_creates_empty_monitors_dict(self):
-        with patch("src.vault_monitor.Gio", _make_mock_gio()):
-            from src.vault_monitor import VaultMonitor
+        with patch("markdown_vault.vault_monitor.Gio", _make_mock_gio()):
+            from markdown_vault.vault_monitor import VaultMonitor
             monitor = VaultMonitor()
             self.assertEqual(monitor._monitors, {})
 
     def test_init_sets_empty_vault_paths(self):
         mock_gio = _make_mock_gio()
-        with patch("src.vault_monitor.Gio", mock_gio):
-            from src.vault_monitor import VaultMonitor
+        with patch("markdown_vault.vault_monitor.Gio", mock_gio):
+            from markdown_vault.vault_monitor import VaultMonitor
             monitor = VaultMonitor()
             self.assertEqual(monitor._vault_paths, [])
 
@@ -96,10 +96,10 @@ class TestVaultMonitorSetVaults(unittest.TestCase):
     def test_set_vaults_creates_monitor_for_one_vault(self):
         """Ein vault path sollte einen Monitor erstellen."""
         mock_gio = _make_mock_gio()
-        with patch("src.vault_monitor.Gio", mock_gio):
-            with patch("src.vault_monitor.os.path.isdir", return_value=True):
-                with patch("src.vault_monitor.os.listdir", return_value=[]):
-                    from src.vault_monitor import VaultMonitor
+        with patch("markdown_vault.vault_monitor.Gio", mock_gio):
+            with patch("markdown_vault.vault_monitor.os.path.isdir", return_value=True):
+                with patch("markdown_vault.vault_monitor.os.listdir", return_value=[]):
+                    from markdown_vault.vault_monitor import VaultMonitor
                     monitor = VaultMonitor()
                     monitor.set_vaults(["/tmp/testvault"])
 
@@ -109,10 +109,10 @@ class TestVaultMonitorSetVaults(unittest.TestCase):
     def test_set_vaults_creates_monitors_for_multiple_vaults(self):
         """Mehrere vault paths sollten mehrere Monitore erstellen."""
         mock_gio = _make_mock_gio()
-        with patch("src.vault_monitor.Gio", mock_gio):
-            with patch("src.vault_monitor.os.path.isdir", return_value=True):
-                with patch("src.vault_monitor.os.listdir", return_value=[]):
-                    from src.vault_monitor import VaultMonitor
+        with patch("markdown_vault.vault_monitor.Gio", mock_gio):
+            with patch("markdown_vault.vault_monitor.os.path.isdir", return_value=True):
+                with patch("markdown_vault.vault_monitor.os.listdir", return_value=[]):
+                    from markdown_vault.vault_monitor import VaultMonitor
                     monitor = VaultMonitor()
                     monitor.set_vaults(["/tmp/vault1", "/tmp/vault2"])
 
@@ -123,10 +123,10 @@ class TestVaultMonitorSetVaults(unittest.TestCase):
     def test_set_vaults_removes_old_monitors(self):
         """Neue vault paths sollten alte Monitore mit cancel() entfernen."""
         mock_gio = _make_mock_gio()
-        with patch("src.vault_monitor.Gio", mock_gio):
-            with patch("src.vault_monitor.os.path.isdir", return_value=True):
-                with patch("src.vault_monitor.os.listdir", return_value=[]):
-                    from src.vault_monitor import VaultMonitor
+        with patch("markdown_vault.vault_monitor.Gio", mock_gio):
+            with patch("markdown_vault.vault_monitor.os.path.isdir", return_value=True):
+                with patch("markdown_vault.vault_monitor.os.listdir", return_value=[]):
+                    from markdown_vault.vault_monitor import VaultMonitor
                     monitor = VaultMonitor()
                     monitor.set_vaults(["/tmp/vault1"])
                     old_monitor = monitor._monitors["/tmp/vault1"]
@@ -141,10 +141,10 @@ class TestVaultMonitorSetVaults(unittest.TestCase):
     def test_set_vaults_clears_all_monitors(self):
         """set_vaults([]) sollte alle Monitore entfernen."""
         mock_gio = _make_mock_gio()
-        with patch("src.vault_monitor.Gio", mock_gio):
-            with patch("src.vault_monitor.os.path.isdir", return_value=True):
-                with patch("src.vault_monitor.os.listdir", return_value=[]):
-                    from src.vault_monitor import VaultMonitor
+        with patch("markdown_vault.vault_monitor.Gio", mock_gio):
+            with patch("markdown_vault.vault_monitor.os.path.isdir", return_value=True):
+                with patch("markdown_vault.vault_monitor.os.listdir", return_value=[]):
+                    from markdown_vault.vault_monitor import VaultMonitor
                     monitor = VaultMonitor()
                     monitor.set_vaults(["/tmp/vault1", "/tmp/vault2"])
                     monitors_before = dict(monitor._monitors)
@@ -159,10 +159,10 @@ class TestVaultMonitorSetVaults(unittest.TestCase):
     def test_set_vaults_stores_paths(self):
         """set_vaults sollte _vault_paths speichern."""
         mock_gio = _make_mock_gio()
-        with patch("src.vault_monitor.Gio", mock_gio):
-            with patch("src.vault_monitor.os.path.isdir", return_value=True):
-                with patch("src.vault_monitor.os.listdir", return_value=[]):
-                    from src.vault_monitor import VaultMonitor
+        with patch("markdown_vault.vault_monitor.Gio", mock_gio):
+            with patch("markdown_vault.vault_monitor.os.path.isdir", return_value=True):
+                with patch("markdown_vault.vault_monitor.os.listdir", return_value=[]):
+                    from markdown_vault.vault_monitor import VaultMonitor
                     monitor = VaultMonitor()
                     monitor.set_vaults(["/tmp/a", "/tmp/b"])
                     self.assertEqual(monitor._vault_paths, ["/tmp/a", "/tmp/b"])
@@ -170,10 +170,10 @@ class TestVaultMonitorSetVaults(unittest.TestCase):
     def test_set_vaults_noop_same_paths(self):
         """Selbe vault_paths sollten keine neuen Monitore erstellen."""
         mock_gio = _make_mock_gio()
-        with patch("src.vault_monitor.Gio", mock_gio):
-            with patch("src.vault_monitor.os.path.isdir", return_value=True):
-                with patch("src.vault_monitor.os.listdir", return_value=[]):
-                    from src.vault_monitor import VaultMonitor
+        with patch("markdown_vault.vault_monitor.Gio", mock_gio):
+            with patch("markdown_vault.vault_monitor.os.path.isdir", return_value=True):
+                with patch("markdown_vault.vault_monitor.os.listdir", return_value=[]):
+                    from markdown_vault.vault_monitor import VaultMonitor
                     monitor = VaultMonitor()
                     monitor.set_vaults(["/tmp/vault1"])
                     call_count_after_first = mock_gio.File.new_for_path.call_count
@@ -187,9 +187,9 @@ class TestVaultMonitorSetVaults(unittest.TestCase):
     def test_set_vaults_nonexistent_path_no_monitor(self):
         """Non-existent path sollte keinen Monitor erstellen und nicht crashen."""
         mock_gio = _make_mock_gio()
-        with patch("src.vault_monitor.Gio", mock_gio):
-            with patch("src.vault_monitor.os.path.isdir", return_value=False):
-                from src.vault_monitor import VaultMonitor
+        with patch("markdown_vault.vault_monitor.Gio", mock_gio):
+            with patch("markdown_vault.vault_monitor.os.path.isdir", return_value=False):
+                from markdown_vault.vault_monitor import VaultMonitor
                 monitor = VaultMonitor()
                 # Sollte nicht crashen und keinen Monitor erstellen
                 monitor.set_vaults(["/nonexistent/xyz/path"])
@@ -200,12 +200,12 @@ class TestVaultMonitorSetVaults(unittest.TestCase):
     def test_set_vaults_mixed_existing_and_nonexistent(self):
         """Gemischte Pfade: existierende Monitore, nicht-existierende ignoriert."""
         mock_gio = _make_mock_gio()
-        with patch("src.vault_monitor.Gio", mock_gio):
+        with patch("markdown_vault.vault_monitor.Gio", mock_gio):
             def isdir_side_effect(path):
                 return path == "/tmp/existing"
-            with patch("src.vault_monitor.os.path.isdir", side_effect=isdir_side_effect):
-                with patch("src.vault_monitor.os.listdir", return_value=[]):
-                    from src.vault_monitor import VaultMonitor
+            with patch("markdown_vault.vault_monitor.os.path.isdir", side_effect=isdir_side_effect):
+                with patch("markdown_vault.vault_monitor.os.listdir", return_value=[]):
+                    from markdown_vault.vault_monitor import VaultMonitor
                     monitor = VaultMonitor()
                     monitor.set_vaults(["/tmp/existing", "/nonexistent/path"])
 
@@ -219,8 +219,8 @@ class TestVaultMonitorSubdirectories(unittest.TestCase):
     def _create_monitor(self, vault_path="/tmp/vault"):
         mock_gio = _make_mock_gio()
         mock_glib = _make_mock_glib()
-        with patch("src.vault_monitor.os.path.isdir", return_value=True):
-            with patch("src.vault_monitor.os.listdir", return_value=[]):
+        with patch("markdown_vault.vault_monitor.os.path.isdir", return_value=True):
+            with patch("markdown_vault.vault_monitor.os.listdir", return_value=[]):
                 mod = _load_monitor(mock_gio, mock_glib)
                 monitor = mod.VaultMonitor()
                 monitor.set_vaults([vault_path])
@@ -247,8 +247,8 @@ class TestVaultMonitorSubdirectories(unittest.TestCase):
                 return ["deep.md"]
             return []
 
-        with patch("src.vault_monitor.os.path.isdir", side_effect=isdir_side_effect):
-            with patch("src.vault_monitor.os.listdir", side_effect=listdir_side_effect):
+        with patch("markdown_vault.vault_monitor.os.path.isdir", side_effect=isdir_side_effect):
+            with patch("markdown_vault.vault_monitor.os.listdir", side_effect=listdir_side_effect):
                 mod = _load_monitor(mock_gio, mock_glib)
                 monitor = mod.VaultMonitor()
                 monitor.set_vaults(["/tmp/vault"])
@@ -280,8 +280,8 @@ class TestVaultMonitorSubdirectories(unittest.TestCase):
                 return []
             return []
 
-        with patch("src.vault_monitor.os.path.isdir", side_effect=isdir_side_effect):
-            with patch("src.vault_monitor.os.listdir", side_effect=listdir_side_effect):
+        with patch("markdown_vault.vault_monitor.os.path.isdir", side_effect=isdir_side_effect):
+            with patch("markdown_vault.vault_monitor.os.listdir", side_effect=listdir_side_effect):
                 mod = _load_monitor(mock_gio, mock_glib)
                 monitor = mod.VaultMonitor()
                 monitor.set_vaults(["/tmp/vault"])
@@ -299,8 +299,8 @@ class TestVaultMonitorSubdirectories(unittest.TestCase):
         mock_gio = _make_mock_gio()
         mock_glib = _make_mock_glib()
 
-        with patch("src.vault_monitor.os.path.isdir", return_value=True):
-            with patch("src.vault_monitor.os.listdir", return_value=[]):
+        with patch("markdown_vault.vault_monitor.os.path.isdir", return_value=True):
+            with patch("markdown_vault.vault_monitor.os.listdir", return_value=[]):
                 mod = _load_monitor(mock_gio, mock_glib)
                 monitor = mod.VaultMonitor()
                 monitor.set_vaults(["/tmp/vault"])
@@ -327,8 +327,8 @@ class TestSkipNextEvent(unittest.TestCase):
     def _create_monitor(self):
         mock_gio = _make_mock_gio()
         mock_glib = _make_mock_glib()
-        with patch("src.vault_monitor.os.path.isdir", return_value=True):
-            with patch("src.vault_monitor.os.listdir", return_value=[]):
+        with patch("markdown_vault.vault_monitor.os.path.isdir", return_value=True):
+            with patch("markdown_vault.vault_monitor.os.listdir", return_value=[]):
                 mod = _load_monitor(mock_gio, mock_glib)
                 monitor = mod.VaultMonitor()
                 monitor.set_vaults(["/tmp/vault"])
@@ -373,8 +373,8 @@ class TestDecrementSkip(unittest.TestCase):
     def _create_monitor(self):
         mock_gio = _make_mock_gio()
         mock_glib = _make_mock_glib()
-        with patch("src.vault_monitor.os.path.isdir", return_value=True):
-            with patch("src.vault_monitor.os.listdir", return_value=[]):
+        with patch("markdown_vault.vault_monitor.os.path.isdir", return_value=True):
+            with patch("markdown_vault.vault_monitor.os.listdir", return_value=[]):
                 mod = _load_monitor(mock_gio, mock_glib)
                 monitor = mod.VaultMonitor()
                 monitor.set_vaults(["/tmp/vault"])
@@ -426,8 +426,8 @@ class TestEmitEventSkipLogic(unittest.TestCase):
     def _create_monitor(self):
         mock_gio = _make_mock_gio()
         mock_glib = _make_mock_glib()
-        with patch("src.vault_monitor.os.path.isdir", return_value=True):
-            with patch("src.vault_monitor.os.listdir", return_value=[]):
+        with patch("markdown_vault.vault_monitor.os.path.isdir", return_value=True):
+            with patch("markdown_vault.vault_monitor.os.listdir", return_value=[]):
                 mod = _load_monitor(mock_gio, mock_glib)
                 monitor = mod.VaultMonitor()
                 monitor.set_vaults(["/tmp/vault"])
@@ -520,8 +520,8 @@ class TestEmitExistingEntries(unittest.TestCase):
     def _create_monitor(self):
         mock_gio = _make_mock_gio()
         mock_glib = _make_mock_glib()
-        with patch("src.vault_monitor.os.path.isdir", return_value=True):
-            with patch("src.vault_monitor.os.listdir", return_value=[]):
+        with patch("markdown_vault.vault_monitor.os.path.isdir", return_value=True):
+            with patch("markdown_vault.vault_monitor.os.listdir", return_value=[]):
                 mod = _load_monitor(mock_gio, mock_glib)
                 monitor = mod.VaultMonitor()
                 monitor.set_vaults(["/tmp/vault"])
@@ -532,7 +532,7 @@ class TestEmitExistingEntries(unittest.TestCase):
         monitor = self._create_monitor()
         received = []
         monitor.connect("external-file-created", lambda *args: received.append(args))
-        with patch("src.vault_monitor.os.listdir", return_value=[]):
+        with patch("markdown_vault.vault_monitor.os.listdir", return_value=[]):
             monitor._emit_existing_entries("/tmp/vault", "/tmp/vault/sub")
         dir_events = [r for r in received if r[1] == "/tmp/vault/sub"]
         self.assertEqual(len(dir_events), 1)
@@ -546,8 +546,8 @@ class TestEmitExistingEntries(unittest.TestCase):
         def listdir_side_effect(path):
             return ["note.md", "readme.txt"]
 
-        with patch("src.vault_monitor.os.listdir", side_effect=listdir_side_effect):
-            with patch("src.vault_monitor.os.path.isdir", return_value=False):
+        with patch("markdown_vault.vault_monitor.os.listdir", side_effect=listdir_side_effect):
+            with patch("markdown_vault.vault_monitor.os.path.isdir", return_value=False):
                 monitor._emit_existing_entries("/tmp/vault", "/tmp/vault/sub")
 
         md_events = [r for r in received if r[1] == "/tmp/vault/sub/note.md"]
@@ -567,8 +567,8 @@ class TestEmitExistingEntries(unittest.TestCase):
         def isdir_side_effect(path):
             return path == "/tmp/vault/sub/.git"
 
-        with patch("src.vault_monitor.os.listdir", side_effect=listdir_side_effect):
-            with patch("src.vault_monitor.os.path.isdir", side_effect=isdir_side_effect):
+        with patch("markdown_vault.vault_monitor.os.listdir", side_effect=listdir_side_effect):
+            with patch("markdown_vault.vault_monitor.os.path.isdir", side_effect=isdir_side_effect):
                 monitor._emit_existing_entries("/tmp/vault", "/tmp/vault/sub")
 
         hidden_events = [r for r in received if ".hidden" in str(r) or ".git" in str(r)]
@@ -590,9 +590,9 @@ class TestEmitExistingEntries(unittest.TestCase):
         def isdir_side_effect(path):
             return path == "/tmp/vault/sub/deep"
 
-        with patch("src.vault_monitor.os.listdir", side_effect=listdir_side_effect):
-            with patch("src.vault_monitor.os.path.isdir", side_effect=isdir_side_effect):
-                with patch("src.vault_monitor.Gio.File.new_for_path") as mock_file:
+        with patch("markdown_vault.vault_monitor.os.listdir", side_effect=listdir_side_effect):
+            with patch("markdown_vault.vault_monitor.os.path.isdir", side_effect=isdir_side_effect):
+                with patch("markdown_vault.vault_monitor.Gio.File.new_for_path") as mock_file:
                     mock_file.return_value.monitor_directory.return_value = MagicMock()
                     monitor._emit_existing_entries("/tmp/vault", "/tmp/vault/sub")
 
@@ -619,8 +619,8 @@ class TestEmitExistingEntries(unittest.TestCase):
         def isdir_side_effect(path):
             return path == "/tmp/vault/sub/child"
 
-        with patch("src.vault_monitor.os.listdir", side_effect=listdir_side_effect):
-            with patch("src.vault_monitor.os.path.isdir", side_effect=isdir_side_effect):
+        with patch("markdown_vault.vault_monitor.os.listdir", side_effect=listdir_side_effect):
+            with patch("markdown_vault.vault_monitor.os.path.isdir", side_effect=isdir_side_effect):
                 monitor._emit_existing_entries("/tmp/vault", "/tmp/vault/sub")
 
         self.assertIn("/tmp/vault/sub/child", calls)
@@ -636,7 +636,7 @@ class TestEmitExistingEntries(unittest.TestCase):
     def test_oserror_logged_not_crashed(self):
         """OSError bei os.listdir → geloggt, kein Crash."""
         monitor = self._create_monitor()
-        with patch("src.vault_monitor.os.listdir", side_effect=OSError("perm")):
+        with patch("markdown_vault.vault_monitor.os.listdir", side_effect=OSError("perm")):
             # Sollte nicht crashen
             monitor._emit_existing_entries("/tmp/vault", "/tmp/vault/sub")
 
@@ -647,8 +647,8 @@ class TestDisconnect(unittest.TestCase):
     def _create_monitor(self):
         mock_gio = _make_mock_gio()
         mock_glib = _make_mock_glib()
-        with patch("src.vault_monitor.os.path.isdir", return_value=True):
-            with patch("src.vault_monitor.os.listdir", return_value=[]):
+        with patch("markdown_vault.vault_monitor.os.path.isdir", return_value=True):
+            with patch("markdown_vault.vault_monitor.os.listdir", return_value=[]):
                 mod = _load_monitor(mock_gio, mock_glib)
                 monitor = mod.VaultMonitor()
                 monitor.set_vaults(["/tmp/vault"])
@@ -695,8 +695,8 @@ class TestCleanup(unittest.TestCase):
         """cleanup entfernt alle Monitore."""
         mock_gio = _make_mock_gio()
         mock_glib = _make_mock_glib()
-        with patch("src.vault_monitor.os.path.isdir", return_value=True):
-            with patch("src.vault_monitor.os.listdir", return_value=[]):
+        with patch("markdown_vault.vault_monitor.os.path.isdir", return_value=True):
+            with patch("markdown_vault.vault_monitor.os.listdir", return_value=[]):
                 mod = _load_monitor(mock_gio, mock_glib)
                 monitor = mod.VaultMonitor()
                 monitor.set_vaults(["/tmp/vault"])
@@ -708,8 +708,8 @@ class TestCleanup(unittest.TestCase):
         """cleanup entfernt alle Debounce-Timer."""
         mock_gio = _make_mock_gio()
         mock_glib = _make_mock_glib()
-        with patch("src.vault_monitor.os.path.isdir", return_value=True):
-            with patch("src.vault_monitor.os.listdir", return_value=[]):
+        with patch("markdown_vault.vault_monitor.os.path.isdir", return_value=True):
+            with patch("markdown_vault.vault_monitor.os.listdir", return_value=[]):
                 mod = _load_monitor(mock_gio, mock_glib)
                 monitor = mod.VaultMonitor()
                 monitor._debounce_timers["test"] = 123

@@ -8,24 +8,24 @@ class TestPreferencesModuleStructure(unittest.TestCase):
     """Verify the preferences module exports the expected class."""
 
     def test_module_has_preferences_dialog(self):
-        src = Path(__file__).resolve().parent.parent / "src" / "preferences.py"
+        src = Path(__file__).resolve().parent.parent / "src" / "lib" / "python3.13" / "site-packages" / "markdown_vault" / "preferences.py"
         source = src.read_text(encoding="utf-8")
         self.assertIn("class PreferencesDialog", source)
 
     def test_dialog_has_settings_changed_signal(self):
-        src = Path(__file__).resolve().parent.parent / "src" / "preferences.py"
+        src = Path(__file__).resolve().parent.parent / "src" / "lib" / "python3.13" / "site-packages" / "markdown_vault" / "preferences.py"
         source = src.read_text(encoding="utf-8")
         self.assertIn("settings-changed", source)
 
     def test_dialog_has_all_pages(self):
-        src = Path(__file__).resolve().parent.parent / "src" / "preferences.py"
+        src = Path(__file__).resolve().parent.parent / "src" / "lib" / "python3.13" / "site-packages" / "markdown_vault" / "preferences.py"
         source = src.read_text(encoding="utf-8")
         self.assertIn("General", source)
         self.assertIn("Editor", source)
         self.assertIn("Preview", source)
 
     def test_dialog_has_all_setting_rows(self):
-        src = Path(__file__).resolve().parent.parent / "src" / "preferences.py"
+        src = Path(__file__).resolve().parent.parent / "src" / "lib" / "python3.13" / "site-packages" / "markdown_vault" / "preferences.py"
         source = src.read_text(encoding="utf-8")
         self.assertIn("autosave_interval", source)
         self.assertIn("default_view_mode", source)
@@ -35,7 +35,7 @@ class TestPreferencesModuleStructure(unittest.TestCase):
         self.assertIn("preview_zoom", source)
 
     def test_dialog_persists_settings(self):
-        src = Path(__file__).resolve().parent.parent / "src" / "preferences.py"
+        src = Path(__file__).resolve().parent.parent / "src" / "lib" / "python3.13" / "site-packages" / "markdown_vault" / "preferences.py"
         source = src.read_text(encoding="utf-8")
         self.assertIn("save_settings", source)
         self.assertIn("emit", source)

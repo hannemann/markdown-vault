@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from src.tags import parse_wikilinks, resolve_link, find_backlinks
+from markdown_vault.tags import parse_wikilinks, resolve_link, find_backlinks
 
 
 class TestParseWikilinks(unittest.TestCase):

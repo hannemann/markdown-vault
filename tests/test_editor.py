@@ -8,7 +8,7 @@ import unittest
 from pathlib import Path
 
 
-_SRC = Path(__file__).resolve().parent.parent / "src" / "editor.py"
+_SRC = Path(__file__).resolve().parent.parent / "src" / "lib" / "python3.13" / "site-packages" / "markdown_vault" / "editor.py"
 
 
 class TestEditorModuleStructure(unittest.TestCase):

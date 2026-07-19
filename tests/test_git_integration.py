@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from src.git_integration import (
+from markdown_vault.git_integration import (
     is_git_repo,
     get_status,
     get_diff,

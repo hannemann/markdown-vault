@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from datetime import datetime
 
-from src.search_logic import extract_headings, compute_file_details
+from markdown_vault.search_logic import extract_headings, compute_file_details
 
 
 class TestExtractHeadings(unittest.TestCase):

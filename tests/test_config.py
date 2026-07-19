@@ -8,7 +8,7 @@ from pathlib import Path
 
 # Patch CONFIG_DIR / CONFIG_FILE before importing the module under test
 # so that no real user config is touched.
-import src.config as _cfg
+import markdown_vault.config as _cfg
 
 
 class _TempConfigMixin:

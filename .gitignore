@@ -5,9 +5,9 @@ repo/
 *.flatpak
 
 # Wheel files (downloaded on demand)
-data/*.whl
-data/*.tar.gz
-data/wheels/
+src/share/markdown-vault/*.whl
+src/share/markdown-vault/*.tar.gz
+src/share/markdown-vault/wheels/
 
 # Generated files
 *.pyc

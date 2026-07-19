@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from src.backlink_index import BacklinkIndex
+from markdown_vault.backlink_index import BacklinkIndex
 
 
 class TestBacklinkIndexBuild(unittest.TestCase):

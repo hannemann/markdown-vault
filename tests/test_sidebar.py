@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 
 from gi.repository import GLib
-from src.sidebar import Sidebar
+from markdown_vault.sidebar import Sidebar
 
 
 class TestSidebarOutline(unittest.TestCase):

@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from src.preview import (
+from markdown_vault.preview import (
     Preview,
     HTML_TEMPLATE,
     MARKDOWN_EXTENSIONS,
