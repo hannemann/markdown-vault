@@ -90,11 +90,37 @@ sudo pacman -S \
   gobject-introspection
 ```
 
+### Ubuntu 24.04: AppArmor profile
+
+Ubuntu 24.04 restricts unprivileged user namespaces
+(`kernel.apparmor_restrict_unprivileged_userns=1`). WebKitGTK needs one for the
+`bwrap` sandbox it always sets up, so without a profile the application aborts
+as soon as a Markdown preview is created:
+
+```
+bwrap: setting up uid map: Permission denied
+ERROR: Failed to fully launch dbus-proxy: Child process exited with code 1
+```
+
+Install the shipped profile, which grants the launcher `userns` and nothing else:
+
+```sh
+sudo install -m 644 packaging/apparmor/markdown-vault /etc/apparmor.d/markdown-vault
+sudo apparmor_parser -r --skip-cache /etc/apparmor.d/markdown-vault
+```
+
+It attaches to `~/.local/bin/markdown-vault`. For a system-wide install, change
+the path in the profile to `/usr/bin/markdown-vault`.
+
 ## Run from source
 
 ```sh
-python3 -m src.main
+PYTHONPATH=src/lib/python3.13/site-packages python3 -m markdown_vault.main
 ```
+
+Use an interpreter that provides PyGObject. A `python3` earlier in `PATH`
+(Homebrew, pyenv, a virtualenv) usually does not, in which case call
+`/usr/bin/python3` explicitly.
 
 ## Vault Configuration
 
@@ -143,7 +169,7 @@ meson install -C builddir
 ### Tests
 
 ```sh
-python3 -m unittest discover -s tests -v
+make test
 ```
 
 ### Code guidelines

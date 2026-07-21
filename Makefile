@@ -9,6 +9,8 @@ REPO_DIR := repo
 BUNDLE_FILE := markdown-vault.flatpak
 APP_ID := de.hannemann.markdown-vault
 PYTHONPATH_DIR := src/lib/python3.13/site-packages
+# A python3 earlier in PATH (e.g. Homebrew) usually lacks PyGObject.
+PYTHON := $(shell python3 -c 'import gi' 2>/dev/null && echo python3 || echo /usr/bin/python3)
 
 download-wheels:
 	@echo "=> Downloading Python wheels from PyPI..."
@@ -77,7 +79,7 @@ import pymdownx; print('pymdownx: OK')"
 
 test:
 	@echo "=> Running tests..."
-	PYTHONPATH=$(PYTHONPATH_DIR) python3 -m unittest discover -s tests -v
+	PYTHONPATH=$(PYTHONPATH_DIR) $(PYTHON) -m unittest discover -s tests -v
 
 clean-build:
 	@echo "=> Removing build directory..."

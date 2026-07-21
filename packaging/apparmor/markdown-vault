@@ -1,0 +1,13 @@
+abi <abi/4.0>,
+include <tunables/global>
+
+# WebKitGTK requires an unprivileged user namespace for its bwrap sandbox.
+# Ubuntu 24.04 restricts those by default, which aborts the app as soon as a
+# preview WebView is created. Like the profiles Ubuntu ships for epiphany,
+# wike and foliate, this one only names the application and grants it userns;
+# it confines nothing.
+profile markdown-vault @{HOME}/.local/bin/markdown-vault flags=(unconfined) {
+  userns,
+
+  include if exists <local/markdown-vault>
+}

@@ -10,6 +10,19 @@ project(
 
 i18n = import('i18n')
 gnome = import('gnome')
+python = import('python')
+
+# The application needs an interpreter with PyGObject. A python3 earlier in PATH
+# (e.g. Homebrew) usually lacks it, so fall back to the distribution one.
+py = python.find_installation('python3', modules: ['gi'], required: false)
+if not py.found()
+  py = python.find_installation('/usr/bin/python3', modules: ['gi'])
+endif
+
+# Modules are installed into a private directory instead of the interpreter's
+# site-packages, which may live outside the install prefix.
+pkgdatadir = get_option('prefix') / get_option('datadir') / 'markdown-vault'
+pythondir = pkgdatadir / 'python'
 
 subdir('src/bin')
 subdir('src/lib/python3.13/site-packages')

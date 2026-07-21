@@ -58,7 +58,8 @@ Markdown Vault — a GNOME desktop app for editing and previewing Markdown files
 
 ```
 src/
-  bin/markdown-vault          — launcher script (shell wrapper, python3 -m markdown_vault.main)
+  bin/markdown-vault.in       — launcher template; Meson substitutes the interpreter
+                                and PYTHONPATH, then installs it as bin/markdown-vault
   lib/python3.13/site-packages/markdown_vault/
     __init__.py               — package marker
     __main__.py               — entry point (python3 -m markdown_vault)
@@ -103,7 +104,9 @@ tests/                   — unit tests (unittest)
 
 **Installation paths:**
 - **Binaries:** `~/.local/bin/` (user) or `/usr/bin/` (system)
-- **Python code:** `~/.local/lib/python3.13/site-packages/markdown_vault/` or `/usr/lib/python3.X/site-packages/markdown_vault/`
+- **Python code:** `<datadir>/markdown-vault/python/markdown_vault/` — a private directory, not the
+  interpreter's `site-packages`, which may sit outside the install prefix. The generated launcher puts
+  it on `PYTHONPATH`.
 - **Data files:** `~/.local/share/markdown-vault/` or `/usr/share/markdown-vault/`
 - **Config:** `~/.config/markdown-vault/` (identical for all installations)
 - **State/Logs:** `~/.local/state/markdown-vault/` (identical for all installations)
@@ -121,7 +124,9 @@ killall markdown-vault
 killall -9 markdown-vault
 
 # Run local tests (from project root)
-PYTHONPATH=src/lib/python3.13/site-packages python3 -m unittest discover -s tests -v
+# Note: use an interpreter that has PyGObject — a python3 earlier in PATH
+# (e.g. Homebrew) usually does not.
+PYTHONPATH=src/lib/python3.13/site-packages /usr/bin/python3 -m unittest discover -s tests -v
 
 # Or with make
 make test
@@ -175,6 +180,8 @@ python3 -m unittest discover -s tests -v
 - Images in Markdown: support `![alt](path)` with both relative and absolute paths.
 - **Test-driven development**: Always write failing tests first, then implement the fix. Run tests to verify they fail, then implement the minimal code to make them pass. Never commit code without corresponding tests.
 - **New Python modules**: When creating a new `.py` file in `src/lib/python3.13/site-packages/markdown_vault/`, it MUST be added to the `py_sources` list in `src/lib/python3.13/site-packages/markdown_vault/meson.build` (alphabetically sorted). Meson has no built-in `glob()` — the list is manually maintained. Forgetting to add it means the file will not be installed and the app will crash with `ModuleNotFoundError`.
+- **GTK CSS in `css/gtk.css`**: Target GTK 4.14 / libadwaita 1.5. `var(--name)` and `color-mix()` need GTK 4.16+ and are silently dropped with "Expected a valid color" parser warnings. Use `@accent_bg_color` and `alpha(@color, 0.3)` instead. This does not apply to `css/style.css`, which is rendered by WebKit.
+- **WebKit needs an unprivileged user namespace**: WebKitGTK 2.46+ always sets up a `bwrap` sandbox and aborts the whole process if it cannot (`Failed to fully launch dbus-proxy`). On Ubuntu 24.04 this requires the AppArmor profile in `packaging/apparmor/` — see README. There is no API or env var to disable the sandbox.
 - **Test organization**: Add tests to existing test files grouped by topic (e.g. vault_monitor events → `test_vault_monitor_events.py`). Do not create new test files with arbitrary context names — distribute into the files that already cover the module under test. When in doubt, ask.
 - **Error handling**: Never use bare `except Exception: pass` — always log the exception at a minimum. Use `logging.warning()` or `logging.error()` with exc_info=True so errors are visible and debuggable.
 - **Logging**: Every module MUST use the standard `logging` module. Add `import logging` and `logger = logging.getLogger(__name__)` at the top of each file. Use `logger.debug()`/`logger.info()`/`logger.warning()`/`logger.error()` — NEVER use `print()` or any other ad-hoc output for diagnostics. Every `except` block must log at minimum with `exc_info=True`. Log level is configurable via `settings.loglevel` (debug/info/warning/error), effective after restart.
