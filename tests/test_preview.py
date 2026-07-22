@@ -209,6 +209,31 @@ class TestMarkdownConversion(unittest.TestCase):
         result = md.markdown(md_text, extensions=MARKDOWN_EXTENSIONS)
         self.assertIn("checkbox", result)
 
+    def test_checkbox_data_index_on_input(self):
+        md_text = "- [ ] first checkbox\n- [x] second checkbox\n- [ ] third checkbox"
+        result = md.markdown(md_text, extensions=MARKDOWN_EXTENSIONS)
+        self.assertIn('data-checkbox-index="0"', result)
+        self.assertIn('data-checkbox-index="1"', result)
+        self.assertIn('data-checkbox-index="2"', result)
+        # No marker spans, no data-line attributes
+        self.assertNotIn('chk-line-marker', result)
+        self.assertNotIn('data-line', result)
+
+    def test_checkbox_index_order_matches_source(self):
+        md_text = "- [ ] unchecked\n  - [ ] nested\n- [x] checked"
+        result = md.markdown(md_text, extensions=MARKDOWN_EXTENSIONS)
+        first = result.index('data-checkbox-index="0"')
+        nested = result.index('data-checkbox-index="1"')
+        second = result.index('data-checkbox-index="2"')
+        self.assertLess(first, nested)
+        self.assertLess(nested, second)
+
+    def test_checkboxes_not_disabled(self):
+        md_text = "- [ ] unchecked\n- [x] checked"
+        result = md.markdown(md_text, extensions=MARKDOWN_EXTENSIONS)
+        self.assertNotIn('disabled', result)
+        self.assertIn('type="checkbox"', result)
+
     def test_converts_fenced_code_with_lang(self):
         md_text = "```python\nprint('hi')\n```"
         result = md.markdown(
