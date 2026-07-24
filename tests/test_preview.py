@@ -25,7 +25,12 @@ _TEMPLATE_KWARGS = dict(
     dim_color="#77767b",
     card_bg_color="#f0f0f0",
     borders_color="#cdc7c2",
+    code_fg_color="#c64600",
 )
+
+_PKG_DIR = Path(__file__).resolve().parent.parent / "src" / "lib" / "python3.13" / "site-packages" / "markdown_vault"
+_PKG_CSS = _PKG_DIR / "css" / "style.css"
+_SHARE_CSS = Path(__file__).resolve().parent.parent / "src" / "share" / "markdown-vault" / "css" / "style.css"
 
 
 class TestHtmlTemplate(unittest.TestCase):
@@ -47,6 +52,67 @@ class TestHtmlTemplate(unittest.TestCase):
         self.assertIn(":root", rendered)
         self.assertIn("--accent:", rendered)
         self.assertIn("--borders:", rendered)
+
+    def test_template_exposes_code_foreground(self):
+        rendered = HTML_TEMPLATE.format(**_TEMPLATE_KWARGS)
+        self.assertIn("--code-fg: #c64600", rendered)
+
+
+class TestStylesheet(unittest.TestCase):
+    """Verify the WebView stylesheet shipped with the package."""
+
+    def setUp(self):
+        self.css = _PKG_CSS.read_text(encoding="utf-8")
+
+    def test_no_reference_to_undefined_card_bg_variable(self):
+        # preview.py defines --card-bg; --card_bg_color was never defined and
+        # silently dropped every background using it.
+        self.assertNotIn("--card_bg_color", self.css)
+
+    def test_inline_code_uses_code_foreground_variable(self):
+        self.assertRegex(
+            self.css,
+            r"\.markdown-body code \{[^}]*color: var\(--code-fg\)",
+        )
+
+    def test_inline_code_is_not_coloured_with_the_link_accent(self):
+        # A second, more specific rule used to paint inline code in
+        # var(--accent) — the same blue as links.
+        self.assertNotIn(":not(pre) > code", self.css)
+
+    def test_code_blocks_keep_default_foreground(self):
+        self.assertRegex(
+            self.css,
+            r"\.markdown-body pre code \{[^}]*color: var\(--fg\)",
+        )
+
+    def test_share_copy_is_in_sync(self):
+        self.assertEqual(self.css, _SHARE_CSS.read_text(encoding="utf-8"))
+
+
+class TestThemeColors(unittest.TestCase):
+    """The preview must publish a code colour that adapts to light/dark."""
+
+    def setUp(self):
+        self.source = (_PKG_DIR / "preview.py").read_text(encoding="utf-8")
+
+    def test_theme_colors_include_code_foreground(self):
+        self.assertIn('"code_fg_color"', self.source)
+
+    def test_code_foreground_has_light_and_dark_variant(self):
+        self.assertIn("#FFBE6F", self.source)
+        self.assertIn("#C64600", self.source)
+
+    def test_theme_update_pushes_code_foreground(self):
+        self.assertIn('setProperty("--code-fg"', self.source)
+
+    def test_links_use_the_standalone_accent_with_bg_fallback(self):
+        # accent_bg_color is meant for filled widgets and is too dark for text
+        # on a dark background; accent_color is libadwaita's text variant.
+        self.assertRegex(
+            self.source,
+            r'"accent_color":.*"accent_color",\s*"accent_bg_color"',
+        )
 
 
 class TestHeadingToSlug(unittest.TestCase):

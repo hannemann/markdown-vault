@@ -35,7 +35,8 @@ body {
 }
 
 .markdown-body code {
-    background: var(--card_bg_color);
+    background: var(--card-bg);
+    color: var(--code-fg);
     padding: 0.2em 0.4em;
     border-radius: 6px;
     font-size: 85%;
@@ -43,15 +44,18 @@ body {
 }
 
 .markdown-body pre {
-    background: var(--card_bg_color);
+    background: var(--card-bg);
     padding: 16px;
     border-radius: 6px;
     overflow-x: auto;
     line-height: 1.45;
 }
 
+/* Code blocks keep the body colour — the inline-code highlight is only meant
+   to make short `code spans` stand out inside running text. */
 .markdown-body pre code {
     background: none;
+    color: var(--fg);
     padding: 0;
     border-radius: 0;
     font-size: 100%;
@@ -102,12 +106,12 @@ body {
 }
 
 .markdown-body table th {
-    background: var(--card_bg_color);
+    background: var(--card-bg);
     font-weight: 600;
 }
 
 .markdown-body table tr:nth-child(even) {
-    background: var(--card_bg_color);
+    background: var(--card-bg);
 }
 
 .markdown-body hr {
@@ -228,15 +232,6 @@ body {
 .markdown-body .codehilite .vg { color: #e5c07b; }                      /* Name.Variable.Global */
 .markdown-body .codehilite .vi { color: #e5c07b; }                      /* Name.Variable.Instance */
 .markdown-body .codehilite .il { color: #d19a66; }                      /* Literal.Number.Integer.Long */
-
-/* Inline code (already styled, but ensure consistency) */
-.markdown-body :not(pre) > code {
-    background: var(--card_bg_color);
-    padding: 0.2em 0.4em;
-    border-radius: 4px;
-    font-size: 0.85em;
-    color: var(--accent);
-}
 
 /* ── MathML ─────────────────────────────────────────────────────── */
 
