@@ -182,6 +182,27 @@ class TestMarkdownConversion(unittest.TestCase):
         )
         self.assertIn("Page", result)
 
+    def test_wikilink_with_alias(self):
+        result = md.markdown(
+            "[[Page|Alias]]",
+            extensions=MARKDOWN_EXTENSIONS,
+            extension_configs=EXTENSION_CONFIGS,
+        )
+        self.assertIn('href="Page"', result)
+        self.assertIn(">Alias<", result)
+        self.assertNotIn("[[", result)
+
+    def test_wikilink_alias_and_plain_mixed(self):
+        result = md.markdown(
+            "[[A|Link zu A]] and [[B]]",
+            extensions=MARKDOWN_EXTENSIONS,
+            extension_configs=EXTENSION_CONFIGS,
+        )
+        self.assertIn('href="A"', result)
+        self.assertIn(">Link zu A<", result)
+        self.assertIn('href="B"', result)
+        self.assertIn(">B<", result)
+
     def test_wikilink_preserves_spaces_no_underscore_no_trailing_slash(self):
         """Wikilinks should generate href with spaces preserved, no underscores, no trailing slash."""
         result = md.markdown(

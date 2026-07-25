@@ -115,13 +115,10 @@ tests/                   — unit tests (unittest)
 
 ```bash
 # Start app (as user would do it)
-gtk-launch de.hannemann.markdown-vault
+gtk-launch de.hannemann.markdown-vault >/dev/null 2>&1 & disown
 
-# Stop app (clean, like X click — session is saved)
-killall markdown-vault
-
-# If app hangs and does not respond to SIGTERM:
-killall -9 markdown-vault
+# Stop app
+kill $(pgrep -f "markdown_vault.main") &
 
 # Run local tests (from project root)
 # Note: use an interpreter that has PyGObject — a python3 earlier in PATH
@@ -212,7 +209,7 @@ python3 -m unittest discover -s tests -v
 - On Flatpak, file access is sandboxed — use `org.freedesktop.portal` for file chooser.
 - GtkSourceView 5 renamed `begin_not_undoable_action` → `begin_irreversible_action`.
 - `editor.file_path` is a `str`, not `Path` — use `Path(editor.file_path).parent` for directory.
-- Kill all existing app instances before starting a new one: Always use `./scripts/test-app.sh` — never manually `pkill` or `killall` (runs in timeout). Duplicate instances cause confusing state.
+- Kill all existing app instances before starting a new one: Always use `kill $(pgrep -f "markdown_vault.main") &` — never manually `killall` (different binary name). Duplicate instances cause confusing state. The `&` is required so the shell doesn't wait for the exit.
 - Shift+Tab generates `Gdk.KEY_ISO_Left_Tab`, not `Gdk.KEY_Tab`. Always check for both keyvals.
 - **Gtk.Stack remove/add destroys WebView DOM**: When a tab is renamed externally, `_on_tab_renamed` removes and re-adds the content stack child. This destroys the WebView's rendered DOM, but `_loaded` and `_last_html_hash` remain stale. Always call `preview.reset()` before `_refresh_preview()` after stack manipulation.
 - **Tab button closures capture file_path**: Close buttons and click gestures in `TabBar._build_tab_widget` must read `_file_path` from the container widget at click time, not capture `file_path` at creation time. After `update_path()`, the old capture points to a dead path.
