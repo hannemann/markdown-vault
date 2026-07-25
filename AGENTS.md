@@ -54,7 +54,7 @@ Markdown Vault — a GNOME desktop app for editing and previewing Markdown files
 - **Rich Markdown (pymdown-extensions)**: strikethrough `~~text~~`, highlight `==text==`, superscript `^sup^`, subscript `~sub~`, task lists `- [ ]`, tasklist `- [x]`, superfences (tabs, line numbers, highlight lines), magic links (auto URLs, @mentions, #issues), keyboard keys `++ctrl+c++`, smart symbols (quotes, dashes, ellipsis), emoji shortcodes `:smile:`, math formulas `$...$`, task lists with checkboxes.
 - **CLI launcher**: `bin/markdown-vault` with shebang; `setproctitle` for correct process name (for `ps`/`killall`).
 
-## Project structure (planned)
+## Project structure
 
 ```
 src/
@@ -113,21 +113,30 @@ tests/                   — unit tests (unittest)
 
 ## Dev commands
 
+**IMPORTANT**
+**ONLY USE THESE COMMANDS TO START, STOP, TEST OR INSTALL THE APP**  
+**NEVER INVENT YOUR OWN COMMANDS TO PERFORM ONE OF THOSE TASKS**
 ```bash
-# Start app (as user would do it)
+# Start app
 gtk-launch de.hannemann.markdown-vault >/dev/null 2>&1 & disown
 
 # Stop app
-kill $(pgrep -f "markdown_vault.main") &
+pkill -f "markdown_vault.main" &
+
+# Terminate app
+pkill -9 -f "markdown_vault.main" &
 
 # Run local tests (from project root)
-# Note: use an interpreter that has PyGObject — a python3 earlier in PATH
-# (e.g. Homebrew) usually does not.
-PYTHONPATH=src/lib/python3.13/site-packages /usr/bin/python3 -m unittest discover -s tests -v
-
-# Or with make
 make test
+
+# Install app
+make install
 ```
+**NEVER use killall python3 — that also kills firewalld and other system Python processes!**
+
+## Test driven development
+
+Always write failing tests first, then implement the fix. Run tests to verify they fail, then implement the minimal code to make them pass. Never commit code without corresponding tests.
 
 ## Testing loop (manual integration tests)
 
@@ -160,45 +169,9 @@ If any exist, warn the user explicitly — changes may be lost during loop reset
 **Note:** For interactions that cannot be automated (tab switches,
 opening files in editor, toggling sidebar etc.) ask the user.
 
-```bash
-# DO NOT use killall python3 — that also kills firewalld and other system Python processes!
-
-# Install dependencies (openSUSE Tumbleweed)
-sudo zypper install python3-gobject python3-gobject-Gdk gtk4-devel gtk4-tools \
-  libadwaita-devel gtksourceview5-devel webkitgtk4-devel \
-  gobject-introspection-devel python3-PyYAML python3-markdown \
-  python313-setproctitle meson gcc
-
-# Install dependencies (Fedora)
-sudo dnf install python3-gobject gtk4-devel libadwaita-devel gtksourceview5-devel \
-  webkit2gtk6.0-devel gobject-introspection-devel python3-markdown \
-  python3-pyyaml python3-setproctitle meson gcc
-
-# Install dependencies (Ubuntu/Debian)
-sudo apt install python3-gi python3-gi-cairo gir1.2-gtk-4.0 libgtk-4-dev \
-  libadwaita-1-dev libwebkitgtk-6.0-dev libgtksourceview-5-dev \
-  libgirepository1.0-dev python3-markdown python3-yaml \
-  python3-setproctitle meson gcc
-
-# Install dependencies (Arch)
-sudo pacman -S python python-gobject gtk4 libadwaita webkitgtk-6.0 \
-  gtksourceview5 python-markdown python-pyyaml python-setproctitle \
-  gobject-introspection meson gcc
-
-# Build with meson
-meson setup builddir
-meson compile -C builddir
-meson install -C builddir
-
-# Flatpak build
-flatpak-builder --user --install --force-clean build-dir de.hannemann.markdown-vault.yml
-
-# Run tests
-python3 -m unittest discover -s tests -v
-```
-
 ## Conventions
 
+- All strings in the code or tests are english (comments etc.)
 - Follow PEP 8, max line length 100.
 - Use `snake_case` for functions/variables, `PascalCase` for classes.
 - All user-facing strings must be translatable via `gettext`.
@@ -206,7 +179,6 @@ python3 -m unittest discover -s tests -v
 - Vault config YAML keys are case-sensitive, paths are absolute.
 - Git features must gracefully handle repos without git initialized.
 - Images in Markdown: support `![alt](path)` with both relative and absolute paths.
-- **Test-driven development**: Always write failing tests first, then implement the fix. Run tests to verify they fail, then implement the minimal code to make them pass. Never commit code without corresponding tests.
 - **New Python modules**: When creating a new `.py` file in `src/lib/python3.13/site-packages/markdown_vault/`, it MUST be added to the `py_sources` list in `src/lib/python3.13/site-packages/markdown_vault/meson.build` (alphabetically sorted). Meson has no built-in `glob()` — the list is manually maintained. Forgetting to add it means the file will not be installed and the app will crash with `ModuleNotFoundError`.
 - **GTK CSS in `css/gtk.css`**: Target GTK 4.14 / libadwaita 1.5. `var(--name)` and `color-mix()` need GTK 4.16+ and are silently dropped with "Expected a valid color" parser warnings. Use `@accent_bg_color` and `alpha(@color, 0.3)` instead. This does not apply to `css/style.css`, which is rendered by WebKit.
 - **WebKit needs an unprivileged user namespace**: WebKitGTK 2.46+ always sets up a `bwrap` sandbox and aborts the whole process if it cannot (`Failed to fully launch dbus-proxy`). On Ubuntu 24.04 this requires the AppArmor profile in `packaging/apparmor/` — see README. There is no API or env var to disable the sandbox.
@@ -247,21 +219,6 @@ python3 -m unittest discover -s tests -v
 - **`mkdir -p` race**: A newly created subdirectory's CREATED event fires before monitors exist for its children. After `_start_monitor()` on a new dir, scan existing children with `os.listdir()` and emit CREATED signals for each so the tree picks them up.
 - **RENAMED convention**: `Gio.FileMonitorEvent.RENAMED` sets `file=old, other=new` — the **opposite** of `MOVED_IN` (`file=new, other=old`). Always swap in `_on_monitor_event` before emitting.
 - **VaultMonitor directory events**: `os.path.isdir()` must check real filesystem, not `_is_valid_md_dir()` which only validates the name. Directories must pass through to signal emission (don't `return` early after managing child monitors).
-
-## Future Features
-
-- **Vault Directory Watching (inotify)** ✓ implemented
-  - `VaultMonitor` in `src/vault_monitor.py`: `Gio.FileMonitor` per vault + recursive subdirs
-  - Events: `created`, `deleted`, `moved`, `renamed`, `changed` (with debounce)
-  - External changes: new files → tree + backlink; deleted files → close tabs; renamed/moved → update paths + tabs; modified → content-changed banner
-  - `mkdir -p` race: after `_start_monitor()`, scan existing children and emit signals
-  - Skip mechanism: ref-counted `_skip_paths` dict for user-initiated operations
-
-- **Integration & E2E Tests**
-  - *Integration*: pytest + Xvfb (headless display) — Widget API tests for tab handling, editor↔preview sync, split view, vault tree expansion, session restore
-  - *E2E*: pytest + dogtail/pyatspi (AT-SPI accessibility) — real keyboard/mouse events via accessibility bus
-  - Goal: cover 80% of critical paths via integration tests, E2E for user flows (new file, open vault, preferences, zoom)
-  - CI: GitHub Actions / GitLab CI with `xvfb-run` and `libatspi2.0-0`
 
 ## Tickets
 
