@@ -505,5 +505,72 @@ class TestVaultTreeDeleteVaultRoot(unittest.TestCase):
         self.assertIn(self.vault_path, paths)
 
 
+class TestVaultTreeContextMenuFallback(unittest.TestCase):
+    """Tests for _show_context_menu fallback when right-clicking empty space."""
+
+    def setUp(self):
+        self._tmpdir = Path(tempfile.mkdtemp())
+        mock_gio = _make_mock_gio()
+        mod = _load_vaulttree(mock_gio)
+        self.VaultTree = mod.VaultTree
+        self.tree = self.VaultTree()
+
+        self.vault_a = str(self._tmpdir / "vault-a")
+        self.vault_b = str(self._tmpdir / "vault-b")
+        Path(self.vault_a).mkdir()
+        Path(self.vault_b).mkdir()
+        (Path(self.vault_a) / "a.md").touch()
+        (Path(self.vault_b) / "b.md").touch()
+        self.tree.set_vaults([self.vault_a, self.vault_b])
+
+    def tearDown(self):
+        shutil.rmtree(self._tmpdir, ignore_errors=True)
+
+    def test_empty_space_uses_active_vault(self):
+        """Right-click on empty space uses _active_vault, not vault_paths[0]."""
+        self.tree._active_vault = self.vault_b
+        self.tree._context_path = None
+        self.tree._context_is_dir = False
+
+        result = self.tree._resolve_context_parent_dir()
+        self.assertEqual(result, self.vault_b)
+
+    def test_empty_space_no_active_vault_uses_first(self):
+        """Without _active_vault, falls back to vault_paths[0]."""
+        self.tree._active_vault = None
+        self.tree._context_path = None
+        self.tree._context_is_dir = False
+
+        result = self.tree._resolve_context_parent_dir()
+        self.assertEqual(result, self.vault_a)
+
+    def test_empty_space_no_vaults_returns_none(self):
+        """No vaults loaded returns None."""
+        self.tree._vault_paths = []
+        self.tree._active_vault = None
+        self.tree._context_path = None
+        self.tree._context_is_dir = False
+
+        result = self.tree._resolve_context_parent_dir()
+        self.assertIsNone(result)
+
+    def test_dir_context_returns_context_path(self):
+        """Right-click on a directory returns that directory."""
+        self.tree._context_path = self.vault_b
+        self.tree._context_is_dir = True
+
+        result = self.tree._resolve_context_parent_dir()
+        self.assertEqual(result, self.vault_b)
+
+    def test_file_context_returns_parent(self):
+        """Right-click on a file returns its parent directory."""
+        file_path = str(Path(self.vault_b) / "b.md")
+        self.tree._context_path = file_path
+        self.tree._context_is_dir = False
+
+        result = self.tree._resolve_context_parent_dir()
+        self.assertEqual(result, self.vault_b)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -262,3 +262,29 @@ python3 -m unittest discover -s tests -v
   - *E2E*: pytest + dogtail/pyatspi (AT-SPI accessibility) — real keyboard/mouse events via accessibility bus
   - Goal: cover 80% of critical paths via integration tests, E2E for user flows (new file, open vault, preferences, zoom)
   - CI: GitHub Actions / GitLab CI with `xvfb-run` and `libatspi2.0-0`
+
+## Tickets
+
+Tickets are stored under `./tmp/Tickets/`, grouped by module:
+
+```
+tmp/Tickets/
+  App_Window/
+    Draft/      ← feature drafts (ignore)
+    Pending/    ← not yet started
+    Progress/   ← in progress
+    Review/     ← ready for review
+    Done/       ← completed tickets
+  VaultTree/
+    Done/
+    Pending/
+    ...
+  Sidebar/
+    ...
+  ...
+```
+
+Status folders: `Draft`, `Pending`, `Progress`, `Review`, `Done`.
+When a ticket-related keyword is mentioned (e.g. "ticket", "bug", "feature"), search under `./tmp/Tickets/` for relevant files first.
+When a ticket changes it's status move it to the appropriate folder.
+If a ticket can be broken down into subtasks, create a folder with the same name. Create tickets for subtasks in that folder.
