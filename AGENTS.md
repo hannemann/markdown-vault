@@ -129,6 +129,36 @@ PYTHONPATH=src/lib/python3.13/site-packages /usr/bin/python3 -m unittest discove
 make test
 ```
 
+## Testing loop (manual integration tests)
+
+For features involving GTK/WebKit/WebViews that cannot be tested
+with `unittest`:
+
+**Preparation (before the first loop):**
+
+**WARNING:** Check with `git status` for uncommitted changes before starting.
+If any exist, warn the user explicitly — changes may be lost during loop resets.
+
+1. Close the app: `kill $(pgrep -f "markdown_vault.main") &`
+2. Delete debug dumps: `rm ~/.local/state/markdown-vault/debug-*`
+3. In `~/.config/markdown-vault/vaults.yaml` set `loglevel: debug`,
+   `debug_active: true` and enable required `debug_dump_*` flags
+
+**Loop:**
+1. **Implement change** + write/update unit tests
+2. **Run unit tests:** `make test`
+3. **Close the app:** `kill $(pgrep -f "markdown_vault.main") &`
+4. **Install:** `make install`
+5. **Start the app:** `gtk-launch de.hannemann.markdown-vault >/dev/null 2>&1 & disown`
+6. **Test the feature manually** (use debug dumps if available)
+7. **Bug found:** implement fix → go to step 2
+8. **Commit** (only on user request)
+9. **Cleanup** (only on user request): remove test files in `tmp/`,
+   delete debug dumps, reset `debug_active` and `loglevel` to originals
+
+**Note:** For interactions that cannot be automated (tab switches,
+opening files in editor, toggling sidebar etc.) ask the user.
+
 ```bash
 # DO NOT use killall python3 — that also kills firewalld and other system Python processes!
 
