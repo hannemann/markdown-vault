@@ -327,5 +327,78 @@ class TestTabBarScrollToActive(unittest.TestCase):
             mock_set.assert_not_called()
 
 
+class TestTabErrorState(unittest.TestCase):
+    """Tests for Tab error attributes and TabBar error methods."""
+
+    def test_tab_has_save_error_default(self):
+        tab = Tab(file_path="/tmp/doc.md", title="doc.md", editor=None, preview=None)
+        self.assertIsNone(tab.save_error)
+        self.assertEqual(tab.save_error_message, "")
+
+    def test_tab_has_warning_and_error_banner(self):
+        tab = Tab(file_path="/tmp/doc.md", title="doc.md", editor=None, preview=None,
+                  warning_banner="w", error_banner="e")
+        self.assertEqual(tab.warning_banner, "w")
+        self.assertEqual(tab.error_banner, "e")
+
+    def test_set_tab_error(self):
+        bar = TabBar()
+        bar.add_tab("/tmp/doc.md", editor=None, preview=None)
+        bar.set_tab_error("/tmp/doc.md", "save_error", "Permission denied")
+        tab = bar.get_tab("/tmp/doc.md")
+        self.assertEqual(tab.save_error, "save_error")
+        self.assertEqual(tab.save_error_message, "Permission denied")
+
+    def test_clear_tab_error(self):
+        bar = TabBar()
+        bar.add_tab("/tmp/doc.md", editor=None, preview=None)
+        bar.set_tab_error("/tmp/doc.md", "save_error", "fail")
+        bar.clear_tab_error("/tmp/doc.md")
+        tab = bar.get_tab("/tmp/doc.md")
+        self.assertIsNone(tab.save_error)
+        self.assertEqual(tab.save_error_message, "")
+
+    def test_set_tab_error_nonexistent_no_crash(self):
+        bar = TabBar()
+        bar.set_tab_error("/tmp/missing.md", "save_error", "nope")
+        # No crash.
+
+    def test_clear_tab_error_nonexistent_no_crash(self):
+        bar = TabBar()
+        bar.clear_tab_error("/tmp/missing.md")
+        # No crash.
+
+
+class TestTabBannerMethods(unittest.TestCase):
+    """Tests for TabBar banner show/hide methods."""
+
+    def test_show_warning_banner_no_crash(self):
+        bar = TabBar()
+        bar.add_tab("/tmp/doc.md", editor=None, preview=None)
+        bar.show_warning_banner("/tmp/doc.md", "Changed externally")
+        tab = bar.get_tab("/tmp/doc.md")
+        # warning_banner was not passed, so None — method should not crash.
+        self.assertIsNone(tab.warning_banner)
+
+    def test_hide_warning_banner_no_crash(self):
+        bar = TabBar()
+        bar.add_tab("/tmp/doc.md", editor=None, preview=None)
+        bar.hide_warning_banner("/tmp/doc.md")
+        # No crash.
+
+    def test_show_error_banner_no_crash(self):
+        bar = TabBar()
+        bar.add_tab("/tmp/doc.md", editor=None, preview=None)
+        bar.show_error_banner("/tmp/doc.md", "Save failed")
+        tab = bar.get_tab("/tmp/doc.md")
+        self.assertIsNone(tab.error_banner)
+
+    def test_hide_error_banner_no_crash(self):
+        bar = TabBar()
+        bar.add_tab("/tmp/doc.md", editor=None, preview=None)
+        bar.hide_error_banner("/tmp/doc.md")
+        # No crash.
+
+
 if __name__ == "__main__":
     unittest.main()
