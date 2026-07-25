@@ -209,24 +209,96 @@ class TestMarkdownConversion(unittest.TestCase):
         result = md.markdown(md_text, extensions=MARKDOWN_EXTENSIONS)
         self.assertIn("checkbox", result)
 
-    def test_checkbox_data_index_on_input(self):
+    def test_checkbox_data_line_on_input(self):
         md_text = "- [ ] first checkbox\n- [x] second checkbox\n- [ ] third checkbox"
         result = md.markdown(md_text, extensions=MARKDOWN_EXTENSIONS)
-        self.assertIn('data-checkbox-index="0"', result)
-        self.assertIn('data-checkbox-index="1"', result)
-        self.assertIn('data-checkbox-index="2"', result)
-        # No marker spans, no data-line attributes
+        self.assertIn('data-checkbox-line="0"', result)
+        self.assertIn('data-checkbox-line="1"', result)
+        self.assertIn('data-checkbox-line="2"', result)
+        self.assertNotIn('data-checkbox-index', result)
         self.assertNotIn('chk-line-marker', result)
-        self.assertNotIn('data-line', result)
 
-    def test_checkbox_index_order_matches_source(self):
+    def test_checkbox_line_numbers_match_source_order(self):
         md_text = "- [ ] unchecked\n  - [ ] nested\n- [x] checked"
         result = md.markdown(md_text, extensions=MARKDOWN_EXTENSIONS)
-        first = result.index('data-checkbox-index="0"')
-        nested = result.index('data-checkbox-index="1"')
-        second = result.index('data-checkbox-index="2"')
+        first = result.index('data-checkbox-line="0"')
+        nested = result.index('data-checkbox-line="1"')
+        second = result.index('data-checkbox-line="2"')
         self.assertLess(first, nested)
         self.assertLess(nested, second)
+
+    def test_checkbox_line_skips_fenced_code(self):
+        md_text = (
+            "- [ ] real one\n"
+            "```python\n"
+            "- [ ] fake in code\n"
+            "```\n"
+            "- [ ] real two"
+        )
+        result = md.markdown(
+            md_text,
+            extensions=MARKDOWN_EXTENSIONS,
+            extension_configs=EXTENSION_CONFIGS,
+        )
+        # Only two checkboxes should get data-checkbox-line (lines 0 and 4).
+        self.assertIn('data-checkbox-line="0"', result)
+        self.assertIn('data-checkbox-line="4"', result)
+        # The fake checkbox in the code block has no data-checkbox-line.
+        lines_with_attr = [l for l in result.split('\n') if 'data-checkbox-line=' in l]
+        self.assertEqual(len(lines_with_attr), 2)
+
+    def test_checkbox_line_skips_tilde_fence(self):
+        md_text = (
+            "- [ ] real one\n"
+            "~~~\n"
+            "- [ ] fake in code\n"
+            "~~~\n"
+            "- [ ] real two"
+        )
+        result = md.markdown(
+            md_text,
+            extensions=MARKDOWN_EXTENSIONS,
+            extension_configs=EXTENSION_CONFIGS,
+        )
+        self.assertIn('data-checkbox-line="0"', result)
+        self.assertIn('data-checkbox-line="4"', result)
+        lines_with_attr = [l for l in result.split('\n') if 'data-checkbox-line=' in l]
+        self.assertEqual(len(lines_with_attr), 2)
+
+    def test_checkbox_uppercase_x(self):
+        md_text = "- [X] uppercase checked\n- [x] lowercase checked\n- [ ] unchecked"
+        result = md.markdown(md_text, extensions=MARKDOWN_EXTENSIONS)
+        self.assertIn('data-checkbox-line="0"', result)
+        self.assertIn('data-checkbox-line="1"', result)
+        self.assertIn('data-checkbox-line="2"', result)
+
+    def test_checkbox_line_blockquote(self):
+        md_text = (
+            "- [ ] normal checkbox\n"
+            "> - [ ] quoted checkbox\n"
+            "- [ ] another normal"
+        )
+        result = md.markdown(md_text, extensions=MARKDOWN_EXTENSIONS)
+        self.assertIn('data-checkbox-line="0"', result)
+        self.assertIn('data-checkbox-line="1"', result)
+        self.assertIn('data-checkbox-line="2"', result)
+        lines_with_attr = [l for l in result.split('\n') if 'data-checkbox-line=' in l]
+        self.assertEqual(len(lines_with_attr), 3)
+
+    def test_checkbox_line_blockquote_mixed(self):
+        md_text = (
+            "- [ ] first\n"
+            "> - [ ] quoted\n"
+            "> > - [ ] double quoted\n"
+            "- [ ] last"
+        )
+        result = md.markdown(md_text, extensions=MARKDOWN_EXTENSIONS)
+        self.assertIn('data-checkbox-line="0"', result)
+        self.assertIn('data-checkbox-line="1"', result)
+        self.assertIn('data-checkbox-line="2"', result)
+        self.assertIn('data-checkbox-line="3"', result)
+        lines_with_attr = [l for l in result.split('\n') if 'data-checkbox-line=' in l]
+        self.assertEqual(len(lines_with_attr), 4)
 
     def test_checkboxes_not_disabled(self):
         md_text = "- [ ] unchecked\n- [x] checked"
