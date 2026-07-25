@@ -451,15 +451,12 @@ class TestOnCloseRequestDirtyCheck(unittest.TestCase):
                 self._tab_bar = unittest.mock.Mock()
                 self._vault_monitor = unittest.mock.Mock()
                 self._preview_debounce_id = None
-                self._autosave_id = None
+                self._autosave = unittest.mock.Mock()
                 self._close_window_pending = False
                 self._surface = unittest.mock.Mock()
 
             _on_close_request = aw.MainWindow._on_close_request
             _on_close_request_confirmed = aw.MainWindow._on_close_request_confirmed
-            _cancel_autosave = aw.MainWindow._cancel_autosave
-            _restart_autosave = aw.MainWindow._restart_autosave
-            _setup_autosave = aw.MainWindow._setup_autosave
             _save_dirty_tabs = aw.MainWindow._save_dirty_tabs
             _show_save_dialog = aw.MainWindow._show_save_dialog
             _on_save_dialog_response = aw.MainWindow._on_save_dialog_response
@@ -522,32 +519,27 @@ class TestOnCloseRequestDirtyCheck(unittest.TestCase):
     def test_close_request_cancels_autosave(self):
         """_on_close_request cancels autosave."""
         win = self._make_fake_window()
-        win._autosave_id = 42
         win._tab_bar.get_all_paths.return_value = []
 
-        with unittest.mock.patch("markdown_vault.app_window.GLib.source_remove") as mock_rm:
-            win._on_close_request()
-            mock_rm.assert_called()
+        win._on_close_request()
+        win._autosave.cancel.assert_called_once()
 
     def test_restart_autosave_sets_up_new_timer(self):
         """_restart_autosave cancels old and sets up new timer."""
         win = self._make_fake_window()
-        win._autosave_id = 42
-
-        with unittest.mock.patch("markdown_vault.app_window.GLib.source_remove"):
-            with unittest.mock.patch.object(win, '_setup_autosave') as mock_setup:
-                win._restart_autosave()
-                mock_setup.assert_called_once()
+        win._autosave.restart = unittest.mock.Mock()
+        win._restart_autosave = lambda: win._autosave.restart()
+        win._restart_autosave()
+        win._autosave.restart.assert_called_once()
 
     def test_cancel_clears_close_window_pending_and_restarts_autosave(self):
         """Cancel response clears _close_window_pending and restarts autosave."""
         win = self._make_fake_window()
         win._close_window_pending = True
 
-        with unittest.mock.patch.object(win, '_restart_autosave') as mock_restart:
-            win._on_save_dialog_response("cancel", ["/tmp/a.md"], on_confirm=None)
-            self.assertFalse(win._close_window_pending)
-            mock_restart.assert_called_once()
+        win._on_save_dialog_response("cancel", ["/tmp/a.md"], on_confirm=None)
+        self.assertFalse(win._close_window_pending)
+        win._autosave.restart.assert_called_once()
 
     def test_save_failure_error_dismiss_clears_pending_and_restarts_autosave(self):
         """Dismissing the save-failure error clears pending and restarts autosave."""
@@ -563,13 +555,12 @@ class TestOnCloseRequestDirtyCheck(unittest.TestCase):
         win._tab_bar.get_tab.return_value = tab
 
         with unittest.mock.patch("markdown_vault.app_window.dialogs") as mock_dialogs:
-            with unittest.mock.patch.object(win, '_restart_autosave') as mock_restart:
-                win._on_save_dialog_response("save", ["/tmp/fail.md"], on_confirm=None)
-                # dialogs.show_error was called for the save failure
-                mock_dialogs.show_error.assert_called_once()
-                # _on_error_dismissed runs inline — pending cleared, autosave restarted
-                self.assertFalse(win._close_window_pending)
-                mock_restart.assert_called_once()
+            win._on_save_dialog_response("save", ["/tmp/fail.md"], on_confirm=None)
+            # dialogs.show_error was called for the save failure
+            mock_dialogs.show_error.assert_called_once()
+            # _on_error_dismissed runs inline — pending cleared, autosave restarted
+            self.assertFalse(win._close_window_pending)
+            win._autosave.restart.assert_called_once()
 
     def test_close_request_no_tabs_returns_false(self):
         """Empty tab list returns False (no dirty tabs)."""

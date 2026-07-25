@@ -145,6 +145,7 @@ If any exist, warn the user explicitly — changes may be lost during loop reset
    `debug_active: true` and enable required `debug_dump_*` flags
 
 **Loop:**
+
 1. **Implement change** + write/update unit tests
 2. **Run unit tests:** `make test`
 3. **Close the app:** `kill $(pgrep -f "markdown_vault.main") &`
