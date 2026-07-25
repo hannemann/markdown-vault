@@ -562,14 +562,12 @@ class TestOnCloseRequestDirtyCheck(unittest.TestCase):
         tab.editor = failing_editor
         win._tab_bar.get_tab.return_value = tab
 
-        with unittest.mock.patch("markdown_vault.app_window.Adw.AlertDialog") as MockDlg:
-            mock_instance = unittest.mock.Mock()
-            MockDlg.return_value = mock_instance
+        with unittest.mock.patch("markdown_vault.app_window.dialogs") as mock_dialogs:
             with unittest.mock.patch.object(win, '_restart_autosave') as mock_restart:
                 win._on_save_dialog_response("save", ["/tmp/fail.md"], on_confirm=None)
-                # Simulate the error dialog's response callback
-                error_callback = mock_instance.connect.call_args[0][1]
-                error_callback(mock_instance, "ok")
+                # dialogs.show_error was called for the save failure
+                mock_dialogs.show_error.assert_called_once()
+                # _on_error_dismissed runs inline — pending cleared, autosave restarted
                 self.assertFalse(win._close_window_pending)
                 mock_restart.assert_called_once()
 
