@@ -391,5 +391,119 @@ class TestVaultTreeFocusFile(unittest.TestCase):
         self.assertIsNone(self.tree.get_selected_path())
 
 
+class TestVaultTreeHandleFileMovedDirectory(unittest.TestCase):
+    """R4.4: _handle_file_moved correctly handles directories."""
+
+    def setUp(self):
+        self._tmpdir = Path(tempfile.mkdtemp())
+        mock_gio = _make_mock_gio()
+        mod = _load_vaulttree(mock_gio)
+        VaultTree = mod.VaultTree
+        self.tree = VaultTree()
+
+        self.vault_path = str(self._tmpdir / "testvault")
+        Path(self.vault_path).mkdir(exist_ok=True)
+        # Create olddir on disk so isdir() check passes
+        old_dir = Path(self.vault_path) / "olddir"
+        old_dir.mkdir(exist_ok=True)
+        (old_dir / "file.md").touch()
+        self.tree.set_vaults([self.vault_path])
+
+        # Pre-populate tree with olddir
+        self.tree._handle_file_created(self.vault_path, str(old_dir))
+
+    def tearDown(self):
+        shutil.rmtree(self._tmpdir, ignore_errors=True)
+
+    def test_handle_file_moved_directory_creates_folder_node(self):
+        """Ein verschobenes Verzeichnis wird als Ordner-Knoten eingefügt."""
+        new_parent = str(self.vault_path)
+        old_path = str(Path(self.vault_path) / "olddir")
+        new_path = str(Path(self.vault_path) / "newdir")
+
+        # Actually rename on disk so os.path.isdir() works
+        import os
+        os.rename(old_path, new_path)
+
+        self.tree._handle_file_moved(old_path, new_parent, new_path)
+
+        paths = []
+        def _walk(iter_):
+            while iter_:
+                node_path = self.tree._store.get_value(iter_, 1)
+                is_dir = self.tree._store.get_value(iter_, 2)
+                paths.append((node_path, is_dir))
+                child = self.tree._store.iter_children(iter_)
+                if child:
+                    _walk(child)
+                iter_ = self.tree._store.iter_next(iter_)
+        _walk(self.tree._store.get_iter_first())
+
+        found_dir = None
+        for p, d in paths:
+            if p == new_path:
+                found_dir = d
+                break
+        self.assertTrue(found_dir, f"Directory {new_path} not found in tree")
+        self.assertTrue(
+            any(p == new_path and d is True for p, d in paths),
+            f"Moved directory should be marked as directory (is_dir=True), got {paths}",
+        )
+
+
+class TestVaultTreeDeleteVaultRoot(unittest.TestCase):
+    """Vault-Root bleibt im Baum wenn alle Dateien gelöscht werden."""
+
+    def setUp(self):
+        self._tmpdir = Path(tempfile.mkdtemp())
+        mock_gio = _make_mock_gio()
+        mod = _load_vaulttree(mock_gio)
+        VaultTree = mod.VaultTree
+        self.tree = VaultTree()
+
+        self.vault_path = str(self._tmpdir / "testvault")
+        Path(self.vault_path).mkdir(exist_ok=True)
+        (Path(self.vault_path) / "file1.md").touch()
+        (Path(self.vault_path) / "file2.md").touch()
+        self.tree.set_vaults([self.vault_path])
+
+    def tearDown(self):
+        shutil.rmtree(self._tmpdir, ignore_errors=True)
+
+    def _get_node_paths(self):
+        paths = []
+        def _walk(iter_):
+            while iter_:
+                paths.append(self.tree._store.get_value(iter_, 1))
+                child = self.tree._store.iter_children(iter_)
+                if child:
+                    _walk(child)
+                iter_ = self.tree._store.iter_next(iter_)
+        _walk(self.tree._store.get_iter_first())
+        return paths
+
+    def test_delete_all_files_preserves_vault_root(self):
+        """Wenn alle Dateien gelöscht werden, bleibt der Vault-Root im Baum."""
+        file1 = str(Path(self.vault_path) / "file1.md")
+        file2 = str(Path(self.vault_path) / "file2.md")
+
+        self.tree._handle_file_deleted(file1)
+        self.tree._handle_file_deleted(file2)
+
+        paths = self._get_node_paths()
+        self.assertIn(self.vault_path, paths)
+
+    def test_delete_dir_inside_vault_preserves_vault_root(self):
+        """Löschen eines Unterordners entfernt nicht den Vault-Root."""
+        subdir = Path(self.vault_path) / "subdir"
+        subdir.mkdir(exist_ok=True)
+        (subdir / "inner.md").touch()
+
+        self.tree._handle_file_deleted(str(subdir))
+
+        paths = self._get_node_paths()
+        self.assertIn(self.vault_path, paths)
+
+
 if __name__ == "__main__":
     unittest.main()
