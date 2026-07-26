@@ -30,6 +30,7 @@ from .search import SearchBar
 from .preferences import PreferencesDialog
 from .monitor_handler import MonitorHandler
 from .tab_manager import TabOrchestrator
+from .session_manager import SessionManager
 from .markdown_help import MarkdownHelpOverlay
 from .autosave import AutosaveManager
 from .file_ops import FileOps
@@ -213,6 +214,13 @@ class MainWindow(Adw.ApplicationWindow):
             },
         )
 
+        # Session persistence manager.
+        self._session_mgr = SessionManager(
+            get_window_state=self._get_window_state,
+            tab_bar=self._tab_bar,
+            mru_manager=self.mru,
+        )
+
         self._sidebar_paned = Gtk.Paned(orientation=Gtk.Orientation.HORIZONTAL)
         self._sidebar_paned.set_wide_handle(True)
         self._sidebar_paned.set_start_child(self._main_paned)
@@ -275,41 +283,14 @@ class MainWindow(Adw.ApplicationWindow):
         self._vault_tree.set_active_vault(self._active_vault)
 
         # Restore tabs for the active vault.
-        vault_data = {}
-        self._nav_history.suppress = True
         if self._active_vault:
-            vault_data = _ses.get("vault_sessions", {}).get(self._active_vault, {})
-            vault_data = session.prune_vault_session(vault_data)
-            for tab_data in vault_data.get("tabs", []):
-                fp = tab_data.get("path", "")
-                if fp and Path(fp).exists():
-                    self._open_file(
-                        fp,
-                        view_mode=tab_data.get("view_mode", "edit"),
-                        split_position=tab_data.get("split_position", 600),
-                        editor_zoom=tab_data.get("editor_zoom", 1.0),
-                        preview_zoom=tab_data.get("preview_zoom", 1.0),
-                    )
-        self._nav_history.suppress = False
-        active_tab = vault_data.get("active_tab")
-        if active_tab and active_tab in self._tab_bar.get_all_paths():
-            self._tab_bar.set_active_tab(active_tab)
-            self._push_history(active_tab)
-            # Restore MRU from session.
-            mru_data = vault_data.get("mru", [])
-            if mru_data:
-                self.mru.clear()
-                for fp in reversed(mru_data):
-                    if fp in self._tab_bar.get_all_paths():
-                        self.mru.push(fp)
-            else:
-                # Fallback: rebuild MRU from tab order.
-                for tab_data in reversed(vault_data.get("tabs", [])):
-                    fp = tab_data.get("path", "")
-                    if fp and fp in self._tab_bar.get_all_paths():
-                        self.mru.push(fp)
-                if active_tab and active_tab in self._tab_bar.get_all_paths():
-                    self.mru.push(active_tab)
+            self._session_mgr.restore_vault_session(
+                self._active_vault,
+                open_file_fn=self._open_file,
+                push_history_fn=self._push_history,
+                suppress_nav_fn=lambda s: setattr(self._nav_history, "suppress", s),
+                mru_push_fn=self.mru.push,
+            )
 
         # Defer expansion so the tree view is fully mapped first.
         expanded = _ses.get("expanded_vaults", [])
@@ -749,7 +730,7 @@ class MainWindow(Adw.ApplicationWindow):
         if new_vault == self._active_vault:
             return
         # Save current vault state.
-        self._save_vault_session()
+        self._session_mgr.save_vault_session(self._active_vault, self._content_stack)
         # Close all open tabs with dirty-check (R4.2).
         self._close_all_tabs_with_dirty_check()
         self.mru.clear()
@@ -759,59 +740,13 @@ class MainWindow(Adw.ApplicationWindow):
         self._active_vault = new_vault
         self._vault_tree.set_active_vault(new_vault)
         # Restore target vault state.
-        self._restore_vault_session(new_vault)
-
-    def _save_vault_session(self) -> None:
-        """Save the current vault's tab state to the session on disk."""
-        if not self._active_vault:
-            return
-        ses = session.load_session()
-        vault_sessions = ses.get("vault_sessions", {})
-        vault_sessions[self._active_vault] = {
-            "tabs": self._collect_tab_data(),
-            "active_tab": self._tab_bar.get_current_path(),
-            "mru": self.mru.tabs,
-        }
-        session.save_session(
-            width=self.get_width(),
-            height=self.get_height(),
-            sidebar_visible=self._sidebar.get_visible(),
-            active_vault=self._active_vault,
-            vault_sessions=vault_sessions,
-            expanded_vaults=self._vault_tree.get_expanded_paths(),
-            search_visible=self._search_bar.get_visible(),
-            search_paned_position=self._search_paned.get_position(),
-            sidebar_paned_position=self._sidebar_paned.get_position(),
-            main_paned_position=self._main_paned.get_position(),
+        self._session_mgr.restore_vault_session(
+            new_vault,
+            open_file_fn=self._open_file,
+            push_history_fn=self._push_history,
+            suppress_nav_fn=lambda s: setattr(self._nav_history, "suppress", s),
+            mru_push_fn=self.mru.push,
         )
-
-    def _restore_vault_session(self, vault_path: str) -> None:
-        """Restore tabs for *vault_path* from the persisted session."""
-        ses = session.load_session()
-        vault_data = ses.get("vault_sessions", {}).get(vault_path, {})
-        vault_data = session.prune_vault_session(vault_data)
-        self._nav_history.suppress = True
-        for tab_data in vault_data.get("tabs", []):
-            fp = tab_data.get("path", "")
-            if fp and Path(fp).exists():
-                self._open_file(
-                    fp,
-                    view_mode=tab_data.get("view_mode", "edit"),
-                    split_position=tab_data.get("split_position", 600),
-                    editor_zoom=tab_data.get("editor_zoom", 1.0),
-                    preview_zoom=tab_data.get("preview_zoom", 1.0),
-                )
-        self._nav_history.suppress = False
-        active_tab = vault_data.get("active_tab")
-        if active_tab and active_tab in self._tab_bar.get_all_paths():
-            self._tab_bar.set_active_tab(active_tab)
-            self._push_history(active_tab)
-        # Restore MRU.
-        mru_data = vault_data.get("mru", [])
-        if mru_data:
-            for fp in reversed(mru_data):
-                if fp in self._tab_bar.get_all_paths():
-                    self.mru.push(fp)
 
     # ── File opening ───────────────────────────────────────────────
 
@@ -1508,51 +1443,18 @@ class MainWindow(Adw.ApplicationWindow):
 
     # ── Session persistence ────────────────────────────────────────
 
-    def _collect_tab_data(self) -> list[dict]:
-        """Gather per-tab state for session saving."""
-        data = []
-        for path in self._tab_bar.get_all_paths():
-            tab = self._tab_bar.get_tab(path)
-            if not tab:
-                continue
-            # Find the Paned to read its split position.
-            split_pos = 600
-            child = self._content_stack.get_child_by_name(path)
-            if isinstance(child, Gtk.Paned):
-                split_pos = child.get_position()
-            data.append({
-                "path": path,
-                "view_mode": tab.view_mode,
-                "split_position": split_pos,
-                "editor_zoom": tab.editor.zoom_factor,
-                "preview_zoom": tab.preview.zoom_level,
-            })
-        return data
-
-    def _save_session(self) -> None:
-        """Persist the current window state to disk."""
-        # Load existing session to preserve other vaults' state.
-        ses = session.load_session()
-        vault_sessions = ses.get("vault_sessions", {})
-        # Update only the current vault's entry.
-        if self._active_vault:
-            vault_sessions[self._active_vault] = {
-                "tabs": self._collect_tab_data(),
-                "active_tab": self._tab_bar.get_current_path(),
-                "mru": self.mru.tabs,
-            }
-        session.save_session(
-            width=self.get_width(),
-            height=self.get_height(),
-            sidebar_visible=self._sidebar.get_visible(),
-            active_vault=self._active_vault,
-            vault_sessions=vault_sessions,
-            expanded_vaults=self._vault_tree.get_expanded_paths(),
-            search_visible=self._search_bar.get_visible(),
-            search_paned_position=self._search_paned.get_position(),
-            sidebar_paned_position=self._sidebar_paned.get_position(),
-            main_paned_position=self._main_paned.get_position(),
-        )
+    def _get_window_state(self) -> dict:
+        """Return window geometry and layout state for session saving."""
+        return {
+            "width": self.get_width(),
+            "height": self.get_height(),
+            "sidebar_visible": self._sidebar.get_visible(),
+            "expanded_vaults": self._vault_tree.get_expanded_paths(),
+            "search_visible": self._search_bar.get_visible(),
+            "search_paned_position": self._search_paned.get_position(),
+            "sidebar_paned_position": self._sidebar_paned.get_position(),
+            "main_paned_position": self._main_paned.get_position(),
+        }
 
     def _on_close_request(self, *_args) -> bool:
         """Dirty-check before the window closes (R6.2).
@@ -1576,7 +1478,7 @@ class MainWindow(Adw.ApplicationWindow):
 
         if not dirty:
             self._vault_monitor.cleanup()
-            self._save_session()
+            self._session_mgr.save_session(self._active_vault, self._content_stack)
             return False  # No unsaved changes → allow close.
 
         # Show the async dialog; hold the close until the user responds.
@@ -1588,7 +1490,7 @@ class MainWindow(Adw.ApplicationWindow):
     def _on_close_request_confirmed(self) -> None:
         """Called after the user chose Discard or Save (no failures)."""
         self._vault_monitor.cleanup()
-        self._save_session()
+        self._session_mgr.save_session(self._active_vault, self._content_stack)
         self.get_surface().destroy()
 
     # ── Autosave ───────────────────────────────────────────────────

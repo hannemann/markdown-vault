@@ -23,6 +23,7 @@ py_sources = files(
   'search.py',
   'search_logic.py',
   'session.py',
+  'session_manager.py',
   'sidebar.py',
   'tab_manager.py',
   'tabs.py',

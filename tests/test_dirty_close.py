@@ -456,13 +456,15 @@ class TestOnCloseRequestDirtyCheck(unittest.TestCase):
                 self._close_window_pending = False
                 self._surface = unittest.mock.Mock()
                 self._restart_autosave = lambda: None
+                self._active_vault = "/tmp/vault"
+                self._content_stack = unittest.mock.Mock()
 
             _on_close_request = aw.MainWindow._on_close_request
             _on_close_request_confirmed = aw.MainWindow._on_close_request_confirmed
             _save_dirty_tabs = aw.MainWindow._save_dirty_tabs
             _show_save_dialog = aw.MainWindow._show_save_dialog
             _on_save_dialog_response = aw.MainWindow._on_save_dialog_response
-            _save_session = unittest.mock.Mock()
+            _session_mgr = unittest.mock.Mock()
 
             def get_surface(self):
                 return self._surface
@@ -515,7 +517,7 @@ class TestOnCloseRequestDirtyCheck(unittest.TestCase):
         win = self._make_fake_window()
         win._on_close_request_confirmed()
         win._vault_monitor.cleanup.assert_called_once()
-        win._save_session.assert_called_once()
+        win._session_mgr.save_session.assert_called_once()
         win._surface.destroy.assert_called_once()
 
     def test_close_request_cancels_autosave(self):
