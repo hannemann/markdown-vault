@@ -35,6 +35,7 @@ from .markdown_help import MarkdownHelpOverlay
 from .autosave import AutosaveManager
 from .file_ops import FileOps
 from .view_mode_manager import ViewModeManager
+from .content_changes import ContentChangeHandler
 from .input_manager import InputManager
 from .file_manager import FileManager
 from . import config
@@ -198,11 +199,11 @@ class MainWindow(Adw.ApplicationWindow):
         self._vault_monitor.connect("external-file-moved", self._monitor_handler.on_file_moved)
         # Two handlers for external-content-changed:
         # 1. MonitorHandler: updates backlink index + sidebar (data layer).
-        # 2. _on_external_content_changed: shows warning banner (UI layer).
+        # 2. ContentChangeHandler: shows warning banner (UI layer).
         self._vault_monitor.connect("external-content-changed", self._monitor_handler.on_content_changed)
         self._vault_monitor.connect(
             "external-content-changed",
-            lambda _vp, fp: self._on_external_content_changed(fp),
+            lambda _vp, fp: self._content_change_handler.handle_external_change(fp),
         )
 
         # View mode manager.
@@ -212,6 +213,9 @@ class MainWindow(Adw.ApplicationWindow):
             sidebar=self._sidebar,
             backlink_index=self._backlink_index,
         )
+
+        # Content change handler for external file modifications.
+        self._content_change_handler = ContentChangeHandler(tab_bar=self._tab_bar)
 
         # Tab lifecycle orchestrator.
         self._tab_orchestrator = TabOrchestrator(
@@ -233,8 +237,8 @@ class MainWindow(Adw.ApplicationWindow):
                 "sync_view_toggle": self._view_mode_manager.sync_view_toggle,
                 "refresh_preview": self._view_mode_manager.refresh_preview,
                 "push_history": self._push_history,
-                "on_banner_reload": self._on_banner_reload,
-                "on_banner_dismiss": self._on_banner_dismiss,
+                "on_banner_reload": self._content_change_handler.reload_content,
+                "on_banner_dismiss": self._content_change_handler.dismiss_content,
                 "dump_debug": self._dump_debug,
             },
         )
@@ -1517,37 +1521,6 @@ class MainWindow(Adw.ApplicationWindow):
                 tab.editor.zoom_factor + direction * _ZOOM_STEP, 2,
             )
         return True
-
-    # ── External file changes ──────────────────────────────────────
-
-    def _on_external_content_changed(self, file_path: str) -> None:
-        """Called when an external change is detected for an open file."""
-        if file_path not in self._tab_bar.get_all_paths():
-            return
-        name = Path(file_path).name
-        self._tab_bar.show_warning_banner(
-            file_path, f'"{name}" was modified externally.',
-            buttons=[
-                ("Reload", lambda: self._on_banner_reload(file_path)),
-                ("Dismiss", lambda: self._on_banner_dismiss(file_path)),
-            ],
-        )
-
-    def _on_banner_reload(self, file_path: str) -> None:
-        """Reload content and hide banner."""
-        tab = self._tab_bar.get_tab(file_path)
-        if not tab:
-            return
-        tab.reload_editor(file_path)
-        tab.preview.update_from_text(
-            tab.editor.get_text(),
-            str(Path(tab.editor.file_path).parent) if tab.editor.file_path else "",
-        )
-        self._tab_bar.hide_warning_banner(file_path)
-
-    def _on_banner_dismiss(self, file_path: str) -> None:
-        """Hide banner without reloading."""
-        self._tab_bar.hide_warning_banner(file_path)
 
     # ── AppWindow alias (for tests) ────────────────────────────────
 

@@ -6,6 +6,7 @@ py_sources = files(
   'backlink_index.py',
   'banners.py',
   'config.py',
+  'content_changes.py',
   'dialogs.py',
   'editor.py',
   'event_router.py',
