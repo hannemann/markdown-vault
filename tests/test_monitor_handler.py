@@ -29,9 +29,8 @@ class TestMonitorHandlerFileCreated(unittest.TestCase):
         self.mock_file_index = MagicMock()
         self.mock_vault_tree = MagicMock()
         self.mock_tab_bar = MagicMock()
-        self.mock_sidebar = MagicMock()
+        self.mock_dispatcher = MagicMock()
         self.mock_debug_fn = MagicMock()
-        self.mock_refresh = MagicMock()
         self._Handler = _handler_class()
 
     def tearDown(self):
@@ -43,9 +42,8 @@ class TestMonitorHandlerFileCreated(unittest.TestCase):
             file_index=self.mock_file_index,
             vault_tree=self.mock_vault_tree,
             tab_bar=self.mock_tab_bar,
-            sidebar=self.mock_sidebar,
+            dispatcher=self.mock_dispatcher,
             debug_fn=self.mock_debug_fn,
-            refresh_sidebar=self.mock_refresh,
         )
 
     def test_calls_vault_tree_handle_file_created(self):
@@ -99,9 +97,8 @@ class TestMonitorHandlerFileDeleted(unittest.TestCase):
         self.mock_file_index = MagicMock()
         self.mock_vault_tree = MagicMock()
         self.mock_tab_bar = MagicMock()
-        self.mock_sidebar = MagicMock()
+        self.mock_dispatcher = MagicMock()
         self.mock_debug_fn = MagicMock()
-        self.mock_refresh = MagicMock()
         self._Handler = _handler_class()
 
     def tearDown(self):
@@ -113,9 +110,8 @@ class TestMonitorHandlerFileDeleted(unittest.TestCase):
             file_index=self.mock_file_index,
             vault_tree=self.mock_vault_tree,
             tab_bar=self.mock_tab_bar,
-            sidebar=self.mock_sidebar,
+            dispatcher=self.mock_dispatcher,
             debug_fn=self.mock_debug_fn,
-            refresh_sidebar=self.mock_refresh,
         )
 
     def test_calls_vault_tree_handle_file_deleted(self):
@@ -162,11 +158,14 @@ class TestMonitorHandlerFileDeleted(unittest.TestCase):
             h.on_file_deleted("/vault", "/vault/foo.md")
             self.mock_tab_bar.close_tab.assert_not_called()
 
-    def test_refresh_sidebar_called(self):
+    def test_dispatcher_on_file_deleted_called(self):
+        """Dispatcher.on_file_deleted should be called."""
         with patch("markdown_vault.monitor_handler.GLib", _GLibMock):
             h = self._make()
             h.on_file_deleted("/vault", "/vault/foo.md")
-            self.mock_refresh.assert_called()
+            self.mock_dispatcher.on_file_deleted.assert_called_once_with(
+                "/vault", "/vault/foo.md",
+            )
 
     def test_debug_fn_called(self):
         with patch("markdown_vault.monitor_handler.GLib", _GLibMock):
@@ -187,9 +186,8 @@ class TestMonitorHandlerFileMoved(unittest.TestCase):
         self.mock_file_index = MagicMock()
         self.mock_vault_tree = MagicMock()
         self.mock_tab_bar = MagicMock()
-        self.mock_sidebar = MagicMock()
+        self.mock_dispatcher = MagicMock()
         self.mock_debug_fn = MagicMock()
-        self.mock_refresh = MagicMock()
         self._Handler = _handler_class()
 
     def tearDown(self):
@@ -201,9 +199,8 @@ class TestMonitorHandlerFileMoved(unittest.TestCase):
             file_index=self.mock_file_index,
             vault_tree=self.mock_vault_tree,
             tab_bar=self.mock_tab_bar,
-            sidebar=self.mock_sidebar,
+            dispatcher=self.mock_dispatcher,
             debug_fn=self.mock_debug_fn,
-            refresh_sidebar=self.mock_refresh,
         )
 
     def test_renamed_file_renames_wikilinks(self):
@@ -234,11 +231,14 @@ class TestMonitorHandlerFileMoved(unittest.TestCase):
             h.on_file_moved("/vault", "/vault/New.md", "/vault/Old.md")
             self.mock_tab_bar.update_path.assert_called_once_with("/vault/Old.md", "/vault/New.md")
 
-    def test_renamed_file_refreshes_sidebar(self):
+    def test_renamed_file_calls_dispatcher(self):
+        """Dispatcher.on_file_moved should be called with all paths."""
         with patch("markdown_vault.monitor_handler.GLib", _GLibMock):
             h = self._make()
             h.on_file_moved("/vault", "/vault/New.md", "/vault/Old.md")
-            self.mock_refresh.assert_called()
+            self.mock_dispatcher.on_file_moved.assert_called_once_with(
+                "/vault", "/vault/New.md", "/vault/Old.md",
+            )
 
     def test_moved_from_outside_calls_handle_file_created(self):
         with patch("markdown_vault.monitor_handler.GLib", _GLibMock):
@@ -272,9 +272,8 @@ class TestMonitorHandlerContentChanged(unittest.TestCase):
         self.mock_file_index = MagicMock()
         self.mock_vault_tree = MagicMock()
         self.mock_tab_bar = MagicMock()
-        self.mock_sidebar = MagicMock()
+        self.mock_dispatcher = MagicMock()
         self.mock_debug_fn = MagicMock()
-        self.mock_refresh = MagicMock()
         self._Handler = _handler_class()
 
     def tearDown(self):
@@ -286,9 +285,8 @@ class TestMonitorHandlerContentChanged(unittest.TestCase):
             file_index=self.mock_file_index,
             vault_tree=self.mock_vault_tree,
             tab_bar=self.mock_tab_bar,
-            sidebar=self.mock_sidebar,
+            dispatcher=self.mock_dispatcher,
             debug_fn=self.mock_debug_fn,
-            refresh_sidebar=self.mock_refresh,
         )
 
     def test_updates_backlink_index(self):
@@ -297,11 +295,14 @@ class TestMonitorHandlerContentChanged(unittest.TestCase):
             h.on_content_changed("/vault", "/vault/foo.md")
             self.mock_backlink.update_file.assert_called()
 
-    def test_refresh_sidebar_called(self):
+    def test_dispatcher_on_content_changed_called(self):
+        """Dispatcher.on_content_changed should be called."""
         with patch("markdown_vault.monitor_handler.GLib", _GLibMock):
             h = self._make()
             h.on_content_changed("/vault", "/vault/foo.md")
-            self.mock_refresh.assert_called()
+            self.mock_dispatcher.on_content_changed.assert_called_once_with(
+                "/vault", "/vault/foo.md",
+            )
 
     def test_debug_fn_called_with_components(self):
         with patch("markdown_vault.monitor_handler.GLib", _GLibMock):
@@ -330,14 +331,40 @@ class TestMonitorHandlerIntegration(unittest.TestCase):
             file_index=MagicMock(),
             vault_tree=MagicMock(),
             tab_bar=MagicMock(),
-            sidebar=MagicMock(),
+            dispatcher=MagicMock(),
             debug_fn=MagicMock(),
-            refresh_sidebar=MagicMock(),
         )
         self.assertTrue(hasattr(h, "on_file_created"))
         self.assertTrue(hasattr(h, "on_file_deleted"))
         self.assertTrue(hasattr(h, "on_file_moved"))
         self.assertTrue(hasattr(h, "on_content_changed"))
+
+    def test_no_refresh_sidebar_methods(self):
+        """MonitorHandler should not have _do_refresh_sidebar anymore."""
+        Handler = _handler_class()
+        h = Handler(
+            backlink_index=MagicMock(),
+            file_index=MagicMock(),
+            vault_tree=MagicMock(),
+            tab_bar=MagicMock(),
+            dispatcher=MagicMock(),
+            debug_fn=MagicMock(),
+        )
+        self.assertFalse(hasattr(h, "_do_refresh_sidebar"))
+        self.assertFalse(hasattr(h, "_refresh_sidebar_fallback"))
+
+    def test_no_banner_reload(self):
+        """MonitorHandler should not have _on_banner_reload anymore."""
+        Handler = _handler_class()
+        h = Handler(
+            backlink_index=MagicMock(),
+            file_index=MagicMock(),
+            vault_tree=MagicMock(),
+            tab_bar=MagicMock(),
+            dispatcher=MagicMock(),
+            debug_fn=MagicMock(),
+        )
+        self.assertFalse(hasattr(h, "_on_banner_reload"))
 
 
 if __name__ == "__main__":  # pragma: no cover

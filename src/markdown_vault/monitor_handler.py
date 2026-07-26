@@ -19,6 +19,8 @@ gi.require_version("Adw", "1")
 
 from gi.repository import GLib
 
+from .event_router import FileEventDispatcher
+
 logger = logging.getLogger(__name__)
 
 
@@ -35,14 +37,10 @@ class MonitorHandler:
         Left-panel file tree widget.
     tab_bar : TabBar
         Tab management (close, rename, path updates).
-    sidebar : Sidebar
-        Right-side panel (backlinks, outline, git, details).
+    dispatcher : FileEventDispatcher
+        Event dispatcher that refreshes consumers (Sidebar, etc.).
     debug_fn : callable
         Debug-dump helper (same signature as ``MainWindow._dump_debug``).
-    refresh_sidebar : callable or None
-        Callback that refreshes the sidebar backlinks for the
-        currently active tab. If ``None``, falls back to the
-        internal ``_refresh_sidebar`` method.
     """
 
     def __init__(
@@ -51,40 +49,15 @@ class MonitorHandler:
         file_index,
         vault_tree,
         tab_bar,
-        sidebar,
+        dispatcher: FileEventDispatcher,
         debug_fn,
-        refresh_sidebar=None,
-    ):
+    ) -> None:
         self._backlink_index = backlink_index
         self._file_index = file_index
         self._vault_tree = vault_tree
         self._tab_bar = tab_bar
-        self._sidebar = sidebar
+        self._dispatcher = dispatcher
         self._debug_fn = debug_fn
-        self._refresh_sidebar_callback = refresh_sidebar
-
-    def _do_refresh_sidebar(self) -> None:
-        """Refresh sidebar backlinks for the currently active tab.
-
-        Uses the injected ``refresh_sidebar`` callback when available,
-        otherwise falls back to the internal implementation.
-        """
-        if self._refresh_sidebar_callback is not None:
-            try:
-                self._refresh_sidebar_callback()
-            except Exception:
-                logger.exception("refresh_sidebar callback failed, falling back")
-                self._refresh_sidebar_fallback()
-        else:
-            self._refresh_sidebar_fallback()
-
-    def _refresh_sidebar_fallback(self) -> None:
-        """Internal sidebar-refresh implementation (fallback)."""
-        tab = self._tab_bar.get_current_tab()
-        if tab is not None and tab.editor is not None:
-            self._sidebar.update_for_file(
-                tab.editor.file_path, tab.editor.get_text(),
-            )
 
     # ── Signal handlers ────────────────────────────────────────────
 
@@ -121,7 +94,7 @@ class MonitorHandler:
                     self._backlink_index.remove_file(path)
                     self._file_index.remove_file(path)
             self._debug_fn(["file_index", "backlink_index", "vault_tree", "tabs"])
-            self._do_refresh_sidebar()
+            self._dispatcher.on_file_deleted(vault_path, file_path)
             return
 
         # Remove wikilinks BEFORE index update
@@ -131,7 +104,7 @@ class MonitorHandler:
         if file_path in self._tab_bar.get_all_paths():
             self._tab_bar.close_tab(file_path)
         self._debug_fn(["file_index", "backlink_index", "vault_tree", "tabs"])
-        self._do_refresh_sidebar()
+        self._dispatcher.on_file_deleted(vault_path, file_path)
 
     def on_file_moved(
         self,
@@ -155,7 +128,7 @@ class MonitorHandler:
             if other_path in self._tab_bar.get_all_paths():
                 self._tab_bar.update_path(other_path, file_path)
             self._debug_fn(["file_index", "backlink_index", "vault_tree", "tabs"])
-            self._do_refresh_sidebar()
+            self._dispatcher.on_file_moved(vault_path, file_path, other_path)
         else:
             self._vault_tree._handle_file_created(vault_path, file_path)
             if file_path.endswith(".md"):
@@ -182,28 +155,7 @@ class MonitorHandler:
                 text = ""
             self._backlink_index.update_file(file_path, text)
             self._debug_fn(["backlink_index", "preview_html", "sidebar"])
-            self._do_refresh_sidebar()
-            # Show external-change banner for the affected tab
-            if file_path in self._tab_bar.get_all_paths():
-                self._tab_bar.show_warning_banner(
-                    file_path,
-                    f"External change detected for {Path(file_path).name}",
-                    buttons=[
-                        ("Reload", lambda fp=file_path: self._on_banner_reload(fp)),
-                        ("Dismiss", lambda fp=file_path: self._tab_bar.hide_warning_banner(fp)),
-                    ],
-                )
+            self._dispatcher.on_content_changed(vault_path, file_path)
             return False
 
         GLib.idle_add(_update)
-
-    def _on_banner_reload(self, file_path: str) -> None:
-        """Reload file content and hide banner."""
-        try:
-            text = Path(file_path).read_text(encoding="utf-8")
-        except OSError:
-            return
-        tab = self._tab_bar.get_current_tab()
-        if tab is not None and tab.editor is not None and tab.editor.file_path == file_path:
-            tab.editor._buffer.set_text(text)
-            self._tab_bar.hide_warning_banner(file_path)

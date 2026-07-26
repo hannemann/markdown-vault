@@ -8,6 +8,7 @@ py_sources = files(
   'config.py',
   'dialogs.py',
   'editor.py',
+  'event_router.py',
   'file_index.py',
   'file_ops.py',
   'file_manager.py',

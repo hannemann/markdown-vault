@@ -47,6 +47,7 @@ from . import path_utils
 from . import validation
 from . import vault_monitor
 from .backlink_index import BacklinkIndex
+from .event_router import FileEventDispatcher
 from .file_index import FileIndex
 
 logger = logging.getLogger(__name__)
@@ -175,20 +176,34 @@ class MainWindow(Adw.ApplicationWindow):
         self._sidebar.connect("file-open-requested", self._on_sidebar_file_requested)
         self._sidebar.connect("outline-clicked", self._on_outline_clicked)
 
+        # Event dispatcher for decoupled sidebar refresh.
+        self._event_dispatcher = FileEventDispatcher(
+            sidebar_refresher=self._sidebar,
+            backlink_index=self._backlink_index,
+            file_index=self._file_index,
+            debug_fn=self._dump_debug,
+        )
+
         # Connect VaultMonitor signals to MonitorHandler.
         self._monitor_handler = MonitorHandler(
             self._backlink_index,
             self._file_index,
             self._vault_tree,
             self._tab_bar,
-            self._sidebar,
+            self._event_dispatcher,
             self._dump_debug,
-            refresh_sidebar=self._refresh_sidebar_backlinks,
         )
         self._vault_monitor.connect("external-file-created", self._monitor_handler.on_file_created)
         self._vault_monitor.connect("external-file-deleted", self._monitor_handler.on_file_deleted)
         self._vault_monitor.connect("external-file-moved", self._monitor_handler.on_file_moved)
+        # Two handlers for external-content-changed:
+        # 1. MonitorHandler: updates backlink index + sidebar (data layer).
+        # 2. _on_external_content_changed: shows warning banner (UI layer).
         self._vault_monitor.connect("external-content-changed", self._monitor_handler.on_content_changed)
+        self._vault_monitor.connect(
+            "external-content-changed",
+            lambda _vp, fp: self._on_external_content_changed(fp),
+        )
 
         # View mode manager.
         self._view_mode_manager = ViewModeManager(

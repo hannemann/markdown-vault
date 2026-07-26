@@ -24,6 +24,7 @@ from gi.repository import Gtk, GLib, GObject
 
 from . import git_integration, tags
 from .backlink_index import BacklinkIndex
+from .event_router import FileEvent
 from .path_utils import HEADING_RE
 
 logger = logging.getLogger(__name__)
@@ -112,6 +113,18 @@ class Sidebar(Gtk.Box):
         """Refresh only the backlinks sub-view for *file_path*."""
         self._current_file = file_path
         self._refresh_backlinks(file_path)
+
+    def refresh(self, event: FileEvent) -> None:
+        """Refresh the sidebar in response to a file event.
+
+        Acts as the single entry-point for all file-system events
+        coming from ``FileEventDispatcher``.
+        """
+        match event.event_type:
+            case "created" | "deleted" | "moved" | "renamed":
+                self.update_for_file(event.file_path)
+            case "content_changed":
+                self.update_text_only(event.file_path)
 
     def _on_stack_page_changed(self, _stack, _pspec) -> None:
         """Refresh git when the user switches to the Git tab."""
