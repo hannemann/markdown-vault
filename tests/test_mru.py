@@ -243,7 +243,7 @@ class TestMRUSwitcherStructure(unittest.TestCase):
     """Structural tests for the MRUSwitcher GTK widget."""
 
     def _source(self) -> str:
-        return (Path(__file__).resolve().parent.parent / "src" / "lib" / "python3.13" / "site-packages" / "markdown_vault" / "mru.py").read_text(
+        return (Path(__file__).resolve().parent.parent / "src" / "markdown_vault" / "mru.py").read_text(
             encoding="utf-8"
         )
 

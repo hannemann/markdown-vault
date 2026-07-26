@@ -115,7 +115,7 @@ the path in the profile to `/usr/bin/markdown-vault`.
 ## Run from source
 
 ```sh
-PYTHONPATH=src/lib/python3.13/site-packages python3 -m markdown_vault.main
+PYTHONPATH=src python3 -m markdown_vault.main
 ```
 
 Use an interpreter that provides PyGObject. A `python3` earlier in `PATH`

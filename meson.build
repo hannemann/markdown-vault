@@ -25,7 +25,7 @@ pkgdatadir = get_option('prefix') / get_option('datadir') / 'markdown-vault'
 pythondir = pkgdatadir / 'python'
 
 subdir('src/bin')
-subdir('src/lib/python3.13/site-packages')
+subdir('src/markdown_vault')
 subdir('src/share/markdown-vault')
 
 gnome.post_install(

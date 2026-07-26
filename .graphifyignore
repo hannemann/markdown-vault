@@ -1,0 +1,13 @@
+# .graphifyignore
+node_modules/
+dist/
+*.generated.py
+
+# only index src/, ignore everything else
+*
+!src/
+!src/**
+!src/markdown_vault
+
+# app icon
+src/share/markdown-vault/icons/hicolor/scalable/apps/de.hannemann.markdown-vault.svg 

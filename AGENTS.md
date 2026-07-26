@@ -102,6 +102,13 @@ meson.build            — top-level build system
 tests/                   — unit tests (unittest)
 ```
 
+## Module Dependencies
+
+<!-- DEPENDENCY_MAP_START -->
+
+
+<!-- DEPENDENCY_MAP_END -->
+
 **Installation paths:**
 - **Binaries:** `~/.local/bin/` (user) or `/usr/bin/` (system)
 - **Python code:** `<datadir>/markdown-vault/python/markdown_vault/` — a private directory, not the
@@ -179,7 +186,7 @@ opening files in editor, toggling sidebar etc.) ask the user.
 - Vault config YAML keys are case-sensitive, paths are absolute.
 - Git features must gracefully handle repos without git initialized.
 - Images in Markdown: support `![alt](path)` with both relative and absolute paths.
-- **New Python modules**: When creating a new `.py` file in `src/lib/python3.13/site-packages/markdown_vault/`, it MUST be added to the `py_sources` list in `src/lib/python3.13/site-packages/markdown_vault/meson.build` (alphabetically sorted). Meson has no built-in `glob()` — the list is manually maintained. Forgetting to add it means the file will not be installed and the app will crash with `ModuleNotFoundError`.
+- **New Python modules**: When creating a new `.py` file in `src/markdown_vault/`, it MUST be added to the `py_sources` list in `src/markdown_vault/meson.build` (alphabetically sorted). Meson has no built-in `glob()` — the list is manually maintained. Forgetting to add it means the file will not be installed and the app will crash with `ModuleNotFoundError`.
 - **GTK CSS in `css/gtk.css`**: Target GTK 4.14 / libadwaita 1.5. `var(--name)` and `color-mix()` need GTK 4.16+ and are silently dropped with "Expected a valid color" parser warnings. Use `@accent_bg_color` and `alpha(@color, 0.3)` instead. This does not apply to `css/style.css`, which is rendered by WebKit.
 - **WebKit needs an unprivileged user namespace**: WebKitGTK 2.46+ always sets up a `bwrap` sandbox and aborts the whole process if it cannot (`Failed to fully launch dbus-proxy`). On Ubuntu 24.04 this requires the AppArmor profile in `packaging/apparmor/` — see README. There is no API or env var to disable the sandbox.
 - **Test organization**: Add tests to existing test files grouped by topic (e.g. vault_monitor events → `test_vault_monitor_events.py`). Do not create new test files with arbitrary context names — distribute into the files that already cover the module under test. When in doubt, ask.

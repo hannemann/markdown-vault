@@ -21,7 +21,8 @@ import gi
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
-from gi.repository import Gtk, Adw
+from gi.repository import Gtk  # type: ignore[attr-defined]
+from gi.repository import Adw  # type: ignore[attr-defined]
 
 from markdown_vault.tabs import Tab, TabBar
 from markdown_vault.editor import Editor
@@ -57,7 +58,7 @@ class TestTabBarSignalExists(unittest.TestCase):
     def test_signal_defined_in_source(self):
         src = os.path.join(
             os.path.dirname(__file__),
-            "..", "src", "lib", "python3.13", "site-packages",
+            "..", "src",
             "markdown_vault", "tabs.py",
         )
         source = Path(src).read_text()
@@ -250,7 +251,7 @@ class TestAppWindowTabCloseRequest(unittest.TestCase):
         """_on_tab_close_request existiert in app_window.py."""
         src = os.path.join(
             os.path.dirname(__file__),
-            "..", "src", "lib", "python3.13", "site-packages",
+            "..", "src",
             "markdown_vault", "app_window.py",
         )
         source = Path(src).read_text()
@@ -260,7 +261,7 @@ class TestAppWindowTabCloseRequest(unittest.TestCase):
         """_show_save_dialog existiert in app_window.py."""
         src = os.path.join(
             os.path.dirname(__file__),
-            "..", "src", "lib", "python3.13", "site-packages",
+            "..", "src",
             "markdown_vault", "app_window.py",
         )
         source = Path(src).read_text()
@@ -270,7 +271,7 @@ class TestAppWindowTabCloseRequest(unittest.TestCase):
         """_on_save_dialog_response existiert in app_window.py."""
         src = os.path.join(
             os.path.dirname(__file__),
-            "..", "src", "lib", "python3.13", "site-packages",
+            "..", "src",
             "markdown_vault", "app_window.py",
         )
         source = Path(src).read_text()
@@ -280,7 +281,7 @@ class TestAppWindowTabCloseRequest(unittest.TestCase):
         """_save_dirty_tabs existiert in app_window.py."""
         src = os.path.join(
             os.path.dirname(__file__),
-            "..", "src", "lib", "python3.13", "site-packages",
+            "..", "src",
             "markdown_vault", "app_window.py",
         )
         source = Path(src).read_text()
@@ -454,6 +455,7 @@ class TestOnCloseRequestDirtyCheck(unittest.TestCase):
                 self._autosave = unittest.mock.Mock()
                 self._close_window_pending = False
                 self._surface = unittest.mock.Mock()
+                self._restart_autosave = lambda: None
 
             _on_close_request = aw.MainWindow._on_close_request
             _on_close_request_confirmed = aw.MainWindow._on_close_request_confirmed

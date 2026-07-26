@@ -8,7 +8,7 @@ CACHE_DIR := .flatpak-builder
 REPO_DIR := repo
 BUNDLE_FILE := markdown-vault.flatpak
 APP_ID := de.hannemann.markdown-vault
-PYTHONPATH_DIR := src/lib/python3.13/site-packages
+PYTHONPATH_DIR := src
 # A python3 earlier in PATH (e.g. Homebrew) usually lacks PyGObject.
 PYTHON := $(shell python3 -c 'import gi' 2>/dev/null && echo python3 || echo /usr/bin/python3)
 
