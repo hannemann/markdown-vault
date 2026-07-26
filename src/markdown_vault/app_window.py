@@ -260,12 +260,15 @@ class MainWindow(Adw.ApplicationWindow):
             mru_manager=self.mru,
         )
 
-        # File manager (new file / new folder dialogs).
+        # File manager (new file / new folder dialogs + delete).
         self._file_manager = FileManager(
             open_tab_fn=self._open_file,
             vault_tree=self._vault_tree,
             file_ops=self._file_ops,
             show_error_fn=self._show_error,
+            tab_bar=self._tab_bar,
+            mru=self.mru,
+            nav_history=self._nav_history,
         )
 
         self._sidebar_paned = Gtk.Paned(orientation=Gtk.Orientation.HORIZONTAL)
@@ -1054,47 +1057,7 @@ class MainWindow(Adw.ApplicationWindow):
 
     def _on_delete_requested(self, _tree, path: str) -> None:
         """Handle 'Delete' from the vault tree context menu."""
-        dialogs.confirm_delete(
-            self, path,
-            on_response=lambda confirmed: self._on_delete_response(confirmed, path),
-        )
-
-    def _on_delete_response(self, confirmed: bool, path: str) -> None:
-        """Handle the delete confirmation response.
-
-        Attempts filesystem delete FIRST, only cleans up UI state on success.
-        Shows error dialog on failure.
-        """
-        if not confirmed:
-            return
-        is_dir = Path(path).is_dir()
-
-        # 1. Attempt filesystem delete FIRST
-        err = FileOps.delete_path(path)
-        if err:
-            self._show_error("Delete Failed", err)
-            return
-
-        # 2. Only on success: close tabs, remove from MRU/history, refresh tree
-        if is_dir:
-            for tab_path in list(self._tab_bar.get_all_paths()):
-                if tab_path == path or tab_path.startswith(path + os.sep):
-                    self._tab_bar.close_tab(tab_path)
-        else:
-            if path in self._tab_bar.get_all_paths():
-                self._tab_bar.close_tab(path)
-
-        # Remove from MRU.
-        self.mru.remove(path)
-        if is_dir:
-            for tab_path in list(self.mru.tabs):
-                if tab_path == path or tab_path.startswith(path + os.sep):
-                    self.mru.remove(tab_path)
-
-        # Remove from nav history.
-        self._nav_history.remove_path(path, is_dir)
-
-        self._vault_tree.refresh()
+        self._file_manager.prompt_delete(self, path)
 
     def _on_close_file_requested(self, _tree, file_path: str) -> None:
         """Handle 'Close File' from the vault tree context menu."""

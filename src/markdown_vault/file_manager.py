@@ -7,6 +7,7 @@ for new-item workflows.
 
 import logging
 import os
+from pathlib import Path
 
 import gi
 
@@ -21,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 
 class FileManager:
-    """Manages new-file and new-folder creation workflows.
+    """Manages new-file, new-folder creation and delete workflows.
 
     Parameters
     ----------
@@ -33,13 +34,25 @@ class FileManager:
         Filesystem operations (resolve vault, create file/folder).
     show_error_fn : callable
         Callback ``(heading, body)`` to show error dialogs.
+    tab_bar : TabBar
+        Used to close tabs for deleted files/directories.
+    mru : MRUManager
+        Used to clean up MRU entries for deleted files.
+    nav_history : NavHistory
+        Used to clean up navigation history entries for deleted files.
     """
 
-    def __init__(self, open_tab_fn, vault_tree, file_ops, show_error_fn) -> None:
+    def __init__(
+        self, open_tab_fn, vault_tree, file_ops, show_error_fn,
+        tab_bar=None, mru=None, nav_history=None,
+    ) -> None:
         self._open_tab = open_tab_fn
         self._vault_tree = vault_tree
         self._file_ops = file_ops
         self._show_error = show_error_fn
+        self._tab_bar = tab_bar
+        self._mru = mru
+        self._nav_history = nav_history
 
     # ── New file ───────────────────────────────────────────────────────
 
@@ -130,3 +143,64 @@ class FileManager:
             self._show_error("Create Failed", err)
             return
         self._vault_tree.refresh()
+
+    # ── Delete ─────────────────────────────────────────────────────────
+
+    def prompt_delete(self, parent: Gtk.Widget, path: str) -> None:
+        """Show the delete dialog and handle the full delete workflow."""
+        dialogs.confirm_delete(
+            parent=parent,
+            path=path,
+            on_response=lambda confirmed: self.handle_delete_response(confirmed, path),
+        )
+
+    def handle_delete_response(self, confirmed: bool, path: str) -> None:
+        """Handle the delete confirmation response.
+
+        Attempts filesystem delete FIRST, only cleans up UI state on success.
+        Shows error dialog on failure.
+        """
+        if not confirmed:
+            return
+
+        is_dir = Path(path).is_dir()
+
+        # 1. Attempt filesystem delete FIRST
+        err = self._file_ops.delete_path(path)
+        if err:
+            self._show_error("Delete Failed", err)
+            return
+
+        # 2. Only on success: close tabs, remove from MRU/history, refresh tree
+        self._close_tabs_for_path(path, is_dir)
+        self._cleanup_mru(path, is_dir)
+        self._cleanup_nav_history(path, is_dir)
+        self._vault_tree.refresh()
+
+    def _close_tabs_for_path(self, path: str, is_dir: bool) -> None:
+        """Close all tabs whose path matches *path* (file) or are inside *path* (directory)."""
+        if not self._tab_bar:
+            return
+        if is_dir:
+            for tab_path in list(self._tab_bar.get_all_paths()):
+                if tab_path == path or tab_path.startswith(path + os.sep):
+                    self._tab_bar.close_tab(tab_path)
+        else:
+            if path in self._tab_bar.get_all_paths():
+                self._tab_bar.close_tab(path)
+
+    def _cleanup_mru(self, path: str, is_dir: bool) -> None:
+        """Remove *path* and (if directory) all contained paths from the MRU list."""
+        if not self._mru:
+            return
+        self._mru.remove(path)
+        if is_dir:
+            for tab_path in list(self._mru.tabs):
+                if tab_path == path or tab_path.startswith(path + os.sep):
+                    self._mru.remove(tab_path)
+
+    def _cleanup_nav_history(self, path: str, is_dir: bool) -> None:
+        """Remove *path* from the navigation history."""
+        if not self._nav_history:
+            return
+        self._nav_history.remove_path(path, is_dir)

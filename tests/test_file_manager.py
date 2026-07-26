@@ -366,5 +366,209 @@ class TestFileManagerLogging(unittest.TestCase):
             mock_err.assert_called_once()
 
 
+# ---------------------------------------------------------------------------
+# prompt_delete — dialog is shown
+# ---------------------------------------------------------------------------
+
+
+class TestPromptDelete(unittest.TestCase):
+
+    def setUp(self):
+        self._open_tab = MagicMock()
+        self._vault_tree = MagicMock()
+        self._file_ops = MagicMock()
+        self._show_error = MagicMock()
+        self._tab_bar = MagicMock()
+        self._mru = MagicMock()
+        self._nav_history = MagicMock()
+        self._fm = FileManager(
+            self._open_tab, self._vault_tree,
+            self._file_ops, self._show_error,
+            tab_bar=self._tab_bar,
+            mru=self._mru,
+            nav_history=self._nav_history,
+        )
+
+    @patch("markdown_vault.file_manager.dialogs.confirm_delete")
+    def test_shows_dialog(self, mock_confirm):
+        parent = MagicMock()
+        self._fm.prompt_delete(parent, "/vault/note.md")
+        mock_confirm.assert_called_once()
+        call_kwargs = mock_confirm.call_args[1]
+        self.assertIs(call_kwargs["parent"], parent)
+        self.assertEqual(call_kwargs["path"], "/vault/note.md")
+        self.assertTrue(callable(call_kwargs["on_response"]))
+
+
+# ---------------------------------------------------------------------------
+# handle_delete_response — confirmed file delete
+# ---------------------------------------------------------------------------
+
+
+class TestHandleDeleteConfirmedFile(unittest.TestCase):
+
+    def setUp(self):
+        self._open_tab = MagicMock()
+        self._vault_tree = MagicMock()
+        self._file_ops = MagicMock()
+        self._show_error = MagicMock()
+        self._tab_bar = MagicMock()
+        self._mru = MagicMock()
+        self._nav_history = MagicMock()
+        self._fm = FileManager(
+            self._open_tab, self._vault_tree,
+            self._file_ops, self._show_error,
+            tab_bar=self._tab_bar,
+            mru=self._mru,
+            nav_history=self._nav_history,
+        )
+
+    @patch("markdown_vault.file_manager.Path")
+    def test_file_delete_success(self, mock_path_cls):
+        mock_path_instance = MagicMock()
+        mock_path_instance.is_dir.return_value = False
+        mock_path_cls.return_value = mock_path_instance
+        self._file_ops.delete_path.return_value = None
+        self._tab_bar.get_all_paths.return_value = ["/vault/note.md"]
+        self._fm.handle_delete_response(True, "/vault/note.md")
+
+        self._file_ops.delete_path.assert_called_once_with("/vault/note.md")
+        self._tab_bar.close_tab.assert_called_once_with("/vault/note.md")
+        self._mru.remove.assert_any_call("/vault/note.md")
+        self._nav_history.remove_path.assert_called_once_with("/vault/note.md", False)
+        self._vault_tree.refresh.assert_called_once()
+        self._show_error.assert_not_called()
+
+    @patch("markdown_vault.file_manager.Path")
+    def test_file_delete_failure_shows_error(self, mock_path_cls):
+        mock_path_instance = MagicMock()
+        mock_path_instance.is_dir.return_value = False
+        mock_path_cls.return_value = mock_path_instance
+        self._file_ops.delete_path.return_value = "Permission denied"
+        self._tab_bar.get_all_paths.return_value = ["/vault/note.md"]
+        self._fm.handle_delete_response(True, "/vault/note.md")
+
+        self._show_error.assert_called_once_with("Delete Failed", "Permission denied")
+        self._tab_bar.close_tab.assert_not_called()
+        self._mru.remove.assert_not_called()
+        self._nav_history.remove_path.assert_not_called()
+        self._vault_tree.refresh.assert_not_called()
+
+    @patch("markdown_vault.file_manager.Path")
+    def test_cancelled_does_nothing(self, mock_path_cls):
+        self._fm.handle_delete_response(False, "/vault/note.md")
+
+        self._file_ops.delete_path.assert_not_called()
+        self._tab_bar.close_tab.assert_not_called()
+        self._mru.remove.assert_not_called()
+        self._nav_history.remove_path.assert_not_called()
+        self._vault_tree.refresh.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# handle_delete_response — confirmed directory delete
+# ---------------------------------------------------------------------------
+
+
+class TestHandleDeleteConfirmedDir(unittest.TestCase):
+
+    def setUp(self):
+        self._open_tab = MagicMock()
+        self._vault_tree = MagicMock()
+        self._file_ops = MagicMock()
+        self._show_error = MagicMock()
+        self._tab_bar = MagicMock()
+        self._mru = MagicMock()
+        self._nav_history = MagicMock()
+        self._fm = FileManager(
+            self._open_tab, self._vault_tree,
+            self._file_ops, self._show_error,
+            tab_bar=self._tab_bar,
+            mru=self._mru,
+            nav_history=self._nav_history,
+        )
+
+    @patch("markdown_vault.file_manager.Path")
+    def test_dir_delete_closes_all_children(self, mock_path_cls):
+        mock_path_instance = MagicMock()
+        mock_path_instance.is_dir.return_value = True
+        mock_path_cls.return_value = mock_path_instance
+        self._file_ops.delete_path.return_value = None
+        self._tab_bar.get_all_paths.return_value = [
+            "/vault/dir/a.md",
+            "/vault/dir/b.md",
+            "/vault/other.md",
+        ]
+        self._mru.tabs = [
+            "/vault/dir/a.md",
+            "/vault/dir/b.md",
+            "/vault/other.md",
+        ]
+
+        self._fm.handle_delete_response(True, "/vault/dir")
+
+        self._file_ops.delete_path.assert_called_once_with("/vault/dir")
+        self._tab_bar.close_tab.assert_any_call("/vault/dir/a.md")
+        self._tab_bar.close_tab.assert_any_call("/vault/dir/b.md")
+        # Verify "/vault/other.md" was NOT closed
+        call_args = [c[0][0] for c in self._tab_bar.close_tab.call_args_list]
+        self.assertNotIn("/vault/other.md", call_args)
+        self._mru.remove.assert_any_call("/vault/dir")
+        self._mru.remove.assert_any_call("/vault/dir/a.md")
+        self._mru.remove.assert_any_call("/vault/dir/b.md")
+        self._nav_history.remove_path.assert_called_once_with("/vault/dir", True)
+        self._vault_tree.refresh.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# handle_delete_response — None dependencies (graceful no-op)
+# ---------------------------------------------------------------------------
+
+
+class TestHandleDeleteNoDependencies(unittest.TestCase):
+
+    @patch("markdown_vault.file_manager.Path")
+    def test_no_tab_bar(self, mock_path_cls):
+        mock_path_instance = MagicMock()
+        mock_path_instance.is_dir.return_value = False
+        mock_path_cls.return_value = mock_path_instance
+        fm = FileManager(
+            MagicMock(), MagicMock(),
+            MagicMock(), MagicMock(),
+            tab_bar=None, mru=None, nav_history=None,
+        )
+        fm._file_ops.delete_path.return_value = None
+        fm.handle_delete_response(True, "/vault/note.md")
+        fm._vault_tree.refresh.assert_called_once()
+
+    @patch("markdown_vault.file_manager.Path")
+    def test_no_mru(self, mock_path_cls):
+        mock_path_instance = MagicMock()
+        mock_path_instance.is_dir.return_value = False
+        mock_path_cls.return_value = mock_path_instance
+        fm = FileManager(
+            MagicMock(), MagicMock(),
+            MagicMock(), MagicMock(),
+            tab_bar=MagicMock(), mru=None, nav_history=MagicMock(),
+        )
+        fm._file_ops.delete_path.return_value = None
+        fm.handle_delete_response(True, "/vault/note.md")
+        fm._vault_tree.refresh.assert_called_once()
+
+    @patch("markdown_vault.file_manager.Path")
+    def test_no_nav_history(self, mock_path_cls):
+        mock_path_instance = MagicMock()
+        mock_path_instance.is_dir.return_value = False
+        mock_path_cls.return_value = mock_path_instance
+        fm = FileManager(
+            MagicMock(), MagicMock(),
+            MagicMock(), MagicMock(),
+            tab_bar=MagicMock(), mru=MagicMock(), nav_history=None,
+        )
+        fm._file_ops.delete_path.return_value = None
+        fm.handle_delete_response(True, "/vault/note.md")
+        fm._vault_tree.refresh.assert_called_once()
+
+
 if __name__ == "__main__":
     unittest.main()
