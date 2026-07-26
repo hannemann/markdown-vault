@@ -1,0 +1,282 @@
+"""Tests for markdown_vault.input_manager — InputManager."""
+
+import unittest
+import unittest.mock
+
+from markdown_vault.input_manager import InputManager
+
+
+class TestInputManagerInit(unittest.TestCase):
+    """InputManager.__init__."""
+
+    def test_stores_dependencies(self):
+        """__init__ stores all dependencies."""
+        application = unittest.mock.MagicMock()
+        on_nav_file_opened = unittest.mock.MagicMock()
+        nav_history = unittest.mock.MagicMock()
+        back_btn = unittest.mock.MagicMock()
+        forward_btn = unittest.mock.MagicMock()
+        settings = {"tab_switch_mode": "mru"}
+
+        mgr = InputManager(
+            application=application,
+            on_nav_file_opened=on_nav_file_opened,
+            nav_history=nav_history,
+            back_btn=back_btn,
+            forward_btn=forward_btn,
+            settings=settings,
+        )
+
+        self.assertEqual(mgr._application, application)
+        self.assertEqual(mgr._on_nav_file_opened, on_nav_file_opened)
+        self.assertEqual(mgr._nav_history, nav_history)
+        self.assertEqual(mgr._back_btn, back_btn)
+        self.assertEqual(mgr._forward_btn, forward_btn)
+        self.assertEqual(mgr._settings, settings)
+        self.assertIsNone(mgr._tab_shortcut_ctrl)
+        self.assertEqual(mgr._tab_shortcuts, [])
+
+
+class TestPushHistory(unittest.TestCase):
+    """InputManager.push_history."""
+
+    def setUp(self):
+        self.application = unittest.mock.MagicMock()
+        self.on_nav_file_opened = unittest.mock.MagicMock()
+        self.nav_history = unittest.mock.MagicMock()
+        self.back_btn = unittest.mock.MagicMock()
+        self.forward_btn = unittest.mock.MagicMock()
+        self.settings = {"tab_switch_mode": "mru"}
+        self._mgr = InputManager(
+            application=self.application,
+            on_nav_file_opened=self.on_nav_file_opened,
+            nav_history=self.nav_history,
+            back_btn=self.back_btn,
+            forward_btn=self.forward_btn,
+            settings=self.settings,
+        )
+
+    def test_push_calls_history_push(self):
+        """push_history delegates to nav_history.push()."""
+        self._mgr.push_history("/path/to/file.md")
+        self.nav_history.push.assert_called_once_with("/path/to/file.md")
+
+    def test_push_updates_buttons(self):
+        """push_history calls update_nav_buttons()."""
+        with unittest.mock.patch.object(InputManager, '_update_nav_buttons') as mock_btn:
+            self._mgr.push_history("/path/to/file.md")
+            mock_btn.assert_called_once()
+
+
+class TestNavBack(unittest.TestCase):
+    """InputManager.nav_back."""
+
+    def setUp(self):
+        self.application = unittest.mock.MagicMock()
+        self.on_nav_file_opened = unittest.mock.MagicMock()
+        self.nav_history = unittest.mock.MagicMock()
+        self.back_btn = unittest.mock.MagicMock()
+        self.forward_btn = unittest.mock.MagicMock()
+        self.settings = {"tab_switch_mode": "mru"}
+        self._mgr = InputManager(
+            application=self.application,
+            on_nav_file_opened=self.on_nav_file_opened,
+            nav_history=self.nav_history,
+            back_btn=self.back_btn,
+            forward_btn=self.forward_btn,
+            settings=self.settings,
+        )
+
+    def test_nav_back_calls_callback(self):
+        """nav_back calls on_nav_file_opened with the back path."""
+        self.nav_history.back.return_value = "/path/to/previous.md"
+        self._mgr.nav_back()
+        self.on_nav_file_opened.assert_called_once_with("/path/to/previous.md", _from_nav=True)
+
+    def test_nav_back_noop_when_none(self):
+        """nav_back does nothing when back() returns None."""
+        self.nav_history.back.return_value = None
+        self._mgr.nav_back()
+        self.on_nav_file_opened.assert_not_called()
+
+    def test_nav_back_updates_buttons(self):
+        """nav_back calls update_nav_buttons()."""
+        self.nav_history.back.return_value = "/path/to/previous.md"
+        with unittest.mock.patch.object(InputManager, '_update_nav_buttons'):
+            self._mgr.nav_back()
+
+
+class TestNavForward(unittest.TestCase):
+    """InputManager.nav_forward."""
+
+    def setUp(self):
+        self.application = unittest.mock.MagicMock()
+        self.on_nav_file_opened = unittest.mock.MagicMock()
+        self.nav_history = unittest.mock.MagicMock()
+        self.back_btn = unittest.mock.MagicMock()
+        self.forward_btn = unittest.mock.MagicMock()
+        self.settings = {"tab_switch_mode": "mru"}
+        self._mgr = InputManager(
+            application=self.application,
+            on_nav_file_opened=self.on_nav_file_opened,
+            nav_history=self.nav_history,
+            back_btn=self.back_btn,
+            forward_btn=self.forward_btn,
+            settings=self.settings,
+        )
+
+    def test_nav_forward_calls_callback(self):
+        """nav_forward calls on_nav_file_opened with the forward path."""
+        self.nav_history.forward.return_value = "/path/to/next.md"
+        self._mgr.nav_forward()
+        self.on_nav_file_opened.assert_called_once_with("/path/to/next.md", _from_nav=True)
+
+    def test_nav_forward_noop_when_none(self):
+        """nav_forward does nothing when forward() returns None."""
+        self.nav_history.forward.return_value = None
+        self._mgr.nav_forward()
+        self.on_nav_file_opened.assert_not_called()
+
+    def test_nav_forward_updates_buttons(self):
+        """nav_forward calls update_nav_buttons()."""
+        self.nav_history.forward.return_value = "/path/to/next.md"
+        with unittest.mock.patch.object(InputManager, '_update_nav_buttons'):
+            self._mgr.nav_forward()
+
+
+class TestUpdateNavButtons(unittest.TestCase):
+    """InputManager.update_nav_buttons."""
+
+    def setUp(self):
+        self.application = unittest.mock.MagicMock()
+        self.on_nav_file_opened = unittest.mock.MagicMock()
+        self.nav_history = unittest.mock.MagicMock()
+        self.back_btn = unittest.mock.MagicMock()
+        self.forward_btn = unittest.mock.MagicMock()
+        self.settings = {"tab_switch_mode": "mru"}
+        self._mgr = InputManager(
+            application=self.application,
+            on_nav_file_opened=self.on_nav_file_opened,
+            nav_history=self.nav_history,
+            back_btn=self.back_btn,
+            forward_btn=self.forward_btn,
+            settings=self.settings,
+        )
+
+    def test_buttons_set_sensitive(self):
+        """update_nav_buttons sets button sensitivity correctly."""
+        self.nav_history.can_go_back.return_value = True
+        self.nav_history.can_go_forward.return_value = False
+        self._mgr.update_nav_buttons()
+        self.back_btn.set_sensitive.assert_called_once_with(True)
+        self.forward_btn.set_sensitive.assert_called_once_with(False)
+
+
+class TestApplyKeybindings(unittest.TestCase):
+    """InputManager.apply_keybindings."""
+
+    def setUp(self):
+        self.application = unittest.mock.MagicMock()
+        self.on_nav_file_opened = unittest.mock.MagicMock()
+        self.nav_history = unittest.mock.MagicMock()
+        self.back_btn = unittest.mock.MagicMock()
+        self.forward_btn = unittest.mock.MagicMock()
+        self.settings = {"tab_switch_mode": "mru"}
+        self._mgr = InputManager(
+            application=self.application,
+            on_nav_file_opened=self.on_nav_file_opened,
+            nav_history=self.nav_history,
+            back_btn=self.back_btn,
+            forward_btn=self.forward_btn,
+            settings=self.settings,
+        )
+        self.tab_shortcut_ctrl = unittest.mock.MagicMock()
+        self.tab_shortcuts = []
+
+    def test_no_application_does_nothing(self):
+        """apply_keybindings does nothing when application is None."""
+        self._mgr._application = None
+        self._mgr.apply_keybindings(self.tab_shortcut_ctrl, self.tab_shortcuts)
+        self.tab_shortcut_ctrl.remove_shortcut.assert_not_called()
+
+    def test_sets_application_accels(self):
+        """apply_keybindings sets application accelerators."""
+        self._mgr.apply_keybindings(self.tab_shortcut_ctrl, self.tab_shortcuts)
+        self.application.set_accels_for_action.assert_any_call(
+            "win.nav-back", ["<Alt>Left"]
+        )
+        self.application.set_accels_for_action.assert_any_call(
+            "win.nav-forward", ["<Alt>Right"]
+        )
+
+    def test_stores_shortcut_references(self):
+        """apply_keybindings stores tab_shortcut_ctrl and tab_shortcuts."""
+        self._mgr.apply_keybindings(self.tab_shortcut_ctrl, self.tab_shortcuts)
+        self.assertEqual(self._mgr._tab_shortcut_ctrl, self.tab_shortcut_ctrl)
+        self.assertEqual(self._mgr._tab_shortcuts, self.tab_shortcuts)
+
+
+class TestUpdateTabShortcuts(unittest.TestCase):
+    """InputManager.update_tab_shortcuts."""
+
+    def setUp(self):
+        self.application = unittest.mock.MagicMock()
+        self.on_nav_file_opened = unittest.mock.MagicMock()
+        self.nav_history = unittest.mock.MagicMock()
+        self.back_btn = unittest.mock.MagicMock()
+        self.forward_btn = unittest.mock.MagicMock()
+        self.settings = {"tab_switch_mode": "linear"}
+        self._mgr = InputManager(
+            application=self.application,
+            on_nav_file_opened=self.on_nav_file_opened,
+            nav_history=self.nav_history,
+            back_btn=self.back_btn,
+            forward_btn=self.forward_btn,
+            settings=self.settings,
+        )
+        self.tab_shortcut_ctrl = unittest.mock.MagicMock()
+        self.tab_shortcuts = []
+        self._mgr.apply_keybindings(self.tab_shortcut_ctrl, self.tab_shortcuts)
+
+    def test_mru_mode_returns_early(self):
+        """update_tab_shortcuts returns early in MRU mode."""
+        self._mgr._settings["tab_switch_mode"] = "mru"
+        self._mgr._tab_shortcuts.clear()
+        self._mgr.update_tab_shortcuts()
+        self.assertEqual(len(self._mgr._tab_shortcuts), 0)
+
+    def test_linear_mode_adds_shortcuts(self):
+        """update_tab_shortcuts adds shortcuts in linear mode."""
+        self._mgr._settings["tab_switch_mode"] = "linear"
+        self._mgr.update_tab_shortcuts()
+        self.tab_shortcut_ctrl.add_shortcut.assert_called()
+
+
+class TestUpdateNavButtonsPublic(unittest.TestCase):
+    """InputManager.update_nav_buttons (public API)."""
+
+    def setUp(self):
+        self.application = unittest.mock.MagicMock()
+        self.on_nav_file_opened = unittest.mock.MagicMock()
+        self.nav_history = unittest.mock.MagicMock()
+        self.back_btn = unittest.mock.MagicMock()
+        self.forward_btn = unittest.mock.MagicMock()
+        self.settings = {"tab_switch_mode": "mru"}
+        self._mgr = InputManager(
+            application=self.application,
+            on_nav_file_opened=self.on_nav_file_opened,
+            nav_history=self.nav_history,
+            back_btn=self.back_btn,
+            forward_btn=self.forward_btn,
+            settings=self.settings,
+        )
+
+    def test_public_api_delegates_to_private(self):
+        """update_nav_buttons public method delegates to _update_nav_buttons."""
+        self._mgr._update_nav_buttons = unittest.mock.MagicMock()
+        self._mgr.update_nav_buttons()
+        self._mgr._update_nav_buttons.assert_called_once()
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -35,6 +35,7 @@ from .markdown_help import MarkdownHelpOverlay
 from .autosave import AutosaveManager
 from .file_ops import FileOps
 from .view_mode_manager import ViewModeManager
+from .input_manager import InputManager
 from . import config
 from . import dialogs
 from . import banners as banner_mod
@@ -222,6 +223,16 @@ class MainWindow(Adw.ApplicationWindow):
             },
         )
 
+        # Input manager (shortcuts + navigation).
+        self._input_manager = InputManager(
+            application=self,
+            on_nav_file_opened=self._open_file,
+            nav_history=self._nav_history,
+            back_btn=self._back_btn,
+            forward_btn=self._forward_btn,
+            settings=self._settings,
+        )
+
         # Session persistence manager.
         self._session_mgr = SessionManager(
             get_window_state=self._get_window_state,
@@ -257,6 +268,11 @@ class MainWindow(Adw.ApplicationWindow):
 
         self._search_paned.set_vexpand(True)
         root_box.append(self._search_paned)
+
+        # Global shortcut controller for dynamic tab switching shortcuts.
+        self._tab_shortcut_ctrl = Gtk.ShortcutController.new()
+        self._tab_shortcut_ctrl.set_scope(Gtk.ShortcutScope.GLOBAL)
+        self._tab_shortcuts: list[Gtk.Shortcut] = []
 
         self._register_actions()
         self._load_vaults()
@@ -342,39 +358,13 @@ class MainWindow(Adw.ApplicationWindow):
         self._motion_ctrl.connect("motion", self._on_motion)
         self._content_stack.add_controller(self._motion_ctrl)
 
-        # Add global shortcut controller for dynamic tab switching shortcuts.
-        self._tab_shortcut_ctrl = Gtk.ShortcutController.new()
-        self._tab_shortcut_ctrl.set_scope(Gtk.ShortcutScope.GLOBAL)
-        self._tab_shortcuts: list[Gtk.Shortcut] = []
-        self.add_controller(self._tab_shortcut_ctrl)
         self._update_tab_shortcuts()
+        self.add_controller(self._tab_shortcut_ctrl)
 
     def _update_tab_shortcuts(self) -> None:
-        """Update dynamic tab switching shortcuts in the global shortcut controller."""
-        if not hasattr(self, "_tab_shortcut_ctrl"):
-            return
-        for shortcut in self._tab_shortcuts:
-            self._tab_shortcut_ctrl.remove_shortcut(shortcut)
-        self._tab_shortcuts = []
-
-        is_mru = self._settings.get("tab_switch_mode", "mru") == "mru"
-        if is_mru:
-            return  # MRU mode uses application accelerators only
-
-        next_accel = self._settings.get("keybinding_next_tab", "<Control>Tab")
-        prev_accel = self._settings.get("keybinding_prev_tab", "<Shift><Control>Tab")
-        if next_accel:
-            trigger = Gtk.ShortcutTrigger.parse_string(next_accel)
-            action = Gtk.NamedAction.new("win.next-tab")
-            shortcut = Gtk.Shortcut.new(trigger, action)
-            self._tab_shortcut_ctrl.add_shortcut(shortcut)
-            self._tab_shortcuts.append(shortcut)
-        if prev_accel:
-            trigger = Gtk.ShortcutTrigger.parse_string(prev_accel)
-            action = Gtk.NamedAction.new("win.prev-tab")
-            shortcut = Gtk.Shortcut.new(trigger, action)
-            self._tab_shortcut_ctrl.add_shortcut(shortcut)
-            self._tab_shortcuts.append(shortcut)
+        """Update dynamic tab switching shortcuts — delegates to
+        :class:`InputManager`."""
+        self._input_manager.update_tab_shortcuts()
 
     # ── Welcome view ───────────────────────────────────────────────
 
@@ -1199,31 +1189,21 @@ class MainWindow(Adw.ApplicationWindow):
     # ── Navigation history ─────────────────────────────────────────
 
     def _push_history(self, file_path: str) -> None:
-        """Append *file_path* to the navigation history.
-
-        Consecutive duplicates are collapsed and any forward history is
-        discarded, matching standard browser behaviour.
-        """
-        self._nav_history.push(file_path)
-        self._update_nav_buttons()
+        """Append *file_path* to the navigation history — delegates to
+        :class:`InputManager`."""
+        self._input_manager.push_history(file_path)
 
     def _nav_back(self) -> None:
-        """Navigate to the previous entry in history, skipping missing files."""
-        file_path = self._nav_history.back()
-        if file_path is not None:
-            self._open_file(file_path, _from_nav=True)
-        self._update_nav_buttons()
+        """Navigate back — delegates to :class:`InputManager`."""
+        self._input_manager.nav_back()
 
     def _nav_forward(self) -> None:
-        """Navigate to the next entry in history, skipping missing files."""
-        file_path = self._nav_history.forward()
-        if file_path is not None:
-            self._open_file(file_path, _from_nav=True)
-        self._update_nav_buttons()
+        """Navigate forward — delegates to :class:`InputManager`."""
+        self._input_manager.nav_forward()
 
     def _update_nav_buttons(self) -> None:
-        self._back_btn.set_sensitive(self._nav_history.can_go_back())
-        self._forward_btn.set_sensitive(self._nav_history.can_go_forward())
+        """Update navigation button state — delegates to :class:`InputManager`."""
+        self._input_manager.update_nav_buttons()
 
     def _next_tab(self) -> None:
         """Switch to the next tab — delegates to :class:`TabOrchestrator`."""
@@ -1260,32 +1240,12 @@ class MainWindow(Adw.ApplicationWindow):
         self._tab_orchestrator.cycle_tab(direction)
 
     def _apply_keybindings(self) -> None:
-        app = self.get_application()
-        if not app:
-            return
-        app.set_accels_for_action("win.nav-back", ["<Alt>Left"])
-        app.set_accels_for_action("win.nav-forward", ["<Alt>Right"])
-        is_mru = self._settings.get("tab_switch_mode", "mru") == "mru"
-        if is_mru:
-            next_accel = self._settings.get("keybinding_next_tab", "<Control>Tab")
-            prev_accel = self._settings.get("keybinding_prev_tab", "<Shift><Control>Tab")
-            app.set_accels_for_action("win.mru-switcher-next", [next_accel] if next_accel else [])
-            app.set_accels_for_action("win.mru-switcher-prev", [prev_accel] if prev_accel else [])
-            app.set_accels_for_action("win.next-tab", [])
-            app.set_accels_for_action("win.prev-tab", [])
-        else:
-            for setting_key, cycle_action in (
-                ("keybinding_next_tab", "next-tab"),
-                ("keybinding_prev_tab", "prev-tab"),
-            ):
-                accel = self._settings.get(setting_key, "")
-                if accel:
-                    app.set_accels_for_action(f"win.{cycle_action}", [accel])
-                else:
-                    app.set_accels_for_action(f"win.{cycle_action}", [])
-            app.set_accels_for_action("win.mru-switcher-next", [])
-            app.set_accels_for_action("win.mru-switcher-prev", [])
-        self._update_tab_shortcuts()
+        """Set application accelerators and dynamic tab shortcuts — delegates
+        to :class:`InputManager`."""
+        self._input_manager.apply_keybindings(
+            tab_shortcut_ctrl=self._tab_shortcut_ctrl,
+            tab_shortcuts=self._tab_shortcuts,
+        )
 
     # ── View mode ──────────────────────────────────────────────────
 
