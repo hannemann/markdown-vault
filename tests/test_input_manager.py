@@ -202,10 +202,10 @@ class TestApplyKeybindings(unittest.TestCase):
     def test_sets_application_accels(self):
         """apply_keybindings sets application accelerators."""
         self._mgr.apply_keybindings(self.tab_shortcut_ctrl, self.tab_shortcuts)
-        self.application.set_accels_for_action.assert_any_call(
+        self.application.get_application().set_accels_for_action.assert_any_call(
             "win.nav-back", ["<Alt>Left"]
         )
-        self.application.set_accels_for_action.assert_any_call(
+        self.application.get_application().set_accels_for_action.assert_any_call(
             "win.nav-forward", ["<Alt>Right"]
         )
 

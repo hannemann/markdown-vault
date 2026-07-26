@@ -127,6 +127,33 @@ def confirm_delete(parent: Gtk.Widget, path: str, on_response) -> None:
     dialog.present(parent)
 
 
+# ── File exists confirmation ───────────────────────────────────────
+
+
+def confirm_file_exists(parent: Gtk.Widget, path: str, on_response) -> None:
+    """Show a dialog when a file already exists.
+
+    *on_response* is called with ``True`` (open file) or ``False``
+    (cancelled).
+    """
+    name = Path(path).name
+    body = f"The file \"{name}\" already exists. Open it?"
+
+    dialog = Adw.AlertDialog(heading="File Already Exists", body=body)
+    dialog.set_prefer_wide_layout(True)
+    dialog.add_response("cancel", "Cancel")
+    dialog.add_response("open", "Open")
+    dialog.set_response_appearance("open", Adw.ResponseAppearance.SUGGESTED)
+    dialog.set_default_response("open")
+    dialog.set_close_response("cancel")
+
+    def _on_response(_dlg, response):
+        on_response(response == "open")
+
+    dialog.connect("response", _on_response)
+    dialog.present(parent)
+
+
 # ── Save / discard / cancel ────────────────────────────────────────
 
 

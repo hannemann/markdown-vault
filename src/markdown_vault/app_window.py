@@ -36,6 +36,7 @@ from .autosave import AutosaveManager
 from .file_ops import FileOps
 from .view_mode_manager import ViewModeManager
 from .input_manager import InputManager
+from .file_manager import FileManager
 from . import config
 from . import dialogs
 from . import banners as banner_mod
@@ -238,6 +239,14 @@ class MainWindow(Adw.ApplicationWindow):
             get_window_state=self._get_window_state,
             tab_bar=self._tab_bar,
             mru_manager=self.mru,
+        )
+
+        # File manager (new file / new folder dialogs).
+        self._file_manager = FileManager(
+            open_tab_fn=self._open_file,
+            vault_tree=self._vault_tree,
+            file_ops=self._file_ops,
+            show_error_fn=self._show_error,
         )
 
         self._sidebar_paned = Gtk.Paned(orientation=Gtk.Orientation.HORIZONTAL)
@@ -668,40 +677,9 @@ class MainWindow(Adw.ApplicationWindow):
 
     def _on_new_file(self) -> None:
         """Prompt for a filename and create it in the active vault."""
-        vaults = self._vault_tree.get_vault_paths()
-        if not vaults:
-            dialogs.show_error(
-                self, "No Vault Open",
-                "Add a vault directory first before creating files.",
-            )
-            return
-
         default_dir = self._resolve_active_vault()
-        dialogs.prompt_new_item(
-            self,
-            heading="New File",
-            body="File name (.md is added automatically):",
-            placeholder="e.g. My Note",
-            on_response=lambda name: self._on_new_file_response(name, default_dir),
-        )
-
-    def _on_new_file_response(self, name: str | None, default_dir: str) -> None:
-        """Handle the new-file dialog response."""
-        if not name:
-            return
-        if not name.endswith(".md"):
-            name += ".md"
-        err = validation.validate_new_item(name, default_dir)
-        if err:
-            self._show_error("Invalid Name", err)
-            return
-        err = self._file_ops.create_file(default_dir, name)
-        if err:
-            self._show_error("Create Failed", err)
-            return
-        self._vault_tree.refresh()
-        file_path = os.path.join(default_dir, name)
-        self._open_file(file_path)
+        vaults = self._vault_tree.get_vault_paths()
+        self._file_manager.prompt_new_file(self, vaults, default_dir)
 
     # ── Vault loading ──────────────────────────────────────────────
 
@@ -1045,37 +1023,11 @@ class MainWindow(Adw.ApplicationWindow):
 
     def _on_new_file_requested(self, _tree, parent_dir: str) -> None:
         """Handle 'New File' from the vault tree context menu."""
-        dialogs.prompt_new_item(
-            self,
-            heading="New File",
-            body="File name (.md is added automatically):",
-            placeholder="e.g. My Note",
-            on_response=lambda name: self._on_new_file_response(name, parent_dir),
-        )
+        self._file_manager.prompt_new_file(self, None, parent_dir)
 
     def _on_new_folder_requested(self, _tree, parent_dir: str) -> None:
         """Handle 'New Folder' from the vault tree context menu."""
-        dialogs.prompt_new_item(
-            self,
-            heading="New Folder",
-            body="Folder name:",
-            placeholder="e.g. My Folder",
-            on_response=lambda name: self._on_new_folder_response(name, parent_dir),
-        )
-
-    def _on_new_folder_response(self, name: str | None, parent_dir: str) -> None:
-        """Handle the new-folder dialog response."""
-        if not name:
-            return
-        err = validation.validate_new_item(name, parent_dir)
-        if err:
-            self._show_error("Invalid Name", err)
-            return
-        err = self._file_ops.create_folder(parent_dir, name)
-        if err:
-            self._show_error("Create Failed", err)
-            return
-        self._vault_tree.refresh()
+        self._file_manager.prompt_new_folder(self, parent_dir)
 
     def _show_error(self, heading: str, body: str) -> None:
         """Show an error dialog with the given message."""

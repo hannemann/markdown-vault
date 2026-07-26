@@ -10,6 +10,7 @@ py_sources = files(
   'editor.py',
   'file_index.py',
   'file_ops.py',
+  'file_manager.py',
   'git_integration.py',
    'history.py',
    'input_manager.py',

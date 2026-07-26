@@ -128,6 +128,64 @@ class TestPromptNewItem(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
+# confirm_file_exists
+# ---------------------------------------------------------------------------
+
+
+class TestConfirmFileExists(unittest.TestCase):
+
+    @patch("markdown_vault.dialogs.Adw.AlertDialog")
+    def test_presents_with_file_name(self, MockDialog):
+        parent = MagicMock()
+        dialogs.confirm_file_exists(parent, "/vault/note.md", lambda c: None)
+
+        MockDialog.assert_called_once()
+        kwargs = MockDialog.call_args[1]
+        self.assertEqual(kwargs["heading"], "File Already Exists")
+        self.assertIn("note.md", kwargs["body"])
+
+    @patch("markdown_vault.dialogs.Adw.AlertDialog")
+    @patch("markdown_vault.dialogs.GLib")
+    def test_open_response_calls_callback_true(self, MockGLib, MockDialog):
+        parent = MagicMock()
+        responses = []
+        dialogs.confirm_file_exists(
+            parent, "/vault/note.md", lambda c: responses.append(c),
+        )
+
+        dlg = MockDialog.return_value
+        response_cb = dlg.connect.call_args[0][1]
+        response_cb(dlg, "open")
+        self.assertEqual(responses, [True])
+
+    @patch("markdown_vault.dialogs.Adw.AlertDialog")
+    @patch("markdown_vault.dialogs.GLib")
+    def test_cancel_response_calls_callback_false(self, MockGLib, MockDialog):
+        parent = MagicMock()
+        responses = []
+        dialogs.confirm_file_exists(
+            parent, "/vault/note.md", lambda c: responses.append(c),
+        )
+
+        dlg = MockDialog.return_value
+        response_cb = dlg.connect.call_args[0][1]
+        response_cb(dlg, "cancel")
+        self.assertEqual(responses, [False])
+
+    @patch("markdown_vault.dialogs.Adw.AlertDialog")
+    def test_response_buttons_configured(self, MockDialog):
+        parent = MagicMock()
+        dialogs.confirm_file_exists(parent, "/vault/note.md", lambda c: None)
+
+        dlg = MockDialog.return_value
+        responses = [
+            call[0][0] for call in dlg.add_response.call_args_list
+        ]
+        self.assertIn("cancel", responses)
+        self.assertIn("open", responses)
+
+
+# ---------------------------------------------------------------------------
 # confirm_delete
 # ---------------------------------------------------------------------------
 
