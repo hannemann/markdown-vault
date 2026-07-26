@@ -24,6 +24,7 @@ py_sources = files(
   'search_logic.py',
   'session.py',
   'sidebar.py',
+  'tab_manager.py',
   'tabs.py',
   'tags.py',
   'validation.py',
