@@ -113,9 +113,9 @@ tests/                   — unit tests (unittest)
 
 ## Dev commands
 
-**IMPORTANT**
-**ONLY USE THESE COMMANDS TO START, STOP, TEST OR INSTALL THE APP**  
-**NEVER INVENT YOUR OWN COMMANDS TO PERFORM ONE OF THOSE TASKS**
+**MUST:** For app start/stop/test/install, ALWAYS use these exact commands.
+**NEVER invent your own commands for these tasks.**
+
 ```bash
 # Start app
 gtk-launch de.hannemann.markdown-vault >/dev/null 2>&1 & disown
