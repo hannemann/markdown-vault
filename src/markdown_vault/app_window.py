@@ -34,6 +34,7 @@ from .session_manager import SessionManager
 from .markdown_help import MarkdownHelpOverlay
 from .autosave import AutosaveManager
 from .file_ops import FileOps
+from .view_mode_manager import ViewModeManager
 from . import config
 from . import dialogs
 from . import banners as banner_mod
@@ -99,7 +100,6 @@ class MainWindow(Adw.ApplicationWindow):
 
         # Guard against re-entrant position clamping.
         self._paned_clamping: bool = False
-        self._preview_debounce_id: int | None = None
         self._close_window_pending: bool = False
 
         # MRU tab manager.
@@ -188,6 +188,14 @@ class MainWindow(Adw.ApplicationWindow):
         self._vault_monitor.connect("external-file-moved", self._monitor_handler.on_file_moved)
         self._vault_monitor.connect("external-content-changed", self._monitor_handler.on_content_changed)
 
+        # View mode manager.
+        self._view_mode_manager = ViewModeManager(
+            tab_bar=self._tab_bar,
+            view_toggle_buttons=self._view_toggle_buttons,
+            sidebar=self._sidebar,
+            backlink_index=self._backlink_index,
+        )
+
         # Tab lifecycle orchestrator.
         self._tab_orchestrator = TabOrchestrator(
             tab_bar=self._tab_bar,
@@ -204,9 +212,9 @@ class MainWindow(Adw.ApplicationWindow):
                 "on_preview_checkbox_toggled": self._on_preview_checkbox_toggled,
                 "on_editor_text_changed": self._on_editor_text_changed,
                 "on_editor_modified": self._on_editor_modified,
-                "apply_view_mode": self._apply_view_mode,
-                "sync_view_toggle": self._sync_view_toggle,
-                "refresh_preview": self._refresh_preview,
+                "apply_view_mode": self._view_mode_manager.apply_view_mode,
+                "sync_view_toggle": self._view_mode_manager.sync_view_toggle,
+                "refresh_preview": self._view_mode_manager.refresh_preview,
                 "push_history": self._push_history,
                 "on_banner_reload": self._on_banner_reload,
                 "on_banner_dismiss": self._on_banner_dismiss,
@@ -1286,78 +1294,26 @@ class MainWindow(Adw.ApplicationWindow):
             return
         if not toggle_btn.get_active():
             return
-        tab = self._tab_bar.get_current_tab()
-        if not tab:
-            return
-        tab.view_mode = toggle_btn._mode  # type: ignore[attr-defined]
-        self._apply_view_mode()
+        self._view_mode_manager.set_view_mode(toggle_btn._mode)  # type: ignore[attr-defined]
 
     def _apply_view_mode(self) -> None:
-        """Show/hide editor and preview based on the current tab's view mode."""
-        tab = self._tab_bar.get_current_tab()
-        if not tab:
-            return
-        mode = tab.view_mode
-        tab.editor.set_visible(mode in ("edit", "split"))
-        tab.preview.set_visible(mode in ("render", "split"))
-        if mode in ("render", "split"):
-            self._refresh_preview()
+        self._view_mode_manager.apply_view_mode()
 
     def _sync_view_toggle(self, mode: str) -> None:
-        """Set the header toggle buttons to reflect *mode* without triggering."""
-        btn = self._view_toggle_buttons.get(mode)
-        if btn:
-            btn.set_active(True)
+        self._view_mode_manager.sync_view_toggle(mode)
 
     def _set_view_mode(self, mode: str) -> None:
-        """Switch the current tab's view mode (action callback)."""
-        tab = self._tab_bar.get_current_tab()
-        if not tab:
-            return
-        tab.view_mode = mode
-        self._sync_view_toggle(mode)
-        self._apply_view_mode()
+        self._view_mode_manager.set_view_mode(mode)
 
     # ── Editor callbacks ────────────────────────────────────────────
 
     def _on_editor_text_changed(self, editor: Editor) -> None:
-        """Update preview and sidebar when editor content changes."""
-        tab = self._tab_bar.get_current_tab()
-        if tab and tab.editor is editor:
-            if editor.file_path:
-                self._backlink_index.update_file(editor.file_path, editor.get_text())
-            if tab.preview.get_visible():
-                self._schedule_preview_refresh()
-            self._sidebar.update_text_only(editor.file_path, editor.get_text())
+        self._view_mode_manager.on_editor_text_changed(editor)
 
     # ── Preview ────────────────────────────────────────────────────
 
-    _PREVIEW_DEBOUNCE_MS = 500
-
-    def _schedule_preview_refresh(self) -> None:
-        """Debounce preview refresh to reduce flicker during rapid typing."""
-        if self._preview_debounce_id is not None:
-            GLib.source_remove(self._preview_debounce_id)
-        self._preview_debounce_id = GLib.timeout_add(
-            self._PREVIEW_DEBOUNCE_MS, self._on_preview_debounce,
-        )
-
-    def _on_preview_debounce(self) -> bool:
-        self._preview_debounce_id = None
-        self._refresh_preview()
-        tab = self._tab_bar.get_current_tab()
-        if tab and tab.editor and tab.editor.file_path:
-            self._sidebar.refresh_backlinks(tab.editor.file_path)
-        return False
-
     def _refresh_preview(self) -> None:
-        """Update the preview for the current tab."""
-        tab = self._tab_bar.get_current_tab()
-        if not tab:
-            return
-        text = tab.editor.get_text()
-        base_dir = str(Path(tab.editor.file_path).parent) if tab.editor.file_path else ""
-        tab.preview.update_from_text(text, base_dir)
+        self._view_mode_manager.refresh_preview()
 
     # ── Misc ───────────────────────────────────────────────────────
 
@@ -1464,9 +1420,7 @@ class MainWindow(Adw.ApplicationWindow):
         explicitly; on cancel or save-failure the close is aborted.
         """
         self._autosave.cancel()
-        if self._preview_debounce_id is not None:
-            GLib.source_remove(self._preview_debounce_id)
-            self._preview_debounce_id = None
+        self._view_mode_manager.cancel_preview_debounce()
 
         # Collect dirty tabs across all open files.
         all_paths = self._tab_bar.get_all_paths()

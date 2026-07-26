@@ -252,3 +252,7 @@ Status folders: `Draft`, `Pending`, `Progress`, `Review`, `Done`.
 When a ticket-related keyword is mentioned (e.g. "ticket", "bug", "feature"), search under `./tmp/Tickets/` for relevant files first.
 When a ticket changes it's status move it to the appropriate folder.
 If a ticket can be broken down into subtasks, create a folder with the same name. Create tickets for subtasks in that folder.
+
+## Code Exploration
+
+When exploring the codebase (architecture, file relationships, dependencies, "how does X work?"), use the `graphify` skill before searching files manually. It provides graph-based queries for faster, more accurate understanding of code structure. Trigger: any question about codebase organization, module dependencies, or call chains.

@@ -451,7 +451,7 @@ class TestOnCloseRequestDirtyCheck(unittest.TestCase):
             def __init__(self):
                 self._tab_bar = unittest.mock.Mock()
                 self._vault_monitor = unittest.mock.Mock()
-                self._preview_debounce_id = None
+                self._view_mode_manager = unittest.mock.Mock()
                 self._autosave = unittest.mock.Mock()
                 self._close_window_pending = False
                 self._surface = unittest.mock.Mock()

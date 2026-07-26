@@ -28,8 +28,9 @@ py_sources = files(
   'tab_manager.py',
   'tabs.py',
   'tags.py',
-  'validation.py',
-  'vault_monitor.py',
+   'validation.py',
+   'view_mode_manager.py',
+   'vault_monitor.py',
   'vault_tree.py',
 )
 
