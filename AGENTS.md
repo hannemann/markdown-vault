@@ -88,6 +88,9 @@ src/
     css/
       style.css               — WebView styling for rendered Markdown
       gtk.css                 — GTK CSS for tab bar and widgets
+    styles/
+      markdown-vault-dark.xml  — GtkSourceView scheme (parent: Adwaita-dark)
+      markdown-vault-light.xml — GtkSourceView scheme (parent: Adwaita)
     meson.build               — Python package build rules
   share/markdown-vault/
     css/style.css             — CSS (copy for Flatpak resource bundle)
@@ -180,6 +183,22 @@ python3 -m unittest discover -s tests -v
 - Images in Markdown: support `![alt](path)` with both relative and absolute paths.
 - **Test-driven development**: Always write failing tests first, then implement the fix. Run tests to verify they fail, then implement the minimal code to make them pass. Never commit code without corresponding tests.
 - **New Python modules**: When creating a new `.py` file in `src/lib/python3.13/site-packages/markdown_vault/`, it MUST be added to the `py_sources` list in `src/lib/python3.13/site-packages/markdown_vault/meson.build` (alphabetically sorted). Meson has no built-in `glob()` — the list is manually maintained. Forgetting to add it means the file will not be installed and the app will crash with `ModuleNotFoundError`.
+- **Editor syntax colours come from a style scheme, not CSS**: GtkSourceView paints syntax via
+  `GtkTextTag` foregrounds taken from the active style scheme — `css/gtk.css` cannot override them.
+  To change one, edit the bundled schemes in `styles/`, which use `parent-scheme` to inherit
+  everything else from stock `Adwaita`/`Adwaita-dark`. `Editor._register_style_scheme_path()` adds
+  the directory to the scheme manager's search path; new scheme files must also be added to the
+  `install_data` block in the package `meson.build`.
+- **Inline code colour**: `def:inline-code` is `#FFBE6F` (dark) / `#C64600` (light). The preview
+  mirrors it via the `--code-fg` CSS variable, fed from `CODE_FG_DARK`/`CODE_FG_LIGHT` in
+  `preview.py`. Change both sides together or editor and preview drift apart.
+- **WebView CSS variable names**: `style.css` may only use the variables `preview.py` actually
+  defines in `:root` — `--bg`, `--fg`, `--accent`, `--dim`, `--card-bg`, `--borders`, `--code-fg`.
+  An undefined variable makes the whole declaration invalid and is dropped silently.
+- **`--accent` is `accent_color`, not `accent_bg_color`**: `accent_bg_color` is the fill colour for
+  buttons and is too dark to read as link text on a dark background. `accent_color` is libadwaita's
+  standalone variant, lightened for text. `_get_theme_colors()` falls back to `accent_bg_color` if
+  the theme does not define it.
 - **GTK CSS in `css/gtk.css`**: Target GTK 4.14 / libadwaita 1.5. `var(--name)` and `color-mix()` need GTK 4.16+ and are silently dropped with "Expected a valid color" parser warnings. Use `@accent_bg_color` and `alpha(@color, 0.3)` instead. This does not apply to `css/style.css`, which is rendered by WebKit.
 - **WebKit needs an unprivileged user namespace**: WebKitGTK 2.46+ always sets up a `bwrap` sandbox and aborts the whole process if it cannot (`Failed to fully launch dbus-proxy`). On Ubuntu 24.04 this requires the AppArmor profile in `packaging/apparmor/` — see README. There is no API or env var to disable the sandbox.
 - **Test organization**: Add tests to existing test files grouped by topic (e.g. vault_monitor events → `test_vault_monitor_events.py`). Do not create new test files with arbitrary context names — distribute into the files that already cover the module under test. When in doubt, ask.
