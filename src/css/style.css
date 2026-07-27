@@ -229,13 +229,12 @@ body {
 .markdown-body .codehilite .vi { color: #e5c07b; }                      /* Name.Variable.Instance */
 .markdown-body .codehilite .il { color: #d19a66; }                      /* Literal.Number.Integer.Long */
 
-/* Inline code (already styled, but ensure consistency) */
+/* Inline code with dynamic colour border/bg via --code-fg */
 .markdown-body :not(pre) > code {
-    background: var(--card-bg);
-    padding: 0.2em 0.4em;
-    border-radius: 4px;
-    font-size: 0.85em;
-    color: var(--accent);
+    --inline-code-color: #B8860B;
+    border: 1px solid var(--inline-code-color);
+    background: color-mix(in srgb, var(--inline-code-color) 25%, transparent);
+    color: inherit;
 }
 
 /* ── MathML ─────────────────────────────────────────────────────── */
