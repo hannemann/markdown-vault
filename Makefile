@@ -58,6 +58,8 @@ install: build
 uninstall:
 	@echo "=> Uninstalling locally..."
 	ninja -C builddir uninstall
+	@echo "=> Cleaning __pycache__ directories..."
+	MESON_INSTALL_PREFIX=$$HOME/.local $(PYTHON) build-aux/meson/post_uninstall.py
 
 clean-local:
 	@echo "=> Cleaning local build..."
