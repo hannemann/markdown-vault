@@ -1,4 +1,3 @@
-subdir('css')
 subdir('icons')
 
 install_data(

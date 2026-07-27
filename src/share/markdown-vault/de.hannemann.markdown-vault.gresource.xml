@@ -3,6 +3,5 @@
   <gresource prefix="/de/hannemann/markdown-vault">
     <file preprocess="xml-stripblanks">de.hannemann.markdown-vault.desktop</file>
     <file>de.hannemann.markdown-vault.metainfo.xml</file>
-    <file alias="css/style.css">css/style.css</file>
   </gresource>
 </gresources>

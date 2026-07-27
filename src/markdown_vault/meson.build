@@ -45,7 +45,7 @@ install_data(
 )
 
 install_data(
-  'css/style.css',
-  'css/gtk.css',
+  '../css/style.css',
+  '../css/gtk.css',
   install_dir: pythondir / 'markdown_vault' / 'css',
 )
