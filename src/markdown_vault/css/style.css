@@ -35,7 +35,7 @@ body {
 }
 
 .markdown-body code {
-    background: var(--card_bg_color);
+    background: var(--card-bg);
     padding: 0.2em 0.4em;
     border-radius: 6px;
     font-size: 85%;
@@ -43,7 +43,7 @@ body {
 }
 
 .markdown-body pre {
-    background: var(--card_bg_color);
+    background: var(--card-bg);
     padding: 16px;
     border-radius: 6px;
     overflow-x: auto;
@@ -102,12 +102,12 @@ body {
 }
 
 .markdown-body table th {
-    background: var(--card_bg_color);
+    background: var(--card-bg);
     font-weight: 600;
 }
 
 .markdown-body table tr:nth-child(even) {
-    background: var(--card_bg_color);
+    background: var(--card-bg);
 }
 
 .markdown-body hr {
@@ -231,7 +231,7 @@ body {
 
 /* Inline code (already styled, but ensure consistency) */
 .markdown-body :not(pre) > code {
-    background: var(--card_bg_color);
+    background: var(--card-bg);
     padding: 0.2em 0.4em;
     border-radius: 4px;
     font-size: 0.85em;
