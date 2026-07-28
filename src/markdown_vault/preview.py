@@ -338,6 +338,9 @@ class Preview(Gtk.ScrolledWindow):
         self._last_html_hash: str = ""
         self._last_html: str = ""
         self._file_index: FileIndex | None = None
+        self._active: bool = True
+        self._pending_text: str | None = None
+        self._pending_base_dir: str = ""
 
         self._web_view = WebKit.WebView()
         self._web_view.set_vexpand(True)
@@ -414,6 +417,18 @@ class Preview(Gtk.ScrolledWindow):
         """Force a full HTML reload on the next ``update_from_text`` call."""
         self._loaded = False
         self._last_html_hash = ""
+
+    def activate(self) -> None:
+        """Tab became active -- render pending content if any."""
+        self._active = True
+        if self._pending_text is not None:
+            self.update_from_text(self._pending_text, self._pending_base_dir)
+            self._pending_text = None
+            self._pending_base_dir = ""
+
+    def deactivate(self) -> None:
+        """Tab became inactive -- pause rendering."""
+        self._active = False
 
     def _on_checkbox_clicked(self, _content_manager, jsc_value) -> None:
         """Handle checkbox click from JavaScript via postMessage."""
@@ -548,7 +563,15 @@ class Preview(Gtk.ScrolledWindow):
         calls, updates only the ``.markdown-body`` innerHTML via JS
         to avoid a full document reload (preserving scroll position
         natively without any capture/restore dance).
+
+        If the tab is inactive, content is buffered and rendered later
+        when ``activate()`` is called.
         """
+        if not self._active:
+            self._pending_text = text
+            self._pending_base_dir = base_dir
+            return
+
         html_content = md.markdown(
             text,
             extensions=MARKDOWN_EXTENSIONS,
@@ -664,6 +687,16 @@ class Preview(Gtk.ScrolledWindow):
             self._web_view.evaluate_javascript,
             js, -1, None, None, None, None,
         )
+
+    # ------------------------------------------------------------------
+    # Lifecycle
+    # ------------------------------------------------------------------
+
+    def cleanup(self) -> None:
+        """Explicitly unparent WebView to release WebKitGTK child processes."""
+        if self._web_view:
+            self._web_view.unparent()
+            self._web_view = None
 
     # ------------------------------------------------------------------
     # Debug

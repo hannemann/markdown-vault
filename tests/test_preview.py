@@ -456,5 +456,69 @@ class TestPreview(unittest.TestCase):
         self.assertEqual(preview._vault_paths, ["/a", "/b"])
 
 
+class TestPreviewCleanup(unittest.TestCase):
+    """Tests for Preview.cleanup() — explicit WebView teardown."""
+
+    def test_cleanup_unparents_web_view(self):
+        preview = Preview()
+        web_view = preview._web_view
+        self.assertIsNotNone(web_view)
+        preview.cleanup()
+        self.assertIsNone(preview._web_view)
+
+    def test_cleanup_idempotent(self):
+        preview = Preview()
+        preview.cleanup()
+        preview.cleanup()
+        self.assertIsNone(preview._web_view)
+
+    def test_cleanup_without_web_view(self):
+        preview = Preview()
+        preview._web_view = None
+        preview.cleanup()
+        self.assertIsNone(preview._web_view)
+
+
+class TestPreviewLazyLoading(unittest.TestCase):
+    """Tests for Preview activate/deactivate (lazy loading)."""
+
+    def test_active_by_default(self):
+        preview = Preview()
+        self.assertTrue(preview._active)
+
+    def test_deactivate_sets_inactive(self):
+        preview = Preview()
+        preview.deactivate()
+        self.assertFalse(preview._active)
+
+    def test_activate_sets_active(self):
+        preview = Preview()
+        preview.deactivate()
+        preview.activate()
+        self.assertTrue(preview._active)
+
+    def test_update_buffers_when_inactive(self):
+        preview = Preview()
+        preview.deactivate()
+        preview.update_from_text("# Hello", "")
+        self.assertEqual(preview._pending_text, "# Hello")
+        self.assertEqual(preview._pending_base_dir, "")
+
+    def test_activate_renders_pending(self):
+        preview = Preview()
+        preview.deactivate()
+        preview.update_from_text("# Hello", "")
+        self.assertIsNotNone(preview._pending_text)
+        preview.activate()
+        self.assertIsNone(preview._pending_text)
+        self.assertTrue(preview._loaded)
+
+    def test_update_renders_when_active(self):
+        preview = Preview()
+        preview.update_from_text("# Hello", "")
+        self.assertIsNone(preview._pending_text)
+        self.assertTrue(preview._loaded)
+
+
 if __name__ == "__main__":
     unittest.main()

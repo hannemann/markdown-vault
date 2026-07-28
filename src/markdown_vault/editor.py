@@ -224,8 +224,8 @@ class Editor(Gtk.ScrolledWindow):
     # Lifecycle
     # ------------------------------------------------------------------
 
-    def do_dispose(self) -> None:
+    def cleanup(self) -> None:
+        """Release pending debounce timer."""
         if self._debounce_id is not None:
             GLib.source_remove(self._debounce_id)
             self._debounce_id = None
-        Gtk.ScrolledWindow.do_dispose(self)

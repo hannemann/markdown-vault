@@ -221,17 +221,35 @@ class TabBar(Gtk.Box):
         """Select the tab for *file_path* and emit ``tab-changed``."""
         if file_path not in self._tabs:
             return
+
+        # Deactivate previous tab's preview
+        if self._current_path and self._current_path in self._tabs:
+            old_tab = self._tabs[self._current_path]
+            if old_tab.preview:
+                old_tab.preview.deactivate()
+
         self._current_path = file_path
         self._update_tab_styles()
         self._scroll_to_active_tab()
+
+        # Activate new tab's preview
+        new_tab = self._tabs[file_path]
+        if new_tab.preview:
+            new_tab.preview.activate()
+
         self.emit("tab-changed", file_path)
 
     def close_tab(self, file_path: str) -> None:
         """Remove the tab for *file_path* and emit ``tab-closed``."""
         if file_path not in self._tabs:
             return
-        self._tabs.pop(file_path)
+        tab = self._tabs.pop(file_path)
         self._remove_tab_widget(file_path)
+        # Explicitly cleanup widgets to release resources
+        if hasattr(tab.preview, "cleanup"):
+            tab.preview.cleanup()
+        if hasattr(tab.editor, "cleanup"):
+            tab.editor.cleanup()
         self.emit("tab-closed", file_path)
         if self._current_path == file_path:
             remaining = list(self._tabs.keys())
