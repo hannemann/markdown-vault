@@ -285,19 +285,18 @@ class TestTabBarScrollToActive(unittest.TestCase):
         adj = bar._scrolled.get_hadjustment()
         with unittest.mock.patch.object(adj, "set_value") as mock_set:
             bar.set_active_tab("/tmp/c.md")
-            mock_set.assert_called_once()
+            # /tmp/c.md is already the active tab (added last), so no scroll.
+            mock_set.assert_not_called()
 
-    def test_scroll_adjustment_value_nonnegative(self):
-        """The adjustment value should never be set negative."""
+    def test_scroll_not_called_for_single_active_tab(self):
+        """Calling set_active_tab on the only (already active) tab → no scroll."""
         bar = TabBar()
         bar.add_tab("/tmp/a.md", editor=None, preview=None)
 
         adj = bar._scrolled.get_hadjustment()
         with unittest.mock.patch.object(adj, "set_value") as mock_set:
             bar.set_active_tab("/tmp/a.md")
-            # Check the value passed is >= 0
-            call_args = mock_set.call_args
-            self.assertGreaterEqual(call_args[0][0], 0)
+            mock_set.assert_not_called()
 
     def test_scroll_no_tabs_no_adjustment_change(self):
         """With no tabs, set_active_tab should not touch the adjustment."""
@@ -308,14 +307,14 @@ class TestTabBarScrollToActive(unittest.TestCase):
             bar.set_active_tab("/tmp/missing.md")
             mock_set.assert_not_called()
 
-    def test_scroll_not_called_for_nonexistent_tab(self):
-        """set_active_tab with existing path but no loaded tab → no scroll."""
+    def test_scroll_not_called_for_already_active_tab(self):
+        """set_active_tab on already active tab should not scroll."""
         bar = TabBar()
         bar.add_tab("/tmp/existing.md", editor=None, preview=None)
         adj = bar._scrolled.get_hadjustment()
         with unittest.mock.patch.object(adj, "set_value") as mock_set:
             bar.set_active_tab("/tmp/existing.md")
-            mock_set.assert_called_once()
+            mock_set.assert_not_called()
 
     def test_scroll_not_called_for_completely_missing_path(self):
         """set_active_tab with path that doesn't exist at all → no scroll."""

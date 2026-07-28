@@ -222,6 +222,12 @@ class TabBar(Gtk.Box):
         if file_path not in self._tabs:
             return
 
+        if file_path == self._current_path:
+            logger.debug("TabBar.set_active_tab: %s — already active, skipped", file_path)
+            return
+
+        logger.debug("TabBar.set_active_tab: %s (current=%s)", file_path, self._current_path)
+
         # Deactivate previous tab's preview
         if self._current_path and self._current_path in self._tabs:
             old_tab = self._tabs[self._current_path]

@@ -341,31 +341,33 @@ class Preview(Gtk.ScrolledWindow):
         self._active: bool = True
         self._pending_text: str | None = None
         self._pending_base_dir: str = ""
+        self._wv_signal_ids: list[int] = []
+        self._ctrl_signal_ids: list[int] = []
 
         self._web_view = WebKit.WebView()
-        self._web_view.set_vexpand(True)
-        self._web_view.set_hexpand(True)
-        # Match WebView background to the GTK theme.
-        colors = self._get_theme_colors()
-        bg = Gdk.RGBA()
-        bg.parse(colors["bg_color"])
-        self._web_view.set_background_color(bg)
+        self._setup_web_view(self._web_view)
+        self._connect_preview_signals()
+        self.set_child(self._web_view)
 
-        web_settings = self._web_view.get_settings()
+    @staticmethod
+    def _setup_web_view(wv: WebKit.WebView) -> None:
+        """Configure a freshly created WebView (settings, scripts, handlers).
+
+        Idempotent — subsequent calls on the same WebView are no-ops.
+        """
+        if getattr(wv, '_setup_done', False):
+            return
+        wv.set_vexpand(True)
+        wv.set_hexpand(True)
+
+        web_settings = wv.get_settings()
         web_settings.set_enable_javascript(True)
         web_settings.set_enable_javascript_markup(False)
         web_settings.set_allow_file_access_from_file_urls(False)
 
-        # Register checkbox click handler via postMessage.
-        content_controller = self._web_view.get_user_content_manager()
+        content_controller = wv.get_user_content_manager()
         content_controller.register_script_message_handler("checkboxHandler")
-        content_controller.connect(
-            "script-message-received::checkboxHandler",
-            self._on_checkbox_clicked,
-        )
 
-        # Inject checkbox click handler script.
-        # Clicks on .task-list-item (label area) toggle the checkbox too.
         checkbox_script = WebKit.UserScript.new(
             """
             (function() {
@@ -396,9 +398,44 @@ class Preview(Gtk.ScrolledWindow):
         )
         content_controller.add_script(checkbox_script)
 
-        self._web_view.connect("decide-policy", self._on_decide_policy)
+        wv._setup_done = True
 
-        self.set_child(self._web_view)
+    def _connect_preview_signals(self) -> None:
+        """Connect per-acquire signal handlers and match background."""
+        wv = self._web_view
+        colors = self._get_theme_colors()
+        bg = Gdk.RGBA()
+        bg.parse(colors["bg_color"])
+        wv.set_background_color(bg)
+
+        sid = wv.connect("decide-policy", self._on_decide_policy)
+        self._wv_signal_ids.append(sid)
+
+        ctrl = wv.get_user_content_manager()
+        sid = ctrl.connect(
+            "script-message-received::checkboxHandler",
+            self._on_checkbox_clicked,
+        )
+        self._ctrl_signal_ids.append(sid)
+
+    def _disconnect_preview_signals(self) -> None:
+        """Disconnect per-acquire signal handlers before release."""
+        wv = self._web_view
+        if wv is None:
+            return
+        for sid in self._wv_signal_ids:
+            try:
+                wv.disconnect(sid)
+            except TypeError:
+                pass
+        self._wv_signal_ids.clear()
+        for sid in self._ctrl_signal_ids:
+            try:
+                ctrl = wv.get_user_content_manager()
+                ctrl.disconnect(sid)
+            except TypeError:
+                pass
+        self._ctrl_signal_ids.clear()
 
     # ------------------------------------------------------------------
     # Zoom
@@ -427,7 +464,7 @@ class Preview(Gtk.ScrolledWindow):
             self._pending_base_dir = ""
 
     def deactivate(self) -> None:
-        """Tab became inactive -- pause rendering."""
+        """Tab became inactive."""
         self._active = False
 
     def _on_checkbox_clicked(self, _content_manager, jsc_value) -> None:
@@ -693,10 +730,8 @@ class Preview(Gtk.ScrolledWindow):
     # ------------------------------------------------------------------
 
     def cleanup(self) -> None:
-        """Explicitly unparent WebView to release WebKitGTK child processes."""
-        if self._web_view:
-            self._web_view.unparent()
-            self._web_view = None
+        """Release the WebView reference — GTK container hierarchy handles the rest."""
+        self._web_view = None
 
     # ------------------------------------------------------------------
     # Debug
