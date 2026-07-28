@@ -1,5 +1,10 @@
 # AGENTS.md
 
+> Before answering any question about how the code is structured (architecture,
+> call chains, dependencies, "how does X work?"), your FIRST action MUST be a
+> `/graphify` query — see **Code Exploration**. Do not grep/read source for
+> structural questions until graphify has run.
+
 ## Project
 
 Markdown Vault — a GNOME desktop app for editing and previewing Markdown files organized in vault directories.
@@ -52,7 +57,7 @@ Markdown Vault — a GNOME desktop app for editing and previewing Markdown files
 - **Zoom**: Ctrl+plus/minus/0 keyboard shortcuts; Ctrl+Wheel zoom on content area; per-tab zoom persisted in session.
 - **Session persistence**: window size, sidebar, tabs (view modes + split positions), active tab, expanded vaults, editor/preview zoom.
 - **Rich Markdown (pymdown-extensions)**: strikethrough `~~text~~`, highlight `==text==`, superscript `^sup^`, subscript `~sub~`, task lists `- [ ]`, tasklist `- [x]`, superfences (tabs, line numbers, highlight lines), magic links (auto URLs, @mentions, #issues), keyboard keys `++ctrl+c++`, smart symbols (quotes, dashes, ellipsis), emoji shortcodes `:smile:`, math formulas `$...$`, task lists with checkboxes.
-- **CLI launcher**: `bin/markdown-vault` with shebang; `setproctitle` for correct process name (for `ps`/`killall`).
+- **CLI launcher**: `src/bin/markdown-vault.in` — a Meson-generated template installed as `bin/markdown-vault`; it pins the PyGObject interpreter and `PYTHONPATH`, then runs `python3 -m markdown_vault.main`. Match the running process by its command line (`markdown_vault.main`).
 
 ## Project structure
 
@@ -60,22 +65,33 @@ Markdown Vault — a GNOME desktop app for editing and previewing Markdown files
 src/
   bin/markdown-vault.in       — launcher template; Meson substitutes the interpreter
                                 and PYTHONPATH, then installs it as bin/markdown-vault
-  lib/python3.13/site-packages/markdown_vault/
+  markdown_vault/             — the Python package (import `markdown_vault`)
     __init__.py               — package marker
     __main__.py               — entry point (python3 -m markdown_vault)
-    main.py                   — AdwApplication setup
-    app_window.py             — main window, three-panel layout
+    main.py                   — AdwApplication setup, logging
+    app_window.py             — main window, three-panel layout (delegates to the managers below)
+    tab_manager.py            — TabOrchestrator: tab lifecycle
+    session_manager.py        — vault session save/restore
+    view_mode_manager.py      — edit/render/split view switching
+    input_manager.py          — keyboard shortcuts / accelerators
+    file_manager.py, file_ops.py — file create/delete/rename/move operations
+    monitor_handler.py        — routes VaultMonitor events to tree/index/tabs
+    event_router.py           — FileEventDispatcher (external-event fan-out to the sidebar)
+    content_changes.py        — external-change detection + reload banner
+    autosave.py               — AutosaveManager
+    dialogs.py, banners.py    — reusable Adw dialogs / banner widget
     vault_tree.py             — left panel: file tree for vaults
     vault_monitor.py          — Gio.FileMonitor wrapper for external change detection
     editor.py                 — text editor widget (GtkSourceView 5)
     preview.py                — WebView-based Markdown renderer
-    tabs.py                   — tab management for open files
+    tabs.py                   — TabBar + Tab widgets
     sidebar.py                — right sidebar (outline, backlinks, git, details)
     search.py                 — bottom bar: full-text search across vaults
     search_logic.py           — search worker (runs in daemon thread)
     git_integration.py        — git status, diff, commit
     tags.py                   — [[wikilink]] parsing, backlinks
     backlink_index.py         — O(1) backlink lookup, built on startup
+    file_index.py             — O(1) wikilink resolution (single index shared across previews)
     config.py                 — vaults.yaml reader/writer + settings
     session.py                — session persistence (JSON)
     preferences.py            — Adw.PreferencesDialog
@@ -85,13 +101,12 @@ src/
     validation.py             — input validation utilities
     latex_mathml.py           — LaTeX → MathML converter (no JS/CDN)
     markdown_help.py          — keyboard shortcuts overlay
-    css/
-      style.css               — WebView styling for rendered Markdown
-      gtk.css                 — GTK CSS for tab bar and widgets
-    meson.build               — Python package build rules
+    meson.build               — Python package build rules (the manually-maintained py_sources list)
+  css/
+    style.css                 — WebView styling for rendered Markdown
+    gtk.css                   — GTK CSS for tab bar and widgets
+                                (Meson installs both into markdown_vault/css/)
   share/markdown-vault/
-    css/style.css             — CSS (copy for Flatpak resource bundle)
-    css/gtk.css
     icons/hicolor/            — icon theme
     de.hannemann.markdown-vault.desktop
     de.hannemann.markdown-vault.metainfo.xml
@@ -99,7 +114,7 @@ src/
     de.hannemann.markdown-vault.yml  — Flatpak manifest
     meson.build               — Data files build rules
 meson.build            — top-level build system
-tests/                   — unit tests (unittest)
+tests/                   — unit tests (unittest); run with PYTHONPATH=src
 ```
 
 ## Module Dependencies
@@ -118,28 +133,32 @@ tests/                   — unit tests (unittest)
 - **Config:** `~/.config/markdown-vault/` (identical for all installations)
 - **State/Logs:** `~/.local/state/markdown-vault/` (identical for all installations)
 
-## Dev commands
+## Running the app — agents MUST use ONLY these commands
 
-**MUST:** For app start/stop/test/install, ALWAYS use these exact commands.
-**NEVER invent your own commands for these tasks.**
+The app is a GTK GUI. NEVER start it in the foreground: a GUI process does not
+exit, so the tool call blocks until timeout. `scripts/app.sh` detaches the
+process and returns immediately — always use it.
 
-```bash
-# Start app
-gtk-launch de.hannemann.markdown-vault >/dev/null 2>&1 & disown
+| Task                        | Command (run VERBATIM)     |
+|-----------------------------|----------------------------|
+| Start / restart the app     | `./scripts/app.sh restart` |
+| Stop the app                | `./scripts/app.sh stop`    |
+| Check if running            | `./scripts/app.sh status`  |
+| Install after a code change | `make install`             |
+| Run unit tests              | `make test`                |
 
-# Stop app
-pkill -f "markdown_vault.main" &
+Hard rules:
 
-# Terminate app
-pkill -9 -f "markdown_vault.main" &
-
-# Run local tests (from project root)
-make test
-
-# Install app
-make install
-```
-**NEVER use killall python3 — that also kills firewalld and other system Python processes!**
+- Run these EXACTLY as written. Do NOT construct your own `gtk-launch`,
+  `python3 -m ...`, `pkill`, or `kill` commands for start/stop.
+- `make run` is FORBIDDEN — it runs in the foreground and will hang the tool call.
+- After changing code you MUST `make install` before `./scripts/app.sh restart`
+  (the app runs the installed copy, not the source tree).
+- `./scripts/app.sh restart` is idempotent and exits 0 on success — a "not
+  running" stop is normal, not an error, so do not retry with other commands.
+- App log: `/tmp/markdown-vault.log`.
+- NEVER use `killall python3` — that also kills firewalld and other system
+  Python processes.
 
 ## Test driven development
 
@@ -155,7 +174,7 @@ with `unittest`:
 **WARNING:** Check with `git status` for uncommitted changes before starting.
 If any exist, warn the user explicitly — changes may be lost during loop resets.
 
-1. Close the app: `kill $(pgrep -f "markdown_vault.main") &`
+1. Close the app: `./scripts/app.sh stop`
 2. Delete debug dumps: `rm ~/.local/state/markdown-vault/debug-*`
 3. In `~/.config/markdown-vault/vaults.yaml` set `loglevel: debug`,
    `debug_active: true` and enable required `debug_dump_*` flags
@@ -164,13 +183,12 @@ If any exist, warn the user explicitly — changes may be lost during loop reset
 
 1. **Implement change** + write/update unit tests
 2. **Run unit tests:** `make test`
-3. **Close the app:** `kill $(pgrep -f "markdown_vault.main") &`
-4. **Install:** `make install`
-5. **Start the app:** `gtk-launch de.hannemann.markdown-vault >/dev/null 2>&1 & disown`
-6. **Test the feature manually** (use debug dumps if available)
-7. **Bug found:** implement fix → go to step 2
-8. **Commit** (only on user request)
-9. **Cleanup** (only on user request): remove test files in `tmp/`,
+3. **Install:** `make install`
+4. **Start/restart the app:** `./scripts/app.sh restart`
+5. **Test the feature manually** (use debug dumps if available)
+6. **Bug found:** implement fix → go to step 2
+7. **Commit** (only on user request)
+8. **Cleanup** (only on user request): remove test files in `tmp/`,
    delete debug dumps, reset `debug_active` and `loglevel` to originals
 
 **Note:** For interactions that cannot be automated (tab switches,
@@ -182,7 +200,7 @@ opening files in editor, toggling sidebar etc.) ask the user.
 - Follow PEP 8, max line length 100.
 - Use `snake_case` for functions/variables, `PascalCase` for classes.
 - All user-facing strings must be translatable via `gettext`.
-- CSS for WebView rendering goes in `data/css/`, not inline in Python.
+- CSS for WebView rendering goes in `src/css/` (Meson installs it into the package as `markdown_vault/css/`), not inline in Python.
 - Vault config YAML keys are case-sensitive, paths are absolute.
 - Git features must gracefully handle repos without git initialized.
 - Images in Markdown: support `![alt](path)` with both relative and absolute paths.
@@ -200,7 +218,7 @@ opening files in editor, toggling sidebar etc.) ask the user.
 - **Single instance**: Only one `MRUSwitcher` dialog may be open at a time. Subsequent Ctrl+Tab while open is ignored.
 - **Exclusive during open**: While the switcher is shown, no other actions (editor typing, sidebar toggling, etc.) are possible — only Tab/Ctrl+Tab navigation and Escape to close.
 - **Alt+Tab behaviour**: Starts at MRU[1] (the previously active tab; MRU[0] is always the current tab), cycles forward with Tab, backward with Ctrl+Shift+Tab. Ctrl+release commits the selection and closes the dialog.
-- **MRU list**: Maintained by `MRUManager` in `src/mru.py`; rebuilt on every tab change (`_on_tab_changed` → `mru.push()`).
+- **MRU list**: Maintained by `MRUManager` in `src/markdown_vault/mru.py`; rebuilt on every tab change (`_on_tab_changed` → `mru.push()`).
 - **No persistence**: The MRU list is in-memory only; it is rebuilt from session tab order on startup.
 - **Double-cycle prevention**: Application accelerators (`app.set_accels_for_action`) AND the switcher's key controller both handle Ctrl+Tab. `cycle_from_accelerator()` sets `_accel_handled` flag so the key controller skips the event. If only the key controller fires (no accelerator), it cycles normally.
 - **No ShortcutController in MRU mode**: `_update_tab_shortcuts()` skips registering shortcuts when `tab_switch_mode == "mru"` to avoid conflicts with application accelerators.
@@ -212,20 +230,20 @@ opening files in editor, toggling sidebar etc.) ask the user.
   - `Gtk.ScrolledWindow` adjustments are **ignored** by WebView — WebView scrolls internally.
   - `WebKit.WebView.get_hadjustment()` does **not exist** in Python bindings.
   - `evaluate_javascript_finish()` returns `JavaScriptCore.Value` (JSCValue), **not** `GLib.Variant`. Use `result.to_string()` to get the string, then `json.loads()`.
-  - **DOM update over full reload**: After the initial `load_html()`, update content via `evaluate_javascript` setting `.innerHTML` (base64-encoded to avoid escaping issues). This avoids full document reload and natively preserves scroll position — no capture/restore dance needed.
+  - **DOM update over full reload**: After the initial `load_html()`, update content via `evaluate_javascript` setting `.innerHTML`, passing the HTML as a `json.dumps(html, ensure_ascii=False)` string literal to handle escaping. (Base64 + `atob` was used earlier but broke non-ASCII characters — do not reintroduce it.) This avoids a full document reload and natively preserves scroll position — no capture/restore dance needed.
   - CSS theme variables can be updated at runtime via `document.documentElement.style.setProperty()`.
 - GtkSourceView needs `gi.require_version("GtkSource", "5")` — version 4 is for GTK3.
 - `vaults.yaml` must never contain duplicate vault paths; deduplicate on load.
 - On Flatpak, file access is sandboxed — use `org.freedesktop.portal` for file chooser.
 - GtkSourceView 5 renamed `begin_not_undoable_action` → `begin_irreversible_action`.
 - `editor.file_path` is a `str`, not `Path` — use `Path(editor.file_path).parent` for directory.
-- Kill all existing app instances before starting a new one: Always use `kill $(pgrep -f "markdown_vault.main") &` — never manually `killall` (different binary name). Duplicate instances cause confusing state. The `&` is required so the shell doesn't wait for the exit.
+- Kill all existing app instances before starting a new one: always use `./scripts/app.sh stop` (or `restart`, which stops first) — never hand-roll `pkill`/`kill`/`killall`. Duplicate instances cause confusing state.
 - Shift+Tab generates `Gdk.KEY_ISO_Left_Tab`, not `Gdk.KEY_Tab`. Always check for both keyvals.
 - **Gtk.Stack remove/add destroys WebView DOM**: When a tab is renamed externally, `_on_tab_renamed` removes and re-adds the content stack child. This destroys the WebView's rendered DOM, but `_loaded` and `_last_html_hash` remain stale. Always call `preview.reset()` before `_refresh_preview()` after stack manipulation.
 - **Tab button closures capture file_path**: Close buttons and click gestures in `TabBar._build_tab_widget` must read `_file_path` from the container widget at click time, not capture `file_path` at creation time. After `update_path()`, the old capture points to a dead path.
 - **`mkdir -p` race**: A newly created subdirectory's CREATED event fires before monitors exist for its children. After `_start_monitor()` on a new dir, scan existing children with `os.listdir()` and emit CREATED signals for each so the tree picks them up.
 - **RENAMED convention**: `Gio.FileMonitorEvent.RENAMED` sets `file=old, other=new` — the **opposite** of `MOVED_IN` (`file=new, other=old`). Always swap in `_on_monitor_event` before emitting.
-- **VaultMonitor directory events**: `os.path.isdir()` must check real filesystem, not `_is_valid_md_dir()` which only validates the name. Directories must pass through to signal emission (don't `return` early after managing child monitors).
+- **VaultMonitor directory events**: on DELETE and on a RENAME's old path the directory is already gone, so `os.path.isdir()` returns False — determine directory-ness from bookkeeping (`fpath in self._monitors`), NOT the filesystem, or child monitors leak and the tree/index go stale. Directories must pass through to signal emission (don't `return` early after managing child monitors).
 
 ## Tickets
 
@@ -253,6 +271,31 @@ When a ticket-related keyword is mentioned (e.g. "ticket", "bug", "feature"), se
 When a ticket changes it's status move it to the appropriate folder.
 If a ticket can be broken down into subtasks, create a folder with the same name. Create tickets for subtasks in that folder.
 
-## Code Exploration
+## Code Exploration — graphify FIRST
 
-When exploring the codebase (architecture, file relationships, dependencies, "how does X work?"), use the `graphify` skill before searching files manually. It provides graph-based queries for faster, more accurate understanding of code structure. Trigger: any question about codebase organization, module dependencies, or call chains.
+For ANY question about code structure — architecture, "how does X work?", who
+calls Y, dependencies, call chains, where a symbol lives, "what breaks if I
+change Z" — your FIRST tool call MUST be `/graphify`. Do NOT use grep/rg/find or
+read source files to answer structural questions until graphify has run and was
+insufficient. graphify queries a local AST knowledge graph — faster and more
+accurate than reading files.
+
+Commands (run VERBATIM — these are the ONLY graphify forms; do not invent others):
+
+| Task                                             | Command                                       |
+|--------------------------------------------------|-----------------------------------------------|
+| Build/refresh the graph (first use, big changes) | `/graphify .`                                  |
+| Incremental update after edits                   | `/graphify . --update`                         |
+| "How does X work?" / how does A connect to B?    | `/graphify query "how does the preview render markdown?"` |
+| Call chain / dependency path between two symbols | `/graphify path "Editor" "Preview"`           |
+| Explain / locate a symbol and how it is wired    | `/graphify explain "TabManager"`              |
+
+Rules:
+
+- graphify is the FIRST step for structural questions, not a fallback.
+- If a query returns nothing useful or seems stale, run `/graphify . --update`
+  once, then re-query — do NOT silently fall back to grep.
+- Only after graphify has run and did not answer the question may you grep/read
+  source directly.
+- Use exactly the four forms above (`.`, `. --update`, `query`, `path`,
+  `explain`). Do NOT invent other subcommands or flags.
