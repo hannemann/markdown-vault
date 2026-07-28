@@ -443,6 +443,7 @@ class TabBar(Gtk.Box):
         """Create the visual widget for a single tab."""
         container = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
         container.add_css_class("tab")
+        container.set_hexpand(False)
         container.set_margin_top(4)
         container.set_margin_bottom(4)
         container.set_margin_start(2)
@@ -458,6 +459,11 @@ class TabBar(Gtk.Box):
         error_icon.set_visible(False)
         error_icon.set_tooltip_text("")
         container.append(error_icon)
+
+        # Spacer pushes the close button to the right.
+        spacer = Gtk.Box()
+        spacer.set_hexpand(True)
+        container.append(spacer)
 
         close_btn = Gtk.Button(icon_name="window-close-symbolic")
         close_btn.add_css_class("flat")
