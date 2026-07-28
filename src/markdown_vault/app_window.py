@@ -173,7 +173,10 @@ class MainWindow(Adw.ApplicationWindow):
         self._backlink_index = BacklinkIndex()
         self._file_index = FileIndex()
 
-        self._sidebar = Sidebar(backlink_index=self._backlink_index)
+        self._sidebar = Sidebar(
+            backlink_index=self._backlink_index,
+            get_active_tab_info=self._get_active_tab_info,
+        )
         self._sidebar.connect("file-open-requested", self._on_sidebar_file_requested)
         self._sidebar.connect("outline-clicked", self._on_outline_clicked)
 
@@ -1218,6 +1221,13 @@ class MainWindow(Adw.ApplicationWindow):
 
     def _on_sidebar_toggled(self, btn: Gtk.ToggleButton) -> None:
         self._sidebar.set_visible(btn.get_active())
+
+    def _get_active_tab_info(self) -> tuple[str | None, str]:
+        """Return ``(file_path, text)`` for the currently active tab."""
+        tab = self._tab_bar.get_current_tab()
+        if tab is not None and tab.editor is not None:
+            return (tab.editor.file_path, tab.editor.get_text())
+        return (None, "")
 
     def _refresh_sidebar_backlinks(self) -> None:
         """Refresh sidebar for the currently active tab."""

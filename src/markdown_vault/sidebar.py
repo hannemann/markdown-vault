@@ -45,7 +45,11 @@ class Sidebar(Gtk.Box):
         "outline-clicked": (GObject.SignalFlags.RUN_LAST, None, (int,)),
     }
 
-    def __init__(self, backlink_index: BacklinkIndex | None = None) -> None:
+    def __init__(
+        self,
+        backlink_index: BacklinkIndex | None = None,
+        get_active_tab_info=None,
+    ) -> None:
         super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=0)
         self.set_size_request(260, -1)
         self.set_visible(False)
@@ -54,6 +58,7 @@ class Sidebar(Gtk.Box):
         self._vault_paths: list[str] = []
         self._backlink_index = backlink_index or BacklinkIndex()
         self._git_generation: int = 0
+        self._get_active_tab_info = get_active_tab_info
 
         # --- Sub-view stack ---
         self._stack = Gtk.Stack()
@@ -119,12 +124,22 @@ class Sidebar(Gtk.Box):
 
         Acts as the single entry-point for all file-system events
         coming from ``FileEventDispatcher``.
+
+        External file events must never hijack the sidebar away from
+        the active tab.  Always refresh with the active tab's file
+        path and editor text, not the event's file path with empty
+        text.
         """
-        match event.event_type:
-            case "created" | "deleted" | "moved" | "renamed":
-                self.update_for_file(event.file_path)
-            case "content_changed":
-                self.update_text_only(event.file_path)
+        get_info = getattr(self, "_get_active_tab_info", None)
+        if get_info is not None:
+            file_path, text = self._get_active_tab_info()
+            if file_path is not None:
+                match event.event_type:
+                    case "content_changed":
+                        self.update_text_only(file_path, text)
+                    case _:
+                        self.update_for_file(file_path, text)
+                return
 
     def _on_stack_page_changed(self, _stack, _pspec) -> None:
         """Refresh git when the user switches to the Git tab."""

@@ -5,6 +5,7 @@ import unittest
 from pathlib import Path
 
 from gi.repository import GLib
+from markdown_vault.event_router import FileEvent
 from markdown_vault.sidebar import Sidebar
 
 
@@ -152,6 +153,78 @@ class TestSidebarBacklinks(unittest.TestCase):
         children = list(self.sidebar._backlinks_list["list"])
         self.assertEqual(len(children), 1)
         self.assertIn("Open a file", children[0].get_text())
+
+
+class TestSidebarRefreshExternalEvent(unittest.TestCase):
+    """Tests for Sidebar.refresh() — must not hijack the sidebar
+    away from the active tab on external file events."""
+
+    def _make_sidebar(self, get_active_tab_info=None):
+        from unittest.mock import MagicMock
+        sidebar = Sidebar(get_active_tab_info=get_active_tab_info)
+        sidebar._refresh_outline = MagicMock()
+        sidebar._refresh_backlinks = MagicMock()
+        sidebar._refresh_details = MagicMock()
+        sidebar._refresh_git = MagicMock()
+        sidebar.get_visible = MagicMock(return_value=False)
+        return sidebar
+
+    def test_external_event_uses_active_tab_info(self):
+        """Event file differs from active tab: sidebar should refresh
+        with the active tab's file/text, not the event's file."""
+        active_file = "/vault/active.md"
+        active_text = "# Active\n\nContent"
+        sidebar = self._make_sidebar(
+            get_active_tab_info=lambda: (active_file, active_text),
+        )
+        sidebar._current_file = active_file
+
+        sidebar.refresh(FileEvent("/vault", "/vault/other.md", "created"))
+
+        sidebar._refresh_outline.assert_called_once_with(active_text)
+        sidebar._refresh_backlinks.assert_called_once_with(active_file)
+        sidebar._refresh_details.assert_called_once_with(active_file, active_text)
+
+    def test_external_event_content_changed_uses_active_tab(self):
+        """content_changed should go through update_text_only with
+        the active tab's info."""
+        active_file = "/vault/active.md"
+        active_text = "# Active"
+        sidebar = self._make_sidebar(
+            get_active_tab_info=lambda: (active_file, active_text),
+        )
+        sidebar._current_file = active_file
+
+        sidebar.refresh(
+            FileEvent("/vault", "/vault/active.md", "content_changed"),
+        )
+
+        sidebar._refresh_outline.assert_called_once_with(active_text)
+        sidebar._refresh_details.assert_called_once_with(active_file, active_text)
+
+    def test_external_event_no_active_tab_does_nothing(self):
+        """When get_active_tab_info returns (None, ''), refresh
+        should not touch sidebar state."""
+        sidebar = self._make_sidebar(
+            get_active_tab_info=lambda: (None, ""),
+        )
+
+        sidebar.refresh(FileEvent("/vault", "/vault/other.md", "created"))
+
+        sidebar._refresh_outline.assert_not_called()
+        sidebar._refresh_backlinks.assert_not_called()
+        sidebar._refresh_details.assert_not_called()
+
+    def test_external_event_no_callback_does_nothing(self):
+        """When no get_active_tab_info is provided, refresh
+        should not hijack to the event's file."""
+        sidebar = self._make_sidebar(get_active_tab_info=None)
+
+        sidebar.refresh(FileEvent("/vault", "/vault/other.md", "created"))
+
+        sidebar._refresh_outline.assert_not_called()
+        sidebar._refresh_backlinks.assert_not_called()
+        sidebar._refresh_details.assert_not_called()
 
 
 if __name__ == "__main__":
