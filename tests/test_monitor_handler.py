@@ -176,6 +176,54 @@ class TestMonitorHandlerFileDeleted(unittest.TestCase):
                 [c for c in self.mock_debug_fn.call_args_list],
             )
 
+    def test_non_md_directory_purges_non_open_file_index_entries(self):
+        """Directory delete must purge ALL .md entries under the directory,
+        not just those that are open as tabs (R9.2)."""
+        with patch("markdown_vault.monitor_handler.GLib", _GLibMock):
+            h = self._make()
+            # Simulate non-open .md files in the file index
+            self.mock_file_index._path_to_stem = {
+                "/vault/dir/a.md": "a",
+                "/vault/dir/b.md": "b",
+                "/vault/outside.md": "outside",
+            }
+            # Only "/vault/dir/a.md" is an open tab
+            self.mock_tab_bar.get_all_paths.return_value = [
+                "/vault/dir/a.md",
+            ]
+            h.on_file_deleted("/vault", "/vault/dir")
+            # Both files under /vault/dir/ must be removed from file_index
+            self.mock_file_index.remove_file.assert_any_call("/vault/dir/a.md")
+            self.mock_file_index.remove_file.assert_any_call("/vault/dir/b.md")
+            # outside.md must NOT be removed
+            for c in self.mock_file_index.remove_file.call_args_list:
+                self.assertNotIn("/vault/outside.md", c[0])
+
+    def test_non_md_directory_purges_non_open_backlink_index_entries(self):
+        """Directory delete must purge ALL backlink entries under the directory,
+        not just those that are open as tabs (R9.2)."""
+        with patch("markdown_vault.monitor_handler.GLib", _GLibMock):
+            h = self._make()
+            # MagicMock auto-creates _path_to_stem — set to None so the
+            # backlink-path branch of _purge_index_prefix is taken.
+            h._backlink_index._path_to_stem = None
+            h._backlink_index._source_to_targets = {
+                "/vault/dir/a.md": {"related"},
+                "/vault/dir/b.md": {"related"},
+                "/vault/outside.md": {"outside"},
+            }
+            # Only "/vault/dir/a.md" is an open tab
+            self.mock_tab_bar.get_all_paths.return_value = [
+                "/vault/dir/a.md",
+            ]
+            h.on_file_deleted("/vault", "/vault/dir")
+            # Both files under /vault/dir/ must trigger _remove_source
+            h._backlink_index._remove_source.assert_any_call("/vault/dir/a.md")
+            h._backlink_index._remove_source.assert_any_call("/vault/dir/b.md")
+            # outside.md must NOT be removed
+            for c in h._backlink_index._remove_source.call_args_list:
+                self.assertNotIn("/vault/outside.md", c[0])
+
 
 class TestMonitorHandlerFileMoved(unittest.TestCase):
     """Tests for MonitorHandler.on_file_moved."""

@@ -85,7 +85,8 @@ class MonitorHandler:
         """Handle file deleted event from VaultMonitor."""
         self._vault_tree._handle_file_deleted(file_path)
         if not file_path.endswith(".md"):
-            # Directory deleted — close tabs inside it
+            # Directory deleted — close tabs inside it and purge ALL index
+            # entries for .md files under the directory (R9.2).
             prefix = file_path + os.sep
             for path in list(self._tab_bar.get_all_paths()):
                 if path.startswith(prefix):
@@ -93,6 +94,9 @@ class MonitorHandler:
                     self._backlink_index.remove_wikilinks(Path(path).stem)
                     self._backlink_index.remove_file(path)
                     self._file_index.remove_file(path)
+            # Purge non-open .md files from indexes
+            self._purge_index_prefix(self._file_index, prefix)
+            self._purge_index_prefix(self._backlink_index, prefix)
             self._debug_fn(["file_index", "backlink_index", "vault_tree", "tabs"])
             self._dispatcher.on_file_deleted(vault_path, file_path)
             return
@@ -159,3 +163,27 @@ class MonitorHandler:
             return False
 
         GLib.idle_add(_update)
+
+    # ── Helpers ──────────────────────────────────────────────────────
+
+    @staticmethod
+    def _purge_index_prefix(index, prefix: str) -> None:
+        """Remove all entries from *index* whose path starts with *prefix*.
+
+        Handles both ``FileIndex`` (``_path_to_stem`` → ``remove_file``)
+        and ``BacklinkIndex`` (``_source_to_targets`` → ``_remove_source``).
+        """
+        path_to_stem = getattr(index, "_path_to_stem", None)
+        if path_to_stem is not None:
+            for p in list(path_to_stem.keys()):
+                if p.startswith(prefix):
+                    index.remove_file(p)
+            return
+        source_to_targets = getattr(index, "_source_to_targets", None)
+        if source_to_targets is not None:
+            for p in list(source_to_targets.keys()):
+                if p.startswith(prefix):
+                    if hasattr(index, "_remove_source"):
+                        index._remove_source(p)
+                    else:
+                        index.remove_source(p)
