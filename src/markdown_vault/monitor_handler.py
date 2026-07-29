@@ -51,6 +51,7 @@ class MonitorHandler:
         tab_bar,
         dispatcher: FileEventDispatcher,
         debug_fn,
+        notify_banner_cb=None,
     ) -> None:
         self._backlink_index = backlink_index
         self._file_index = file_index
@@ -58,6 +59,7 @@ class MonitorHandler:
         self._tab_bar = tab_bar
         self._dispatcher = dispatcher
         self._debug_fn = debug_fn
+        self._notify_banner_cb = notify_banner_cb
 
     # ── Signal handlers ────────────────────────────────────────────
 
@@ -120,35 +122,37 @@ class MonitorHandler:
 
         Convention: *file_path* = new path, *other_path* = old path.
         When *other_path* is ``None`` the file came from outside (MOVED_IN).
+
+        Distinguishes three cases:
+
+        1. **Genuine rename** — *other_path* is a tracked file (open tab or
+           in the file index). Update index paths and tree (existing behaviour).
+
+        2. **Atomic save** — *other_path* is an untracked temp file, but
+           *file_path* is tracked (open tab or in the index). Treat as a
+           content replacement: refresh index and trigger the reload banner.
+
+        3. **New file** — neither path is tracked. Treat as a file creation
+           (same as MOVED_IN without *other_path*).
         """
         if other_path is not None:
-            old_stem = Path(other_path).stem
-            new_stem = Path(file_path).stem
-            self._backlink_index.rename_wikilinks(old_stem, new_stem)
-            self._backlink_index.rename_file(other_path, file_path)
-            self._file_index.rename_file(other_path, file_path)
-            new_parent = str(Path(file_path).parent)
-            self._vault_tree._handle_file_moved(other_path, new_parent, file_path)
-            if other_path in self._tab_bar.get_all_paths():
-                self._tab_bar.update_path(other_path, file_path)
-            self._debug_fn(["file_index", "backlink_index", "vault_tree", "tabs"])
-            self._dispatcher.on_file_moved(vault_path, file_path, other_path)
+            source_tracked = (
+                other_path in self._tab_bar.get_all_paths()
+                or self._file_index.has_path(other_path)
+            )
+            dest_tracked = (
+                file_path in self._tab_bar.get_all_paths()
+                or self._file_index.has_path(file_path)
+            )
+
+            if source_tracked:
+                self._handle_genuine_rename(vault_path, file_path, other_path)
+            elif dest_tracked:
+                self._notify_external_change(vault_path, file_path)
+            else:
+                self._handle_new_file_from_move(vault_path, file_path)
         else:
-            self._vault_tree._handle_file_created(vault_path, file_path)
-            if file_path.endswith(".md"):
-                self._file_index.add_file(file_path)
-                self._debug_fn(["file_index", "vault_tree"])
-
-                def _update_backlink():
-                    try:
-                        text = Path(file_path).read_text(encoding="utf-8")
-                    except (OSError, UnicodeDecodeError):
-                        text = ""
-                    self._backlink_index.update_file(file_path, text)
-                    self._debug_fn(["backlink_index"])
-                    return False
-
-                GLib.idle_add(_update_backlink)
+            self._handle_new_file_from_move(vault_path, file_path)
 
     def on_content_changed(self, vault_path: str, file_path: str) -> None:
         """Handle content-changed event from VaultMonitor."""
@@ -187,3 +191,53 @@ class MonitorHandler:
                         index._remove_source(p)
                     else:
                         index.remove_source(p)
+
+    def _handle_genuine_rename(
+        self, vault_path: str, file_path: str, other_path: str
+    ) -> None:
+        old_stem = Path(other_path).stem
+        new_stem = Path(file_path).stem
+        self._backlink_index.rename_wikilinks(old_stem, new_stem)
+        self._backlink_index.rename_file(other_path, file_path)
+        self._file_index.rename_file(other_path, file_path)
+        new_parent = str(Path(file_path).parent)
+        self._vault_tree._handle_file_moved(other_path, new_parent, file_path)
+        if other_path in self._tab_bar.get_all_paths():
+            self._tab_bar.update_path(other_path, file_path)
+        self._debug_fn(["file_index", "backlink_index", "vault_tree", "tabs"])
+        self._dispatcher.on_file_moved(vault_path, file_path, other_path)
+
+    def _notify_external_change(self, vault_path: str, file_path: str) -> None:
+        """Treat as a content replacement: refresh index + banner."""
+        self._file_index.add_file(file_path)
+        if self._notify_banner_cb is not None:
+            self._notify_banner_cb(vault_path, file_path)
+
+        def _update():
+            try:
+                text = Path(file_path).read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError):
+                text = ""
+            self._backlink_index.update_file(file_path, text)
+            self._debug_fn(["backlink_index", "preview_html", "sidebar"])
+            self._dispatcher.on_content_changed(vault_path, file_path)
+            return False
+
+        GLib.idle_add(_update)
+
+    def _handle_new_file_from_move(self, vault_path: str, file_path: str) -> None:
+        self._vault_tree._handle_file_created(vault_path, file_path)
+        if file_path.endswith(".md"):
+            self._file_index.add_file(file_path)
+            self._debug_fn(["file_index", "vault_tree"])
+
+            def _update_backlink():
+                try:
+                    text = Path(file_path).read_text(encoding="utf-8")
+                except (OSError, UnicodeDecodeError):
+                    text = ""
+                self._backlink_index.update_file(file_path, text)
+                self._debug_fn(["backlink_index"])
+                return False
+
+            GLib.idle_add(_update_backlink)

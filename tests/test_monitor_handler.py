@@ -241,8 +241,8 @@ class TestMonitorHandlerFileMoved(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree(self._tmp, ignore_errors=True)
 
-    def _make(self):
-        return self._Handler(
+    def _make(self, **kwargs):
+        args = dict(
             backlink_index=self.mock_backlink,
             file_index=self.mock_file_index,
             vault_tree=self.mock_vault_tree,
@@ -250,6 +250,8 @@ class TestMonitorHandlerFileMoved(unittest.TestCase):
             dispatcher=self.mock_dispatcher,
             debug_fn=self.mock_debug_fn,
         )
+        args.update(kwargs)
+        return self._Handler(**args)
 
     def test_renamed_file_renames_wikilinks(self):
         with patch("markdown_vault.monitor_handler.GLib", _GLibMock):
@@ -309,6 +311,67 @@ class TestMonitorHandlerFileMoved(unittest.TestCase):
             h = self._make()
             h.on_file_moved("/vault", "/vault/readme.txt", None)
             self.mock_file_index.add_file.assert_not_called()
+
+    # ── Atomic-save tests ────────────────────────────────────────────
+
+    def test_atomic_save_over_open_file_triggers_external_change(self):
+        """Atomic save (temp→target) over an open tab: notify external change."""
+        with patch("markdown_vault.monitor_handler.GLib", _GLibMock):
+            h = self._make()
+            self.mock_tab_bar.get_all_paths.return_value = ["/vault/target.md"]
+            self.mock_file_index.has_path.return_value = False
+            h.on_file_moved("/vault", "/vault/target.md", "/vault/.target.md.tmp.1234")
+            self.mock_backlink.update_file.assert_called()
+            self.mock_dispatcher.on_content_changed.assert_called_once_with(
+                "/vault", "/vault/target.md",
+            )
+
+    def test_atomic_save_over_open_file_fires_banner_callback(self):
+        """Atomic save over open tab calls the injected banner callback."""
+        with patch("markdown_vault.monitor_handler.GLib", _GLibMock):
+            banner_cb = MagicMock()
+            h = self._make(notify_banner_cb=banner_cb)
+            self.mock_tab_bar.get_all_paths.return_value = ["/vault/target.md"]
+            self.mock_file_index.has_path.return_value = False
+            h.on_file_moved("/vault", "/vault/target.md", "/vault/.target.md.tmp.1234")
+            banner_cb.assert_called_once_with("/vault", "/vault/target.md")
+
+    def test_atomic_save_over_indexed_file_triggers_external_change(self):
+        """Atomic save where dest is in file_index (not open tab) also triggers."""
+        with patch("markdown_vault.monitor_handler.GLib", _GLibMock):
+            h = self._make()
+            self.mock_tab_bar.get_all_paths.return_value = []
+            self.mock_file_index.has_path.side_effect = (
+                lambda p: p == "/vault/target.md"
+            )
+            h.on_file_moved("/vault", "/vault/target.md", "/vault/.tmp.xyz.md")
+            self.mock_dispatcher.on_content_changed.assert_called_once_with(
+                "/vault", "/vault/target.md",
+            )
+
+    def test_atomic_save_new_file_creates_tree_entry(self):
+        """Atomic save to a brand-new (untracked) path: treat as creation."""
+        with patch("markdown_vault.monitor_handler.GLib", _GLibMock):
+            h = self._make()
+            self.mock_tab_bar.get_all_paths.return_value = []
+            self.mock_file_index.has_path.return_value = False
+            h.on_file_moved("/vault", "/vault/neues.md", "/vault/.neues.md.tmp.42")
+            self.mock_vault_tree._handle_file_created.assert_called_once_with(
+                "/vault", "/vault/neues.md",
+            )
+            self.mock_file_index.add_file.assert_called_once_with("/vault/neues.md")
+
+    def test_genuine_rename_still_works(self):
+        """Source-tracked rename still takes the rename path (no banner)."""
+        with patch("markdown_vault.monitor_handler.GLib", _GLibMock):
+            banner_cb = MagicMock()
+            h = self._make(notify_banner_cb=banner_cb)
+            self.mock_tab_bar.get_all_paths.return_value = ["/vault/Old.md"]
+            self.mock_file_index.has_path.return_value = False
+            h.on_file_moved("/vault", "/vault/New.md", "/vault/Old.md")
+            self.mock_backlink.rename_wikilinks.assert_called_once_with("Old", "New")
+            self.mock_backlink.rename_file.assert_called_once_with("/vault/Old.md", "/vault/New.md")
+            banner_cb.assert_not_called()
 
 
 class TestMonitorHandlerContentChanged(unittest.TestCase):

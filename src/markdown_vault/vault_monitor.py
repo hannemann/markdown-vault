@@ -335,7 +335,7 @@ class VaultMonitor:
 
         # Filter: .md files and directories pass; everything else is ignored
         if mapped_type in ("created", "deleted", "moved", "renamed"):
-            if not is_dir and not _is_valid_md_file(file, other_file):
+            if not is_dir and not (_is_valid_md_file(file) or _is_valid_md_file(other_file)):
                 return
         elif mapped_type == "changed":
             if not _is_valid_md_file(file):

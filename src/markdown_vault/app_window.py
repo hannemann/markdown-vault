@@ -196,6 +196,7 @@ class MainWindow(Adw.ApplicationWindow):
             self._tab_bar,
             self._event_dispatcher,
             self._dump_debug,
+            notify_banner_cb=lambda vp, fp: self._content_change_handler.handle_external_change(fp),
         )
         self._vault_monitor.connect("external-file-created", self._monitor_handler.on_file_created)
         self._vault_monitor.connect("external-file-deleted", self._monitor_handler.on_file_deleted)

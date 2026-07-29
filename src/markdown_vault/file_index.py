@@ -106,6 +106,10 @@ class FileIndex:
     # Query
     # ------------------------------------------------------------------
 
+    def has_path(self, file_path: str) -> bool:
+        """Return ``True`` if *file_path* is tracked in the index."""
+        return file_path in self._path_to_stem
+
     def resolve(self, stem: str) -> str | None:
         """Look up a stem and return the file path, or ``None``.
 
