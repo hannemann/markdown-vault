@@ -12,6 +12,10 @@ A GNOME desktop application for editing and previewing Markdown files organized 
 - **Git integration** — status indicators, diff, commit
 - **Full-text search** — bottom bar across all vaults (Ctrl+F)
 - **Tags & backlinks** — wikilink-style `[[page]]` navigation
+- **Live reload** — external file changes (edits, git pulls) are detected and the affected tab offers a reload
+- **Interactive checkboxes** — toggle `- [ ]`/`- [x]` task items directly in the rendered preview
+- **Zoom & session** — per-tab zoom (Ctrl+±/0, Ctrl+wheel); window, tabs, view modes and zoom are restored on restart
+- **Math** — LaTeX `$...$`/`$$...$$` rendered as native MathML (no JavaScript/CDN)
 - **Customizable keybindings** — GNOME defaults, optional vim/emacs modes
 - **Rich Markdown (pymdown-extensions)** — strikethrough `~~text~~`, highlight `==text==`, superscript `^sup^`, subscript `~sub~`, task lists `- [ ]`/`- [x]`, superfences (tabs, line numbers, highlight lines), magic links (auto URLs, @mentions, #issues), keyboard keys `++ctrl+c++`, smart symbols (quotes, dashes, ellipsis), emoji shortcodes `:smile:`, math formulas `$...$`, task lists with checkboxes
 
@@ -23,20 +27,24 @@ Runtime dependencies for running the application.
 
 ```sh
 sudo zypper install \
-  python3-gobject \
-  python3-gobject-Gdk \
-  gtk4 \
-  gtk4-tools \
-  libadwaita-1-0 \
-  libgtksourceview-5-0 \
-  libwebkit2gtk4.1-0 \
-  libgirepository-1.0-1 \
-  python3-PyYAML \
-  python3-markdown \
+  python313-gobject \
+  python313-gobject-Gdk \
+  python313-gobject-cairo \
+  typelib-1_0-Gtk-4_0 \
+  typelib-1_0-Adw-1 \
+  typelib-1_0-GtkSource-5 \
+  typelib-1_0-WebKit-6_0 \
+  typelib-1_0-Pango-1_0 \
+  python313-PyYAML \
+  python313-Markdown \
   python313-pymdown-extensions \
-  python313-Pygments \
-  python313-setproctitle
+  python313-Pygments
 ```
+
+The `python313-*` names track the current default Python on Tumbleweed; adjust
+the prefix if your interpreter differs. The `typelib-1_0-*` packages are the
+GObject-introspection bindings the app imports at runtime (they pull in the
+underlying GTK 4 / libadwaita / WebKitGTK 6.0 / GtkSourceView 5 libraries).
 
 ### Fedora
 
@@ -51,8 +59,7 @@ sudo dnf install \
   python3-markdown \
   python3-pyyaml \
   python3-pymdown-extensions \
-  python3-pygments \
-  python3-setproctitle
+  python3-pygments
 ```
 
 ### Ubuntu / Debian
@@ -68,8 +75,7 @@ sudo apt install \
   python3-markdown \
   python3-yaml \
   python3-pymdownx \
-  python3-pygments \
-  python3-setproctitle
+  python3-pygments
 ```
 
 ### Arch Linux
@@ -86,7 +92,6 @@ sudo pacman -S \
   python-yaml \
   python-pymdown-extensions \
   python-pygments \
-  python-setproctitle \
   gobject-introspection
 ```
 
@@ -112,15 +117,29 @@ sudo apparmor_parser -r --skip-cache /etc/apparmor.d/markdown-vault
 It attaches to `~/.local/bin/markdown-vault`. For a system-wide install, change
 the path in the profile to `/usr/bin/markdown-vault`.
 
-## Run from source
+## Install and run
+
+Install the app and its launcher into your user prefix with Meson, then run it:
 
 ```sh
-PYTHONPATH=src python3 -m markdown_vault.main
+make install     # builds and installs to ~/.local (or: meson setup builddir && meson install -C builddir)
+markdown-vault   # launcher installed to ~/.local/bin (make run does the same)
 ```
 
-Use an interpreter that provides PyGObject. A `python3` earlier in `PATH`
-(Homebrew, pyenv, a virtualenv) usually does not, in which case call
-`/usr/bin/python3` explicitly.
+The launcher pins an interpreter that provides PyGObject. A `python3` earlier in
+`PATH` (Homebrew, pyenv, a virtualenv) usually does not — the generated launcher
+handles this for you.
+
+> Running straight from the source tree (`PYTHONPATH=src python3 -m markdown_vault.main`)
+> is **not supported** for normal use: it loads no CSS, because the stylesheets
+> ship inside the installed package. That path is only for the test suite.
+
+### Flatpak
+
+```sh
+make install-flatpak
+make run-flatpak
+```
 
 ## Vault Configuration
 
@@ -144,19 +163,15 @@ Development dependencies and build instructions.
 
 ### Development dependencies
 
-In addition to the runtime dependencies above, you need:
+The build ships no C sources — it only installs the Python package and data
+files. Beyond the runtime dependencies above you need **Meson**, a **C compiler**
+(Meson probes for one because the project declares the C language), and
+**gettext** (used by Meson's i18n module). No GUI `-devel` headers are required.
 
-**openSUSE Tumbleweed:**
-- `gtk4-devel`, `libadwaita-devel`, `gtksourceview5-devel`, `webkitgtk4-devel`, `gobject-introspection-devel`, `meson`, `gcc`
-
-**Fedora:**
-- `gtk4-devel`, `libadwaita-devel`, `gtksourceview5-devel`, `webkit2gtk6.0-devel`, `gobject-introspection-devel`, `meson`, `gcc`
-
-**Ubuntu / Debian:**
-- `libgtk-4-dev`, `libadwaita-1-dev`, `libwebkitgtk-6.0-dev`, `libgtksourceview-5-dev`, `libgirepository1.0-dev`, `meson`, `gcc`
-
-**Arch Linux:**
-- `meson`, `gcc`
+- **openSUSE Tumbleweed:** `meson`, `gcc`, `gettext-tools`
+- **Fedora:** `meson`, `gcc`, `gettext`
+- **Ubuntu / Debian:** `meson`, `gcc`, `gettext`
+- **Arch Linux:** `meson`, `gcc`, `gettext`
 
 ### Build
 
@@ -178,6 +193,5 @@ See `AGENTS.md` for project conventions, TDD requirements, and gotchas.
 
 ## TODO
 
-- Flatpak packaging
-- pip module distribution
-- AppStream metadata
+- Publish to Flathub (local Flatpak build already works, see above)
+- pip / PyPI distribution

@@ -1,9 +1,10 @@
 # AGENTS.md
 
-> Before answering any question about how the code is structured (architecture,
-> call chains, dependencies, "how does X work?"), your FIRST action MUST be a
-> `/graphify` query — see **Code Exploration**. Do not grep/read source for
-> structural questions until graphify has run.
+> **graphify gate.** For ANY question about how the code is structured, your
+> FIRST tool call MUST be `/graphify` (see **Code Exploration**). If you are
+> about to run grep/rg/find/read to *understand* code, STOP — that urge is the
+> signal to call `/graphify` instead. Grepping a structural question before
+> graphify has run is a process error, even if grep would "work".
 
 ## Project
 
@@ -276,8 +277,9 @@ If a ticket can be broken down into subtasks, create a folder with the same name
 For ANY question about code structure — architecture, "how does X work?", who
 calls Y, dependencies, call chains, where a symbol lives, "what breaks if I
 change Z" — your FIRST tool call MUST be `/graphify`. Do NOT use grep/rg/find or
-read source files to answer structural questions until graphify has run and was
-insufficient. graphify queries a local AST knowledge graph — faster and more
+read source files as your first step for a structural question — call graphify
+first, every time. You may NOT pre-judge graphify as "insufficient" before
+running it. graphify queries a local AST knowledge graph — faster and more
 accurate than reading files.
 
 Commands (run VERBATIM — these are the ONLY graphify forms; do not invent others):
@@ -299,3 +301,20 @@ Rules:
   source directly.
 - Use exactly the four forms above (`.`, `. --update`, `query`, `path`,
   `explain`). Do NOT invent other subcommands or flags.
+
+**How to comply — every structural task:**
+
+1. Ask yourself: is this about *where / how / why* the code is structured, or who
+   calls / depends on what? If yes → graphify is your first tool call.
+2. Issue `/graphify query|path|explain …` FIRST. Not grep. Not read. Not glob.
+3. Only after graphify has actually run and did not answer may you grep/read the
+   files it pointed you to.
+
+```
+WRONG:  "How does the sidebar refresh?"  →  grep -r "refresh" src/
+RIGHT:  "How does the sidebar refresh?"  →  /graphify query "how does the sidebar refresh?"
+                                            →  then read the files it cites
+```
+
+If you catch yourself reaching for grep/rg/find/read to understand code you have
+not yet queried with graphify, that itch is the trigger to call graphify instead.
