@@ -97,3 +97,15 @@ clean: clean-build clean-cache
 	@echo "=> Cleaning wheel files and temp archives..."
 	rm -f $(WHEEL_DIR)/*.whl $(WHEEL_DIR)/*.tar.gz
 	@echo "Done."
+
+start:
+	@echo "=> start app"
+	./scripts/app.sh start
+
+stop:
+	@echo "=> stop app"
+	./scripts/app.sh stop
+
+restart:
+	@echo "=> restart app"
+	./scripts/app.sh restart
