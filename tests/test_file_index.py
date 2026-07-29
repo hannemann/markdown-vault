@@ -314,6 +314,22 @@ class TestFileIndexEdgeCases(unittest.TestCase):
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
 
+    def test_shallowest_file_wins_on_duplicate_stem(self):
+        """When root note.md and sub/note.md both exist,
+        resolve('note') returns the root (shallowest) file."""
+        tmp = tempfile.mkdtemp()
+        try:
+            vault = Path(tmp) / "vault"
+            sub = vault / "sub"
+            sub.mkdir(parents=True)
+            (vault / "note.md").write_text("# Root")
+            (sub / "note.md").write_text("# Sub")
+            idx = FileIndex()
+            idx.build([str(vault)])
+            self.assertEqual(idx.resolve("note"), str(vault / "note.md"))
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
 
 if __name__ == "__main__":
     unittest.main()

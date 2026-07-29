@@ -158,9 +158,13 @@ class FileIndex:
         return name.startswith(_HIDDEN_PREFIXES)
 
     def _add_stem_mapping(self, stem: str, path_str: str) -> None:
-        """Register *stem* → *path_str*, including underscore↔space variants."""
-        # Primary stem
-        self._stem_to_path[stem] = path_str
+        """Register *stem* → *path_str*, including underscore↔space variants.
+
+        On duplicate stems the first (shallowest) registration wins.
+        """
+        # Primary stem — first registration wins
+        if stem not in self._stem_to_path:
+            self._stem_to_path[stem] = path_str
         self._path_to_stem[path_str] = stem
         # Alternate: replace spaces with underscores
         alt = stem.replace(" ", "_")
