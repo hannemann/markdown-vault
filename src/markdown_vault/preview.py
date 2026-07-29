@@ -635,6 +635,11 @@ class Preview(Gtk.ScrolledWindow):
             self._web_view.load_html(full_html, base_uri)
             self._loaded = True
         else:
+            css_content = self._load_css_content()
+            colors = self._get_theme_colors()
+            self._last_html = HTML_TEMPLATE.format(
+                css_content=css_content, content=html_content, **colors,
+            )
             html_json = json.dumps(html_content, ensure_ascii=False)
             js = (
                 'document.querySelector(".markdown-body").innerHTML '
