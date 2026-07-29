@@ -327,6 +327,37 @@ class TestMarkdownConversion(unittest.TestCase):
         self.assertNotIn('disabled', result)
         self.assertIn('type="checkbox"', result)
 
+    def test_checkbox_line_skips_indented_code_block(self):
+        md_text = (
+            "Some text\n"
+            "\n"
+            "    - [ ] fake in indented code\n"
+            "\n"
+            "- [ ] real one\n"
+            "\n"
+            "- [ ] real two"
+        )
+        result = md.markdown(md_text, extensions=MARKDOWN_EXTENSIONS)
+        lines_with_attr = [l for l in result.split('\n') if 'data-checkbox-line=' in l]
+        self.assertEqual(len(lines_with_attr), 2)
+        self.assertIn('data-checkbox-line="4"', result)
+        self.assertIn('data-checkbox-line="6"', result)
+
+    def test_checkbox_line_preserves_sublist_checkboxes(self):
+        md_text = (
+            "- [ ] outer\n"
+            "\n"
+            "    - [ ] nested sublist\n"
+            "\n"
+            "- [ ] another"
+        )
+        result = md.markdown(md_text, extensions=MARKDOWN_EXTENSIONS)
+        lines_with_attr = [l for l in result.split('\n') if 'data-checkbox-line=' in l]
+        self.assertEqual(len(lines_with_attr), 3)
+        self.assertIn('data-checkbox-line="0"', result)
+        self.assertIn('data-checkbox-line="2"', result)
+        self.assertIn('data-checkbox-line="4"', result)
+
     def test_converts_fenced_code_with_lang(self):
         md_text = "```python\nprint('hi')\n```"
         result = md.markdown(

@@ -183,16 +183,24 @@ class CheckboxLinePreprocessor(Preprocessor):
     """Record source-line numbers of checkbox lines before markdown processing.
 
     Scans the raw markdown source for task-list checkbox patterns while
-    tracking fenced-code boundaries (```, ~~~, 4-space indent) so that
+    tracking fenced-code and 4-space-indented code boundaries so that
     checkbox-like lines inside code blocks are ignored.
     """
 
     CHECKBOX_RE = re.compile(r'^(>\s*)*(\s*)([-*+]|\d+\.)\s+\[[ xX]\]')
     FENCE_OPEN_RE = re.compile(r'^(`{3,}|~{3,})(.*)$')
+    LIST_MARKER_RE = re.compile(r'^(\s*)([-*+]|\d+\.)\s')
+
+    def _prev_nonblank_is_list(self, lines: list[str], i: int) -> bool:
+        j = i - 1
+        while j >= 0 and lines[j].strip() == '':
+            j -= 1
+        return j >= 0 and bool(self.LIST_MARKER_RE.match(lines[j].lstrip()))
 
     def run(self, lines):
         in_fence = False
         fence_char = None
+        in_indented_code = False
         checkbox_lines = []
         for i, line in enumerate(lines):
             if in_fence:
@@ -204,6 +212,19 @@ class CheckboxLinePreprocessor(Preprocessor):
                 in_fence = True
                 fence_char = m.group(1)[0]
                 continue
+
+            stripped = line.lstrip()
+            is_indented = len(line) - len(stripped) >= 4 and stripped != ''
+
+            if in_indented_code:
+                if is_indented or line == '':
+                    continue
+                in_indented_code = False
+            elif is_indented and (i == 0 or lines[i - 1].rstrip() == ''):
+                if not self._prev_nonblank_is_list(lines, i):
+                    in_indented_code = True
+                    continue
+
             if self.CHECKBOX_RE.match(line):
                 checkbox_lines.append(i)
         self.md._checkbox_source_lines = checkbox_lines
