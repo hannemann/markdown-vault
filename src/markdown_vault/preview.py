@@ -341,9 +341,6 @@ class Preview(Gtk.ScrolledWindow):
         self._active: bool = True
         self._pending_text: str | None = None
         self._pending_base_dir: str = ""
-        self._wv_signal_ids: list[int] = []
-        self._ctrl_signal_ids: list[int] = []
-
         self._web_view = WebKit.WebView()
         self._setup_web_view(self._web_view)
         self._connect_preview_signals()
@@ -408,34 +405,13 @@ class Preview(Gtk.ScrolledWindow):
         bg.parse(colors["bg_color"])
         wv.set_background_color(bg)
 
-        sid = wv.connect("decide-policy", self._on_decide_policy)
-        self._wv_signal_ids.append(sid)
+        wv.connect("decide-policy", self._on_decide_policy)
 
         ctrl = wv.get_user_content_manager()
-        sid = ctrl.connect(
+        ctrl.connect(
             "script-message-received::checkboxHandler",
             self._on_checkbox_clicked,
         )
-        self._ctrl_signal_ids.append(sid)
-
-    def _disconnect_preview_signals(self) -> None:
-        """Disconnect per-acquire signal handlers before release."""
-        wv = self._web_view
-        if wv is None:
-            return
-        for sid in self._wv_signal_ids:
-            try:
-                wv.disconnect(sid)
-            except TypeError:
-                pass
-        self._wv_signal_ids.clear()
-        for sid in self._ctrl_signal_ids:
-            try:
-                ctrl = wv.get_user_content_manager()
-                ctrl.disconnect(sid)
-            except TypeError:
-                pass
-        self._ctrl_signal_ids.clear()
 
     # ------------------------------------------------------------------
     # Zoom
