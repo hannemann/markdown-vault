@@ -2,6 +2,7 @@
 
 import tempfile
 import unittest
+from unittest.mock import MagicMock
 from pathlib import Path
 
 from markdown_vault.preview import (
@@ -495,6 +496,22 @@ class TestPreviewCleanup(unittest.TestCase):
         web_view = preview._web_view
         self.assertIsNotNone(web_view)
         preview.cleanup()
+        self.assertIsNone(preview._web_view)
+
+    def test_cleanup_calls_unparent(self):
+        """cleanup() must call unparent() on WebView to release WebKitGTK child processes."""
+        preview = Preview()
+        mock_web_view = MagicMock()
+        preview._web_view = mock_web_view
+        preview.cleanup()
+        mock_web_view.unparent.assert_called_once()
+        self.assertIsNone(preview._web_view)
+
+    def test_cleanup_no_unparent_when_none(self):
+        """cleanup() must not crash when _web_view is already None."""
+        preview = Preview()
+        preview._web_view = None
+        preview.cleanup()  # should not raise
         self.assertIsNone(preview._web_view)
 
     def test_cleanup_idempotent(self):

@@ -732,8 +732,10 @@ class Preview(Gtk.ScrolledWindow):
     # ------------------------------------------------------------------
 
     def cleanup(self) -> None:
-        """Release the WebView reference — GTK container hierarchy handles the rest."""
-        self._web_view = None
+        """Explicitly unparent WebView to release WebKitGTK child processes."""
+        if self._web_view:
+            self._web_view.unparent()
+            self._web_view = None
 
     # ------------------------------------------------------------------
     # Debug
