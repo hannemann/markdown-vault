@@ -575,5 +575,225 @@ class TestOnCloseRequestDirtyCheck(unittest.TestCase):
         self.assertFalse(result)
 
 
+
+# ---------------------------------------------------------------------------
+# R4.2-b — Switch vault dirty dialog race fix
+# ---------------------------------------------------------------------------
+
+class TestSwitchVaultDirtyDialogRace(unittest.TestCase):
+    """R4.2-b: vault switch waits for dirty-dialog confirmation."""
+
+    def _make_fake_window(self):
+        """Create a minimal FakeWindow with all needed methods from MainWindow."""
+        import markdown_vault.app_window as aw
+
+        class FakeWindow:
+            _close_all_tabs_with_dirty_check = aw.MainWindow._close_all_tabs_with_dirty_check
+            _do_close_paths = aw.MainWindow._do_close_paths
+            _update_nav_buttons = lambda self: None
+            _open_file = lambda self, *a, **k: None
+            _switch_vault = aw.MainWindow._switch_vault
+
+            def __init__(self):
+                self._tab_bar = unittest.mock.Mock()
+                self._vault_monitor = unittest.mock.Mock()
+                self._vault_tree = unittest.mock.Mock()
+                self._session_mgr = unittest.mock.Mock()
+                self._nav_history = unittest.mock.Mock()
+                self._autosave = unittest.mock.Mock()
+                self._close_window_pending = False
+                self._active_vault = "/tmp/vault-a"
+                self._content_stack = unittest.mock.Mock()
+                self.mru = unittest.mock.Mock()
+
+            def _show_save_dialog(self, dirty_paths, on_confirm=None):
+                if on_confirm is not None:
+                    on_confirm()
+
+            def _switch_vault_complete(self, new_vault, open_file_path=None, post_open_fn=None):
+                # Full vault-switch logic (same as MainWindow)
+                self._do_close_paths(self._tab_bar.get_all_paths())
+                self.mru.clear()
+                self._nav_history.clear()
+                self._update_nav_buttons()
+                self._active_vault = new_vault
+                self._vault_tree.set_active_vault(new_vault)
+                self._session_mgr.restore_vault_session(
+                    new_vault,
+                    open_file_fn=self._open_file,
+                    push_history_fn=lambda *a, **k: None,
+                    suppress_nav_fn=lambda s: setattr(self._nav_history, "suppress", s),
+                    mru_push_fn=self.mru.push,
+                )
+
+        return FakeWindow()
+
+    def test_close_all_tabs_clean_calls_on_confirm(self):
+        """Clean tabs: on_confirm called immediately, no dialog shown."""
+        win = self._make_fake_window()
+
+        clean_editor = unittest.mock.Mock()
+        clean_editor.is_modified = False
+        tab = unittest.mock.Mock()
+        tab.editor = clean_editor
+        win._tab_bar.get_tab.return_value = tab
+        win._tab_bar.get_all_paths.return_value = ["/tmp/a.md", "/tmp/b.md"]
+
+        confirmed = []
+        def fake_on_confirm():
+            confirmed.append(True)
+
+        with unittest.mock.patch("markdown_vault.app_window.GLib.idle_add") as mock_idle:
+            win._close_all_tabs_with_dirty_check(on_confirm=fake_on_confirm)
+
+        self.assertEqual(confirmed, [True])
+        mock_idle.assert_not_called()
+        win._tab_bar.close_tab.assert_called()
+
+    def test_close_all_dirty_defers_on_confirm(self):
+        """Dirty tabs: on_confirm NOT called yet, dialog is scheduled."""
+        import markdown_vault.app_window as aw
+
+        class DirtyWindow:
+            _close_all_tabs_with_dirty_check = aw.MainWindow._close_all_tabs_with_dirty_check
+
+            def __init__(self):
+                self._tab_bar = unittest.mock.Mock()
+                self._show_save_dialog_called = False
+
+            def _show_save_dialog(self, dirty_paths, on_confirm=None):
+                self._show_save_dialog_called = True
+
+        win = DirtyWindow()
+
+        dirty_editor = unittest.mock.Mock()
+        dirty_editor.is_modified = True
+        tab = unittest.mock.Mock()
+        tab.editor = dirty_editor
+        win._tab_bar.get_tab.return_value = tab
+        win._tab_bar.get_all_paths.return_value = ["/tmp/a.md"]
+
+        confirmed = []
+        def fake_on_confirm():
+            confirmed.append(True)
+
+        def fake_idle_add(func, *args, **kwargs):
+            func(*args, **kwargs)
+
+        with unittest.mock.patch(
+            "markdown_vault.app_window.GLib.idle_add", fake_idle_add
+        ):
+            win._close_all_tabs_with_dirty_check(on_confirm=fake_on_confirm)
+
+        self.assertEqual(confirmed, [])
+        self.assertTrue(win._show_save_dialog_called)
+
+    def test_switch_vault_no_dirty_switches_immediately(self):
+        """No dirty tabs: vault switch happens synchronously."""
+        win = self._make_fake_window()
+
+        clean_editor = unittest.mock.Mock()
+        clean_editor.is_modified = False
+        tab = unittest.mock.Mock()
+        tab.editor = clean_editor
+        win._tab_bar.get_tab.return_value = tab
+        win._tab_bar.get_all_paths.return_value = ["/tmp/vault-a/note.md"]
+
+        win._switch_vault("/tmp/vault-b")
+
+        self.assertEqual(win._active_vault, "/tmp/vault-b")
+
+    def test_switch_vault_cancelled_keeps_original(self):
+        """Cancel: on_confirm is captured but NOT called."""
+        win = self._make_fake_window()
+
+        dirty_editor = unittest.mock.Mock()
+        dirty_editor.is_modified = True
+        tab = unittest.mock.Mock()
+        tab.editor = dirty_editor
+        win._tab_bar.get_tab.return_value = tab
+        win._tab_bar.get_all_paths.return_value = ["/tmp/vault-a/note.md"]
+
+        captured_kwargs = {}
+        def capture_show(self, dirty_paths, on_confirm=None):
+            captured_kwargs['on_confirm'] = on_confirm
+        win.__class__._show_save_dialog = capture_show
+
+        def fake_idle_add(func, *args, **kwargs):
+            func(*args, **kwargs)
+
+        with unittest.mock.patch(
+            "markdown_vault.app_window.GLib.idle_add", fake_idle_add
+        ):
+            win._switch_vault("/tmp/vault-b")
+
+        self.assertIn('on_confirm', captured_kwargs)
+
+        # Cancel: on_confirm is NOT called
+        self.assertEqual(win._active_vault, "/tmp/vault-a")
+
+    def test_switch_vault_save_confirms_switch(self):
+        """Save+Confirm: vault switch IS invoked."""
+        win = self._make_fake_window()
+
+        dirty_editor = unittest.mock.Mock()
+        dirty_editor.is_modified = True
+        tab = unittest.mock.Mock()
+        tab.editor = dirty_editor
+        win._tab_bar.get_tab.return_value = tab
+        win._tab_bar.get_all_paths.return_value = ["/tmp/vault-a/note.md"]
+
+        captured_kwargs = {}
+        def capture_show(self, dirty_paths, on_confirm=None):
+            captured_kwargs['on_confirm'] = on_confirm
+        win.__class__._show_save_dialog = capture_show
+
+        def fake_idle_add(func, *args, **kwargs):
+            func(*args, **kwargs)
+
+        with unittest.mock.patch(
+            "markdown_vault.app_window.GLib.idle_add", fake_idle_add
+        ):
+            win._switch_vault("/tmp/vault-b")
+
+        # Simulate Save/Discard: on_confirm IS called
+        on_confirm = captured_kwargs.get('on_confirm')
+        if on_confirm:
+            on_confirm()
+
+        self.assertEqual(win._active_vault, "/tmp/vault-b")
+
+    def test_switch_vault_discard_confirms_switch(self):
+        """Discard+Confirm: vault switch IS invoked (no save)."""
+        win = self._make_fake_window()
+
+        dirty_editor = unittest.mock.Mock()
+        dirty_editor.is_modified = True
+        tab = unittest.mock.Mock()
+        tab.editor = dirty_editor
+        win._tab_bar.get_tab.return_value = tab
+        win._tab_bar.get_all_paths.return_value = ["/tmp/vault-a/note.md"]
+
+        captured_kwargs = {}
+        def capture_show(self, dirty_paths, on_confirm=None):
+            captured_kwargs['on_confirm'] = on_confirm
+        win.__class__._show_save_dialog = capture_show
+
+        def fake_idle_add(func, *args, **kwargs):
+            func(*args, **kwargs)
+
+        with unittest.mock.patch(
+            "markdown_vault.app_window.GLib.idle_add", fake_idle_add
+        ):
+            win._switch_vault("/tmp/vault-b")
+
+        # Simulate Discard: on_confirm IS called
+        on_confirm = captured_kwargs.get('on_confirm')
+        if on_confirm:
+            on_confirm()
+
+        self.assertEqual(win._active_vault, "/tmp/vault-b")
+
+
 if __name__ == "__main__":
     unittest.main()

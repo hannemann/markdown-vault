@@ -727,14 +727,54 @@ class MainWindow(Adw.ApplicationWindow):
         file_parent = str(Path(file_path).parent)
         return path_utils.find_vault_for_dir(file_parent, self._vault_tree.get_vault_paths())
 
-    def _switch_vault(self, new_vault: str) -> None:
-        """Switch to *new_vault*, saving the current vault's session first."""
+    def _switch_vault(
+        self, new_vault: str, *,
+        open_file_path: str | None = None,
+        post_open_fn=None,
+    ) -> None:
+        """Switch to *new_vault*, saving the current vault's session first.
+
+        Phase 1: Save current vault, start dirty-check.
+        Phase 2 (via ``_switch_vault_complete``): Clear MRU/nav, switch,
+        restore target vault.  Phase 2 runs in the dialog's confirm-callback
+        so that Cancel fully aborts the switch.
+
+        If *open_file_path* is given, the file is opened in Phase 2 after
+        the switch is confirmed.
+        *post_open_fn* is called after opening (e.g. for scrolling).
+        """
         if new_vault == self._active_vault:
             return
         # Save current vault state.
         self._session_mgr.save_vault_session(self._active_vault, self._content_stack)
-        # Close all open tabs with dirty-check (R4.2).
-        self._close_all_tabs_with_dirty_check()
+        # Close all open tabs with dirty-check; on confirm continue in Phase 2.
+        logger.info("switch-vault: phase 1 — saving current vault session, checking dirty tabs (target=%s, open_file=%s)", new_vault, open_file_path)
+        self._close_all_tabs_with_dirty_check(
+            on_confirm=lambda: self._switch_vault_complete(new_vault, open_file_path, post_open_fn)
+        )
+
+    def _open_file_and_scroll(self, file_path: str, line_num: int) -> None:
+        """Open *file_path* and scroll to *line_num* (used after vault switch)."""
+        self._open_file(file_path)
+        tab = self._tab_bar.get_current_tab()
+        if tab:
+            tab.editor.scroll_to_line(line_num - 1)
+            text = tab.editor.get_text()
+            tab.preview.scroll_to_line(line_num - 1, text)
+
+    def _switch_vault_complete(
+        self, new_vault: str, open_file_path: str | None = None,
+        post_open_fn=None,
+    ) -> None:
+        """Phase 2 of vault switching — called after dirty-check is confirmed.
+
+        Closes all open tabs, clears MRU/navigation, sets the active vault,
+        and restores the target vault's session.
+        If *open_file_path* is given, opens the file after the switch.
+        *post_open_fn* is called after opening (e.g. for scrolling).
+        """
+        logger.info("switch-vault: phase 2 — closing tabs then switching to %s (open_file=%s)", new_vault, open_file_path)
+        self._do_close_paths(self._tab_bar.get_all_paths())
         self.mru.clear()
         self._nav_history.clear()
         self._update_nav_buttons()
@@ -749,6 +789,12 @@ class MainWindow(Adw.ApplicationWindow):
             suppress_nav_fn=lambda s: setattr(self._nav_history, "suppress", s),
             mru_push_fn=self.mru.push,
         )
+        # Open the requested file if given.
+        if open_file_path is not None:
+            logger.info("switch-vault: opening %s in new vault", open_file_path)
+            self._open_file(open_file_path)
+            if post_open_fn is not None:
+                GLib.idle_add(post_open_fn)
 
     # ── File opening ───────────────────────────────────────────────
 
@@ -780,8 +826,9 @@ class MainWindow(Adw.ApplicationWindow):
     def _on_file_selected_from_tree(self, _tree, file_path: str) -> None:
         vault = self._find_vault_for_file(file_path)
         if vault and vault != self._active_vault:
-            self._switch_vault(vault)
-        self._open_file(file_path)
+            self._switch_vault(vault, open_file_path=file_path)
+        else:
+            self._open_file(file_path)
 
     def _on_vault_activated(self, _tree, vault_path: str) -> None:
         """Handle double-click on a vault root in the tree."""
@@ -933,13 +980,16 @@ class MainWindow(Adw.ApplicationWindow):
             if path in self._tab_bar.get_all_paths():
                 self._tab_bar.close_tab(path)
 
-    def _close_all_tabs_with_dirty_check(self) -> None:
+    def _close_all_tabs_with_dirty_check(self, on_confirm=None) -> None:
         """Close all open tabs with dirty-check (R4.2).
 
         If any tabs are dirty, an aggregated save/discard dialog is shown.
+        *on_confirm* is called after the tabs are closed (Save/Discard path).
         """
         all_paths = self._tab_bar.get_all_paths()
         if not all_paths:
+            if on_confirm:
+                on_confirm()
             return
         dirty = []
         for path in all_paths:
@@ -947,15 +997,18 @@ class MainWindow(Adw.ApplicationWindow):
             if tab and tab.editor and tab.editor.is_modified:
                 dirty.append(path)
         if dirty:
-            GLib.idle_add(self._show_save_dialog, dirty, lambda: self._do_close_paths(all_paths))
+            GLib.idle_add(self._show_save_dialog, dirty, on_confirm)
         else:
             self._do_close_paths(all_paths)
+            if on_confirm:
+                on_confirm()
 
     def _on_sidebar_file_requested(self, _sidebar, file_path: str) -> None:
         vault = self._find_vault_for_file(file_path)
         if vault and vault != self._active_vault:
-            self._switch_vault(vault)
-        self._open_file(file_path)
+            self._switch_vault(vault, open_file_path=file_path)
+        else:
+            self._open_file(file_path)
 
     def _on_outline_clicked(self, _sidebar, line: int) -> None:
         tab = self._tab_bar.get_current_tab()
@@ -968,19 +1021,27 @@ class MainWindow(Adw.ApplicationWindow):
     def _on_search_result_selected(self, _search_bar, file_path: str, line_num: int) -> None:
         vault = self._find_vault_for_file(file_path)
         if vault and vault != self._active_vault:
-            self._switch_vault(vault)
-        self._open_file(file_path)
-        tab = self._tab_bar.get_current_tab()
-        if tab:
-            tab.editor.scroll_to_line(line_num - 1)
-            text = tab.editor.get_text()
-            tab.preview.scroll_to_line(line_num - 1, text)
+            def _scroll():
+                tab = self._tab_bar.get_current_tab()
+                if tab:
+                    tab.editor.scroll_to_line(line_num - 1)
+                    text = tab.editor.get_text()
+                    tab.preview.scroll_to_line(line_num - 1, text)
+            self._switch_vault(vault, open_file_path=file_path, post_open_fn=_scroll)
+        else:
+            self._open_file(file_path)
+            tab = self._tab_bar.get_current_tab()
+            if tab:
+                tab.editor.scroll_to_line(line_num - 1)
+                text = tab.editor.get_text()
+                tab.preview.scroll_to_line(line_num - 1, text)
 
     def _on_preview_link_clicked(self, _preview, file_path: str) -> None:
         vault = self._find_vault_for_file(file_path)
         if vault and vault != self._active_vault:
-            self._switch_vault(vault)
-        self._open_file(file_path)
+            self._switch_vault(vault, open_file_path=file_path)
+        else:
+            self._open_file(file_path)
 
     # Matches a Markdown checkbox on a list line (group 4 = state: space or x/X).
     _CHECKBOX_RE = re.compile(r'^(>\s*)*(\s*)([-*+]|\d+\.)\s+\[([ xX])\]')
