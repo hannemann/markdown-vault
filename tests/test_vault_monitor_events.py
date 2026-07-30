@@ -321,6 +321,83 @@ class TestN3_MovedInWithoutOtherFile(unittest.TestCase):
         self.assertEqual(received[0][1], "/tmp/testvault/incoming.md")
 
 
+class TestR11_1_AtomicSaveRenamedFilter(unittest.TestCase):
+    """R11.1 Lücke: RENAMED-Filter muss temp→.md durchlassen.
+
+    Atomic-save writers (Claude Code, VS Code, vim backupcopy=no)
+    schreiben in eine temp-Datei und rename() sie über das Ziel.
+    Gio meldet das als RENAMED mit file=temp, other=target.
+
+    Der Filter an Zeile 338 prüft:
+        _is_valid_md_file(file) or _is_valid_md_file(other_file)
+
+    Ohne den `or _is_valid_md_file(other_file)` Teil wird das Event
+    gedroppt, weil file (temp-Name) keine .md-Endung hat.
+
+    Dieser Test stellt sicher, dass die Filter-Logik den Ziel-Pfad
+    berücksichtigt — ein Zurück revertieren auf `_is_valid_md_file(file)`
+    allein lässt den Test durchfallen.
+    """
+
+    def _create_monitor(self):
+        mock_gio = _make_mock_gio()
+        mock_glib = _make_mock_glib()
+        with patch("markdown_vault.vault_monitor.os.path.isdir", return_value=True):
+            mod = _load_monitor(mock_gio, mock_glib)
+            monitor = mod.VaultMonitor()
+            monitor.set_vaults(["/tmp/testvault"])
+            return monitor
+
+    def test_renamed_temp_to_md_emits_file_moved(self):
+        """RENAMED von .tmp → .md muss durch den Filter durchkommen."""
+        monitor = self._create_monitor()
+        received = []
+        monitor.connect("external-file-moved", lambda *args: received.append(args))
+
+        mock_tmp = _make_mock_file("/tmp/testvault/note.md.tmp.12345")
+        mock_target = _make_mock_file("/tmp/testvault/note.md")
+        mock_monitor = list(monitor._monitors.values())[0]
+        # Gio RENAMED: file=temp, other=target
+        monitor._on_monitor_event(mock_monitor, mock_tmp, mock_target, _RENAMED)
+
+        self.assertEqual(len(received), 1)
+        self.assertEqual(received[0][1], "/tmp/testvault/note.md")
+        self.assertEqual(received[0][2], "/tmp/testvault/note.md.tmp.12345")
+
+    def test_renamed_md_to_temp_passes_filter(self):
+        """RENAMED von .md → .tmp muss den Filter passieren.
+
+        RENAMED emittiert immer das "moved"-Signal (via _SIGNAL_NAMES).
+        Die Semantik (create/changed/delete) wird in on_file_moved
+        klassifiziert. Wichtig: Der Filter muss das Event durchlassen,
+        sonst wird es still verschluckt.
+        """
+        mock_gio = _make_mock_gio()
+        mock_glib = _make_mock_glib()
+        # is_dir=True nur für Verzeichnisse, False für Dateien
+        def is_dir_side_effect(path):
+            return path.endswith("/") or path in ("/tmp/testvault", "/tmp/testvault/subdir")
+        with patch("markdown_vault.vault_monitor.os.path.isdir", side_effect=is_dir_side_effect):
+            mod = _load_monitor(mock_gio, mock_glib)
+            monitor = mod.VaultMonitor()
+            monitor.set_vaults(["/tmp/testvault"])
+            monitor._monitors["/tmp/testvault/subdir"] = MagicMock()
+
+        received_moved = []
+        monitor.connect("external-file-moved", lambda *args: received_moved.append(args))
+
+        mock_target = _make_mock_file("/tmp/testvault/subdir/note.md")
+        mock_tmp = _make_mock_file("/tmp/testvault/subdir/note.md.tmp.12345")
+        mock_monitor = list(monitor._monitors.values())[0]
+        # Gio RENAMED: file=target(.md), other=tmp
+        monitor._on_monitor_event(mock_monitor, mock_target, mock_tmp, _RENAMED)
+
+        # Event muss durchkommen — on_file_moved klassifiziert es später
+        self.assertEqual(len(received_moved), 1)
+        self.assertEqual(received_moved[0][1], "/tmp/testvault/subdir/note.md.tmp.12345")
+        self.assertEqual(received_moved[0][2], "/tmp/testvault/subdir/note.md")
+
+
 class TestN4_CallbackExceptionLogging(unittest.TestCase):
     """N.4: Callback exceptions must be logged, not silently swallowed."""
 

@@ -321,6 +321,7 @@ class TestSaveDirtyTabsFailure(unittest.TestCase):
                 self._tab_bar = unittest.mock.Mock()
                 self._vault_monitor = unittest.mock.Mock()
                 self._close_window_pending = False
+                self._switch_vault_pending = False
 
             _save_dirty_tabs = aw.MainWindow._save_dirty_tabs
             _on_save_dialog_response = aw.MainWindow._on_save_dialog_response
@@ -454,6 +455,7 @@ class TestOnCloseRequestDirtyCheck(unittest.TestCase):
                 self._view_mode_manager = unittest.mock.Mock()
                 self._autosave = unittest.mock.Mock()
                 self._close_window_pending = False
+                self._switch_vault_pending = False
                 self._surface = unittest.mock.Mock()
                 self._restart_autosave = lambda: None
                 self._active_vault = "/tmp/vault"
@@ -602,6 +604,7 @@ class TestSwitchVaultDirtyDialogRace(unittest.TestCase):
                 self._nav_history = unittest.mock.Mock()
                 self._autosave = unittest.mock.Mock()
                 self._close_window_pending = False
+                self._switch_vault_pending = False
                 self._active_vault = "/tmp/vault-a"
                 self._content_stack = unittest.mock.Mock()
                 self.mru = unittest.mock.Mock()

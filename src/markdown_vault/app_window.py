@@ -105,6 +105,7 @@ class MainWindow(Adw.ApplicationWindow):
         # Guard against re-entrant position clamping.
         self._paned_clamping: bool = False
         self._close_window_pending: bool = False
+        self._switch_vault_pending: bool = False
 
         # MRU tab manager.
         self.mru = mru.MRUManager()
@@ -745,6 +746,9 @@ class MainWindow(Adw.ApplicationWindow):
         """
         if new_vault == self._active_vault:
             return
+        if self._switch_vault_pending:
+            return
+        self._switch_vault_pending = True
         # Save current vault state.
         self._session_mgr.save_vault_session(self._active_vault, self._content_stack)
         # Close all open tabs with dirty-check; on confirm continue in Phase 2.
@@ -773,6 +777,7 @@ class MainWindow(Adw.ApplicationWindow):
         If *open_file_path* is given, opens the file after the switch.
         *post_open_fn* is called after opening (e.g. for scrolling).
         """
+        self._switch_vault_pending = False
         logger.info("switch-vault: phase 2 — closing tabs then switching to %s (open_file=%s)", new_vault, open_file_path)
         self._do_close_paths(self._tab_bar.get_all_paths())
         self.mru.clear()
@@ -930,6 +935,7 @@ class MainWindow(Adw.ApplicationWindow):
             if self._close_window_pending:
                 self._close_window_pending = False
                 self._autosave.restart()
+            self._switch_vault_pending = False
             return
         if response == "save":
             failed = self._save_dirty_tabs(dirty_paths)
@@ -1385,6 +1391,8 @@ class MainWindow(Adw.ApplicationWindow):
         is open.  On discard or successful save the surface is destroyed
         explicitly; on cancel or save-failure the close is aborted.
         """
+        if self._close_window_pending:
+            return True
         self._autosave.cancel()
         self._view_mode_manager.cancel_preview_debounce()
 
