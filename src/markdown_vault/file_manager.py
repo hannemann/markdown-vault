@@ -13,7 +13,7 @@ import gi
 
 gi.require_version("Gtk", "4.0")
 
-from gi.repository import Gtk
+from gi.repository import GLib, Gtk
 
 from . import dialogs, validation
 from .file_ops import FileOps
@@ -182,12 +182,24 @@ class FileManager:
         if not self._tab_bar:
             return
         if is_dir:
-            for tab_path in list(self._tab_bar.get_all_paths()):
-                if tab_path == path or tab_path.startswith(path + os.sep):
-                    self._tab_bar.close_tab(tab_path)
+            paths_to_close = [
+                tab_path for tab_path in self._tab_bar.get_all_paths()
+                if tab_path == path or tab_path.startswith(path + os.sep)
+            ]
+            if paths_to_close:
+                GLib.idle_add(self._close_tabs_batch, paths_to_close)
         else:
             if path in self._tab_bar.get_all_paths():
                 self._tab_bar.close_tab(path)
+
+    def _close_tabs_batch(self, paths: list[str]) -> bool:
+        """Close multiple tabs via idle callback to avoid GTK segfault."""
+        all_paths = self._tab_bar.get_all_paths() if self._tab_bar else []
+        for tab_path in paths:
+            if tab_path in all_paths:
+                self._tab_bar.close_tab(tab_path)
+                all_paths = self._tab_bar.get_all_paths()
+        return False  # Do not repeat
 
     def _cleanup_mru(self, path: str, is_dir: bool) -> None:
         """Remove *path* and (if directory) all contained paths from the MRU list."""

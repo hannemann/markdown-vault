@@ -215,7 +215,8 @@ class BacklinkIndex:
         """Remove *path_str* from all reverse-mapping entries."""
         targets = self._source_to_targets.pop(path_str, set())
         for stem in targets:
-            sources = self._target_to_sources.get(stem, set())
-            sources.discard(path_str)
-            if not sources:
-                del self._target_to_sources[stem]
+            sources = self._target_to_sources.get(stem)
+            if sources is not None:
+                sources.discard(path_str)
+                if not sources:
+                    del self._target_to_sources[stem]

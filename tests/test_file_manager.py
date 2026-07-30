@@ -12,6 +12,11 @@ import shutil
 import unittest
 from unittest.mock import patch, MagicMock
 
+import gi
+
+gi.require_version("Gtk", "4.0")
+from gi.repository import GLib
+
 from markdown_vault.file_manager import FileManager
 
 
@@ -506,6 +511,12 @@ class TestHandleDeleteConfirmedDir(unittest.TestCase):
         ]
 
         self._fm.handle_delete_response(True, "/vault/dir")
+
+        # Execute the idle callback directly (no GTK main loop in unit tests)
+        self._fm._close_tabs_batch(
+            [p for p in self._tab_bar.get_all_paths()
+             if p.startswith("/vault/dir")],
+        )
 
         self._file_ops.delete_path.assert_called_once_with("/vault/dir")
         self._tab_bar.close_tab.assert_any_call("/vault/dir/a.md")

@@ -331,5 +331,145 @@ class TestFileIndexEdgeCases(unittest.TestCase):
             shutil.rmtree(tmp, ignore_errors=True)
 
 
+class TestFileIndexStemTieBreak(unittest.TestCase):
+    """R12.1: incremental updates — tie-break stable, promote on remove."""
+
+    def setUp(self):
+        self._tmp = tempfile.mkdtemp()
+        self._vault = Path(self._tmp) / "vault"
+        self._vault.mkdir()
+
+    def tearDown(self):
+        shutil.rmtree(self._tmp, ignore_errors=True)
+
+    def test_build_shallowest_wins(self):
+        """build(): root.md wins over sub/root.md regardless of walk order."""
+        sub = self._vault / "sub"
+        sub.mkdir()
+        (self._vault / "root.md").write_text("# Root")
+        (sub / "root.md").write_text("# Sub")
+        idx = FileIndex()
+        idx.build([str(self._vault)])
+        self.assertEqual(
+            idx.resolve("root"),
+            str(self._vault / "root.md"),
+        )
+
+    def test_add_duplicate_root_then_sub(self):
+        """add_file(root.md) then add_file(sub/root.md) → root wins."""
+        sub = self._vault / "sub"
+        sub.mkdir()
+        (self._vault / "root.md").write_text("# Root")
+        (sub / "root.md").write_text("# Sub")
+        idx = FileIndex()
+        idx.add_file(str(self._vault / "root.md"))
+        idx.add_file(str(sub / "root.md"))
+        self.assertEqual(
+            idx.resolve("root"),
+            str(self._vault / "root.md"),
+        )
+
+    def test_add_duplicate_sub_then_root(self):
+        """add_file(sub/root.md) then add_file(root.md) → root still wins."""
+        sub = self._vault / "sub"
+        sub.mkdir()
+        (self._vault / "root.md").write_text("# Root")
+        (sub / "root.md").write_text("# Sub")
+        idx = FileIndex()
+        idx.add_file(str(sub / "root.md"))
+        idx.add_file(str(self._vault / "root.md"))
+        self.assertEqual(
+            idx.resolve("root"),
+            str(self._vault / "root.md"),
+        )
+
+    def test_add_duplicate_same_depth_lex_smaller_wins(self):
+        """Same depth: lex-smaller path wins."""
+        a = self._vault / "a_dir"
+        b = self._vault / "b_dir"
+        a.mkdir()
+        b.mkdir()
+        (b / "same.md").write_text("# B")
+        (a / "same.md").write_text("# A")
+        idx = FileIndex()
+        idx.add_file(str(b / "same.md"))
+        idx.add_file(str(a / "same.md"))
+        self.assertEqual(
+            idx.resolve("same"),
+            str(a / "same.md"),
+        )
+
+    def test_remove_root_promotes_sub(self):
+        """After removing root, resolve() returns sub/ file."""
+        sub = self._vault / "sub"
+        sub.mkdir()
+        (self._vault / "root.md").write_text("# Root")
+        (sub / "root.md").write_text("# Sub")
+        idx = FileIndex()
+        idx.build([str(self._vault)])
+        result = idx.resolve("root")
+        self.assertEqual(result, str(self._vault / "root.md"))
+        idx.remove_file(result)
+        result = idx.resolve("root")
+        self.assertEqual(result, str(sub / "root.md"))
+
+    def test_remove_all_returns_none(self):
+        """After removing all files with same stem, resolve() returns None."""
+        sub = self._vault / "sub"
+        sub.mkdir()
+        (sub / "root.md").write_text("# Sub")
+        idx = FileIndex()
+        idx.build([str(self._vault)])
+        self.assertEqual(
+            idx.resolve("root"),
+            str(sub / "root.md"),
+        )
+        idx.remove_file(str(sub / "root.md"))
+        self.assertIsNone(idx.resolve("root"))
+
+    def test_add_multiple_levels_shallowest_wins(self):
+        """Three levels: a/b/c/root.md, a/root.md, root.md → root.md wins."""
+        a = self._vault / "a"
+        ab = a / "b"
+        abc = ab / "c"
+        abc.mkdir(parents=True)
+        (self._vault / "root.md").write_text("# Root")
+        (a / "root.md").write_text("# A")
+        (abc / "root.md").write_text("# ABC")
+        idx = FileIndex()
+        idx.add_file(str(abc / "root.md"))
+        idx.add_file(str(a / "root.md"))
+        idx.add_file(str(self._vault / "root.md"))
+        self.assertEqual(
+            idx.resolve("root"),
+            str(self._vault / "root.md"),
+        )
+
+    def test_space_underscore_variant_preserved(self):
+        """Space↔underscore alternate stays consistent after remove+promote."""
+        sub = self._vault / "sub"
+        sub.mkdir()
+        (self._vault / "my note.md").write_text("# Root")
+        (sub / "my note.md").write_text("# Sub")
+        idx = FileIndex()
+        idx.build([str(self._vault)])
+        # Direct lookup
+        root_path = idx.resolve("my note")
+        self.assertEqual(root_path, str(self._vault / "my note.md"))
+        # Underscore variant
+        self.assertEqual(
+            idx.resolve("my_note"),
+            root_path,
+        )
+        # After remove root, both variants resolve to sub
+        idx.remove_file(root_path)
+        sub_path = idx.resolve("my note")
+        self.assertEqual(sub_path, str(sub / "my note.md"))
+        self.assertEqual(
+            idx.resolve("my_note"),
+            sub_path,
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
