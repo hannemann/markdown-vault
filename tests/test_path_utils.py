@@ -1,0 +1,198 @@
+"""Tests for markdown_vault.path_utils — vault name-to-path resolver."""
+
+import os
+import tempfile
+import unittest
+from pathlib import Path
+
+# Need to patch config before importing path_utils.
+import markdown_vault.config as _cfg
+
+
+class _TempConfigMixin:
+    """Redirect config to a temporary directory for each test."""
+
+    def setUp(self):
+        self._tmpdir = tempfile.mkdtemp()
+        self._orig_dir = _cfg.CONFIG_DIR
+        self._orig_file = _cfg.CONFIG_FILE
+        _cfg.CONFIG_DIR = Path(self._tmpdir)
+        _cfg.CONFIG_FILE = Path(self._tmpdir) / "vaults.yaml"
+        # Invalidate cache so tests start fresh.
+        if hasattr(_cfg, "_vaults_cache"):
+            _cfg._vaults_cache = None
+
+    def tearDown(self):
+        _cfg.CONFIG_DIR = self._orig_dir
+        _cfg.CONFIG_FILE = self._orig_file
+        if hasattr(_cfg, "_vaults_cache"):
+            _cfg._vaults_cache = None
+        import shutil
+        shutil.rmtree(self._tmpdir, ignore_errors=True)
+
+
+class TestVaultCache(_TempConfigMixin, unittest.TestCase):
+    """Tests for the vaults.yaml in-memory cache."""
+
+    def test_cache_miss_reads_from_disk(self):
+        _cfg.CONFIG_FILE.write_text(
+            "vaults:\n  - name: Notes\n    path: /tmp/notes\n",
+            encoding="utf-8",
+        )
+        result = _cfg.load_vaults()
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]["name"], "Notes")
+
+    def test_cache_hit_returns_same_list(self):
+        _cfg.CONFIG_FILE.write_text(
+            "vaults:\n  - name: Notes\n    path: /tmp/notes\n",
+            encoding="utf-8",
+        )
+        first = _cfg.load_vaults()
+        second = _cfg.load_vaults()
+        self.assertIs(first, second)
+
+    def test_cache_invalidated_after_save_vaults(self):
+        _cfg.CONFIG_FILE.write_text(
+            "vaults:\n  - name: Old\n    path: /tmp/old\n",
+            encoding="utf-8",
+        )
+        first = _cfg.load_vaults()
+        self.assertEqual(first[0]["name"], "Old")
+        _cfg.save_vaults([{"name": "New", "path": "/tmp/new"}])
+        second = _cfg.load_vaults()
+        self.assertEqual(second[0]["name"], "New")
+        self.assertIsNot(first, second)
+
+    def test_cache_invalidated_after_add_vault(self):
+        _cfg.CONFIG_FILE.write_text(
+            "vaults:\n  - name: A\n    path: /tmp/a\n",
+            encoding="utf-8",
+        )
+        first = _cfg.load_vaults()
+        self.assertEqual(len(first), 1)
+        _cfg.add_vault("B", "/tmp/b")
+        second = _cfg.load_vaults()
+        self.assertEqual(len(second), 2)
+
+    def test_cache_invalidated_after_remove_vault(self):
+        _cfg.add_vault("A", "/tmp/a")
+        _cfg.add_vault("B", "/tmp/b")
+        first = _cfg.load_vaults()
+        self.assertEqual(len(first), 2)
+        _cfg.remove_vault("/tmp/b")
+        second = _cfg.load_vaults()
+        self.assertEqual(len(second), 1)
+
+    def test_cache_invalidated_after_save_settings(self):
+        _cfg.CONFIG_FILE.write_text(
+            "vaults:\n  - name: Notes\n    path: /tmp/notes\n",
+            encoding="utf-8",
+        )
+        first = _cfg.load_vaults()
+        self.assertEqual(first[0]["name"], "Notes")
+        _cfg.save_settings({"autosave_interval": 60})
+        # Settings save also preserves vaults, but should invalidate cache.
+        second = _cfg.load_vaults()
+        self.assertEqual(second[0]["name"], "Notes")
+
+
+class TestResolveVaultPath(_TempConfigMixin, unittest.TestCase):
+    """Tests for resolve_vault_path()."""
+
+    def setUp(self):
+        super().setUp()
+        from markdown_vault.path_utils import resolve_vault_path
+        self._resolve = resolve_vault_path
+
+    def test_returns_path_for_known_name(self):
+        _cfg.CONFIG_FILE.write_text(
+            "vaults:\n"
+            "  - name: Notes\n    path: /tmp/notes\n"
+            "  - name: Work\n    path: /home/user/work\n",
+            encoding="utf-8",
+        )
+        self.assertEqual(self._resolve("Notes"), "/tmp/notes")
+        self.assertEqual(self._resolve("Work"), "/home/user/work")
+
+    def test_returns_none_for_unknown_name(self):
+        self.assertIsNone(self._resolve("NonExistent"))
+
+    def test_returns_none_for_empty_name(self):
+        self.assertIsNone(self._resolve(""))
+
+    def test_resolves_relative_paths(self):
+        _cfg.CONFIG_FILE.write_text(
+            "vaults:\n  - name: Rel\n    path: relative/path\n",
+            encoding="utf-8",
+        )
+        self.assertTrue(os.path.isabs(self._resolve("Rel")))
+
+    def test_cache_is_used(self):
+        _cfg.CONFIG_FILE.write_text(
+            "vaults:\n  - name: Notes\n    path: /tmp/notes\n",
+            encoding="utf-8",
+        )
+        first = self._resolve("Notes")
+        # Modify file on disk — cache should still return old value.
+        _cfg.CONFIG_FILE.write_text(
+            "vaults:\n  - name: Notes\n    path: /tmp/changed\n",
+            encoding="utf-8",
+        )
+        second = self._resolve("Notes")
+        self.assertEqual(first, second)
+        # After invalidate, should get new value.
+        _cfg._invalidate_cache()
+        third = self._resolve("Notes")
+        self.assertNotEqual(first, third)
+
+
+class TestResolveWikilink(_TempConfigMixin, unittest.TestCase):
+    """Tests for resolve_wikilink()."""
+
+    def setUp(self):
+        super().setUp()
+        from markdown_vault.path_utils import resolve_wikilink
+        self._resolve = resolve_wikilink
+
+    def test_resolves_simple_stem(self):
+        _cfg.CONFIG_FILE.write_text(
+            "vaults:\n  - name: VaultA\n    path: /tmp/Vault-A\n",
+            encoding="utf-8",
+        )
+        result = self._resolve("VaultA", "Page")
+        self.assertEqual(result, "/tmp/Vault-A/Page.md")
+
+    def test_resolves_subdirectory_path(self):
+        _cfg.CONFIG_FILE.write_text(
+            "vaults:\n  - name: VaultA\n    path: /tmp/Vault-A\n",
+            encoding="utf-8",
+        )
+        result = self._resolve("VaultA", "sub/nested/Page")
+        self.assertEqual(result, "/tmp/Vault-A/sub/nested/Page.md")
+
+    def test_returns_none_for_unknown_vault(self):
+        _cfg.CONFIG_FILE.write_text(
+            "vaults:\n  - name: VaultA\n    path: /tmp/Vault-A\n",
+            encoding="utf-8",
+        )
+        self.assertIsNone(self._resolve("Unknown", "Page"))
+
+    def test_returns_none_for_empty_path(self):
+        _cfg.CONFIG_FILE.write_text(
+            "vaults:\n  - name: VaultA\n    path: /tmp/Vault-A\n",
+            encoding="utf-8",
+        )
+        self.assertIsNone(self._resolve("VaultA", ""))
+
+    def test_handles_trailing_slash_in_path(self):
+        _cfg.CONFIG_FILE.write_text(
+            "vaults:\n  - name: VaultA\n    path: /tmp/Vault-A\n",
+            encoding="utf-8",
+        )
+        result = self._resolve("VaultA", "sub/Page")
+        self.assertEqual(result, "/tmp/Vault-A/sub/Page.md")
+
+
+if __name__ == "__main__":
+    unittest.main()

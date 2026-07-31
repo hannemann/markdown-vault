@@ -20,10 +20,12 @@ class _TempConfigMixin:
         self._orig_file = _cfg.CONFIG_FILE
         _cfg.CONFIG_DIR = Path(self._tmpdir)
         _cfg.CONFIG_FILE = Path(self._tmpdir) / "vaults.yaml"
+        _cfg._vaults_cache = None
 
     def tearDown(self):
         _cfg.CONFIG_DIR = self._orig_dir
         _cfg.CONFIG_FILE = self._orig_file
+        _cfg._vaults_cache = None
         shutil.rmtree(self._tmpdir, ignore_errors=True)
 
 

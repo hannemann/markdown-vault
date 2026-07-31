@@ -56,7 +56,7 @@ class TestVaultTreeHandleFileCreated(unittest.TestCase):
         self.vault_path = str(self._tmpdir / "testvault")
         Path(self.vault_path).mkdir(exist_ok=True)
         (Path(self.vault_path) / "existing.md").touch()
-        self.tree.set_vaults([self.vault_path])
+        self.tree.set_vaults([{"name": "testvault", "path": self.vault_path}])
 
     def tearDown(self):
         shutil.rmtree(self._tmpdir, ignore_errors=True)
@@ -156,7 +156,7 @@ class TestVaultTreeHandleFileDeleted(unittest.TestCase):
         Path(self.vault_path).mkdir(exist_ok=True)
         (Path(self.vault_path) / "delete_me.md").touch()
         (Path(self.vault_path) / "keep_me.md").touch()
-        self.tree.set_vaults([self.vault_path])
+        self.tree.set_vaults([{"name": "testvault", "path": self.vault_path}])
 
     def tearDown(self):
         shutil.rmtree(self._tmpdir, ignore_errors=True)
@@ -215,7 +215,7 @@ class TestVaultTreeHandleFileMoved(unittest.TestCase):
         (Path(self.vault_path) / "subdir").mkdir(exist_ok=True)
         self.moved_file = Path(self.vault_path) / "move_me.md"
         self.moved_file.touch()
-        self.tree.set_vaults([self.vault_path])
+        self.tree.set_vaults([{"name": "testvault", "path": self.vault_path}])
 
     def tearDown(self):
         shutil.rmtree(self._tmpdir, ignore_errors=True)
@@ -269,7 +269,7 @@ class TestVaultTreeDeleteShortcut(unittest.TestCase):
         self.vault_path = str(self._tmpdir / "testvault")
         Path(self.vault_path).mkdir(exist_ok=True)
         (Path(self.vault_path) / "file.md").touch()
-        self.tree.set_vaults([self.vault_path])
+        self.tree.set_vaults([{"name": "testvault", "path": self.vault_path}])
 
     def tearDown(self):
         shutil.rmtree(self._tmpdir, ignore_errors=True)
@@ -316,7 +316,7 @@ class TestVaultTreeFocusFile(unittest.TestCase):
         subdir = Path(self.vault_path) / "sub"
         subdir.mkdir(exist_ok=True)
         (subdir / "deep.md").touch()
-        self.tree.set_vaults([self.vault_path])
+        self.tree.set_vaults([{"name": "testvault", "path": self.vault_path}])
 
     def tearDown(self):
         shutil.rmtree(self._tmpdir, ignore_errors=True)
@@ -407,7 +407,7 @@ class TestVaultTreeHandleFileMovedDirectory(unittest.TestCase):
         old_dir = Path(self.vault_path) / "olddir"
         old_dir.mkdir(exist_ok=True)
         (old_dir / "file.md").touch()
-        self.tree.set_vaults([self.vault_path])
+        self.tree.set_vaults([{"name": "testvault", "path": self.vault_path}])
 
         # Pre-populate tree with olddir
         self.tree._handle_file_created(self.vault_path, str(old_dir))
@@ -465,7 +465,7 @@ class TestVaultTreeDeleteVaultRoot(unittest.TestCase):
         Path(self.vault_path).mkdir(exist_ok=True)
         (Path(self.vault_path) / "file1.md").touch()
         (Path(self.vault_path) / "file2.md").touch()
-        self.tree.set_vaults([self.vault_path])
+        self.tree.set_vaults([{"name": "testvault", "path": self.vault_path}])
 
     def tearDown(self):
         shutil.rmtree(self._tmpdir, ignore_errors=True)
@@ -521,7 +521,7 @@ class TestVaultTreeContextMenuFallback(unittest.TestCase):
         Path(self.vault_b).mkdir()
         (Path(self.vault_a) / "a.md").touch()
         (Path(self.vault_b) / "b.md").touch()
-        self.tree.set_vaults([self.vault_a, self.vault_b])
+        self.tree.set_vaults([{"name": "VaultA", "path": self.vault_a}, {"name": "VaultB", "path": self.vault_b}])
 
     def tearDown(self):
         shutil.rmtree(self._tmpdir, ignore_errors=True)

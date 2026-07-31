@@ -651,7 +651,7 @@ class TestSwitchVaultDirtyDialogRace(unittest.TestCase):
 
         self.assertEqual(confirmed, [True])
         mock_idle.assert_not_called()
-        win._tab_bar.close_tab.assert_called()
+        win._tab_bar.close_tab.assert_not_called()
 
     def test_close_all_dirty_defers_on_confirm(self):
         """Dirty tabs: on_confirm NOT called yet, dialog is scheduled."""

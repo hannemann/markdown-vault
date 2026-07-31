@@ -250,19 +250,23 @@ class TabBar(Gtk.Box):
         if file_path not in self._tabs:
             return
         tab = self._tabs.pop(file_path)
+        # Cleanup Python-side resources BEFORE removing from container
+        # (container removal triggers GTK widget destruction)
+        try:
+            if hasattr(tab.preview, "cleanup"):
+                tab.preview.cleanup()
+        except Exception:
+            logger.error("close_tab: preview cleanup failed for %s", file_path, exc_info=True)
+        try:
+            if hasattr(tab.editor, "cleanup"):
+                tab.editor.cleanup()
+        except Exception:
+            logger.error("close_tab: editor cleanup failed for %s", file_path, exc_info=True)
+        # Now remove from container (triggers GTK unparent)
         self._remove_tab_widget(file_path)
-        # Explicitly cleanup widgets to release resources
-        if hasattr(tab.preview, "cleanup"):
-            tab.preview.cleanup()
-        if hasattr(tab.editor, "cleanup"):
-            tab.editor.cleanup()
         self.emit("tab-closed", file_path)
         if self._current_path == file_path:
-            remaining = list(self._tabs.keys())
-            if remaining:
-                self.set_active_tab(remaining[-1])
-            else:
-                self._current_path = None
+            self._current_path = None
 
     def close_others(self, file_path: str) -> None:
         """Close all tabs except the one at *file_path*.

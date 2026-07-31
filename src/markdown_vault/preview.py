@@ -6,6 +6,7 @@ The rendering respects system theme colours via GTK named CSS variables
 to light and dark mode.
 """
 
+import os
 from pathlib import Path
 
 import hashlib
@@ -21,8 +22,12 @@ import xml.etree.ElementTree as etree
 from pygments.formatters import HtmlFormatter
 from urllib.parse import unquote
 from markdown_vault.latex_mathml import MathMLPostprocessor
-from markdown_vault.file_index import FileIndex
-from markdown_vault.path_utils import HEADING_RE
+from markdown_vault.path_utils import (
+    HEADING_RE,
+    find_vault_name_for_path,
+    resolve_vault_path,
+    resolve_wikilink,
+)
 import gi
 
 gi.require_version("Gtk", "4.0")
@@ -354,11 +359,12 @@ class Preview(Gtk.ScrolledWindow):
         self._css_path = css_path
         self._zoom_level: float = 1.0
         self._vault_paths: list[str] = []
+        self._vault_names: list[str] = []
+        self._current_vault_path: str | None = None
         self._loaded: bool = False
         self._base_uri: str | None = None
         self._last_html_hash: str = ""
         self._last_html: str = ""
-        self._file_index: FileIndex | None = None
         self._active: bool = True
         self._pending_text: str | None = None
         self._pending_base_dir: str = ""
@@ -479,13 +485,30 @@ class Preview(Gtk.ScrolledWindow):
     # Vault paths (for wikilink resolution)
     # ------------------------------------------------------------------
 
-    def set_file_index(self, file_index: FileIndex) -> None:
-        """Set the shared file index used for wikilink resolution."""
-        self._file_index = file_index
-
     def set_vault_paths(self, paths: list[str]) -> None:
         """Set the vault root directories used to resolve wikilinks."""
         self._vault_paths = list(paths)
+
+    def set_vault_names(self, names: list[str]) -> None:
+        """Set the vault names (from vaults.yaml) for resolution."""
+        self._vault_names = list(names)
+
+    def _resolve_vault_name(self, vault_name: str) -> str | None:
+        """Try to match a vault name to a vault path."""
+        if not vault_name:
+            return None
+        # Try exact match first (vault name == vault path)
+        if vault_name in self._vault_paths:
+            return vault_name
+        # Try matching by vault name
+        if self._vault_names:
+            try:
+                idx = self._vault_names.index(vault_name)
+                if idx < len(self._vault_paths):
+                    return self._vault_paths[idx]
+            except ValueError:
+                pass
+        return None
 
     # ------------------------------------------------------------------
     # Navigation
@@ -507,7 +530,8 @@ class Preview(Gtk.ScrolledWindow):
             logger.debug("No URI in navigation request")
             return False
 
-        logger.debug("Navigation request URI: %s", uri)
+        logger.debug("Navigation request URI (raw): %r", uri)
+        logger.debug("Navigation request URI (hex): %r", uri.encode().hex())
 
         # Explicitly handle external links - open in default browser
         if uri.startswith(("http://", "https://", "mailto:")):
@@ -515,13 +539,13 @@ class Preview(Gtk.ScrolledWindow):
             GLib.idle_add(Gtk.show_uri, self.get_root(), uri, Gdk.CURRENT_TIME)
             return True
 
-        # Only process file:// URIs that look like wikilink clicks
-        # (relative paths or paths without directories beyond vault roots)
-        if not uri.startswith("file://"):
-            return False
+        # Extract the path string from the URI
+        if uri.startswith("file://"):
+            path_str = uri[7:]
+        else:
+            # Non-file:// URIs — could be a wikilink (e.g., "vault::Page")
+            path_str = uri
 
-        # Strip file:// prefix and URL-decode (e.g. %20 -> space)
-        path_str = uri[7:]
         path_str = unquote(path_str)
 
         logger.debug("Attempting wikilink resolve for: %r", path_str)
@@ -543,46 +567,58 @@ class Preview(Gtk.ScrolledWindow):
         return False
 
     def _resolve_wikilink(self, path_str: str) -> str | None:
-        """Resolve a link target to an existing .md file."""
-        from pathlib import Path as _P
+        """Resolve a link target to an existing .md file.
 
-        target = _P(path_str)
+        Handles three cases:
+        1. Absolute file paths that exist on disk
+        2. Vault-prefixed wikilinks (``VaultName>sub/Page``) — resolved via
+           the cached vaults config (SSOT: vaults.yaml)
+        3. Same-vault wikilinks (``sub/Page``) — resolved relative to the
+           vault that contains the source file
+        """
+        logger.debug("_resolve_wikilink path_str=%r", path_str)
+        target = Path(path_str)
         name = target.name
 
-        # If it already has .md and exists, use it
+        # Case 1: Direct file path (with or without .md extension)
         if name.endswith(".md") and target.exists():
             return str(target.resolve())
-
-        # Try with .md extension in same directory
         with_md = target.with_suffix(".md")
         if with_md.exists():
             return str(with_md.resolve())
 
-        # Search in vault roots using the pre-built file index.
-        stem = target.stem if name.endswith(".md") else name
-        if self._file_index is not None:
-            result = self._file_index.resolve(stem)
-            if result is not None:
-                return result
+        # Determine the raw wikilink stem from the URI.
+        raw = name if not name.endswith(".md") else target.stem
+        if ">" in raw or ">" in str(target.parent):
+            # Case 2: Vault-prefixed wikilink.
+            # The '>' may be in the filename (raw) or in a parent directory
+            # because the WebView resolved the relative URL against the
+            # current file's directory.
+            if ">" in raw:
+                vault_name, _, stem = raw.partition(">")
+            else:
+                # Extract vault+stem from the parent path.
+                # parent is like "…/Vault-B/Vault-A>sub"
+                parent_stem = target.parent.name  # "Vault-A>sub"
+                if ">" in parent_stem:
+                    vault_name, _, parent_suffix = parent_stem.partition(">")
+                    stem = parent_suffix + os.sep + name
+                else:
+                    return None
+            result = resolve_wikilink(vault_name, stem)
+            if result and Path(result).exists():
+                return str(Path(result).resolve())
+            return None
 
-        # Fallback: scan vaults when the index is stale (e.g., file created
-        # after index build).  Only do rglob when the index misses — this
-        # preserves the old behaviour for race conditions while keeping the
-        # hot path O(1).
-        # Apply the same underscore↔space normalization as FileIndex.resolve().
-        stems_to_check = [stem]
-        if "_" in stem:
-            stems_to_check.append(stem.replace("_", " "))
-        elif " " in stem:
-            stems_to_check.append(stem.replace(" ", "_"))
-        for vp in self._vault_paths:
-            vault = _P(vp)
-            for md_file in vault.rglob("*.md"):
-                if md_file.stem in stems_to_check:
-                    # Update the index so subsequent lookups are fast.
-                    if self._file_index is not None:
-                        self._file_index.add_file(str(md_file))
-                    return str(md_file.resolve())
+        # Case 3: Same-vault wikilink (no vault prefix)
+        if self._current_vault_path:
+            vault_name = find_vault_name_for_path(self._current_vault_path)
+            if vault_name is None:
+                return None
+            result = resolve_wikilink(vault_name, raw)
+            if result and Path(result).exists():
+                return str(Path(result).resolve())
+            return None
 
         return None
 
@@ -649,6 +685,10 @@ class Preview(Gtk.ScrolledWindow):
                 self._web_view.evaluate_javascript,
                 js, -1, None, None, None, None,
             )
+
+    def set_current_vault_path(self, vault_path: str) -> None:
+        """Set the current vault path for wikilink resolution."""
+        self._current_vault_path = vault_path
 
     def scroll_to_line(self, line: int, text: str) -> None:
         """Scroll the preview to the heading at the given 0-based *line*.

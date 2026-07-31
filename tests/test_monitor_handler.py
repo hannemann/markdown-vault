@@ -67,7 +67,7 @@ class TestMonitorHandlerFileCreated(unittest.TestCase):
             p = Path(self._tmp) / "foo.md"
             p.write_text("# Foo", encoding="utf-8")
             h.on_file_created("/vault", str(p))
-            self.mock_file_index.add_file.assert_called_once_with(str(p))
+            self.mock_file_index.add_file.assert_called_once_with(str(p), vault="/vault")
 
     def test_non_utf8_file_handled_gracefully(self):
         with patch("markdown_vault.monitor_handler.GLib", _GLibMock):
@@ -304,7 +304,7 @@ class TestMonitorHandlerFileMoved(unittest.TestCase):
             p = Path(self._tmp) / "arrived.md"
             p.write_text("# Arrived", encoding="utf-8")
             h.on_file_moved("/vault", str(p), None)
-            self.mock_file_index.add_file.assert_called_once_with(str(p))
+            self.mock_file_index.add_file.assert_called_once_with(str(p), vault="/vault")
 
     def test_moved_non_md_from_outside_no_index(self):
         with patch("markdown_vault.monitor_handler.GLib", _GLibMock):
@@ -359,7 +359,9 @@ class TestMonitorHandlerFileMoved(unittest.TestCase):
             self.mock_vault_tree._handle_file_created.assert_called_once_with(
                 "/vault", "/vault/neues.md",
             )
-            self.mock_file_index.add_file.assert_called_once_with("/vault/neues.md")
+            self.mock_file_index.add_file.assert_called_once_with(
+                "/vault/neues.md", vault="/vault",
+            )
 
     def test_genuine_rename_still_works(self):
         """Source-tracked rename still takes the rename path (no banner)."""

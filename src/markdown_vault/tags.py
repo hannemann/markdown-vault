@@ -8,48 +8,73 @@ all files that link *to* a given target.
 import logging
 import os
 import re
+from dataclasses import dataclass
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-WIKILINK_RE = re.compile(r"\[\[([^\]|]+)(?:\|([^\]]+))?\]\]")
 
+@dataclass(frozen=True)
+class WikilinkInfo:
+    """Parsed information about a single wikilink.
 
-def parse_wikilinks(text: str) -> list[tuple[str, str | None]]:
-    """Return all ``(page, alias)`` pairs found in *text*.
-
-    ``alias`` is ``None`` when no pipe syntax is used.
+    Attributes
+    ----------
+    raw : str
+        Original content between ``[[`` and ``]]`` (e.g. ``"VaultA>sub/note|Alias"``).
+    stem : str
+        Target path without vault prefix or alias (e.g. ``"sub/note"``).
+    vault : str | None
+        Vault name prefix if present (e.g. ``"VaultA"``), else ``None``.
+    alias : str | None
+        Display alias after ``|``, else ``None``.
+    display : str
+        Full display string: ``stem|alias`` or just ``stem``.
     """
-    return [(m.group(1), m.group(2)) for m in WIKILINK_RE.finditer(text)]
+
+    raw: str
+    stem: str
+    vault: str | None
+    alias: str | None
+    display: str
 
 
-def resolve_link(
-    page_name: str,
-    current_file: Path,
-    vault_paths: list[str],
-) -> Path | None:
-    """Resolve *page_name* to an existing ``.md`` file.
+# Match wikilinks: [[...]] with optional |alias and >vault-prefix.
+# The > must appear at the very start (right after [[).
+# vault: only non-], non-whitespace chars.
+# stem: non-|, non-] chars.
+WIKILINK_RE = re.compile(
+    r"\[\["
+    r"(?:(?P<vault>[^>\s]+)>(?P<stem1>[^]\|]+))?"
+    r"(?P<stem2>[^]\|]+)?"
+    r"(?:\|(?P<alias>[^\]]+))?"
+    r"\]\]"
+)
 
-    The search order is:
 
-    1. Same directory as *current_file*
-    2. Each vault root (in order)
+def parse_wikilinks(text: str) -> list[WikilinkInfo]:
+    """Parse all wikilinks in *text* and return a list of ``WikilinkInfo``.
 
-    Returns ``None`` when no matching file is found.
+    Supports vault-prefix syntax: ``[[VaultName>path/to/file|Alias]]``.
+    The vault prefix must start with ``>`` immediately after ``[[``.
     """
-    current_dir = current_file.parent
-    candidates: list[Path] = [
-        current_dir / f"{page_name}.md",
-        current_dir / page_name,
-    ]
-    for vp in vault_paths:
-        vault = Path(vp)
-        candidates.append(vault / f"{page_name}.md")
-        candidates.append(vault / page_name)
-    for candidate in candidates:
-        if candidate.exists() and candidate.suffix == ".md":
-            return candidate
-    return None
+    results: list[WikilinkInfo] = []
+    for m in WIKILINK_RE.finditer(text):
+        raw = m.group(0)[2:-2]  # Strip [[ and ]]
+        vault = m.group("vault")
+        stem = m.group("stem1") or m.group("stem2")
+        alias = m.group("alias")
+        display = f"{stem}|{alias}" if alias else stem
+        results.append(
+            WikilinkInfo(
+                raw=raw,
+                stem=stem,
+                vault=vault,
+                alias=alias,
+                display=display,
+            )
+        )
+    return results
 
 
 def find_backlinks(target_file: Path, vault_paths: list[str]) -> list[Path]:
@@ -73,8 +98,8 @@ def find_backlinks(target_file: Path, vault_paths: list[str]) -> list[Path]:
                 except (OSError, UnicodeDecodeError):
                     logger.debug("Cannot read %s for backlink scan", fpath, exc_info=True)
                     continue
-                for page, _alias in parse_wikilinks(text):
-                    if page == target_stem:
+                for info in parse_wikilinks(text):
+                    if info.stem == target_stem:
                         backlinks.append(fpath)
                         break
     return backlinks

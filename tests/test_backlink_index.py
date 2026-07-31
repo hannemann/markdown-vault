@@ -23,7 +23,7 @@ class TestBacklinkIndexBuild(unittest.TestCase):
         (self._vault / "Page.md").write_text("# Page\n")
         (self._vault / "Note.md").write_text("See [[Page]].\n")
         idx = BacklinkIndex()
-        idx.build([str(self._vault)])
+        idx.build([{"name": "vault", "path": str(self._vault)}])
         backlinks = idx.find_backlinks(self._vault / "Page.md")
         self.assertEqual(len(backlinks), 1)
         self.assertTrue(backlinks[0].endswith("Note.md"))
@@ -32,7 +32,7 @@ class TestBacklinkIndexBuild(unittest.TestCase):
         (self._vault / "Page.md").write_text("# Page\n")
         (self._vault / "Note.txt").write_text("See [[Page]].\n")
         idx = BacklinkIndex()
-        idx.build([str(self._vault)])
+        idx.build([{"name": "vault", "path": str(self._vault)}])
         backlinks = idx.find_backlinks(self._vault / "Page.md")
         self.assertEqual(len(backlinks), 0)
 
@@ -40,14 +40,14 @@ class TestBacklinkIndexBuild(unittest.TestCase):
         (self._vault / "Page.md").write_text("# Page\n")
         (self._vault / "Bad.md").write_bytes(b"\xff\xfe\x00binary")
         idx = BacklinkIndex()
-        idx.build([str(self._vault)])
+        idx.build([{"name": "vault", "path": str(self._vault)}])
         backlinks = idx.find_backlinks(self._vault / "Page.md")
         self.assertEqual(len(backlinks), 0)
 
     def test_find_backlinks_empty_when_no_links(self):
         (self._vault / "Page.md").write_text("# Page\n")
         idx = BacklinkIndex()
-        idx.build([str(self._vault)])
+        idx.build([{"name": "vault", "path": str(self._vault)}])
         backlinks = idx.find_backlinks(self._vault / "Page.md")
         self.assertEqual(len(backlinks), 0)
 
@@ -57,7 +57,7 @@ class TestBacklinkIndexBuild(unittest.TestCase):
         (self._vault / "A.md").write_text("[[Target]].\n")
         (self._vault / "B.md").write_text("[[Target]].\n")
         idx = BacklinkIndex()
-        idx.build([str(self._vault)])
+        idx.build([{"name": "vault", "path": str(self._vault)}])
         backlinks = idx.find_backlinks(self._vault / "Target.md")
         names = [Path(p).name for p in backlinks]
         self.assertEqual(names, ["A.md", "B.md", "C.md"])
@@ -129,7 +129,7 @@ class TestBacklinkIndexAlias(unittest.TestCase):
         (self._vault / "Page.md").write_text("# Page\n")
         (self._vault / "Note.md").write_text("[[Page|my alias]].\n")
         idx = BacklinkIndex()
-        idx.build([str(self._vault)])
+        idx.build([{"name": "vault", "path": str(self._vault)}])
         backlinks = idx.find_backlinks(self._vault / "Page.md")
         self.assertEqual(len(backlinks), 1)
 

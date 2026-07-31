@@ -15,6 +15,9 @@ import yaml
 
 logger = logging.getLogger(__name__)
 
+# In-memory cache for vaults loaded from vaults.yaml.
+_vaults_cache: list[dict[str, str]] | None = None
+
 CONFIG_DIR = Path.home() / ".config" / "markdown-vault"
 CONFIG_FILE = CONFIG_DIR / "vaults.yaml"
 
@@ -68,12 +71,8 @@ def _atomic_write(path: Path, content: str) -> None:
         raise
 
 
-def load_vaults() -> list[dict[str, str]]:
-    """Return the list of configured vaults.
-
-    Each entry is ``{"name": str, "path": str}`` where *path* is always
-    absolute.  Duplicate paths are silently discarded (first wins).
-    """
+def _read_vaults_from_disk() -> list[dict[str, str]]:
+    """Read vaults from vaults.yaml on disk (no caching)."""
     try:
         if not CONFIG_FILE.exists():
             logger.debug("No config file found, returning empty vault list")
@@ -101,8 +100,32 @@ def load_vaults() -> list[dict[str, str]]:
     return unique
 
 
+def _invalidate_cache() -> None:
+    """Invalidate the in-memory vaults cache."""
+    global _vaults_cache
+    _vaults_cache = None
+
+
+def load_vaults() -> list[dict[str, str]]:
+    """Return the list of configured vaults (cached).
+
+    Each entry is ``{"name": str, "path": str}`` where *path* is always
+    absolute.  Duplicate paths are silently discarded (first wins).
+
+    The result is cached in memory and only re-read from disk when
+    :func:`_invalidate_cache` has been called (triggered by any write
+    operation: ``save_vaults``, ``add_vault``, ``remove_vault``,
+    ``save_settings``).
+    """
+    global _vaults_cache
+    if _vaults_cache is None:
+        _vaults_cache = _read_vaults_from_disk()
+    return _vaults_cache
+
+
 def save_vaults(vaults: list[dict[str, str]]) -> None:
     """Persist *vaults* to disk, deduplicating by absolute path."""
+    _invalidate_cache()
     _ensure_config_dir()
     seen: set[str] = set()
     unique: list[dict[str, str]] = []
@@ -187,6 +210,7 @@ def load_settings() -> dict:
 
 def save_settings(settings: dict) -> None:
     """Persist settings into vaults.yaml (merged with existing vaults)."""
+    _invalidate_cache()
     _ensure_config_dir()
     existing: dict = {}
     if CONFIG_FILE.exists():

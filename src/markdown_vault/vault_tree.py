@@ -78,6 +78,7 @@ class VaultTree(Gtk.Box):
     def __init__(self) -> None:
         super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=0)
         self._vault_paths: list[str] = []
+        self._vaults: list[dict[str, str]] = []
         self._active_vault: str | None = None
         self._context_path: str | None = None
         self._context_is_dir: bool = False
@@ -192,12 +193,13 @@ class VaultTree(Gtk.Box):
     # Public API
     # ------------------------------------------------------------------
 
-    def set_vaults(self, vault_paths: list[str]) -> None:
+    def set_vaults(self, vaults: list[dict[str, str]]) -> None:
         """Replace the entire tree with the given vault directories."""
-        self._vault_paths = list(vault_paths)
+        self._vault_paths = [v["path"] for v in vaults]
+        self._vaults = list(vaults)
         self._store.clear()
-        for vp in vault_paths:
-            self._populate_directory(Path(vp), None)
+        for v in vaults:
+            self._populate_directory(Path(v["path"]), None, name=v["name"])
 
     def get_vault_paths(self) -> list[str]:
         """Return the list of currently loaded vault root paths."""
@@ -230,7 +232,7 @@ class VaultTree(Gtk.Box):
     def refresh(self) -> None:
         """Rebuild the tree from the current vault paths, preserving expansion."""
         expanded = self.get_expanded_paths()
-        self.set_vaults(self._vault_paths)
+        self.set_vaults(self._vaults)
         if expanded:
             self.expand_paths(expanded)
 
@@ -570,10 +572,11 @@ class VaultTree(Gtk.Box):
         """Handle canceled inline rename (no-op)."""
         pass
 
-    def _populate_directory(self, path: Path, parent_iter) -> None:
+    def _populate_directory(self, path: Path, parent_iter, *, name: str | None = None) -> None:
         """Recursively add *path* and its children to the tree store."""
+        display_name = name if name else path.name
         dir_iter = self._store.append(
-            parent_iter, [path.name, str(path), True, FOLDER_ICON, ""]
+            parent_iter, [display_name, str(path), True, FOLDER_ICON, ""]
         )
         try:
             entries = sorted(path.iterdir(), key=lambda e: (not e.is_dir(), e.name.lower()))

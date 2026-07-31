@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 
 from markdown_vault.history import NavHistory
-from markdown_vault.path_utils import find_vault_for_path, find_vault_for_dir
+from markdown_vault.path_utils import find_vault_for_dir
 
 
 class TestNavHistory(unittest.TestCase):
@@ -272,8 +272,8 @@ class TestNavHistory(unittest.TestCase):
         self.assertEqual(h.current, self._path(0))
 
 
-class TestFindVaultForPath(unittest.TestCase):
-    """Tests for find_vault_for_path function."""
+class TestFindVaultForDir(unittest.TestCase):
+    """Tests for find_vault_for_dir function."""
 
     def setUp(self):
         self._tmp = tempfile.mkdtemp()
@@ -287,51 +287,7 @@ class TestFindVaultForPath(unittest.TestCase):
         import shutil
         shutil.rmtree(self._tmp, ignore_errors=True)
 
-    def test_exact_md_file(self):
-        target = str(self._vault / "Page.md")
-        result = find_vault_for_path(target, [str(self._vault)])
-        self.assertIsNotNone(result)
-        self.assertEqual(result, str(self._vault))
-
-    def test_without_extension(self):
-        target = str(self._vault / "Page")
-        result = find_vault_for_path(target, [str(self._vault)])
-        self.assertIsNotNone(result)
-        self.assertEqual(result, str(self._vault))
-
-    def test_subdirectory(self):
-        target = str(self._vault / "Sub" / "Deep")
-        result = find_vault_for_path(target, [str(self._vault)])
-        self.assertIsNotNone(result)
-        self.assertEqual(result, str(self._vault))
-
-    def test_multiple_vaults(self):
-        other = Path(self._tmp) / "other"
-        other.mkdir()
-        (other / "Note.md").write_text("# Note")
-        target = str(self._vault / "Page")
-        result = find_vault_for_path(target, [str(other), str(self._vault)])
-        self.assertEqual(result, str(self._vault))
-
-    def test_no_match(self):
-        result = find_vault_for_path("/nonexistent/Nope.md", [str(self._vault)])
-        self.assertIsNone(result)
-
-    def test_empty_vault_list(self):
-        result = find_vault_for_path("/some/path", [])
-        self.assertIsNone(result)
-
-    def test_prefix_not_parent(self):
-        # Vault "a" should not match file "ab.md"
-        other = Path(self._tmp) / "a"
-        other.mkdir()
-        (other / "x.md").write_text("")
-        target = str(Path(self._tmp) / "ab.md")
-        Path(target).write_text("")
-        result = find_vault_for_path(target, [str(other)])
-        self.assertIsNone(result)
-
-    # ── find_vault_for_dir (new contract) ───────────────────────────
+    # ── find_vault_for_dir ────────────────────────────────────────
 
     def test_find_vault_for_dir_exact(self):
         result = find_vault_for_dir(str(self._vault), [str(self._vault)])

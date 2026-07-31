@@ -68,7 +68,7 @@ class MonitorHandler:
         self._vault_tree._handle_file_created(vault_path, file_path)
         if not file_path.endswith(".md"):
             return
-        self._file_index.add_file(file_path)
+        self._file_index.add_file(file_path, vault=vault_path)
         self._debug_fn(["file_index", "vault_tree"])
 
         # Update backlink index on idle (file I/O — don't block signal chain)
@@ -209,7 +209,7 @@ class MonitorHandler:
 
     def _notify_external_change(self, vault_path: str, file_path: str) -> None:
         """Treat as a content replacement: refresh index + banner."""
-        self._file_index.add_file(file_path)
+        self._file_index.add_file(file_path, vault=vault_path)
         if self._notify_banner_cb is not None:
             self._notify_banner_cb(vault_path, file_path)
 
@@ -228,7 +228,7 @@ class MonitorHandler:
     def _handle_new_file_from_move(self, vault_path: str, file_path: str) -> None:
         self._vault_tree._handle_file_created(vault_path, file_path)
         if file_path.endswith(".md"):
-            self._file_index.add_file(file_path)
+            self._file_index.add_file(file_path, vault=vault_path)
             self._debug_fn(["file_index", "vault_tree"])
 
             def _update_backlink():

@@ -12,6 +12,7 @@ import os
 import re
 from pathlib import Path
 
+from .path_utils import find_vault_name_for_path, resolve_vault_path
 from .tags import parse_wikilinks
 
 logger = logging.getLogger(__name__)
@@ -40,11 +41,12 @@ class BacklinkIndex:
     # Bulk operations
     # ------------------------------------------------------------------
 
-    def build(self, vault_paths: list[str]) -> None:
+    def build(self, vaults: list[dict[str, str]]) -> None:
         """Scan all vaults and build the index from scratch."""
         self._target_to_sources.clear()
         self._source_to_targets.clear()
-        for vp in vault_paths:
+        for v in vaults:
+            vp = v["path"]
             for root, _dirs, files in os.walk(vp):
                 for fname in files:
                     if not fname.endswith(".md"):
@@ -171,9 +173,45 @@ class BacklinkIndex:
     # ------------------------------------------------------------------
 
     def find_backlinks(self, target_file: str | Path) -> list[str]:
-        """Return sorted list of source paths that link to *target_file*."""
-        target_stem = Path(target_file).stem
-        sources = set(self._target_to_sources.get(target_stem, set()))
+        """Return sorted list of source paths that link to *target_file*.
+
+        Returns both vault-prefixed sources (cross-vault backlinks) and
+        unqualified sources from the same vault (same-vault backlinks via
+        ``[[Stem]]``). Unqualified sources from OTHER vaults are excluded.
+        """
+        target_path = Path(target_file)
+        target_stem = target_path.stem
+        sources: set[str] = set()
+
+        # Determine the vault name and path via the global config (SSOT).
+        target_vault_name = find_vault_name_for_path(str(target_path))
+        target_vault_path = (
+            resolve_vault_path(target_vault_name) if target_vault_name else None
+        )
+
+        # Vault-prefixed sources: "VaultName>relpath" (cross-vault backlinks).
+        if target_vault_name and target_vault_path:
+            relative = str(target_path.relative_to(Path(target_vault_path)).with_suffix(""))
+            key = f"{target_vault_name}>{relative}"
+            sources.update(self._target_to_sources.get(key, set()))
+            # Unqualified sources from the SAME vault only (same-vault [[Stem]] or [[path/Stem]]).
+            for key_, key_sources in self._target_to_sources.items():
+                # Skip vault-prefixed keys — already handled above.
+                if ">" in key_:
+                    continue
+                # Match by stem OR by full relative path (e.g. "sub/Test1").
+                if key_ != target_stem and key_ != relative:
+                    continue
+                for sp in key_sources:
+                    sp_str = str(sp)
+                    # Exact vault match: source must be inside target_vault_path.
+                    if sp_str == target_vault_path:
+                        sources.add(sp)
+                    elif sp_str.startswith(target_vault_path + os.sep):
+                        sources.add(sp)
+        else:
+            # No vault known — unqualified only.
+            sources.update(self._target_to_sources.get(target_stem, set()))
         return sorted(sources)
 
     # ------------------------------------------------------------------
@@ -205,9 +243,14 @@ class BacklinkIndex:
     def _index_file(self, path_str: str, text: str) -> None:
         """Parse wikilinks in *text* and add them to the index."""
         targets: set[str] = set()
-        for page, _alias in parse_wikilinks(text):
-            targets.add(page)
-            self._target_to_sources.setdefault(page, set()).add(path_str)
+        for info in parse_wikilinks(text):
+            # Use vault-prefixed key if vault is specified
+            if info.vault:
+                key = f"{info.vault}>{info.stem}"
+            else:
+                key = info.stem
+            targets.add(key)
+            self._target_to_sources.setdefault(key, set()).add(path_str)
         if targets:
             self._source_to_targets[path_str] = targets
 

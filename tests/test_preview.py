@@ -1,5 +1,6 @@
 """Tests for markdown_vault.preview — Markdown-to-HTML rendering."""
 
+import os
 import tempfile
 import unittest
 from unittest.mock import MagicMock
@@ -435,23 +436,63 @@ class TestPreviewResolveWikilink(unittest.TestCase):
         self.assertTrue(result.endswith("Datei B.md"))
 
     def test_resolves_filename_with_underscores_fallback(self):
-        """Test fallback: underscore in link resolves to file with spaces."""
+        """R12.2: No underscore↔space normalization — exact match only."""
         (self._vault / "Datei B.md").write_text("# Datei B")
-        # Link comes in with underscore (e.g., from older markdown renderers)
+        # Link with underscore should NOT resolve to file with spaces
         target = str(self._vault / "Datei_B")
         result = self._preview._resolve_wikilink(target)
-        self.assertIsNotNone(result)
-        self.assertTrue(result.endswith("Datei B.md"))
+        self.assertIsNone(result)
 
     def test_resolves_filename_with_underscores_fallback_subdir(self):
-        """Test fallback works for files in subdirectories."""
+        """R12.2: Root-only — subdirectory files not indexed."""
         subdir = self._vault / "Sub Dir"
         subdir.mkdir()
         (subdir / "Deep File.md").write_text("# Deep")
         target = str(self._vault / "Sub_Dir" / "Deep_File")
         result = self._preview._resolve_wikilink(target)
+        self.assertIsNone(result)
+
+    def test_resolve_vault_name_exact_path(self):
+        """_resolve_vault_name matches exact vault path."""
+        result = self._preview._resolve_vault_name(str(self._vault))
+        self.assertEqual(result, str(self._vault))
+
+    def test_resolve_vault_name_by_vault_name(self):
+        """_resolve_vault_name matches vault name from vaults.yaml."""
+        self._preview.set_vault_names(["vault"])
+        result = self._preview._resolve_vault_name("vault")
+        self.assertEqual(result, str(self._vault))
+
+    def test_resolve_vault_name_unknown(self):
+        """_resolve_vault_name returns None for unknown vault."""
+        self._preview.set_vault_names(["vault"])
+        result = self._preview._resolve_vault_name("nonexistent")
+        self.assertIsNone(result)
+
+    def test_resolve_vault_name_empty(self):
+        """_resolve_vault_name returns None for empty name."""
+        result = self._preview._resolve_vault_name("")
+        self.assertIsNone(result)
+
+    def test_resolves_vault_prefixed_wikilink(self):
+        """R12.2: [[VaultName>Page]] resolves to the correct vault's file."""
+        other_vault = Path(self._tmp) / "other_vault"
+        other_vault.mkdir()
+        (other_vault / "Page.md").write_text("# Other Page")
+        # Set up config cache so resolve_wikilink finds the test vaults.
+        import markdown_vault.config as _cfg
+        _cfg._vaults_cache = [
+            {"name": "vault", "path": str(self._vault)},
+            {"name": "other_vault", "path": str(other_vault)},
+        ]
+        vault_paths = [str(self._vault), str(other_vault)]
+        vault_names = ["vault", "other_vault"]
+        self._preview.set_vault_paths(vault_paths)
+        self._preview.set_vault_names(vault_names)
+
+        result = self._preview._resolve_wikilink("other_vault>Page")
         self.assertIsNotNone(result)
-        self.assertTrue(result.endswith("Deep File.md"))
+        self.assertTrue(result.endswith("other_vault" + os.sep + "Page.md"))
 
 
 class TestPreview(unittest.TestCase):

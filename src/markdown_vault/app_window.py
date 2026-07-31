@@ -713,12 +713,14 @@ class MainWindow(Adw.ApplicationWindow):
     def _load_vaults(self) -> None:
         vaults = config.load_vaults()
         paths = [v["path"] for v in vaults]
-        self._vault_tree.set_vaults(paths)
+        names = [v["name"] for v in vaults]
+        self._vault_tree.set_vaults(vaults)
         self._vault_monitor.set_vaults(paths)
         self._sidebar.set_vault_paths(paths)
         self._tab_bar.set_vault_paths(paths)
-        self._backlink_index.build(paths)
-        self._file_index.build(paths)
+        self._tab_orchestrator.set_vault_names(names)
+        self._backlink_index.build(vaults)
+        self._file_index.build(vaults)
         self._dump_debug(["file_index", "backlink_index", "vault_tree"])
 
     # ── Vault switching ──────────────────────────────────────────
@@ -778,15 +780,28 @@ class MainWindow(Adw.ApplicationWindow):
         *post_open_fn* is called after opening (e.g. for scrolling).
         """
         self._switch_vault_pending = False
-        logger.info("switch-vault: phase 2 — closing tabs then switching to %s (open_file=%s)", new_vault, open_file_path)
-        self._do_close_paths(self._tab_bar.get_all_paths())
+        logger.info("switch-vault: phase 2 — switching to %s (open_file=%s)", new_vault, open_file_path)
         self.mru.clear()
         self._nav_history.clear()
         self._update_nav_buttons()
         # Switch.
         self._active_vault = new_vault
         self._vault_tree.set_active_vault(new_vault)
-        # Restore target vault state.
+        # Defer tab closure + restore to next idle iteration (avoid GTK widget lifecycle conflict).
+        GLib.idle_add(self._switch_vault_complete_phase3, new_vault, open_file_path, post_open_fn)
+
+    def _switch_vault_complete_phase3(
+        self, new_vault: str, open_file_path: str | None = None,
+        post_open_fn=None,
+    ) -> bool:
+        """Phase 3 of vault switching — deferred via GLib.idle_add.
+
+        Closes all open tabs, restores target vault state, and opens the
+        requested file. Deferred to next idle iteration to avoid GTK
+        widget lifecycle conflicts.
+        """
+        logger.info("switch-vault: phase 3 — closing tabs and restoring %s", new_vault)
+        self._do_close_paths(self._tab_bar.get_all_paths())
         self._session_mgr.restore_vault_session(
             new_vault,
             open_file_fn=self._open_file,
@@ -794,12 +809,12 @@ class MainWindow(Adw.ApplicationWindow):
             suppress_nav_fn=lambda s: setattr(self._nav_history, "suppress", s),
             mru_push_fn=self.mru.push,
         )
-        # Open the requested file if given.
         if open_file_path is not None:
             logger.info("switch-vault: opening %s in new vault", open_file_path)
             self._open_file(open_file_path)
             if post_open_fn is not None:
                 GLib.idle_add(post_open_fn)
+        return False  # Remove from idle queue after execution
 
     # ── File opening ───────────────────────────────────────────────
 
@@ -843,8 +858,10 @@ class MainWindow(Adw.ApplicationWindow):
     def _on_vault_added(self, _tree, vault_path: str) -> None:
         """Handle a new vault being added."""
         self._tab_bar.set_vault_paths(self._vault_tree.get_vault_paths())
-        self._backlink_index.build([vault_path])
-        self._file_index.build([vault_path])
+        vault_entry = next((v for v in self._vault_tree._vaults if v["path"] == vault_path), None)
+        if vault_entry:
+            self._backlink_index.build([vault_entry])
+            self._file_index.build([vault_entry])
         self._dump_debug(["file_index", "backlink_index", "vault_tree"])
         self._switch_vault(vault_path)
 
@@ -1005,7 +1022,6 @@ class MainWindow(Adw.ApplicationWindow):
         if dirty:
             GLib.idle_add(self._show_save_dialog, dirty, on_confirm)
         else:
-            self._do_close_paths(all_paths)
             if on_confirm:
                 on_confirm()
 
