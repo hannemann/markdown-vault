@@ -6,10 +6,8 @@ all files that link *to* a given target.
 """
 
 import logging
-import os
 import re
 from dataclasses import dataclass
-from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +50,27 @@ WIKILINK_RE = re.compile(
 )
 
 
+def _info_from_match(m: re.Match) -> WikilinkInfo:
+    """Build a ``WikilinkInfo`` from a ``WIKILINK_RE`` match."""
+    raw = m.group(0)[2:-2]  # Strip [[ and ]]
+    vault = m.group("vault")
+    stem = m.group("stem1") or m.group("stem2")
+    alias = m.group("alias")
+    display = f"{stem}|{alias}" if alias else stem
+    return WikilinkInfo(
+        raw=raw,
+        stem=stem,
+        vault=vault,
+        alias=alias,
+        display=display,
+    )
+
+
+def wikilink_info_from_match(m: re.Match) -> WikilinkInfo:
+    """Return the ``WikilinkInfo`` for a ``WIKILINK_RE`` match (public API)."""
+    return _info_from_match(m)
+
+
 def parse_wikilinks(text: str) -> list[WikilinkInfo]:
     """Parse all wikilinks in *text* and return a list of ``WikilinkInfo``.
 
@@ -60,46 +79,5 @@ def parse_wikilinks(text: str) -> list[WikilinkInfo]:
     """
     results: list[WikilinkInfo] = []
     for m in WIKILINK_RE.finditer(text):
-        raw = m.group(0)[2:-2]  # Strip [[ and ]]
-        vault = m.group("vault")
-        stem = m.group("stem1") or m.group("stem2")
-        alias = m.group("alias")
-        display = f"{stem}|{alias}" if alias else stem
-        results.append(
-            WikilinkInfo(
-                raw=raw,
-                stem=stem,
-                vault=vault,
-                alias=alias,
-                display=display,
-            )
-        )
+        results.append(_info_from_match(m))
     return results
-
-
-def find_backlinks(target_file: Path, vault_paths: list[str]) -> list[Path]:
-    """Return all ``.md`` files in *vault_paths* that link to *target_file*.
-
-    Matching is done by comparing the link target against the stem
-    (filename without extension) of *target_file*.
-    """
-    backlinks: list[Path] = []
-    target_stem = target_file.stem
-    for vp in vault_paths:
-        for root, _dirs, files in os.walk(vp):
-            for fname in files:
-                if not fname.endswith(".md"):
-                    continue
-                fpath = Path(root) / fname
-                if fpath.resolve() == target_file.resolve():
-                    continue
-                try:
-                    text = fpath.read_text(encoding="utf-8")
-                except (OSError, UnicodeDecodeError):
-                    logger.debug("Cannot read %s for backlink scan", fpath, exc_info=True)
-                    continue
-                for info in parse_wikilinks(text):
-                    if info.stem == target_stem:
-                        backlinks.append(fpath)
-                        break
-    return backlinks

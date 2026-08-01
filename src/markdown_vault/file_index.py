@@ -16,6 +16,8 @@ import json
 import logging
 from pathlib import Path
 
+from .path_utils import find_vault_name_for_path, resolve_vault_path
+
 logger = logging.getLogger(__name__)
 
 # Hidden files and directories that should be excluded from indexing.
@@ -41,8 +43,6 @@ class FileIndex:
     def __init__(self) -> None:
         self._stem_to_path: dict[str, str] = {}
         self._path_to_stem: dict[str, str] = {}
-        self._vault_paths: list[str] = []
-        self._vault_names: list[str] = []
 
     # ------------------------------------------------------------------
     # Bulk operations
@@ -59,8 +59,6 @@ class FileIndex:
         """
         self._stem_to_path.clear()
         self._path_to_stem.clear()
-        self._vault_paths = [v["path"] for v in vaults]
-        self._vault_names = [v["name"] for v in vaults]
         for v in vaults:
             vp = v["path"]
             try:
@@ -86,17 +84,20 @@ class FileIndex:
     # Incremental updates
     # ------------------------------------------------------------------
 
-    def add_file(self, file_path: str, vault: str) -> None:
-        """Add *file_path* to the index after a file creation."""
+    def add_file(self, file_path: str, vault_path: str) -> None:
+        """Add *file_path* to the index after a file creation.
+
+        *vault_path* is the vault root directory; the vault name is resolved
+        from the config (SSOT).
+        """
         path = Path(file_path)
         if not path.name.endswith(".md") or self._is_hidden(path.name):
             return
-        stem = path.stem
-        # Resolve vault path → vault name if needed
-        if vault in self._vault_paths:
-            idx = self._vault_paths.index(vault)
-            vault = self._vault_names[idx]
-        self._add_stem_mapping(vault, stem, file_path)
+        vault_name = find_vault_name_for_path(vault_path)
+        if not vault_name:
+            logger.error("Cannot resolve vault for path: %s", vault_path)
+            return
+        self._add_stem_mapping(vault_name, path.stem, file_path)
 
     def remove_file(self, file_path: str) -> None:
         """Remove *file_path* from the index after file deletion."""
@@ -106,10 +107,16 @@ class FileIndex:
 
     def rename_file(self, old_path: str, new_path: str) -> None:
         """Update the index for a file rename/move."""
-        old_key = self._path_to_stem[old_path]
-        old_vault = old_key.rsplit(">", 1)[0]
+        if old_path not in self._path_to_stem:
+            logger.debug("rename_file: %s not in index, skipping", old_path)
+            return
+        vault_name = find_vault_name_for_path(old_path)
+        vault_root = resolve_vault_path(vault_name) if vault_name else None
+        if not vault_root:
+            logger.error("Cannot resolve vault for path: %s", old_path)
+            return
         self.remove_file(old_path)
-        self.add_file(new_path, vault=old_vault)
+        self.add_file(new_path, vault_path=vault_root)
 
     # ------------------------------------------------------------------
     # Query

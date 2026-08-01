@@ -11,6 +11,7 @@ from markdown_vault.preview import (
     HTML_TEMPLATE,
     MARKDOWN_EXTENSIONS,
     EXTENSION_CONFIGS,
+    WikiLinkExtension,
     _heading_to_slug,
     LanguageExtractorPreprocessor,
     PygmentsCodePostprocessor,
@@ -184,40 +185,57 @@ class TestMarkdownConversion(unittest.TestCase):
         )
         self.assertIn("Page", result)
 
-    def test_wikilink_with_alias(self):
-        result = md.markdown(
-            "[[Page|Alias]]",
-            extensions=MARKDOWN_EXTENSIONS,
+    def _render_wikilinks(self, text, source_vault="VaultA"):
+        """Render *text* with the wikilink extension bound to *source_vault*."""
+        extensions = [
+            WikiLinkExtension(source_vault) if isinstance(e, WikiLinkExtension) else e
+            for e in MARKDOWN_EXTENSIONS
+        ]
+        return md.markdown(
+            text,
+            extensions=extensions,
             extension_configs=EXTENSION_CONFIGS,
         )
-        self.assertIn('href="Page"', result)
+
+    def test_wikilink_with_alias(self):
+        result = self._render_wikilinks("[[Page|Alias]]")
+        self.assertIn('href="vault:VaultA?path=Page"', result)
         self.assertIn(">Alias<", result)
         self.assertNotIn("[[", result)
 
     def test_wikilink_alias_and_plain_mixed(self):
-        result = md.markdown(
-            "[[A|Link zu A]] and [[B]]",
-            extensions=MARKDOWN_EXTENSIONS,
-            extension_configs=EXTENSION_CONFIGS,
-        )
-        self.assertIn('href="A"', result)
+        result = self._render_wikilinks("[[A|Link zu A]] and [[B]]")
+        self.assertIn('href="vault:VaultA?path=A"', result)
         self.assertIn(">Link zu A<", result)
-        self.assertIn('href="B"', result)
+        self.assertIn('href="vault:VaultA?path=B"', result)
         self.assertIn(">B<", result)
 
     def test_wikilink_preserves_spaces_no_underscore_no_trailing_slash(self):
         """Wikilinks should generate href with spaces preserved, no underscores, no trailing slash."""
-        result = md.markdown(
-            "[[Datei B]]",
-            extensions=MARKDOWN_EXTENSIONS,
-            extension_configs=EXTENSION_CONFIGS,
-        )
+        result = self._render_wikilinks("[[Datei B]]")
         # Should NOT contain underscore or trailing slash
         self.assertNotIn("Datei_B", result)
         self.assertNotIn("Datei_B/", result)
-        # Should contain the link with space in href
-        self.assertIn('href="Datei B"', result)
+        # Space is percent-encoded in the canonical vault: URL
+        self.assertIn('href="vault:VaultA?path=Datei%20B"', result)
         self.assertIn("Datei B", result)
+
+    def test_wikilink_vault_prefix_href(self):
+        """Vault-prefixed wikilinks produce a canonical vault: URL."""
+        result = self._render_wikilinks("[[VaultA>sub/Note|Alias]]")
+        self.assertIn('href="vault:VaultA?path=sub/Note"', result)
+        self.assertIn(">Alias<", result)
+
+    def test_wikilink_cross_vault_href(self):
+        """Explicit vault in the link wins over the source vault."""
+        result = self._render_wikilinks("[[VaultB>Page]]", source_vault="VaultA")
+        self.assertIn('href="vault:VaultB?path=Page"', result)
+
+    def test_wikilink_fragment_href(self):
+        """Fragment is passed through the URL, target stays path-only."""
+        result = self._render_wikilinks("[[Page#Sec 1|Label]]")
+        self.assertIn('href="vault:VaultA?path=Page#Sec%201"', result)
+        self.assertIn(">Label<", result)
 
     def test_converts_bold(self):
         result = md.markdown("**bold**", extensions=MARKDOWN_EXTENSIONS)
@@ -399,7 +417,6 @@ class TestPreviewResolveWikilink(unittest.TestCase):
         (self._vault / "Sub").mkdir()
         (self._vault / "Sub" / "Deep.md").write_text("# Deep")
         self._preview = Preview()
-        self._preview.set_vault_paths([str(self._vault)])
 
     def tearDown(self):
         import shutil
@@ -452,27 +469,9 @@ class TestPreviewResolveWikilink(unittest.TestCase):
         result = self._preview._resolve_wikilink(target)
         self.assertIsNone(result)
 
-    def test_resolve_vault_name_exact_path(self):
-        """_resolve_vault_name matches exact vault path."""
-        result = self._preview._resolve_vault_name(str(self._vault))
-        self.assertEqual(result, str(self._vault))
-
-    def test_resolve_vault_name_by_vault_name(self):
-        """_resolve_vault_name matches vault name from vaults.yaml."""
-        self._preview.set_vault_names(["vault"])
-        result = self._preview._resolve_vault_name("vault")
-        self.assertEqual(result, str(self._vault))
-
-    def test_resolve_vault_name_unknown(self):
-        """_resolve_vault_name returns None for unknown vault."""
-        self._preview.set_vault_names(["vault"])
-        result = self._preview._resolve_vault_name("nonexistent")
-        self.assertIsNone(result)
-
-    def test_resolve_vault_name_empty(self):
-        """_resolve_vault_name returns None for empty name."""
-        result = self._preview._resolve_vault_name("")
-        self.assertIsNone(result)
+    def _page_uri(self, vault_name, relpath, fragment=""):
+        from markdown_vault.path_utils import wikilink_url
+        return wikilink_url(vault_name, relpath, fragment)
 
     def test_resolves_vault_prefixed_wikilink(self):
         """R12.2: [[VaultName>Page]] resolves to the correct vault's file."""
@@ -485,14 +484,116 @@ class TestPreviewResolveWikilink(unittest.TestCase):
             {"name": "vault", "path": str(self._vault)},
             {"name": "other_vault", "path": str(other_vault)},
         ]
-        vault_paths = [str(self._vault), str(other_vault)]
-        vault_names = ["vault", "other_vault"]
-        self._preview.set_vault_paths(vault_paths)
-        self._preview.set_vault_names(vault_names)
 
-        result = self._preview._resolve_wikilink("other_vault>Page")
+        result = self._preview._resolve_wikilink_page(
+            self._page_uri("other_vault", "Page")
+        )
         self.assertIsNotNone(result)
         self.assertTrue(result.endswith("other_vault" + os.sep + "Page.md"))
+
+    def _set_current_vault(self):
+        import markdown_vault.config as _cfg
+        _cfg._vaults_cache = [{"name": "vault", "path": str(self._vault)}]
+        self._preview._current_vault_path = str(self._vault)
+
+    def test_page_resolves_root_not_sibling(self):
+        """Strict: [[Page]] resolves to vault-root Page.md, never a sibling."""
+        sibling = self._vault / "Sub" / "Page.md"
+        sibling.write_text("# Sibling Page")
+        self._set_current_vault()
+        result = self._preview._resolve_wikilink_page(self._page_uri("vault", "Page"))
+        self.assertIsNotNone(result)
+        self.assertTrue(result.endswith(os.sep + "Page.md"))
+        self.assertNotEqual(result, str(sibling.resolve()))
+
+    def test_page_resolves_subdir_path(self):
+        """Strict: [[sub/Page]] resolves relative to the vault root."""
+        self._set_current_vault()
+        result = self._preview._resolve_wikilink_page(self._page_uri("vault", "Sub/Deep"))
+        self.assertIsNotNone(result)
+        self.assertTrue(result.endswith("Sub" + os.sep + "Deep.md"))
+
+    def test_page_resolves_md_suffix(self):
+        """Strict: [[Page.md]] still resolves to Page.md."""
+        self._set_current_vault()
+        result = self._preview._resolve_wikilink_page(self._page_uri("vault", "Page.md"))
+        self.assertIsNotNone(result)
+        self.assertTrue(result.endswith(os.sep + "Page.md"))
+
+    def test_page_vault_prefixed(self):
+        """Strict: [[VaultName>Page]] resolves into the named vault."""
+        other_vault = Path(self._tmp) / "other_vault"
+        other_vault.mkdir()
+        (other_vault / "Page.md").write_text("# Other Page")
+        import markdown_vault.config as _cfg
+        _cfg._vaults_cache = [
+            {"name": "vault", "path": str(self._vault)},
+            {"name": "other_vault", "path": str(other_vault)},
+        ]
+        self._preview._current_vault_path = str(self._vault)
+        result = self._preview._resolve_wikilink_page(
+            self._page_uri("other_vault", "Page")
+        )
+        self.assertIsNotNone(result)
+        self.assertTrue(result.endswith("other_vault" + os.sep + "Page.md"))
+
+    def test_page_fragment_does_not_affect_target(self):
+        """A fragment is ignored for file resolution."""
+        self._set_current_vault()
+        result = self._preview._resolve_wikilink_page(
+            self._page_uri("vault", "Page", "Sec 1")
+        )
+        self.assertIsNotNone(result)
+        self.assertTrue(result.endswith(os.sep + "Page.md"))
+
+    def test_page_unknown_returns_none(self):
+        self._set_current_vault()
+        result = self._preview._resolve_wikilink_page(self._page_uri("vault", "Nope"))
+        self.assertIsNone(result)
+
+    def test_page_empty_returns_none(self):
+        self._set_current_vault()
+        result = self._preview._resolve_wikilink_page(self._page_uri("vault", ""))
+        self.assertIsNone(result)
+
+    def test_page_unknown_vault_returns_none(self):
+        self._set_current_vault()
+        result = self._preview._resolve_wikilink_page(
+            self._page_uri("unknown_vault", "Page")
+        )
+        self.assertIsNone(result)
+
+    def test_page_non_vault_uri_returns_none(self):
+        self._set_current_vault()
+        result = self._preview._resolve_wikilink_page("file:///etc/passwd")
+        self.assertIsNone(result)
+
+    def test_page_empty_vault_is_bug(self):
+        """An empty vault in a vault: URI must never fuzzy-resolve (R12.2)."""
+        self._set_current_vault()
+        result = self._preview._resolve_wikilink_page("vault:?path=Page")
+        self.assertIsNone(result)
+
+    def test_resolve_source_vault_from_base_dir(self):
+        """_resolve_source_vault prefers the file's own directory."""
+        import markdown_vault.config as _cfg
+        _cfg._vaults_cache = [{"name": "vault", "path": str(self._vault)}]
+        result = self._preview._resolve_source_vault(str(self._vault))
+        self.assertEqual(result, "vault")
+
+    def test_resolve_source_vault_outside_falls_back_to_current(self):
+        """Outside any vault, falls back to _current_vault_path."""
+        import markdown_vault.config as _cfg
+        _cfg._vaults_cache = [{"name": "vault", "path": str(self._vault)}]
+        self._preview._current_vault_path = str(self._vault)
+        result = self._preview._resolve_source_vault("/nonexistent/dir")
+        self.assertEqual(result, "vault")
+
+    def test_resolve_source_vault_none_when_fully_unknown(self):
+        """No base_dir and no current vault → None (bug signal)."""
+        self._preview._current_vault_path = None
+        result = self._preview._resolve_source_vault("")
+        self.assertIsNone(result)
 
 
 class TestPreview(unittest.TestCase):
@@ -522,11 +623,6 @@ class TestPreview(unittest.TestCase):
         self.assertEqual(preview.zoom_level, 0.25)
         preview.zoom_level = 10.0  # above max
         self.assertEqual(preview.zoom_level, 5.0)
-
-    def test_vault_paths(self):
-        preview = Preview()
-        preview.set_vault_paths(["/a", "/b"])
-        self.assertEqual(preview._vault_paths, ["/a", "/b"])
 
 
 class TestPreviewCleanup(unittest.TestCase):

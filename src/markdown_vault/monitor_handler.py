@@ -68,7 +68,7 @@ class MonitorHandler:
         self._vault_tree._handle_file_created(vault_path, file_path)
         if not file_path.endswith(".md"):
             return
-        self._file_index.add_file(file_path, vault=vault_path)
+        self._file_index.add_file(file_path, vault_path=vault_path)
         self._debug_fn(["file_index", "vault_tree"])
 
         # Update backlink index on idle (file I/O — don't block signal chain)
@@ -93,7 +93,7 @@ class MonitorHandler:
             for path in list(self._tab_bar.get_all_paths()):
                 if path.startswith(prefix):
                     self._tab_bar.close_tab(path)
-                    self._backlink_index.remove_wikilinks(Path(path).stem)
+                    self._backlink_index.remove_wikilinks(path)
                     self._backlink_index.remove_file(path)
                     self._file_index.remove_file(path)
             # Purge non-open .md files from indexes
@@ -104,7 +104,7 @@ class MonitorHandler:
             return
 
         # Remove wikilinks BEFORE index update
-        self._backlink_index.remove_wikilinks(Path(file_path).stem)
+        self._backlink_index.remove_wikilinks(file_path)
         self._backlink_index.remove_file(file_path)
         self._file_index.remove_file(file_path)
         if file_path in self._tab_bar.get_all_paths():
@@ -195,9 +195,13 @@ class MonitorHandler:
     def _handle_genuine_rename(
         self, vault_path: str, file_path: str, other_path: str
     ) -> None:
-        old_stem = Path(other_path).stem
-        new_stem = Path(file_path).stem
-        self._backlink_index.rename_wikilinks(old_stem, new_stem)
+        if not file_path.endswith(".md"):
+            # A tracked .md file renamed to a non-markdown extension is not
+            # supported: treat it like a deletion so the tab closes, the tree
+            # entry disappears and all index entries are purged (R9.3).
+            self.on_file_deleted(vault_path, other_path)
+            return
+        self._backlink_index.rename_wikilinks(other_path, file_path)
         self._backlink_index.rename_file(other_path, file_path)
         self._file_index.rename_file(other_path, file_path)
         new_parent = str(Path(file_path).parent)
@@ -209,7 +213,7 @@ class MonitorHandler:
 
     def _notify_external_change(self, vault_path: str, file_path: str) -> None:
         """Treat as a content replacement: refresh index + banner."""
-        self._file_index.add_file(file_path, vault=vault_path)
+        self._file_index.add_file(file_path, vault_path=vault_path)
         if self._notify_banner_cb is not None:
             self._notify_banner_cb(vault_path, file_path)
 
@@ -228,7 +232,7 @@ class MonitorHandler:
     def _handle_new_file_from_move(self, vault_path: str, file_path: str) -> None:
         self._vault_tree._handle_file_created(vault_path, file_path)
         if file_path.endswith(".md"):
-            self._file_index.add_file(file_path, vault=vault_path)
+            self._file_index.add_file(file_path, vault_path=vault_path)
             self._debug_fn(["file_index", "vault_tree"])
 
             def _update_backlink():

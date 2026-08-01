@@ -1,16 +1,11 @@
-"""Tests for markdown_vault.tags — wikilink parsing and backlink discovery."""
+"""Tests for markdown_vault.tags — wikilink parsing."""
 
-import shutil
-import tempfile
 import unittest
-from pathlib import Path
 
 from markdown_vault.tags import (
     WikilinkInfo,
     parse_wikilinks,
-    find_backlinks,
 )
-
 
 class TestParseWikilinks(unittest.TestCase):
     """Unit tests for ``parse_wikilinks``."""
@@ -125,62 +120,6 @@ class TestParseWikilinks(unittest.TestCase):
         # "::" at start is recognized as vault prefix
         self.assertEqual(info.vault, "Vault")
         self.assertEqual(info.stem, "A::B")
-
-
-class TestFindBacklinks(unittest.TestCase):
-    """Tests for ``find_backlinks``."""
-
-    def setUp(self):
-        self._tmpdir = tempfile.mkdtemp()
-        self._vault = Path(self._tmpdir) / "vault"
-        self._vault.mkdir(exist_ok=True)
-
-    def tearDown(self):
-        shutil.rmtree(self._tmpdir, ignore_errors=True)
-
-    def test_finds_single_backlink(self):
-        (self._vault / "A.md").write_text("See [[B]] here.", encoding="utf-8")
-        (self._vault / "B.md").write_text("# B", encoding="utf-8")
-        result = find_backlinks(self._vault / "B.md", [str(self._vault)])
-        self.assertEqual(len(result), 1)
-        self.assertEqual(result[0].name, "A.md")
-
-    def test_finds_multiple_backlinks(self):
-        (self._vault / "A.md").write_text("[[Target]]", encoding="utf-8")
-        (self._vault / "B.md").write_text("[[Target]]", encoding="utf-8")
-        (self._vault / "Target.md").write_text("# Target", encoding="utf-8")
-        result = find_backlinks(self._vault / "Target.md", [str(self._vault)])
-        self.assertEqual(len(result), 2)
-
-    def test_excludes_self(self):
-        (self._vault / "Self.md").write_text("[[Self]]", encoding="utf-8")
-        result = find_backlinks(self._vault / "Self.md", [str(self._vault)])
-        self.assertEqual(len(result), 0)
-
-    def test_ignores_non_md_files(self):
-        (self._vault / "notes.txt").write_text("[[Target]]", encoding="utf-8")
-        (self._vault / "Target.md").write_text("# T", encoding="utf-8")
-        result = find_backlinks(self._vault / "Target.md", [str(self._vault)])
-        self.assertEqual(len(result), 0)
-
-    def test_returns_empty_for_no_matches(self):
-        (self._vault / "A.md").write_text("No links here.", encoding="utf-8")
-        (self._vault / "B.md").write_text("# B", encoding="utf-8")
-        result = find_backlinks(self._vault / "B.md", [str(self._vault)])
-        self.assertEqual(len(result), 0)
-
-    def test_finds_backlink_with_vault_prefix_stem(self):
-        # find_backlinks matches on stem, so [[VaultB>Target]] has stem="Target"
-        (self._vault / "A.md").write_text("[[VaultB>Target]]", encoding="utf-8")
-        (self._vault / "Target.md").write_text("# Target", encoding="utf-8")
-        result = find_backlinks(self._vault / "Target.md", [str(self._vault)])
-        self.assertEqual(len(result), 1)
-
-    def test_backlink_exact_stem_no_underscore_mapping(self):
-        (self._vault / "A.md").write_text("[[My_Note]]", encoding="utf-8")
-        (self._vault / "My Note.md").write_text("# My Note", encoding="utf-8")
-        result = find_backlinks(self._vault / "My Note.md", [str(self._vault)])
-        self.assertEqual(len(result), 0)
 
 
 if __name__ == "__main__":

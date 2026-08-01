@@ -40,13 +40,13 @@ class FileOps:
         # 1. Derive from the currently open tab's file path.
         if tab and tab.editor.file_path:
             file_parent = str(Path(tab.editor.file_path).parent)
-            result = path_utils.find_vault_for_dir(file_parent, vaults)
+            result = path_utils.find_vault_for_dir(file_parent)
             if result:
                 return result
 
         # 2. Derive from vault tree selection.
         if tree_selected_path:
-            result = path_utils.find_vault_for_dir(tree_selected_path, vaults)
+            result = path_utils.find_vault_for_dir(tree_selected_path)
             if result:
                 return result
 

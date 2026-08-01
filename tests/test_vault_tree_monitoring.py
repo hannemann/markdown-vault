@@ -255,6 +255,18 @@ class TestVaultTreeHandleFileMoved(unittest.TestCase):
         old_path = str(self.moved_file)
         self.tree._handle_file_moved(old_path, "/nonexistent", "/nonexistent/file.md")
 
+    def test_handle_file_moved_to_non_md_removes_old_node(self):
+        """.md → non-.md rename: old node is removed, no .txt node appears."""
+        new_parent = str(self._tmpdir / "testvault" / "subdir")
+        old_path = str(self.moved_file)
+        new_path = str(new_parent) + "/move_me.txt"
+
+        self.tree._handle_file_moved(old_path, new_parent, new_path)
+
+        paths = self._get_node_paths()
+        self.assertNotIn(old_path, paths)
+        self.assertNotIn(new_path, paths)
+
 
 class TestVaultTreeDeleteShortcut(unittest.TestCase):
     """DEL Shortcut: emit delete-requested für ausgewähltes Element."""

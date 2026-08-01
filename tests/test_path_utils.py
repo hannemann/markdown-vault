@@ -194,5 +194,66 @@ class TestResolveWikilink(_TempConfigMixin, unittest.TestCase):
         self.assertEqual(result, "/tmp/Vault-A/sub/Page.md")
 
 
+class TestWikilinkUrl(unittest.TestCase):
+    """Tests for wikilink_url()/parse_wikilink_url() — canonical vault: URLs."""
+
+    def setUp(self):
+        from markdown_vault.path_utils import (
+            parse_wikilink_url,
+            wikilink_url,
+        )
+        self._build = wikilink_url
+        self._parse = parse_wikilink_url
+
+    def test_build_simple(self):
+        self.assertEqual(self._build("VaultA", "Page"), "vault:VaultA?path=Page")
+
+    def test_build_subdir_path(self):
+        self.assertEqual(
+            self._build("VaultA", "sub/Page"),
+            "vault:VaultA?path=sub/Page",
+        )
+
+    def test_build_encodes_spaces(self):
+        self.assertEqual(
+            self._build("Vault A", "Datei B"),
+            "vault:Vault%20A?path=Datei%20B",
+        )
+
+    def test_build_with_fragment(self):
+        self.assertEqual(
+            self._build("VaultA", "Page", "Sec 1"),
+            "vault:VaultA?path=Page#Sec%201",
+        )
+
+    def test_build_without_fragment(self):
+        self.assertNotIn("#", self._build("VaultA", "Page"))
+
+    def test_parse_round_trip(self):
+        url = self._build("Vault A", "sub/Datei B", "Sec 1")
+        self.assertEqual(
+            self._parse(url),
+            ("Vault A", "sub/Datei B", "Sec 1"),
+        )
+
+    def test_parse_plain(self):
+        self.assertEqual(
+            self._parse("vault:VaultA?path=Page"),
+            ("VaultA", "Page", ""),
+        )
+
+    def test_parse_empty_path(self):
+        self.assertEqual(
+            self._parse("vault:VaultA"),
+            ("VaultA", "", ""),
+        )
+
+    def test_parse_preserves_encoded_slashes(self):
+        self.assertEqual(
+            self._parse("vault:VaultA?path=sub%2FPage"),
+            ("VaultA", "sub/Page", ""),
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

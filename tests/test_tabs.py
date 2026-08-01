@@ -8,6 +8,7 @@ import gi
 gi.require_version("Gtk", "4.0")
 from gi.repository import Gtk
 
+import markdown_vault.config as _cfg
 from markdown_vault.tabs import Tab, TabBar
 
 
@@ -19,6 +20,16 @@ class MockEditor:
 
     def set_file_path(self, new_path):
         self.file_path = new_path
+
+
+class _TabBarTestBase(unittest.TestCase):
+    """Base class that isolates tests from the real config (SSOT)."""
+
+    def setUp(self):
+        _cfg._vaults_cache = []
+
+    def tearDown(self):
+        _cfg._vaults_cache = None
 
 
 class TestTab(unittest.TestCase):
@@ -33,7 +44,7 @@ class TestTab(unittest.TestCase):
         self.assertEqual(tab.view_mode, "edit")
 
 
-class TestTabBar(unittest.TestCase):
+class TestTabBar(_TabBarTestBase):
     """Tests for the TabBar widget (structural)."""
 
     def test_can_be_instantiated(self):
@@ -91,12 +102,17 @@ class TestTabBar(unittest.TestCase):
         self.assertEqual(tab.file_path, "/tmp/new.md")
 
 
-class TestTabTooltip(unittest.TestCase):
+class TestTabTooltip(_TabBarTestBase):
     """Tooltip mit relativem Pfad zum Vault-Root."""
+
+    def setUp(self):
+        _cfg._vaults_cache = [{"name": "vault", "path": "/home/user/vault"}]
+
+    def tearDown(self):
+        _cfg._vaults_cache = None
 
     def test_tooltip_shows_relative_path(self):
         bar = TabBar()
-        bar.set_vault_paths(["/home/user/vault"])
         tab_widget = bar._build_tab_widget(
             "/home/user/vault/sub/note.md", "note.md"
         )
@@ -105,7 +121,6 @@ class TestTabTooltip(unittest.TestCase):
 
     def test_tooltip_shows_filename_for_root_file(self):
         bar = TabBar()
-        bar.set_vault_paths(["/home/user/vault"])
         tab_widget = bar._build_tab_widget(
             "/home/user/vault/readme.md", "readme.md"
         )
@@ -122,7 +137,6 @@ class TestTabTooltip(unittest.TestCase):
 
     def test_tooltip_falls_back_if_path_not_in_vault(self):
         bar = TabBar()
-        bar.set_vault_paths(["/home/user/vault"])
         tab_widget = bar._build_tab_widget(
             "/other/dir/note.md", "note.md"
         )
@@ -131,7 +145,6 @@ class TestTabTooltip(unittest.TestCase):
 
     def test_add_tab_sets_tooltip(self):
         bar = TabBar()
-        bar.set_vault_paths(["/home/user/vault"])
         bar.add_tab("/home/user/vault/sub/doc.md", editor=None, preview=None)
         for child in bar._box:
             if getattr(child, "_file_path", None) == "/home/user/vault/sub/doc.md":
@@ -142,7 +155,6 @@ class TestTabTooltip(unittest.TestCase):
 
     def test_update_path_updates_tooltip(self):
         bar = TabBar()
-        bar.set_vault_paths(["/home/user/vault"])
         bar.add_tab("/home/user/vault/old.md", editor=None, preview=None)
         bar.update_path("/home/user/vault/old.md", "/home/user/vault/sub/new.md")
         for child in bar._box:
@@ -153,7 +165,7 @@ class TestTabTooltip(unittest.TestCase):
             self.fail("Tab widget not found")
 
 
-class TestTabContextMenu(unittest.TestCase):
+class TestTabContextMenu(_TabBarTestBase):
     """Kontextmenu: Copy path, Close, Close others, Close Left/Right."""
 
     def test_tab_widget_has_rightclick_gesture(self):
@@ -192,7 +204,7 @@ class TestTabContextMenu(unittest.TestCase):
         self.assertIsNotNone(bar._tab_actions.lookup_action("close-right"))
 
 
-class TestTabCloseOthers(unittest.TestCase):
+class TestTabCloseOthers(_TabBarTestBase):
     """close_others schließt alle Tabs außer dem angegebenen."""
 
     def test_close_others_keeps_target(self):
@@ -221,7 +233,7 @@ class TestTabCloseOthers(unittest.TestCase):
         self.assertEqual(bar.get_current_path(), "/tmp/b.md")
 
 
-class TestTabCloseLeftRight(unittest.TestCase):
+class TestTabCloseLeftRight(_TabBarTestBase):
     """close_left / close_right schließen Tabs relativ zur Position."""
 
     def test_close_left_removes_tabs_before(self):
@@ -271,7 +283,7 @@ class TestTabCloseLeftRight(unittest.TestCase):
         self.assertEqual(bar.get_all_paths(), ["/tmp/a.md", "/tmp/b.md"])
 
 
-class TestTabBarScrollToActive(unittest.TestCase):
+class TestTabBarScrollToActive(_TabBarTestBase):
     """Tests for scroll-to-active-tab behaviour."""
 
     def test_scroll_adjustment_updated_on_active_tab(self):
@@ -326,7 +338,7 @@ class TestTabBarScrollToActive(unittest.TestCase):
             mock_set.assert_not_called()
 
 
-class TestTabErrorState(unittest.TestCase):
+class TestTabErrorState(_TabBarTestBase):
     """Tests for Tab error attributes and TabBar error methods."""
 
     def test_tab_has_save_error_default(self):
@@ -368,7 +380,7 @@ class TestTabErrorState(unittest.TestCase):
         # No crash.
 
 
-class TestTabBannerMethods(unittest.TestCase):
+class TestTabBannerMethods(_TabBarTestBase):
     """Tests for TabBar banner show/hide methods."""
 
     def test_show_warning_banner_no_crash(self):

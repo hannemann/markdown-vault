@@ -1,34 +1,37 @@
 """Markdown Vault — incremental backlink index.
 
-Maintains a reverse index: for each target stem (filename without
-``.md``), keeps the set of source files that link to it via
-``[[wikilink]]``.  The index is built once on startup and updated
-incrementally as files are created, deleted, renamed, or modified.
+Maintains a reverse index: for each target (canonical ``vault:`` URL),
+keeps the set of source files that link to it via ``[[wikilink]]``.
+The index is built once on startup and updated incrementally as files
+are created, deleted, renamed, or modified.
 """
 
 import json
 import logging
 import os
-import re
 from pathlib import Path
 
-from .path_utils import find_vault_name_for_path, resolve_vault_path
-from .tags import parse_wikilinks
+from .path_utils import (
+    find_vault_name_for_path,
+    resolve_vault_path,
+    wikilink_url,
+)
+from .tags import WIKILINK_RE, parse_wikilinks, wikilink_info_from_match
 
 logger = logging.getLogger(__name__)
 
 
 class BacklinkIndex:
-    """In-memory index mapping target stems to source file paths.
+    """In-memory index mapping canonical ``vault:`` targets to source paths.
 
     Two internal maps:
 
     ``_target_to_sources``
-        ``{target_stem: {source_path_str, ...}}``
+        ``{canonical_url: {source_path_str, ...}}``
         The reverse index used for O(1) backlink lookups.
 
     ``_source_to_targets``
-        ``{source_path_str: {target_stem, ...}}``
+        ``{source_path_str: {canonical_url, ...}}``
         Tracks which targets a given source links to so we can
         cleanly remove stale entries on file update/delete.
     """
@@ -84,15 +87,18 @@ class BacklinkIndex:
             sources.discard(old_str)
             sources.add(new_str)
 
-    def remove_wikilinks(self, stem: str) -> list[str]:
-        """Remove all [[stem]] and [[stem|alias]] from files linking to *stem*.
+    def remove_wikilinks(self, file_path: str | Path) -> list[str]:
+        """Remove all ``[[wikilink]]`` references to *file_path* from linking files.
 
+        Only links whose canonical target is exactly *file_path* are removed.
         Returns list of modified file paths.
         """
-        sources = self._target_to_sources.get(stem, set())
+        key = self._file_key(str(file_path))
+        if not key:
+            return []
+        sources = self._target_to_sources.get(key, set())
         if not sources:
             return []
-        pattern = re.compile(r"\[\[" + re.escape(stem) + r"(?:\|[^\]]+)?\]\]")
         modified = []
         for path_str in list(sources):
             try:
@@ -104,7 +110,7 @@ class BacklinkIndex:
             except (OSError, UnicodeDecodeError):
                 logger.warning("Cannot read %s for wikilink removal", path_str, exc_info=True)
                 continue
-            new_text = pattern.sub("", text)
+            new_text = self._remove_links_to(text, path_str, key)
             if new_text != text:
                 try:
                     Path(path_str).write_text(new_text, encoding="utf-8")
@@ -114,28 +120,40 @@ class BacklinkIndex:
                 modified.append(path_str)
                 # Update _source_to_targets for this file
                 targets = self._source_to_targets.get(path_str, set())
-                targets.discard(stem)
+                targets.discard(key)
         # All wikilinks removed — clean up target entry
         if modified:
-            self._target_to_sources.pop(stem, None)
+            self._target_to_sources.pop(key, None)
         return modified
 
-    def rename_wikilinks(self, old_stem: str, new_stem: str) -> list[str]:
-        """Replace [[old]] → [[new]] and [[old|alias]] → [[new|alias]].
+    def _remove_links_to(self, text: str, source_file: str, key: str) -> str:
+        """Return *text* with links targeting *key* removed (exact match)."""
 
-        Also updates _target_to_sources keys so find_backlinks works.
+        def repl(m):
+            info = wikilink_info_from_match(m)
+            if self._link_key(info, source_file) == key:
+                return ""
+            return m.group(0)
 
+        return WIKILINK_RE.sub(repl, text)
+
+    def rename_wikilinks(self, old_path: str | Path, new_path: str | Path) -> list[str]:
+        """Redirect ``[[wikilink]]`` references from *old_path* to *new_path*.
+
+        Also updates ``_target_to_sources`` keys so ``find_backlinks`` works.
         Returns list of modified file paths.
         """
-        sources = self._target_to_sources.get(old_stem, set())
+        old_key = self._file_key(str(old_path))
+        new_key = self._file_key(str(new_path))
+        if not old_key or not new_key or old_key == new_key:
+            return []
+        new_parts = self._file_key_parts(str(new_path))
+        if new_parts is None:
+            return []
+        new_vault, new_rel = new_parts
+        sources = self._target_to_sources.get(old_key, set())
         if not sources:
             return []
-        old_pattern = re.compile(
-            r"\[\[" + re.escape(old_stem) + r"\]\]"
-        )
-        old_alias_pattern = re.compile(
-            r"\[\[" + re.escape(old_stem) + r"\|([^\]]+)\]\]"
-        )
         modified = []
         for path_str in list(sources):
             try:
@@ -146,10 +164,7 @@ class BacklinkIndex:
             except (OSError, UnicodeDecodeError):
                 logger.warning("Cannot read %s for wikilink rename", path_str, exc_info=True)
                 continue
-            new_text = old_pattern.sub(f"[[{new_stem}]]", text)
-            new_text = old_alias_pattern.sub(
-                lambda m: f"[[{new_stem}|{m.group(1)}]]", new_text
-            )
+            new_text = self._rename_links_to(text, path_str, old_key, new_vault, new_rel)
             if new_text != text:
                 try:
                     Path(path_str).write_text(new_text, encoding="utf-8")
@@ -159,14 +174,32 @@ class BacklinkIndex:
                 modified.append(path_str)
                 # Update _source_to_targets for this file
                 targets = self._source_to_targets.get(path_str, set())
-                if old_stem in targets:
-                    targets.discard(old_stem)
-                    targets.add(new_stem)
+                if old_key in targets:
+                    targets.discard(old_key)
+                    targets.add(new_key)
         # Update _target_to_sources keys
-        if old_stem in self._target_to_sources:
-            new_sources = self._target_to_sources.pop(old_stem)
-            self._target_to_sources.setdefault(new_stem, set()).update(new_sources)
+        if old_key in self._target_to_sources:
+            new_sources = self._target_to_sources.pop(old_key)
+            self._target_to_sources.setdefault(new_key, set()).update(new_sources)
         return modified
+
+    def _rename_links_to(
+        self, text: str, source_file: str, old_key: str,
+        new_vault: str, new_rel: str,
+    ) -> str:
+        """Return *text* with links targeting *old_key* redirected to the new target."""
+
+        def repl(m):
+            info = wikilink_info_from_match(m)
+            if self._link_key(info, source_file) != old_key:
+                return m.group(0)
+            alias = f"|{info.alias}" if info.alias else ""
+            source_vault = find_vault_name_for_path(source_file)
+            if info.vault or source_vault != new_vault:
+                return f"[[{new_vault}>{new_rel}{alias}]]"
+            return f"[[{new_rel}{alias}]]"
+
+        return WIKILINK_RE.sub(repl, text)
 
     # ------------------------------------------------------------------
     # Query
@@ -175,44 +208,14 @@ class BacklinkIndex:
     def find_backlinks(self, target_file: str | Path) -> list[str]:
         """Return sorted list of source paths that link to *target_file*.
 
-        Returns both vault-prefixed sources (cross-vault backlinks) and
-        unqualified sources from the same vault (same-vault backlinks via
-        ``[[Stem]]``). Unqualified sources from OTHER vaults are excluded.
+        Exact canonical-key lookup only — the target file's ``vault:`` URL
+        is computed from the config (SSOT) and matched verbatim.  No fuzzy
+        matching, no cross-vault or unqualified fallbacks.
         """
-        target_path = Path(target_file)
-        target_stem = target_path.stem
-        sources: set[str] = set()
-
-        # Determine the vault name and path via the global config (SSOT).
-        target_vault_name = find_vault_name_for_path(str(target_path))
-        target_vault_path = (
-            resolve_vault_path(target_vault_name) if target_vault_name else None
-        )
-
-        # Vault-prefixed sources: "VaultName>relpath" (cross-vault backlinks).
-        if target_vault_name and target_vault_path:
-            relative = str(target_path.relative_to(Path(target_vault_path)).with_suffix(""))
-            key = f"{target_vault_name}>{relative}"
-            sources.update(self._target_to_sources.get(key, set()))
-            # Unqualified sources from the SAME vault only (same-vault [[Stem]] or [[path/Stem]]).
-            for key_, key_sources in self._target_to_sources.items():
-                # Skip vault-prefixed keys — already handled above.
-                if ">" in key_:
-                    continue
-                # Match by stem OR by full relative path (e.g. "sub/Test1").
-                if key_ != target_stem and key_ != relative:
-                    continue
-                for sp in key_sources:
-                    sp_str = str(sp)
-                    # Exact vault match: source must be inside target_vault_path.
-                    if sp_str == target_vault_path:
-                        sources.add(sp)
-                    elif sp_str.startswith(target_vault_path + os.sep):
-                        sources.add(sp)
-        else:
-            # No vault known — unqualified only.
-            sources.update(self._target_to_sources.get(target_stem, set()))
-        return sorted(sources)
+        key = self._file_key(str(target_file))
+        if not key:
+            return []
+        return sorted(self._target_to_sources.get(key, set()))
 
     # ------------------------------------------------------------------
     # Debug
@@ -241,25 +244,60 @@ class BacklinkIndex:
     # ------------------------------------------------------------------
 
     def _index_file(self, path_str: str, text: str) -> None:
-        """Parse wikilinks in *text* and add them to the index."""
+        """Parse wikilinks in *text* and add them to the index.
+
+        Every target is fully vault-qualified: a link without an explicit
+        ``Vault>`` prefix resolves against the source file's own vault.
+        """
         targets: set[str] = set()
         for info in parse_wikilinks(text):
-            # Use vault-prefixed key if vault is specified
-            if info.vault:
-                key = f"{info.vault}>{info.stem}"
-            else:
-                key = info.stem
+            key = self._link_key(info, path_str)
+            if not key:
+                continue
             targets.add(key)
             self._target_to_sources.setdefault(key, set()).add(path_str)
         if targets:
             self._source_to_targets[path_str] = targets
 
+    def _link_key(self, info, source_file: str) -> str | None:
+        """Return the canonical ``vault:`` key for a parsed link.
+
+        Links without an explicit vault prefix are qualified with the
+        source file's vault.  ``None`` means the link cannot be resolved
+        (source file outside any vault) — never an empty vault.
+        """
+        if info.vault:
+            return wikilink_url(info.vault, info.stem)
+        vault = find_vault_name_for_path(source_file)
+        if not vault:
+            logger.error("Source file not in any vault: %s", source_file)
+            return None
+        return wikilink_url(vault, info.stem)
+
+    def _file_key(self, file_path: str) -> str | None:
+        """Return the canonical ``vault:`` key a file is targeted by."""
+        parts = self._file_key_parts(file_path)
+        if not parts:
+            return None
+        return wikilink_url(*parts)
+
+    def _file_key_parts(self, file_path: str) -> tuple[str, str] | None:
+        """Return ``(vault_name, relative_path)`` for a file, or ``None``."""
+        vault = find_vault_name_for_path(file_path)
+        if not vault:
+            return None
+        vault_path = resolve_vault_path(vault)
+        if not vault_path:
+            return None
+        relative = str(Path(file_path).relative_to(Path(vault_path)).with_suffix(""))
+        return vault, relative
+
     def _remove_source(self, path_str: str) -> None:
         """Remove *path_str* from all reverse-mapping entries."""
         targets = self._source_to_targets.pop(path_str, set())
-        for stem in targets:
-            sources = self._target_to_sources.get(stem)
+        for key in targets:
+            sources = self._target_to_sources.get(key)
             if sources is not None:
                 sources.discard(path_str)
                 if not sources:
-                    del self._target_to_sources[stem]
+                    del self._target_to_sources[key]

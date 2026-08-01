@@ -850,6 +850,11 @@ class VaultTree(Gtk.Box):
                 file_name, new_path, True, FOLDER_ICON, "",
             ])
         else:
+            # Non-markdown files are never shown in the tree (consistent with
+            # _do_handle_file_created) — remove the old node, do not re-add.
+            if not new_path.endswith(".md"):
+                self._store.remove(old_iter)
+                return False
             new_iter = self._store.append(parent_iter, [
                 file_name, new_path, False, FILE_ICON, "markdown",
             ])

@@ -315,6 +315,17 @@ class TestFindVaultForDir(unittest.TestCase):
         result = find_vault_for_dir(str(self._vault), [str(other), str(self._vault)])
         self.assertEqual(result, str(self._vault))
 
+    def test_find_vault_for_dir_uses_config_ssot(self):
+        """Without a vault list, roots come from the config (SSOT)."""
+        import markdown_vault.config as _cfg
+        _cfg._vaults_cache = [{"name": "vault", "path": str(self._vault)}]
+        try:
+            result = find_vault_for_dir(str(self._vault / "Sub"))
+            self.assertEqual(result, str(self._vault))
+            self.assertIsNone(find_vault_for_dir("/nonexistent"))
+        finally:
+            _cfg._vaults_cache = None
+
 
 if __name__ == "__main__":
     unittest.main()

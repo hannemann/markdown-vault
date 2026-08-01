@@ -8,6 +8,7 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 from markdown_vault.file_ops import FileOps
+import markdown_vault.config as _cfg
 
 
 class TestResolveActiveVault(unittest.TestCase):
@@ -17,6 +18,14 @@ class TestResolveActiveVault(unittest.TestCase):
         self._vaults = ["/vault/a", "/vault/b", "/vault/c"]
         self._skip = MagicMock()
         self._ops = FileOps(skip_fn=self._skip)
+        _cfg._vaults_cache = [
+            {"name": "a", "path": "/vault/a"},
+            {"name": "b", "path": "/vault/b"},
+            {"name": "c", "path": "/vault/c"},
+        ]
+
+    def tearDown(self):
+        _cfg._vaults_cache = None
 
     def _make_tab(self, file_path: str | None = None):
         tab = MagicMock()

@@ -5,6 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import markdown_vault.config as _cfg
 from markdown_vault.backlink_index import BacklinkIndex
 
 
@@ -15,8 +16,10 @@ class TestBacklinkIndexBuild(unittest.TestCase):
         self._tmp = tempfile.mkdtemp()
         self._vault = Path(self._tmp) / "vault"
         self._vault.mkdir()
+        _cfg._vaults_cache = [{"name": "vault", "path": str(self._vault)}]
 
     def tearDown(self):
+        _cfg._vaults_cache = None
         shutil.rmtree(self._tmp, ignore_errors=True)
 
     def test_build_finds_backlinks(self):
@@ -62,12 +65,49 @@ class TestBacklinkIndexBuild(unittest.TestCase):
         names = [Path(p).name for p in backlinks]
         self.assertEqual(names, ["A.md", "B.md", "C.md"])
 
+    def test_unqualified_link_is_same_vault_only(self):
+        """[[Page]] in vault A must NOT backlink vault B's Page.md."""
+        vault_b = Path(self._tmp) / "vault_b"
+        vault_b.mkdir()
+        (vault_b / "Page.md").write_text("# Page B\n")
+        (self._vault / "Note.md").write_text("[[Page]].\n")
+        idx = BacklinkIndex()
+        idx.build([
+            {"name": "vault", "path": str(self._vault)},
+            {"name": "vault_b", "path": str(vault_b)},
+        ])
+        self.assertNotIn(
+            str(self._vault / "Note.md"),
+            idx.find_backlinks(vault_b / "Page.md"),
+        )
+
+    def test_cross_vault_qualified_link(self):
+        """[[VaultB>Page]] from vault A must backlink vault B's Page.md."""
+        vault_b = Path(self._tmp) / "vault_b"
+        vault_b.mkdir()
+        (vault_b / "Page.md").write_text("# Page B\n")
+        (self._vault / "Note.md").write_text("[[vault_b>Page]].\n")
+        idx = BacklinkIndex()
+        _cfg._vaults_cache = [
+            {"name": "vault", "path": str(self._vault)},
+            {"name": "vault_b", "path": str(vault_b)},
+        ]
+        idx.build([
+            {"name": "vault", "path": str(self._vault)},
+            {"name": "vault_b", "path": str(vault_b)},
+        ])
+        self.assertIn(
+            str(self._vault / "Note.md"),
+            idx.find_backlinks(vault_b / "Page.md"),
+        )
+
 
 class TestBacklinkIndexIncremental(unittest.TestCase):
     """Tests for incremental updates to the index."""
 
     def setUp(self):
         self._idx = BacklinkIndex()
+        _cfg._vaults_cache = [{"name": "vault", "path": "/vault"}]
 
     def test_update_file_adds_links(self):
         path = "/vault/Note.md"
@@ -121,8 +161,10 @@ class TestBacklinkIndexAlias(unittest.TestCase):
         self._tmp = tempfile.mkdtemp()
         self._vault = Path(self._tmp) / "vault"
         self._vault.mkdir()
+        _cfg._vaults_cache = [{"name": "vault", "path": str(self._vault)}]
 
     def tearDown(self):
+        _cfg._vaults_cache = None
         shutil.rmtree(self._tmp, ignore_errors=True)
 
     def test_alias_does_not_create_separate_target(self):

@@ -6,14 +6,12 @@ The rendering respects system theme colours via GTK named CSS variables
 to light and dark mode.
 """
 
-import os
-from pathlib import Path
-
 import hashlib
 import json
 import logging
 import markdown as md
 import re
+from pathlib import Path
 from markdown.extensions import Extension
 from markdown.inlinepatterns import InlineProcessor
 from markdown.postprocessors import Postprocessor
@@ -25,8 +23,9 @@ from markdown_vault.latex_mathml import MathMLPostprocessor
 from markdown_vault.path_utils import (
     HEADING_RE,
     find_vault_name_for_path,
-    resolve_vault_path,
+    parse_wikilink_url,
     resolve_wikilink,
+    wikilink_url,
 )
 import gi
 
@@ -299,16 +298,46 @@ WIKILINK_RE = r"\[\[([^\]|]+)(?:\|([^\]]+))?\]\]"
 
 
 class WikilinkInlineProcessor(InlineProcessor):
-    """Render [[Page]] and [[Page|Alias]] as clickable links."""
+    """Render [[Page]] and [[Page|Alias]] as clickable links.
+
+    Hrefs use the canonical ``vault:`` scheme
+    (``vault:<vault>?path=<relative>#<fragment>``) so the click handler can
+    resolve them strictly against vault roots instead of relative to the
+    source file's directory.  The vault is always explicit: either taken
+    from the link (``Vault>...``) or from *source_vault* (the vault of the
+    file being rendered).
+    """
+
+    def __init__(self, pattern, md, source_vault: str | None = None):
+        super().__init__(pattern, md)
+        self._source_vault = source_vault
 
     def handleMatch(self, m, data):
         page = m.group(1).strip()
         alias = m.group(2)
         if alias:
             alias = alias.strip()
+        fragment = ""
+        if "#" in page:
+            page, _, fragment = page.partition("#")
+        if ">" in page:
+            vault_name, _, relative = page.partition(">")
+        else:
+            vault_name = self._source_vault
+            relative = page
         el = etree.Element("a")
         el.set("class", "wikilink")
-        el.set("href", page)
+        if vault_name:
+            el.set("href", wikilink_url(vault_name, relative, fragment))
+        else:
+            # No vault available — this is a bug (never emit an empty vault
+            # in the URL).  Render a plain link instead so no vault: URI is
+            # produced.
+            logger.error(
+                "No vault context for wikilink %r — source file outside all vaults",
+                m.group(0),
+            )
+            el.set("href", page)
         el.text = alias if alias else page
         return el, m.start(0), m.end(0)
 
@@ -316,8 +345,12 @@ class WikilinkInlineProcessor(InlineProcessor):
 class WikiLinkExtension(Extension):
     """Custom wikilink extension supporting [[Page|Alias]] syntax."""
 
+    def __init__(self, source_vault: str | None = None):
+        super().__init__()
+        self.source_vault = source_vault
+
     def extendMarkdown(self, md):
-        processor = WikilinkInlineProcessor(WIKILINK_RE, md)
+        processor = WikilinkInlineProcessor(WIKILINK_RE, md, self.source_vault)
         md.inlinePatterns.register(processor, "wikilink", 75)
 
 
@@ -358,8 +391,6 @@ class Preview(Gtk.ScrolledWindow):
         super().__init__()
         self._css_path = css_path
         self._zoom_level: float = 1.0
-        self._vault_paths: list[str] = []
-        self._vault_names: list[str] = []
         self._current_vault_path: str | None = None
         self._loaded: bool = False
         self._base_uri: str | None = None
@@ -482,35 +513,6 @@ class Preview(Gtk.ScrolledWindow):
             logger.error("Failed to handle checkbox message from preview", exc_info=True)
 
     # ------------------------------------------------------------------
-    # Vault paths (for wikilink resolution)
-    # ------------------------------------------------------------------
-
-    def set_vault_paths(self, paths: list[str]) -> None:
-        """Set the vault root directories used to resolve wikilinks."""
-        self._vault_paths = list(paths)
-
-    def set_vault_names(self, names: list[str]) -> None:
-        """Set the vault names (from vaults.yaml) for resolution."""
-        self._vault_names = list(names)
-
-    def _resolve_vault_name(self, vault_name: str) -> str | None:
-        """Try to match a vault name to a vault path."""
-        if not vault_name:
-            return None
-        # Try exact match first (vault name == vault path)
-        if vault_name in self._vault_paths:
-            return vault_name
-        # Try matching by vault name
-        if self._vault_names:
-            try:
-                idx = self._vault_names.index(vault_name)
-                if idx < len(self._vault_paths):
-                    return self._vault_paths[idx]
-            except ValueError:
-                pass
-        return None
-
-    # ------------------------------------------------------------------
     # Navigation
     # ------------------------------------------------------------------
 
@@ -530,20 +532,32 @@ class Preview(Gtk.ScrolledWindow):
             logger.debug("No URI in navigation request")
             return False
 
-        logger.debug("Navigation request URI (raw): %r", uri)
-        logger.debug("Navigation request URI (hex): %r", uri.encode().hex())
-
         # Explicitly handle external links - open in default browser
         if uri.startswith(("http://", "https://", "mailto:")):
             decision.ignore()
             GLib.idle_add(Gtk.show_uri, self.get_root(), uri, Gdk.CURRENT_TIME)
             return True
 
+        # Wikilinks use the canonical "vault:" scheme so they are never
+        # resolved relative to the source file — only against vault roots.
+        if uri.startswith("vault:"):
+            logger.debug("Wikilink click: %r", uri)
+            resolved = self._resolve_wikilink_page(uri)
+            if resolved:
+                logger.debug("Wikilink resolved to: %s", resolved)
+                decision.ignore()
+                self.emit("link-clicked", resolved)
+                return True
+            logger.warning("Wikilink NOT resolved: %r", uri)
+            decision.ignore()
+            self.emit("link-not-found", uri)
+            return True
+
         # Extract the path string from the URI
         if uri.startswith("file://"):
             path_str = uri[7:]
         else:
-            # Non-file:// URIs — could be a wikilink (e.g., "vault::Page")
+            # Non-file:// URIs — could be a plain relative link.
             path_str = uri
 
         path_str = unquote(path_str)
@@ -567,59 +581,65 @@ class Preview(Gtk.ScrolledWindow):
         return False
 
     def _resolve_wikilink(self, path_str: str) -> str | None:
-        """Resolve a link target to an existing .md file.
+        """Resolve a plain relative/absolute link target to an existing .md file.
 
-        Handles three cases:
-        1. Absolute file paths that exist on disk
-        2. Vault-prefixed wikilinks (``VaultName>sub/Page``) — resolved via
-           the cached vaults config (SSOT: vaults.yaml)
-        3. Same-vault wikilinks (``sub/Page``) — resolved relative to the
-           vault that contains the source file
+        Only used for non-wikilink links (e.g. ``[text](sub/Page)``), which
+        are resolved against the file system.  Wikilinks use the ``vault:``
+        scheme and are handled by ``_resolve_wikilink_page`` instead.
         """
         logger.debug("_resolve_wikilink path_str=%r", path_str)
         target = Path(path_str)
         name = target.name
 
-        # Case 1: Direct file path (with or without .md extension)
         if name.endswith(".md") and target.exists():
             return str(target.resolve())
         with_md = target.with_suffix(".md")
         if with_md.exists():
             return str(with_md.resolve())
+        return None
 
-        # Determine the raw wikilink stem from the URI.
-        raw = name if not name.endswith(".md") else target.stem
-        if ">" in raw or ">" in str(target.parent):
-            # Case 2: Vault-prefixed wikilink.
-            # The '>' may be in the filename (raw) or in a parent directory
-            # because the WebView resolved the relative URL against the
-            # current file's directory.
-            if ">" in raw:
-                vault_name, _, stem = raw.partition(">")
-            else:
-                # Extract vault+stem from the parent path.
-                # parent is like "…/Vault-B/Vault-A>sub"
-                parent_stem = target.parent.name  # "Vault-A>sub"
-                if ">" in parent_stem:
-                    vault_name, _, parent_suffix = parent_stem.partition(">")
-                    stem = parent_suffix + os.sep + name
-                else:
-                    return None
-            result = resolve_wikilink(vault_name, stem)
-            if result and Path(result).exists():
-                return str(Path(result).resolve())
+    def _resolve_wikilink_page(self, uri: str) -> str | None:
+        """Strictly resolve a canonical ``vault:`` URI to an existing .md file.
+
+        Root-only semantics — the relative path is always interpreted
+        relative to the vault root given in the URL, never relative to the
+        source file:
+
+        - ``vault:Vault?path=Page`` → ``<Vault>/Page.md``
+        - ``vault:Vault?path=sub/Page`` → ``<Vault>/sub/Page.md``
+
+        The vault in the URL must never be empty — an empty vault is a bug
+        and is never fuzzy-resolved.  The fragment (heading anchor) is
+        ignored for file resolution.
+        """
+        if not uri.startswith("vault:"):
             return None
+        vault_name, relative, _fragment = parse_wikilink_url(uri)
+        if not vault_name:
+            logger.error("Empty vault in vault: URI — internal bug: %r", uri)
+            return None
+        if relative.endswith(".md"):
+            relative = relative[:-3]
+        if not relative:
+            return None
+        result = resolve_wikilink(vault_name, relative)
+        if result and Path(result).exists():
+            return str(Path(result).resolve())
+        return None
 
-        # Case 3: Same-vault wikilink (no vault prefix)
+    def _resolve_source_vault(self, base_dir: str) -> str | None:
+        """Return the vault name of the file currently being rendered.
+
+        Prefers the file's own directory (*base_dir*); falls back to
+        ``_current_vault_path``.  ``None`` means the file is outside all
+        vaults — callers must treat that as a bug (never an empty vault).
+        """
+        if base_dir:
+            vault = find_vault_name_for_path(base_dir)
+            if vault:
+                return vault
         if self._current_vault_path:
-            vault_name = find_vault_name_for_path(self._current_vault_path)
-            if vault_name is None:
-                return None
-            result = resolve_wikilink(vault_name, raw)
-            if result and Path(result).exists():
-                return str(Path(result).resolve())
-            return None
-
+            return find_vault_name_for_path(self._current_vault_path)
         return None
 
     # ------------------------------------------------------------------
@@ -642,9 +662,14 @@ class Preview(Gtk.ScrolledWindow):
             self._pending_base_dir = base_dir
             return
 
+        source_vault = self._resolve_source_vault(base_dir)
+        extensions = [
+            WikiLinkExtension(source_vault) if isinstance(e, WikiLinkExtension) else e
+            for e in MARKDOWN_EXTENSIONS
+        ]
         html_content = md.markdown(
             text,
-            extensions=MARKDOWN_EXTENSIONS,
+            extensions=extensions,
             extension_configs=EXTENSION_CONFIGS,
         )
         # Convert <script type="math/tex"> tags to native MathML

@@ -17,6 +17,8 @@ gi.require_version("Gdk", "4.0")
 
 from gi.repository import Gtk, GObject, Gio, Gdk
 
+from .path_utils import find_vault_for_dir
+
 logger = logging.getLogger(__name__)
 
 
@@ -89,7 +91,6 @@ class TabBar(Gtk.Box):
         super().__init__(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
         self._tabs: dict[str, Tab] = {}
         self._current_path: str | None = None
-        self._vault_paths: list[str] = []
         self._context_menu_target: str | None = None
         self._min_width = 100
         self._css_provider = Gtk.CssProvider()
@@ -178,10 +179,6 @@ class TabBar(Gtk.Box):
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
-
-    def set_vault_paths(self, vault_paths: list[str]) -> None:
-        """Set the vault root paths for computing relative tooltip paths."""
-        self._vault_paths = list(vault_paths)
 
     def set_tab_min_width(self, min_width: int) -> None:
         """Set the minimum width for tab widgets in pixels."""
@@ -435,12 +432,9 @@ class TabBar(Gtk.Box):
 
     def _compute_relative_path(self, file_path: str) -> str:
         """Compute a path relative to the matching vault root, or fall back to filename."""
-        for vault in self._vault_paths:
-            try:
-                rel = str(Path(file_path).relative_to(vault))
-                return rel
-            except ValueError:
-                continue
+        vault = find_vault_for_dir(str(Path(file_path).parent))
+        if vault:
+            return str(Path(file_path).relative_to(vault))
         return Path(file_path).name
 
     def _build_tab_widget(self, file_path: str, title: str) -> Gtk.Box:

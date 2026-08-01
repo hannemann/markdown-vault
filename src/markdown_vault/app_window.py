@@ -713,12 +713,9 @@ class MainWindow(Adw.ApplicationWindow):
     def _load_vaults(self) -> None:
         vaults = config.load_vaults()
         paths = [v["path"] for v in vaults]
-        names = [v["name"] for v in vaults]
         self._vault_tree.set_vaults(vaults)
         self._vault_monitor.set_vaults(paths)
         self._sidebar.set_vault_paths(paths)
-        self._tab_bar.set_vault_paths(paths)
-        self._tab_orchestrator.set_vault_names(names)
         self._backlink_index.build(vaults)
         self._file_index.build(vaults)
         self._dump_debug(["file_index", "backlink_index", "vault_tree"])
@@ -728,7 +725,7 @@ class MainWindow(Adw.ApplicationWindow):
     def _find_vault_for_file(self, file_path: str) -> str | None:
         """Return the vault root that contains *file_path*, or ``None``."""
         file_parent = str(Path(file_path).parent)
-        return path_utils.find_vault_for_dir(file_parent, self._vault_tree.get_vault_paths())
+        return path_utils.find_vault_for_dir(file_parent)
 
     def _switch_vault(
         self, new_vault: str, *,
@@ -857,7 +854,6 @@ class MainWindow(Adw.ApplicationWindow):
 
     def _on_vault_added(self, _tree, vault_path: str) -> None:
         """Handle a new vault being added."""
-        self._tab_bar.set_vault_paths(self._vault_tree.get_vault_paths())
         vault_entry = next((v for v in self._vault_tree._vaults if v["path"] == vault_path), None)
         if vault_entry:
             self._backlink_index.build([vault_entry])
@@ -1126,7 +1122,16 @@ class MainWindow(Adw.ApplicationWindow):
 
     def _on_preview_link_not_found(self, _preview, path_str: str) -> None:
         """Show a dialog when a wikilink cannot be resolved."""
-        dialogs.show_link_not_found(self, path_str)
+        dialogs.show_link_not_found(self, self._wikilink_display_name(path_str))
+
+    def _wikilink_display_name(self, uri: str) -> str:
+        """Render a user-friendly target name from a ``vault:`` URI."""
+        if not uri.startswith("vault:"):
+            return uri
+        vault, rel, _fragment = path_utils.parse_wikilink_url(uri)
+        if not rel:
+            return vault
+        return f"{vault}>{rel}"
 
     # ── Vault tree file operations ───────────────────────────────
 
@@ -1154,9 +1159,7 @@ class MainWindow(Adw.ApplicationWindow):
     def _on_file_renamed(self, _tree, old_path: str, new_path: str) -> None:
         """Handle file/folder rename from the vault tree."""
         # Update wikilinks in other files BEFORE index update
-        old_stem = Path(old_path).stem
-        new_stem = Path(new_path).stem
-        self._backlink_index.rename_wikilinks(old_stem, new_stem)
+        self._backlink_index.rename_wikilinks(old_path, new_path)
         self._backlink_index.rename_file(old_path, new_path)
         self._file_index.rename_file(old_path, new_path)
         self._dump_debug(["file_index", "backlink_index", "vault_tree", "tabs"])

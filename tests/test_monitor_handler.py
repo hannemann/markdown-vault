@@ -67,7 +67,7 @@ class TestMonitorHandlerFileCreated(unittest.TestCase):
             p = Path(self._tmp) / "foo.md"
             p.write_text("# Foo", encoding="utf-8")
             h.on_file_created("/vault", str(p))
-            self.mock_file_index.add_file.assert_called_once_with(str(p), vault="/vault")
+            self.mock_file_index.add_file.assert_called_once_with(str(p), vault_path="/vault")
 
     def test_non_utf8_file_handled_gracefully(self):
         with patch("markdown_vault.monitor_handler.GLib", _GLibMock):
@@ -140,7 +140,7 @@ class TestMonitorHandlerFileDeleted(unittest.TestCase):
         with patch("markdown_vault.monitor_handler.GLib", _GLibMock):
             h = self._make()
             h.on_file_deleted("/vault", "/vault/Notes.md")
-            self.mock_backlink.remove_wikilinks.assert_called_once_with("Notes")
+            self.mock_backlink.remove_wikilinks.assert_called_once_with("/vault/Notes.md")
             self.mock_backlink.remove_file.assert_called_once_with("/vault/Notes.md")
             self.mock_file_index.remove_file.assert_called_once_with("/vault/Notes.md")
 
@@ -257,7 +257,9 @@ class TestMonitorHandlerFileMoved(unittest.TestCase):
         with patch("markdown_vault.monitor_handler.GLib", _GLibMock):
             h = self._make()
             h.on_file_moved("/vault", "/vault/New.md", "/vault/Old.md")
-            self.mock_backlink.rename_wikilinks.assert_called_once_with("Old", "New")
+            self.mock_backlink.rename_wikilinks.assert_called_once_with(
+                "/vault/Old.md", "/vault/New.md"
+            )
 
     def test_renamed_file_renames_indexes(self):
         with patch("markdown_vault.monitor_handler.GLib", _GLibMock):
@@ -304,7 +306,7 @@ class TestMonitorHandlerFileMoved(unittest.TestCase):
             p = Path(self._tmp) / "arrived.md"
             p.write_text("# Arrived", encoding="utf-8")
             h.on_file_moved("/vault", str(p), None)
-            self.mock_file_index.add_file.assert_called_once_with(str(p), vault="/vault")
+            self.mock_file_index.add_file.assert_called_once_with(str(p), vault_path="/vault")
 
     def test_moved_non_md_from_outside_no_index(self):
         with patch("markdown_vault.monitor_handler.GLib", _GLibMock):
@@ -360,7 +362,7 @@ class TestMonitorHandlerFileMoved(unittest.TestCase):
                 "/vault", "/vault/neues.md",
             )
             self.mock_file_index.add_file.assert_called_once_with(
-                "/vault/neues.md", vault="/vault",
+                "/vault/neues.md", vault_path="/vault",
             )
 
     def test_genuine_rename_still_works(self):
@@ -371,9 +373,47 @@ class TestMonitorHandlerFileMoved(unittest.TestCase):
             self.mock_tab_bar.get_all_paths.return_value = ["/vault/Old.md"]
             self.mock_file_index.has_path.return_value = False
             h.on_file_moved("/vault", "/vault/New.md", "/vault/Old.md")
-            self.mock_backlink.rename_wikilinks.assert_called_once_with("Old", "New")
+            self.mock_backlink.rename_wikilinks.assert_called_once_with(
+                "/vault/Old.md", "/vault/New.md"
+            )
             self.mock_backlink.rename_file.assert_called_once_with("/vault/Old.md", "/vault/New.md")
             banner_cb.assert_not_called()
+
+    def test_md_to_non_md_rename_handled_as_deletion(self):
+        """Renaming a tracked .md file to a non-.md extension must be treated
+        like a deletion: close the tab, remove the tree entry and purge all
+        index entries — nothing may remain under the new extension."""
+        with patch("markdown_vault.monitor_handler.GLib", _GLibMock):
+            h = self._make()
+            self.mock_tab_bar.get_all_paths.return_value = ["/vault/Old.md"]
+            self.mock_file_index.has_path.return_value = False
+            h.on_file_moved("/vault", "/vault/Old.txt", "/vault/Old.md")
+            # Tree entry of the old .md path is removed, not renamed to .txt
+            self.mock_vault_tree._handle_file_deleted.assert_called_once_with("/vault/Old.md")
+            self.mock_vault_tree._handle_file_moved.assert_not_called()
+            # Open tab is closed, never kept open under the new extension
+            self.mock_tab_bar.close_tab.assert_called_once_with("/vault/Old.md")
+            self.mock_tab_bar.update_path.assert_not_called()
+            # Backlink + file index entries of the old path are purged
+            self.mock_backlink.remove_wikilinks.assert_called_once_with("/vault/Old.md")
+            self.mock_backlink.remove_file.assert_called_once_with("/vault/Old.md")
+            self.mock_file_index.remove_file.assert_called_once_with("/vault/Old.md")
+            # No rename/wikilink redirect onto the new extension
+            self.mock_backlink.rename_file.assert_not_called()
+            self.mock_backlink.rename_wikilinks.assert_not_called()
+            self.mock_file_index.rename_file.assert_not_called()
+
+    def test_md_to_non_md_rename_closes_tab_when_not_indexed(self):
+        """A .md→.txt rename of a file that is only open as a tab (not in the
+        file index) still closes the tab and purges the backlink entry."""
+        with patch("markdown_vault.monitor_handler.GLib", _GLibMock):
+            h = self._make()
+            self.mock_tab_bar.get_all_paths.return_value = ["/vault/sub/Old.md"]
+            self.mock_file_index.has_path.return_value = False
+            h.on_file_moved("/vault", "/vault/sub/Old.txt", "/vault/sub/Old.md")
+            self.mock_tab_bar.close_tab.assert_called_once_with("/vault/sub/Old.md")
+            self.mock_tab_bar.update_path.assert_not_called()
+            self.mock_backlink.remove_wikilinks.assert_called_once_with("/vault/sub/Old.md")
 
 
 class TestMonitorHandlerContentChanged(unittest.TestCase):

@@ -82,11 +82,6 @@ class TabOrchestrator:
         self._backlink_index = backlink_index
         self._vault_tree = vault_tree
         self._cb = callbacks
-        self._vault_names: list[str] = []
-
-    def set_vault_names(self, names: list[str]) -> None:
-        """Set vault names (from vaults.yaml) for preview resolution."""
-        self._vault_names = list(names)
 
     # ── helpers ────────────────────────────────────────────────────
 
@@ -158,8 +153,6 @@ class TabOrchestrator:
             wrap_text=self._settings.get("editor_wrap_text", True),
         )
         preview = Preview()
-        preview.set_vault_paths(self._vault_tree.get_vault_paths())
-        preview.set_vault_names(self._vault_names)
         preview.connect("link-clicked", self._on_preview_link_clicked)
         preview.connect("link-not-found", self._on_preview_link_not_found)
         preview.connect("checkbox-toggled", self._on_preview_checkbox_toggled)

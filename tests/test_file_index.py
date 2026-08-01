@@ -6,6 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import markdown_vault.config as _cfg
 from markdown_vault.file_index import FileIndex
 
 
@@ -130,20 +131,22 @@ class TestFileIndexIncremental(unittest.TestCase):
         self._tmp = tempfile.mkdtemp()
         self._vault = Path(self._tmp) / "vault"
         self._vault.mkdir()
+        _cfg._vaults_cache = [{"name": "vault", "path": str(self._vault)}]
         self._idx = FileIndex()
         self._idx.build([{"name": "vault", "path": str(self._vault)}])
 
     def tearDown(self):
+        _cfg._vaults_cache = None
         shutil.rmtree(self._tmp, ignore_errors=True)
 
     def test_add_file(self):
         (self._vault / "NewFile.md").write_text("# New")
-        self._idx.add_file(str(self._vault / "NewFile.md"), vault="vault")
+        self._idx.add_file(str(self._vault / "NewFile.md"), vault_path=str(self._vault))
         self.assertTrue(self._idx.has_path(str(self._vault / "NewFile.md")))
 
     def test_remove_file(self):
         (self._vault / "Page.md").write_text("# Page")
-        self._idx.add_file(str(self._vault / "Page.md"), vault="vault")
+        self._idx.add_file(str(self._vault / "Page.md"), vault_path=str(self._vault))
         self.assertTrue(self._idx.has_path(str(self._vault / "Page.md")))
         self._idx.remove_file(str(self._vault / "Page.md"))
         self.assertFalse(self._idx.has_path(str(self._vault / "Page.md")))
@@ -152,7 +155,7 @@ class TestFileIndexIncremental(unittest.TestCase):
         (self._vault / "OldName.md").write_text("# Old")
         old = str(self._vault / "OldName.md")
         new = str(self._vault / "NewName.md")
-        self._idx.add_file(old, vault="vault")
+        self._idx.add_file(old, vault_path=str(self._vault))
         os.rename(old, new)
         self._idx.rename_file(old, new)
         self.assertFalse(self._idx.has_path(old))
@@ -163,7 +166,7 @@ class TestFileIndexIncremental(unittest.TestCase):
         (self._vault / "OldName.md").write_text("# Old")
         old = str(self._vault / "OldName.md")
         new = str(self._vault / "New File.md")
-        self._idx.add_file(old, vault="vault")
+        self._idx.add_file(old, vault_path=str(self._vault))
         os.rename(old, new)
         self._idx.rename_file(old, new)
         self.assertFalse(self._idx.has_path(old))
