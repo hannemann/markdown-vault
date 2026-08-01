@@ -207,5 +207,46 @@ class TestSettings(_TempConfigMixin, unittest.TestCase):
         self.assertEqual(len(tmp_files), 0)
 
 
+class TestWebkitEnv(_TempConfigMixin, unittest.TestCase):
+    """Tests for ``apply_webkit_env`` (WebKit VRAM/GPU switches)."""
+
+    def test_webkit_defaults_are_off(self):
+        s = _cfg.load_settings()
+        self.assertFalse(s["webkit_disable_dmabuf"])
+        self.assertFalse(s["webkit_disable_compositing"])
+
+    def test_apply_webkit_env_sets_both_when_true(self):
+        import os
+        from unittest import mock
+
+        settings = {"webkit_disable_dmabuf": True, "webkit_disable_compositing": True}
+        with mock.patch.dict(os.environ, {}, clear=True):
+            _cfg.apply_webkit_env(settings)
+            self.assertEqual(os.environ["WEBKIT_DISABLE_DMABUF_RENDERER"], "1")
+            self.assertEqual(os.environ["WEBKIT_DISABLE_COMPOSITING_MODE"], "1")
+
+    def test_apply_webkit_env_leaves_unset_when_false(self):
+        import os
+        from unittest import mock
+
+        settings = {"webkit_disable_dmabuf": False, "webkit_disable_compositing": False}
+        with mock.patch.dict(os.environ, {}, clear=True):
+            _cfg.apply_webkit_env(settings)
+            self.assertNotIn("WEBKIT_DISABLE_DMABUF_RENDERER", os.environ)
+            self.assertNotIn("WEBKIT_DISABLE_COMPOSITING_MODE", os.environ)
+
+    def test_apply_webkit_env_loads_settings_when_none(self):
+        import os
+        from unittest import mock
+
+        settings = _cfg.load_settings()
+        settings["webkit_disable_dmabuf"] = True
+        _cfg.save_settings(settings)
+        with mock.patch.dict(os.environ, {}, clear=True):
+            _cfg.apply_webkit_env()
+            self.assertEqual(os.environ["WEBKIT_DISABLE_DMABUF_RENDERER"], "1")
+            self.assertNotIn("WEBKIT_DISABLE_COMPOSITING_MODE", os.environ)
+
+
 if __name__ == "__main__":
     unittest.main()

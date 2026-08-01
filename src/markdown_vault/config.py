@@ -187,6 +187,14 @@ _DEFAULT_SETTINGS = {
     "tab_wrap": False,
     "loglevel": "info",
     "third_party_loglevel": "warning",
+    "webkit_disable_dmabuf": False,
+    "webkit_disable_compositing": False,
+}
+
+# Setting key → environment variable consumed by WebKitGTK at startup.
+_WEBKIT_ENV_KEYS = {
+    "webkit_disable_dmabuf": "WEBKIT_DISABLE_DMABUF_RENDERER",
+    "webkit_disable_compositing": "WEBKIT_DISABLE_COMPOSITING_MODE",
 }
 
 
@@ -226,3 +234,18 @@ def save_settings(settings: dict) -> None:
     except OSError:
         logger.error("Failed to save settings to %s", CONFIG_FILE, exc_info=True)
         raise
+
+
+def apply_webkit_env(settings: dict | None = None) -> None:
+    """Apply WebKit environment variables from *settings*.
+
+    Must run before any WebKit module is imported (i.e. before the app
+    window is created), otherwise the renderer/compositor is already
+    initialised with the defaults.  Environment variables are only set,
+    never unset — the app starts in a fresh process each time.
+    """
+    if settings is None:
+        settings = load_settings()
+    for setting_key, env_key in _WEBKIT_ENV_KEYS.items():
+        if settings.get(setting_key):
+            os.environ[env_key] = "1"

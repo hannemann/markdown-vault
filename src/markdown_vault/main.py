@@ -32,6 +32,12 @@ if os.environ.get("MARKDOWN_VAULT_DEBUG"):
 
     signal.signal(signal.SIGUSR1, _sigusr1)
 
+# WebKit env vars must be set before any WebKit module is imported, otherwise
+# the renderer/compositor is already initialised with the defaults.
+from . import config
+
+config.apply_webkit_env(config.load_settings())
+
 import gi
 
 gi.require_version("Gtk", "4.0")
@@ -40,7 +46,6 @@ gi.require_version("Adw", "1")
 from gi.repository import Adw, Gio
 
 from .app_window import MainWindow
-from . import config
 
 _LOGLEVEL_MAP = {
     "debug": logging.DEBUG,

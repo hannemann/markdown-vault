@@ -23,6 +23,7 @@ class TestPreferencesModuleStructure(unittest.TestCase):
         self.assertIn("General", source)
         self.assertIn("Editor", source)
         self.assertIn("Preview", source)
+        self.assertIn("Web", source)
 
     def test_dialog_has_all_setting_rows(self):
         src = Path(__file__).resolve().parent.parent / "src" / "markdown_vault" / "preferences.py"
@@ -39,6 +40,14 @@ class TestPreferencesModuleStructure(unittest.TestCase):
         source = src.read_text(encoding="utf-8")
         self.assertIn("save_settings", source)
         self.assertIn("emit", source)
+
+    def test_dialog_has_webkit_switches(self):
+        src = Path(__file__).resolve().parent.parent / "src" / "markdown_vault" / "preferences.py"
+        source = src.read_text(encoding="utf-8")
+        self.assertIn("webkit_disable_dmabuf", source)
+        self.assertIn("webkit_disable_compositing", source)
+        self.assertIn("WEBKIT_DISABLE_DMABUF_RENDERER", source)
+        self.assertIn("WEBKIT_DISABLE_COMPOSITING_MODE", source)
 
 
 if __name__ == "__main__":

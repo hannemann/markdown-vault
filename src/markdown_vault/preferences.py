@@ -9,6 +9,8 @@ import logging
 
 import gi
 
+logger = logging.getLogger(__name__)
+
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 gi.require_version("Gdk", "4.0")
@@ -81,12 +83,11 @@ class PreferencesDialog(Adw.PreferencesDialog):
         autosave_group = Adw.PreferencesGroup(title="Autosave")
         general.add(autosave_group)
 
-        self._autosave_row = Adw.ActionRow(title="Autosave interval (seconds)")
-        self._autosave_spin = Gtk.SpinButton.new_with_range(0, 600, 5)
-        self._autosave_spin.set_value(self._settings.get("autosave_interval", 30))
-        self._autosave_spin.connect("value-changed", self._on_autosave_changed)
-        self._autosave_row.add_suffix(self._autosave_spin)
-        self._autosave_row.activatable_widget = self._autosave_spin
+        self._autosave_row = Adw.SpinRow(
+            title="Autosave interval (seconds)",
+            adjustment=Gtk.Adjustment.new(30, 0, 600, 5, 10, 0),
+        )
+        self._autosave_row.connect("notify::value", self._on_autosave_changed)
         autosave_group.add(self._autosave_row)
 
         # Default view mode group.
@@ -111,46 +112,39 @@ class PreferencesDialog(Adw.PreferencesDialog):
         font_group = Adw.PreferencesGroup(title="Font &amp; Layout")
         editor.add(font_group)
 
-        self._font_row = Adw.ActionRow(title="Font size")
-        self._font_spin = Gtk.SpinButton.new_with_range(8, 72, 1)
-        self._font_spin.set_value(self._settings.get("editor_font_size", 14))
-        self._font_spin.connect("value-changed", self._on_font_size_changed)
-        self._font_row.add_suffix(self._font_spin)
-        self._font_row.activatable_widget = self._font_spin
+        self._font_row = Adw.SpinRow(
+            title="Font size",
+            adjustment=Gtk.Adjustment.new(14, 8, 72, 1, 5, 0),
+        )
+        self._font_row.connect("notify::value", self._on_font_size_changed)
         font_group.add(self._font_row)
 
-        self._tab_row = Adw.ActionRow(title="Tab width")
-        self._tab_spin = Gtk.SpinButton.new_with_range(1, 16, 1)
-        self._tab_spin.set_value(self._settings.get("editor_tab_width", 4))
-        self._tab_spin.connect("value-changed", self._on_tab_width_changed)
-        self._tab_row.add_suffix(self._tab_spin)
-        self._tab_row.activatable_widget = self._tab_spin
+        self._tab_row = Adw.SpinRow(
+            title="Tab width",
+            adjustment=Gtk.Adjustment.new(4, 1, 16, 1, 4, 0),
+        )
+        self._tab_row.connect("notify::value", self._on_tab_width_changed)
         font_group.add(self._tab_row)
 
         self._wrap_row = Adw.SwitchRow(title="Word wrap")
-        self._wrap_switch = Gtk.Switch()
-        self._wrap_switch.set_active(self._settings.get("editor_wrap_text", True))
-        self._wrap_switch.connect("notify::active", self._on_wrap_changed)
-        self._wrap_row.set_child(self._wrap_switch)
+        self._wrap_row.set_active(self._settings.get("editor_wrap_text", True))
+        self._wrap_row.connect("notify::active", self._on_wrap_changed)
         font_group.add(self._wrap_row)
 
         # Tabs group.
         tabs_group = Adw.PreferencesGroup(title="Tabs")
         editor.add(tabs_group)
 
-        self._tab_width_row = Adw.ActionRow(title="Minimum tab width (px)")
-        self._tab_width_spin = Gtk.SpinButton.new_with_range(50, 300, 10)
-        self._tab_width_spin.set_value(self._settings.get("tab_min_width", 100))
-        self._tab_width_spin.connect("value-changed", self._on_tab_min_width_changed)
-        self._tab_width_row.add_suffix(self._tab_width_spin)
-        self._tab_width_row.activatable_widget = self._tab_width_spin
+        self._tab_width_row = Adw.SpinRow(
+            title="Minimum tab width (px)",
+            adjustment=Gtk.Adjustment.new(100, 50, 300, 10, 50, 0),
+        )
+        self._tab_width_row.connect("notify::value", self._on_tab_min_width_changed)
         tabs_group.add(self._tab_width_row)
 
         self._tab_wrap_row = Adw.SwitchRow(title="Wrap tabs")
-        self._tab_wrap_switch = Gtk.Switch()
-        self._tab_wrap_switch.set_active(self._settings.get("tab_wrap", False))
-        self._tab_wrap_switch.connect("notify::active", self._on_tab_wrap_changed)
-        self._tab_wrap_row.set_child(self._tab_wrap_switch)
+        self._tab_wrap_row.set_active(self._settings.get("tab_wrap", False))
+        self._tab_wrap_row.connect("notify::active", self._on_tab_wrap_changed)
         tabs_group.add(self._tab_wrap_row)
 
         self.add(editor)
@@ -161,16 +155,56 @@ class PreferencesDialog(Adw.PreferencesDialog):
         zoom_group = Adw.PreferencesGroup(title="Zoom")
         preview.add(zoom_group)
 
-        self._zoom_row = Adw.ActionRow(title="Default zoom level")
-        self._zoom_spin = Gtk.SpinButton.new_with_range(0.25, 5.0, 0.05)
-        self._zoom_spin.set_digits(2)
-        self._zoom_spin.set_value(self._settings.get("preview_zoom", 1.0))
-        self._zoom_spin.connect("value-changed", self._on_zoom_changed)
-        self._zoom_row.add_suffix(self._zoom_spin)
-        self._zoom_row.activatable_widget = self._zoom_spin
+        zoom_value = self._settings.get("preview_zoom", 1.0)
+        self._zoom_row = Adw.SpinRow(
+            title="Default zoom level",
+            adjustment=Gtk.Adjustment.new(zoom_value, 0.25, 5.0, 0.05, 0.25, 0),
+            digits=2,
+        )
+        self._zoom_row.connect("notify::value", self._on_zoom_changed)
         zoom_group.add(self._zoom_row)
 
         self.add(preview)
+
+        # ── Web page ────────────────────────────────────────────────
+        web = Adw.PreferencesPage(
+            title="Web", icon_name="applications-internet-symbolic",
+        )
+
+        web_group = Adw.PreferencesGroup(title="WebKit Rendering")
+        web.add(web_group)
+
+        self._dmabuf_row = Adw.SwitchRow(title="Disable DMA-BUF renderer")
+        self._dmabuf_row.subtitle = (
+            "Lowers GPU/video memory usage "
+            "(WEBKIT_DISABLE_DMABUF_RENDERER). Takes effect after restart."
+        )
+        self._dmabuf_row.set_active(
+            self._settings.get("webkit_disable_dmabuf", False),
+        )
+        self._dmabuf_row.connect(
+            "notify::active", self._on_webkit_toggle_changed,
+            "webkit_disable_dmabuf",
+        )
+        web_group.add(self._dmabuf_row)
+
+        self._compositing_row = Adw.SwitchRow(
+            title="Disable hardware acceleration",
+        )
+        self._compositing_row.subtitle = (
+            "Render without the GPU (WEBKIT_DISABLE_COMPOSITING_MODE). "
+            "Takes effect after restart."
+        )
+        self._compositing_row.set_active(
+            self._settings.get("webkit_disable_compositing", False),
+        )
+        self._compositing_row.connect(
+            "notify::active", self._on_webkit_toggle_changed,
+            "webkit_disable_compositing",
+        )
+        web_group.add(self._compositing_row)
+
+        self.add(web)
 
         # ── Keyboard page ──────────────────────────────────────────
         keyboard = Adw.PreferencesPage(title="Keyboard", icon_name="input-keyboard-symbolic")
@@ -276,8 +310,8 @@ class PreferencesDialog(Adw.PreferencesDialog):
             return
         self.emit("settings-changed")
 
-    def _on_autosave_changed(self, spin: Gtk.SpinButton) -> None:
-        self._settings["autosave_interval"] = int(spin.get_value())
+    def _on_autosave_changed(self, _row: Adw.SpinRow, _pspec) -> None:
+        self._settings["autosave_interval"] = int(self._autosave_row.get_adjustment().get_value())
         self._persist()
 
     def _on_view_mode_changed(self, row: Adw.ComboRow, _pspec) -> None:
@@ -287,28 +321,28 @@ class PreferencesDialog(Adw.PreferencesDialog):
             self._settings["default_view_mode"] = modes[idx]
             self._persist()
 
-    def _on_font_size_changed(self, spin: Gtk.SpinButton) -> None:
-        self._settings["editor_font_size"] = int(spin.get_value())
+    def _on_font_size_changed(self, _row: Adw.SpinRow, _pspec) -> None:
+        self._settings["editor_font_size"] = int(self._font_row.get_adjustment().get_value())
         self._persist()
 
-    def _on_tab_width_changed(self, spin: Gtk.SpinButton) -> None:
-        self._settings["editor_tab_width"] = int(spin.get_value())
+    def _on_tab_width_changed(self, _row: Adw.SpinRow, _pspec) -> None:
+        self._settings["editor_tab_width"] = int(self._tab_row.get_adjustment().get_value())
         self._persist()
 
     def _on_wrap_changed(self, switch: Gtk.Switch, _pspec) -> None:
         self._settings["editor_wrap_text"] = switch.get_active()
         self._persist()
 
-    def _on_tab_min_width_changed(self, spin: Gtk.SpinButton) -> None:
-        self._settings["tab_min_width"] = int(spin.get_value())
+    def _on_tab_min_width_changed(self, _row: Adw.SpinRow, _pspec) -> None:
+        self._settings["tab_min_width"] = int(self._tab_width_row.get_adjustment().get_value())
         self._persist()
 
     def _on_tab_wrap_changed(self, switch: Gtk.Switch, _pspec) -> None:
         self._settings["tab_wrap"] = switch.get_active()
         self._persist()
 
-    def _on_zoom_changed(self, spin: Gtk.SpinButton) -> None:
-        self._settings["preview_zoom"] = round(spin.get_value(), 2)
+    def _on_zoom_changed(self, _row: Adw.SpinRow, _pspec) -> None:
+        self._settings["preview_zoom"] = round(self._zoom_row.get_adjustment().get_value(), 2)
         self._persist()
 
     # ── Keybinding capture ──────────────────────────────────────────
@@ -388,4 +422,10 @@ class PreferencesDialog(Adw.PreferencesDialog):
 
     def _on_dump_toggle_changed(self, row: Adw.SwitchRow, _pspec, key: str) -> None:
         self._settings[f"debug_dump_{key}"] = row.get_active()
+        self._persist()
+
+    def _on_webkit_toggle_changed(
+        self, row: Adw.SwitchRow, _pspec, key: str,
+    ) -> None:
+        self._settings[key] = row.get_active()
         self._persist()
