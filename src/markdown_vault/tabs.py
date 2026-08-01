@@ -56,8 +56,11 @@ class Tab:
         self.save_error: str | None = None
         self.save_error_message: str = ""
 
-    def reload_editor(self, file_path: str) -> None:
-        """Reload editor content from disk."""
+    def reload_editor(self, file_path: str) -> bool:
+        """Reload editor content from disk.
+
+        Returns ``True`` on success, ``False`` if an I/O error occurred.
+        """
         try:
             new_text = Path(file_path).read_text(encoding="utf-8")
             start = self.editor._buffer.get_start_iter()
@@ -65,8 +68,10 @@ class Tab:
             self.editor._buffer.delete(start, end)
             self.editor._buffer.insert(start, new_text)
             self.editor._buffer.set_modified(False)
+            return True
         except OSError:
             logger.warning("Could not reload editor from %s", file_path, exc_info=True)
+            return False
 
 
 class TabBar(Gtk.Box):

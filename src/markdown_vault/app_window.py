@@ -220,7 +220,9 @@ class MainWindow(Adw.ApplicationWindow):
         )
 
         # Content change handler for external file modifications.
-        self._content_change_handler = ContentChangeHandler(tab_bar=self._tab_bar)
+        self._content_change_handler = ContentChangeHandler(
+            tab_bar=self._tab_bar, parent=self
+        )
 
         # Tab lifecycle orchestrator.
         self._tab_orchestrator = TabOrchestrator(
