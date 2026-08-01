@@ -98,17 +98,7 @@ def confirm_delete(parent: Gtk.Widget, path: str, on_response) -> None:
     is_dir = Path(path).is_dir()
 
     if is_dir:
-        try:
-            count = sum(1 for _ in Path(path).rglob("*"))
-        except PermissionError:
-            count = -1
-        if count > 0:
-            body = (
-                f"Delete \"{name}\" and all {count} contained items? "
-                "This cannot be undone."
-            )
-        else:
-            body = f"Delete empty folder \"{name}\"?"
+        body = f"Delete folder \"{name}\" and all its contents? This cannot be undone."
     else:
         body = f"Delete \"{name}\"?"
 

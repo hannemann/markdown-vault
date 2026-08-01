@@ -211,15 +211,15 @@ class TestConfirmDelete(unittest.TestCase):
         self.assertNotIn("contained items", kwargs["body"])
 
     @patch("markdown_vault.dialogs.Adw.AlertDialog")
-    def test_empty_dir_body(self, MockDialog):
+    def test_dir_body_for_empty_folder(self, MockDialog):
         parent = MagicMock()
         dialogs.confirm_delete(parent, self._tmp, lambda c: None)
 
         kwargs = MockDialog.call_args[1]
-        self.assertIn("empty folder", kwargs["body"])
+        self.assertIn("all its contents", kwargs["body"])
 
     @patch("markdown_vault.dialogs.Adw.AlertDialog")
-    def test_nonempty_dir_body_shows_count(self, MockDialog):
+    def test_dir_body_mentions_contents(self, MockDialog):
         for i in range(3):
             with open(os.path.join(self._tmp, f"f{i}.md"), "w") as f:
                 f.write("x")
@@ -228,7 +228,7 @@ class TestConfirmDelete(unittest.TestCase):
         dialogs.confirm_delete(parent, self._tmp, lambda c: None)
 
         kwargs = MockDialog.call_args[1]
-        self.assertIn("3 contained items", kwargs["body"])
+        self.assertIn("all its contents", kwargs["body"])
 
     @patch("markdown_vault.dialogs.Adw.AlertDialog")
     def test_confirm_calls_true(self, MockDialog):
