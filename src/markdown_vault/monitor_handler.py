@@ -78,7 +78,10 @@ class MonitorHandler:
             except (OSError, UnicodeDecodeError):
                 text = ""
             self._backlink_index.update_file(file_path, text)
-            self._debug_fn(["backlink_index"])
+            # Refresh the sidebar so backlinks appear without a tab switch.
+            # "created" refreshes the backlinks view (unlike "content_changed").
+            self._dispatcher.on_file_created(vault_path, file_path)
+            self._debug_fn(["backlink_index", "sidebar"])
             return False
 
         GLib.idle_add(_update_backlink)
@@ -99,8 +102,8 @@ class MonitorHandler:
             # Purge non-open .md files from indexes
             self._purge_index_prefix(self._file_index, prefix)
             self._purge_index_prefix(self._backlink_index, prefix)
-            self._debug_fn(["file_index", "backlink_index", "vault_tree", "tabs"])
             self._dispatcher.on_file_deleted(vault_path, file_path)
+            self._debug_fn(["file_index", "backlink_index", "vault_tree", "tabs", "sidebar"])
             return
 
         # Remove wikilinks BEFORE index update
@@ -109,8 +112,8 @@ class MonitorHandler:
         self._file_index.remove_file(file_path)
         if file_path in self._tab_bar.get_all_paths():
             self._tab_bar.close_tab(file_path)
-        self._debug_fn(["file_index", "backlink_index", "vault_tree", "tabs"])
         self._dispatcher.on_file_deleted(vault_path, file_path)
+        self._debug_fn(["file_index", "backlink_index", "vault_tree", "tabs", "sidebar"])
 
     def on_file_moved(
         self,
@@ -150,9 +153,9 @@ class MonitorHandler:
             elif dest_tracked:
                 self._notify_external_change(vault_path, file_path)
             else:
-                self._handle_new_file_from_move(vault_path, file_path)
+                self._handle_new_file_from_move(vault_path, file_path, other_path)
         else:
-            self._handle_new_file_from_move(vault_path, file_path)
+            self._handle_new_file_from_move(vault_path, file_path, None)
 
     def on_content_changed(self, vault_path: str, file_path: str) -> None:
         """Handle content-changed event from VaultMonitor."""
@@ -208,8 +211,8 @@ class MonitorHandler:
         self._vault_tree._handle_file_moved(other_path, new_parent, file_path)
         if other_path in self._tab_bar.get_all_paths():
             self._tab_bar.update_path(other_path, file_path)
-        self._debug_fn(["file_index", "backlink_index", "vault_tree", "tabs"])
         self._dispatcher.on_file_moved(vault_path, file_path, other_path)
+        self._debug_fn(["file_index", "backlink_index", "vault_tree", "tabs", "sidebar"])
 
     def _notify_external_change(self, vault_path: str, file_path: str) -> None:
         """Treat as a content replacement: refresh index + banner."""
@@ -229,8 +232,25 @@ class MonitorHandler:
 
         GLib.idle_add(_update)
 
-    def _handle_new_file_from_move(self, vault_path: str, file_path: str) -> None:
-        self._vault_tree._handle_file_created(vault_path, file_path)
+    def _handle_new_file_from_move(
+        self, vault_path: str, file_path: str, other_path: str | None = None
+    ) -> None:
+        if other_path is not None and other_path.endswith(".md"):
+            if not file_path.endswith(".md"):
+                # A .md file renamed to a non-markdown extension is not
+                # supported: treat it like a deletion — the tree entry is
+                # removed and all index entries are purged (R9.3).
+                self.on_file_deleted(vault_path, other_path)
+                return
+            # Untracked .md→.md rename: move the tree node and swap the old
+            # index entries out for the new path.
+            self._vault_tree._handle_file_moved(
+                other_path, str(Path(file_path).parent), file_path,
+            )
+            self._file_index.remove_file(other_path)
+            self._backlink_index.remove_file(other_path)
+        else:
+            self._vault_tree._handle_file_created(vault_path, file_path)
         if file_path.endswith(".md"):
             self._file_index.add_file(file_path, vault_path=vault_path)
             self._debug_fn(["file_index", "vault_tree"])
@@ -241,7 +261,10 @@ class MonitorHandler:
                 except (OSError, UnicodeDecodeError):
                     text = ""
                 self._backlink_index.update_file(file_path, text)
-                self._debug_fn(["backlink_index"])
+                # Refresh the sidebar so backlinks appear without a tab switch.
+                # "created" refreshes the backlinks view (unlike "content_changed").
+                self._dispatcher.on_file_created(vault_path, file_path)
+                self._debug_fn(["backlink_index", "sidebar"])
                 return False
 
             GLib.idle_add(_update_backlink)

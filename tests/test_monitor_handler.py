@@ -87,6 +87,24 @@ class TestMonitorHandlerFileCreated(unittest.TestCase):
                 [c for c in self.mock_debug_fn.call_args_list],
             )
 
+    def test_created_md_with_links_refreshes_sidebar(self):
+        """A newly created .md file with links must refresh the sidebar so
+        backlinks appear without waiting for a tab switch."""
+        with patch("markdown_vault.monitor_handler.GLib", _GLibMock):
+            h = self._make()
+            p = Path(self._tmp) / "new.md"
+            p.write_text("[[Target]]", encoding="utf-8")
+            h.on_file_created("/vault", str(p))
+            self.mock_backlink.update_file.assert_called_once_with(str(p), "[[Target]]")
+            self.mock_dispatcher.on_file_created.assert_called_once_with("/vault", str(p))
+
+    def test_created_non_md_does_not_refresh_sidebar(self):
+        """A non-.md file must not trigger a sidebar refresh."""
+        with patch("markdown_vault.monitor_handler.GLib", _GLibMock):
+            h = self._make()
+            h.on_file_created("/vault", "/vault/readme.txt")
+            self.mock_dispatcher.on_file_created.assert_not_called()
+
 
 class TestMonitorHandlerFileDeleted(unittest.TestCase):
     """Tests for MonitorHandler.on_file_deleted."""
@@ -172,7 +190,7 @@ class TestMonitorHandlerFileDeleted(unittest.TestCase):
             h = self._make()
             h.on_file_deleted("/vault", "/vault/foo.md")
             self.assertIn(
-                call(["file_index", "backlink_index", "vault_tree", "tabs"]),
+                call(["file_index", "backlink_index", "vault_tree", "tabs", "sidebar"]),
                 [c for c in self.mock_debug_fn.call_args_list],
             )
 
@@ -313,6 +331,61 @@ class TestMonitorHandlerFileMoved(unittest.TestCase):
             h = self._make()
             h.on_file_moved("/vault", "/vault/readme.txt", None)
             self.mock_file_index.add_file.assert_not_called()
+
+    def test_move_back_to_md_notifies_sidebar_dispatcher(self):
+        """Re-renaming a non-.md file back to .md must refresh the sidebar via
+        the dispatcher so backlinks reappear without a tab switch."""
+        with patch("markdown_vault.monitor_handler.GLib", _GLibMock):
+            h = self._make()
+            self.mock_tab_bar.get_all_paths.return_value = []
+            self.mock_file_index.has_path.return_value = False
+            p = Path(self._tmp) / "sub"
+            p.mkdir()
+            md = p / "Back.md"
+            md.write_text("[[Target]]", encoding="utf-8")
+            h.on_file_moved("/vault", str(md), str(p / "Back.txt"))
+            self.mock_backlink.update_file.assert_called_once_with(str(md), "[[Target]]")
+            self.mock_dispatcher.on_file_created.assert_called_once_with("/vault", str(md))
+            self.mock_dispatcher.on_content_changed.assert_not_called()
+
+    def test_moved_in_md_with_links_refreshes_sidebar(self):
+        """A .md file moved in from outside with links also refreshes the
+        sidebar backlinks (consistent with _notify_external_change)."""
+        with patch("markdown_vault.monitor_handler.GLib", _GLibMock):
+            h = self._make()
+            self.mock_tab_bar.get_all_paths.return_value = []
+            self.mock_file_index.has_path.return_value = False
+            p = Path(self._tmp) / "arrived.md"
+            p.write_text("[[Target]]", encoding="utf-8")
+            h.on_file_moved("/vault", str(p), None)
+            self.mock_dispatcher.on_file_created.assert_called_once_with("/vault", str(p))
+
+    def test_untracked_md_to_non_md_rename_purges_old_index_entries(self):
+        """A .md file that is not open/indexed but renamed to a non-.md
+        extension must still have its old index entries purged (treated like
+        a deletion — no stale backlinks may remain)."""
+        with patch("markdown_vault.monitor_handler.GLib", _GLibMock):
+            h = self._make()
+            self.mock_tab_bar.get_all_paths.return_value = []
+            self.mock_file_index.has_path.return_value = False
+            h.on_file_moved("/vault", "/vault/sub/old.txt", "/vault/sub/old.md")
+            self.mock_file_index.remove_file.assert_called_once_with("/vault/sub/old.md")
+            self.mock_backlink.remove_file.assert_called_once_with("/vault/sub/old.md")
+            self.mock_backlink.rename_file.assert_not_called()
+
+    def test_untracked_md_to_md_rename_purges_old_entry(self):
+        """An untracked .md→.md rename removes the old index entry while the
+        new one is indexed (no stale path may remain)."""
+        with patch("markdown_vault.monitor_handler.GLib", _GLibMock):
+            h = self._make()
+            self.mock_tab_bar.get_all_paths.return_value = []
+            self.mock_file_index.has_path.return_value = False
+            p = Path(self._tmp) / "new.md"
+            p.write_text("# New", encoding="utf-8")
+            h.on_file_moved("/vault", str(p), "/vault/old.md")
+            self.mock_file_index.remove_file.assert_called_once_with("/vault/old.md")
+            self.mock_file_index.add_file.assert_called_once_with(str(p), vault_path="/vault")
+            self.mock_backlink.update_file.assert_called_once_with(str(p), "# New")
 
     # ── Atomic-save tests ────────────────────────────────────────────
 
