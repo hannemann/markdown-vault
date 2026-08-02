@@ -1,0 +1,283 @@
+"""Tests for markdown_vault.logging_setup.
+
+Covers the standard-logging routing (normal messages -> stdout,
+errors -> stderr), the two rotated log files, and the fd redirect
+that captures native/child-process output.
+"""
+
+import faulthandler
+import logging
+import logging.handlers
+import os
+import shutil
+import tempfile
+import unittest
+
+from markdown_vault import logging_setup
+
+_ROOT = logging.getLogger()
+
+
+def _flush(handlers):
+    for handler in handlers:
+        try:
+            handler.flush()
+        except Exception:
+            pass
+
+
+class MaxMinFilterTest(unittest.TestCase):
+    """Level filters used to route stdout vs. stderr."""
+
+    def _record(self, level):
+        return logging.LogRecord("test", level, "", 0, "msg", (), None)
+
+    def test_max_level_filter_allows_lower_or_equal(self):
+        filt = logging_setup._MaxLevelFilter(logging.INFO)
+        self.assertTrue(filt.filter(self._record(logging.DEBUG)))
+        self.assertTrue(filt.filter(self._record(logging.INFO)))
+        self.assertFalse(filt.filter(self._record(logging.WARNING)))
+        self.assertFalse(filt.filter(self._record(logging.ERROR)))
+
+    def test_min_level_filter_allows_higher_or_equal(self):
+        filt = logging_setup._MinLevelFilter(logging.WARNING)
+        self.assertFalse(filt.filter(self._record(logging.DEBUG)))
+        self.assertFalse(filt.filter(self._record(logging.INFO)))
+        self.assertTrue(filt.filter(self._record(logging.WARNING)))
+        self.assertTrue(filt.filter(self._record(logging.ERROR)))
+
+
+class LoggingSetupTestCase(unittest.TestCase):
+    """Isolated state-dir + root logger per test."""
+
+    def setUp(self):
+        self._tmp = tempfile.mkdtemp()
+        self._orig_state_dir = logging_setup._STATE_DIR
+        self._orig_root_level = _ROOT.level
+        self._orig_root_handlers = list(_ROOT.handlers)
+        logging_setup._STATE_DIR = self._tmp
+        logging_setup._file_setup_done = False
+        logging_setup._console_setup_done = False
+        logging_setup._installed_handlers.clear()
+        logging_setup._glib_handler_id.clear()
+
+    def tearDown(self):
+        for handler in list(logging_setup._installed_handlers):
+            _ROOT.removeHandler(handler)
+            try:
+                handler.close()
+            except Exception:
+                pass
+        logging_setup._installed_handlers.clear()
+        for handler in list(_ROOT.handlers):
+            if handler not in self._orig_root_handlers:
+                _ROOT.removeHandler(handler)
+        _ROOT.setLevel(self._orig_root_level)
+        logging_setup._STATE_DIR = self._orig_state_dir
+        shutil.rmtree(self._tmp, ignore_errors=True)
+
+    def _init(self, settings):
+        logging_setup.init(
+            settings,
+            redirect_stdout=False,
+            redirect_stderr=False,
+            setup_glib=False,
+        )
+
+    def _stdout_log(self):
+        return os.path.join(self._tmp, "markdown-vault.log")
+
+    def _stderr_log(self):
+        return os.path.join(self._tmp, "markdown-vault.stderr.log")
+
+
+class InitTest(LoggingSetupTestCase):
+    def test_init_creates_two_log_files(self):
+        self._init({"loglevel": "debug"})
+        self.assertTrue(os.path.exists(self._stdout_log()))
+        self.assertTrue(os.path.exists(self._stderr_log()))
+
+    def test_init_reads_loglevel_from_dict(self):
+        self._init({"loglevel": "debug"})
+        self.assertEqual(logging.getLogger("markdown-vault").level, logging.DEBUG)
+        self.assertEqual(_ROOT.level, logging.DEBUG)
+
+    def test_init_defaults_to_warning_for_missing_level(self):
+        self._init({})
+        self.assertEqual(logging.getLogger("markdown-vault").level, logging.WARNING)
+
+    def test_routes_normal_messages_to_stdout_log(self):
+        self._init({"loglevel": "debug"})
+        logger = logging.getLogger("markdown-vault")
+        logger.info("normal message 42")
+        logger.warning("warning message 43")
+        _flush(logging_setup._installed_handlers)
+        with open(self._stdout_log(), encoding="utf-8") as fh:
+            stdout_content = fh.read()
+        with open(self._stderr_log(), encoding="utf-8") as fh:
+            stderr_content = fh.read()
+        self.assertIn("normal message 42", stdout_content)
+        self.assertNotIn("warning message 43", stdout_content)
+        self.assertNotIn("normal message 42", stderr_content)
+        self.assertIn("warning message 43", stderr_content)
+
+    def test_routes_debug_to_stdout_log(self):
+        self._init({"loglevel": "debug"})
+        logging.getLogger("markdown-vault").debug("debug message 44")
+        _flush(logging_setup._installed_handlers)
+        with open(self._stdout_log(), encoding="utf-8") as fh:
+            stdout_content = fh.read()
+        self.assertIn("debug message 44", stdout_content)
+
+    def test_init_with_none_settings_uses_defaults(self):
+        self._init(None)
+        self.assertEqual(
+            logging.getLogger("markdown-vault").level, logging.WARNING
+        )
+        self.assertEqual(_ROOT.level, logging.WARNING)
+        self.assertTrue(os.path.exists(self._stdout_log()))
+        self.assertTrue(os.path.exists(self._stderr_log()))
+
+    def test_init_twice_reattaches_level(self):
+        self._init({"loglevel": "debug"})
+        self._init({"loglevel": "error"})
+        self.assertEqual(
+            logging.getLogger("markdown-vault").level, logging.ERROR
+        )
+        self.assertEqual(_ROOT.level, logging.ERROR)
+
+    def test_init_enables_faulthandler(self):
+        faulthandler.disable()
+        self._init({"loglevel": "debug"})
+        self.assertTrue(faulthandler.is_enabled())
+
+
+class ThirdPartyLevelTest(unittest.TestCase):
+    def setUp(self):
+        self._original = {
+            prefix: logging.getLogger(prefix).level
+            for prefix in ("markdown", "pymdownx", "urllib3", "pygments", "xml")
+        }
+
+    def tearDown(self):
+        for prefix, level in self._original.items():
+            logging.getLogger(prefix).setLevel(level)
+
+    def test_sets_third_party_loggers(self):
+        logging_setup.set_third_party_loglevel("error")
+        self.assertEqual(logging.getLogger("markdown").level, logging.ERROR)
+        self.assertEqual(logging.getLogger("pymdownx").level, logging.ERROR)
+        self.assertEqual(logging.getLogger("MARKDOWN").level, logging.ERROR)
+
+    def test_unknown_level_falls_back_to_warning(self):
+        logging_setup.set_third_party_loglevel("bogus")
+        self.assertEqual(logging.getLogger("markdown").level, logging.WARNING)
+
+
+class GlibHandlerTest(unittest.TestCase):
+    """Handler registration/removal in _setup_glib_logging."""
+
+    def test_reregistration_removes_only_owned_domains(self):
+        calls = []
+        handlers = []
+
+        class FakeFlags:
+            LEVEL_ERROR = 1
+            LEVEL_WARNING = 2
+            LEVEL_CRITICAL = 4
+            LEVEL_MASK = 0xFFFF
+
+        class FakeGLib:
+            LogLevelFlags = FakeFlags
+
+            @staticmethod
+            def log_set_handler(domain, level, func, data):
+                calls.append(("set", domain))
+                handlers.append((domain, len(calls)))
+                return len(calls)
+
+            @staticmethod
+            def log_set_default_handler(func, data):
+                calls.append(("set_default", None))
+                handlers.append((None, len(calls)))
+                return len(calls)
+
+            @staticmethod
+            def log_remove_handler(domain, hid):
+                calls.append(("remove", domain, hid))
+
+            @staticmethod
+            def log_remove_default_handler(hid):
+                calls.append(("remove_default", hid))
+
+        saved_glib = logging_setup.GLib
+        saved_level = logging_setup._glib_log_level
+        saved_ids = list(logging_setup._glib_handler_id)
+        logging_setup.GLib = FakeGLib
+        logging_setup._glib_log_level = None
+        logging_setup._glib_handler_id = []
+        try:
+            logging_setup._setup_glib_logging("warning")
+            logging_setup._setup_glib_logging("error")
+            for call in calls:
+                if call[0] == "remove":
+                    self.assertIn((call[1], call[2]), handlers)
+                elif call[0] == "remove_default":
+                    self.assertIn((None, call[1]), handlers)
+        finally:
+            logging_setup.GLib = saved_glib
+            logging_setup._glib_log_level = saved_level
+            logging_setup._glib_handler_id = saved_ids
+
+
+class RotationTest(unittest.TestCase):
+    def test_rotating_handler_creates_backups(self):
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        path = os.path.join(tmp, "stderr.log")
+        saved = os.dup(2)
+        handler = None
+        try:
+            handler = logging_setup._StderrRotatingFileHandler(
+                path, maxBytes=200, backupCount=3
+            )
+            for i in range(50):
+                handler.emit(
+                    logging.LogRecord(
+                        "test", logging.WARNING, "", 0, "x" * 50, (), None
+                    )
+                )
+            handler.flush()
+            self.assertTrue(os.path.exists(path))
+            self.assertTrue(os.path.exists(path + ".1"))
+        finally:
+            if handler is not None:
+                handler.close()
+            os.dup2(saved, 2)
+            os.close(saved)
+
+
+class FDRedirectTest(unittest.TestCase):
+    def test_stderr_handler_redirects_fd2_to_log_file(self):
+        if not os.path.islink("/proc/self/fd/2"):
+            self.skipTest("requires /proc")
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        path = os.path.join(tmp, "stderr.log")
+        saved = os.dup(2)
+        handler = None
+        try:
+            handler = logging_setup._StderrRotatingFileHandler(
+                path, maxBytes=1_000_000, backupCount=0
+            )
+            target = os.readlink("/proc/self/fd/2")
+            self.assertEqual(os.path.realpath(target), os.path.realpath(path))
+        finally:
+            if handler is not None:
+                handler.close()
+            os.dup2(saved, 2)
+            os.close(saved)
+
+
+if __name__ == "__main__":
+    unittest.main()

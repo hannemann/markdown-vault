@@ -441,10 +441,12 @@ class PreferencesDialog(Adw.PreferencesDialog):
         if idx < len(levels):
             self._settings["loglevel"] = levels[idx]
             self._persist()
-            logging.getLogger().setLevel(_LOGLEVEL_MAP[levels[idx]])
+            level = _LOGLEVEL_MAP[levels[idx]]
+            logging.getLogger().setLevel(level)
+            logging.getLogger("markdown-vault").setLevel(level)
 
     def _on_tp_loglevel_changed(self, row: Adw.ComboRow, _pspec) -> None:
-        from .main import set_third_party_loglevel
+        from .logging_setup import set_third_party_loglevel
         levels = list(_LOGLEVELS.keys())
         idx = row.get_selected()
         if idx < len(levels):

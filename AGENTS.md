@@ -162,7 +162,13 @@ Hard rules:
   (the app runs the installed copy, not the source tree).
 - `./scripts/app.sh restart` is idempotent and exits 0 on success — a "not
   running" stop is normal, not an error, so do not retry with other commands.
-- App log: `/tmp/markdown-vault.log`.
+- App logs: `~/.local/state/markdown-vault/markdown-vault.log` (level ≤ INFO)
+  and `~/.local/state/markdown-vault/markdown-vault.stderr.log` (level ≥ WARNING
+  plus native/child stderr via fd redirect). The app rotates them at 1 MB, 3
+  backups. Logging is set up by the app itself as the first action in
+  `main.py`, so it works identically regardless of the launcher (app.sh,
+  gtk-launch, terminal). On a terminal, messages ≤ INFO additionally appear on
+  stdout and ≥ WARNING on stderr.
 - NEVER use `killall python3` — that also kills firewalld and other system
   Python processes.
 

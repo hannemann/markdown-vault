@@ -5,14 +5,16 @@
 #
 # The app is a GTK GUI that never exits on its own. Starting it in the
 # foreground would block the caller forever, so `start` fully detaches the
-# process (no controlling TTY, stdout/stderr to a log). Every subcommand
-# returns immediately and exits 0 on success, so callers do not hang and do
-# not mistake "nothing to kill" for a failure.
+# process (no controlling TTY). Logging is handled entirely by the app itself
+# (log files under ~/.local/state/markdown-vault/ + fd redirect on headless
+# launches), so app.sh does not need to do anything for logging. Every
+# subcommand returns immediately and exits 0 on success, so callers do not
+# hang and do not mistake "nothing to kill" for a failure.
 set -u
 
 PATTERN="markdown_vault.main"
 BIN="$HOME/.local/bin/markdown-vault"
-LOG="/tmp/markdown-vault.log"
+STDERR_LOG="$HOME/.local/state/markdown-vault/markdown-vault.stderr.log"
 
 stop() {
     pkill -f "$PATTERN" 2>/dev/null || true
@@ -25,13 +27,16 @@ start() {
         echo "FAILED: $BIN not found — run 'make install' first." >&2
         exit 1
     fi
-    setsid "$BIN" >"$LOG" 2>&1 </dev/null &   # fully detached: no TTY, no blocking
+    # Detached, no blocking. /dev/null only guards against the caller's pipes
+    # being inherited; the app redirects fd 1 / fd 2 to its rotated log files
+    # itself on headless launches.
+    setsid "$BIN" >/dev/null 2>&1 </dev/null &
     sleep 2
     if pgrep -f "$PATTERN" >/dev/null; then
-        echo "started (log: $LOG)"
+        echo "started"
     else
-        echo "FAILED to start; last log lines:" >&2
-        tail -n 5 "$LOG" >&2 2>/dev/null || true
+        echo "FAILED to start; last stderr log lines:" >&2
+        tail -n 5 "$STDERR_LOG" >&2 2>/dev/null || true
         exit 1
     fi
 }
