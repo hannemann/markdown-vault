@@ -4,6 +4,7 @@ import shutil
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 import markdown_vault.config as _cfg
 from markdown_vault.backlink_index import BacklinkIndex, scan_vaults
@@ -80,6 +81,7 @@ class TestApplyBacklinkBuild(unittest.TestCase):
             def __init__(self):
                 self._backlink_index = BacklinkIndex()
                 self._build_generation = 1
+                self._rebuild_timeout = None
                 self._dump_debug = unittest.mock.Mock()
                 self._sidebar = unittest.mock.Mock()
                 self._schedule_backlink_build = unittest.mock.Mock()
@@ -88,6 +90,8 @@ class TestApplyBacklinkBuild(unittest.TestCase):
                 self._vault_tree._vaults = []
 
             _apply_backlink_build = aw.MainWindow._apply_backlink_build
+            _coalesce_backlink_rebuild = aw.MainWindow._coalesce_backlink_rebuild
+            _do_backlink_rebuild = aw.MainWindow._do_backlink_rebuild
 
         win = FakeWindow()
         for key, value in overrides.items():
@@ -119,17 +123,52 @@ class TestApplyBacklinkBuild(unittest.TestCase):
         win._schedule_backlink_build.assert_not_called()
 
     def test_apply_backlink_build_reschedules_on_mutation(self):
-        """R16.1: incremental mutations during the build window must not be
-        lost — discard the stale snapshot and re-scan the full vault list."""
-        win = self._make_fake_window()
+        """R16.1/R17.1: incremental mutations during the build window must not
+        be lost — the stale snapshot is discarded and a fresh rescan is
+        coalesced (never a synchronous reschedule, which could livelock)."""
+        import unittest.mock
+
+        win = self._make_fake_window(
+            _coalesce_backlink_rebuild=unittest.mock.Mock(),
+        )
         win._backlink_index._mutation_seq = 6
         result = win._apply_backlink_build(
             1, 5, {"k": {"s"}}, {"s": {"k"}},
         )
         self.assertFalse(result)
         self.assertEqual(win._backlink_index._target_to_sources, {})
-        win._schedule_backlink_build.assert_called_once_with(win._vault_tree._vaults)
+        win._coalesce_backlink_rebuild.assert_called_once_with()
+        win._schedule_backlink_build.assert_not_called()
         win._dump_debug.assert_not_called()
+
+    def test_coalesce_backlink_rebuild_debounces(self):
+        """R17.1: consecutive coalesce calls while a rebuild is already
+        pending must not stack further timers (livelock protection)."""
+        import markdown_vault.app_window as aw
+
+        win = self._make_fake_window()
+        with patch("markdown_vault.app_window.GLib") as glib:
+            win._coalesce_backlink_rebuild()
+            win._coalesce_backlink_rebuild()
+        self.assertEqual(glib.timeout_add.call_count, 1)
+        self.assertIsNotNone(win._rebuild_timeout)
+        self.assertEqual(
+            glib.timeout_add.call_args.args[0],
+            aw._BACKLINK_REBUILD_COOLDOWN_MS,
+        )
+
+    def test_do_backlink_rebuild_reschedules_from_config(self):
+        """R17.1: the debounced rebuild clears the pending timer and schedules
+        a full rescan from the config SSOT (not private vault_tree state)."""
+        win = self._make_fake_window()
+        win._rebuild_timeout = 123
+        vaults = [{"name": "A", "path": "/A"}]
+        with patch("markdown_vault.app_window.config.load_vaults", return_value=vaults):
+            with patch("markdown_vault.app_window.GLib"):
+                result = win._do_backlink_rebuild()
+        self.assertFalse(result)
+        self.assertIsNone(win._rebuild_timeout)
+        win._schedule_backlink_build.assert_called_once_with(vaults)
 
     def test_apply_backlink_build_refreshes_sidebar_backlinks(self):
         """R16.3: applying the build must refresh sidebar backlinks for the
@@ -142,8 +181,9 @@ class TestApplyBacklinkBuild(unittest.TestCase):
         win._sidebar.refresh_backlinks.assert_called_once_with("/vault/file.md")
 
     def test_on_vault_added_builds_full_vault_list(self):
-        """R16.2: adding a vault must rebuild the full vault list, never a
-        single vault, so one vault can never replace the whole index."""
+        """R16.2: adding a vault must rebuild the full vault list from the
+        config SSOT, never a single vault, so one vault can never replace the
+        whole index."""
         import unittest.mock
         import markdown_vault.app_window as aw
 
@@ -152,9 +192,9 @@ class TestApplyBacklinkBuild(unittest.TestCase):
             {"name": "B", "path": "/B"},
         ]
         win = self._make_fake_window()
-        win._vault_tree._vaults = vaults
         win._switch_vault = unittest.mock.Mock()
-        aw.MainWindow._on_vault_added(win, None, "/B")
+        with patch("markdown_vault.app_window.config.load_vaults", return_value=vaults):
+            aw.MainWindow._on_vault_added(win, None, "/B")
         win._schedule_backlink_build.assert_called_once_with(vaults)
         win._file_index.build.assert_called_once_with(vaults)
 

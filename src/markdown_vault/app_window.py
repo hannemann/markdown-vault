@@ -93,6 +93,10 @@ def _make_theme_handler(scheme: int):
 
 _ZOOM_STEP = 0.1
 
+# R17.1: debounce window for coalescing backlink-build reschedules, so a
+# sustained burst of incremental edits cannot livelock the async build.
+_BACKLINK_REBUILD_COOLDOWN_MS = 500
+
 
 class MainWindow(Adw.ApplicationWindow):
     """Top-level application window."""
@@ -182,6 +186,8 @@ class MainWindow(Adw.ApplicationWindow):
         # R16.2: monotonic generation for the async backlink build — a worker
         # result from a superseded schedule is discarded on apply.
         self._build_generation = 0
+        # R17.1: debounce timer for coalesced backlink-build reschedules.
+        self._rebuild_timeout = None
 
         self._sidebar = Sidebar(
             backlink_index=self._backlink_index,
@@ -784,8 +790,9 @@ class MainWindow(Adw.ApplicationWindow):
             return False
         if self._backlink_index.mutation_seq != start_mutation_seq:
             # Incremental edits landed during the scan; a wholesale swap
-            # would discard them.  Re-scan the full vault list instead.
-            self._schedule_backlink_build(self._vault_tree._vaults)
+            # would discard them.  Coalesce a fresh rescan instead (R17.1:
+            # debounced, so a sustained edit burst cannot livelock the build).
+            self._coalesce_backlink_rebuild()
             return False
         self._backlink_index.set_index(target_to_sources, source_to_targets)
         file_path, _text = self._get_active_tab_info()
@@ -793,6 +800,26 @@ class MainWindow(Adw.ApplicationWindow):
             self._sidebar.refresh_backlinks(file_path)
         self._dump_debug(["backlink_index"])
         return False  # remove idle handler
+
+    def _coalesce_backlink_rebuild(self) -> None:
+        """Schedule a fresh full rescan, coalescing rapid reschedules (R17.1).
+
+        While a rebuild timer is already pending, further calls are ignored so
+        consecutive edits collapse into a single rescan after the cooldown.
+        """
+        if self._rebuild_timeout is not None:
+            return
+        self._rebuild_timeout = GLib.timeout_add(
+            _BACKLINK_REBUILD_COOLDOWN_MS,
+            self._do_backlink_rebuild,
+        )
+
+    def _do_backlink_rebuild(self) -> bool:
+        """Debounced rescan trigger (idle timeout callback)."""
+        self._rebuild_timeout = None
+        # Rebuild from the config SSOT, not private vault-tree state.
+        self._schedule_backlink_build(config.load_vaults())
+        return False  # remove timer source
 
     # ── Vault switching ──────────────────────────────────────────
 
@@ -928,12 +955,13 @@ class MainWindow(Adw.ApplicationWindow):
 
     def _on_vault_added(self, _tree, vault_path: str) -> None:
         """Handle a new vault being added."""
-        if any(v["path"] == vault_path for v in self._vault_tree._vaults):
-            # R16.2: rebuild from the full vault list, never a single vault —
-            # a partial build racing the startup build would replace the
-            # whole index (same applies to the root-only FileIndex).
-            self._schedule_backlink_build(self._vault_tree._vaults)
-            self._file_index.build(self._vault_tree._vaults)
+        # R16.2/R17.1: rebuild from the config SSOT (full list), never a
+        # single vault — a partial build racing the startup build would
+        # replace the whole index (same applies to the root-only FileIndex).
+        vaults = config.load_vaults()
+        if any(v["path"] == vault_path for v in vaults):
+            self._schedule_backlink_build(vaults)
+            self._file_index.build(vaults)
         self._dump_debug(["file_index", "vault_tree"])
         self._switch_vault(vault_path)
 
