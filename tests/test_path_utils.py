@@ -43,14 +43,26 @@ class TestVaultCache(_TempConfigMixin, unittest.TestCase):
         self.assertEqual(len(result), 1)
         self.assertEqual(result[0]["name"], "Notes")
 
-    def test_cache_hit_returns_same_list(self):
+    def test_cache_hit_returns_equal_list(self):
         _cfg.CONFIG_FILE.write_text(
             "vaults:\n  - name: Notes\n    path: /tmp/notes\n",
             encoding="utf-8",
         )
         first = _cfg.load_vaults()
         second = _cfg.load_vaults()
-        self.assertIs(first, second)
+        self.assertEqual(first, second)
+        self.assertIsNot(first, second)
+
+    def test_mutating_returned_list_does_not_pollute_cache(self):
+        """load_vaults returns a copy, so callers cannot alias the cache."""
+        _cfg.CONFIG_FILE.write_text(
+            "vaults:\n  - name: A\n    path: /tmp/a\n",
+            encoding="utf-8",
+        )
+        first = _cfg.load_vaults()
+        first.append({"name": "Sneaky", "path": "/tmp/sneaky"})
+        second = _cfg.load_vaults()
+        self.assertEqual(len(second), 1)
 
     def test_cache_invalidated_after_save_vaults(self):
         _cfg.CONFIG_FILE.write_text(

@@ -656,6 +656,8 @@ class Preview(Gtk.ScrolledWindow):
         If the tab is inactive, content is buffered and rendered later
         when ``activate()`` is called.
         """
+        if self._web_view is None:
+            return
         if not self._active:
             self._pending_text = text
             self._pending_base_dir = base_dir
@@ -720,6 +722,8 @@ class Preview(Gtk.ScrolledWindow):
         Extracts the heading slug from the source *text* and uses
         JavaScript to scroll the matching element into view.
         """
+        if self._web_view is None:
+            return
         # Find the nearest heading at or before the target line.
         # Track seen slugs to match toc extension's duplicate handling.
         seen: dict[str, int] = {}
@@ -771,6 +775,8 @@ class Preview(Gtk.ScrolledWindow):
 
     def update_theme(self) -> None:
         """Update the WebView background and CSS variables to match the current GTK theme."""
+        if self._web_view is None:
+            return
         colors = self._get_theme_colors()
         bg = Gdk.RGBA()
         bg.parse(colors["bg_color"])

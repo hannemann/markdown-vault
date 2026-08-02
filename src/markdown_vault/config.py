@@ -115,12 +115,13 @@ def load_vaults() -> list[dict[str, str]]:
     The result is cached in memory and only re-read from disk when
     :func:`_invalidate_cache` has been called (triggered by any write
     operation: ``save_vaults``, ``add_vault``, ``remove_vault``,
-    ``save_settings``).
+    ``save_settings``).  A fresh list is returned on every call so
+    callers cannot alias or mutate the cached object.
     """
     global _vaults_cache
     if _vaults_cache is None:
         _vaults_cache = _read_vaults_from_disk()
-    return _vaults_cache
+    return list(_vaults_cache)
 
 
 def save_vaults(vaults: list[dict[str, str]]) -> None:

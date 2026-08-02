@@ -706,5 +706,26 @@ class TestPreviewLazyLoading(unittest.TestCase):
         self.assertTrue(preview._loaded)
 
 
+class TestPreviewCleanupGuard(unittest.TestCase):
+    """R10.2: update/scroll/theme paths are no-ops after cleanup()"""
+
+    def test_update_from_text_is_noop_after_cleanup(self):
+        preview = Preview()
+        preview.update_from_text("# Hello", "")
+        preview.cleanup()
+        self.assertIsNone(preview._web_view)
+        preview.update_from_text("# World", "")
+
+    def test_scroll_to_line_is_noop_after_cleanup(self):
+        preview = Preview()
+        preview.cleanup()
+        preview.scroll_to_line(0, "# Heading")
+
+    def test_update_theme_is_noop_after_cleanup(self):
+        preview = Preview()
+        preview.cleanup()
+        preview.update_theme()
+
+
 if __name__ == "__main__":
     unittest.main()
