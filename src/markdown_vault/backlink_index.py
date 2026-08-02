@@ -45,22 +45,27 @@ class BacklinkIndex:
     # ------------------------------------------------------------------
 
     def build(self, vaults: list[dict[str, str]]) -> None:
-        """Scan all vaults and build the index from scratch."""
-        self._target_to_sources.clear()
-        self._source_to_targets.clear()
-        for v in vaults:
-            vp = v["path"]
-            for root, _dirs, files in os.walk(vp):
-                for fname in files:
-                    if not fname.endswith(".md"):
-                        continue
-                    fpath = str(Path(root) / fname)
-                    try:
-                        text = Path(fpath).read_text(encoding="utf-8")
-                    except (OSError, UnicodeDecodeError):
-                        logger.debug("Cannot read %s for indexing", fpath, exc_info=True)
-                        continue
-                    self._index_file(fpath, text)
+        """Scan all vaults and build the index from scratch.
+
+        Delegates to the pure :func:`scan_vaults` and swaps the result
+        in atomically.  For a large vault, callers should run the scan
+        off the main thread (see ``scan_vaults``) and apply it via
+        :meth:`set_index` on the main thread.
+        """
+        self.set_index(*scan_vaults(vaults))
+
+    def set_index(
+        self,
+        target_to_sources: dict[str, set[str]],
+        source_to_targets: dict[str, set[str]],
+    ) -> None:
+        """Replace both maps atomically (called on the main thread).
+
+        The maps are taken over by reference — they must not be mutated
+        afterwards by the worker that produced them.
+        """
+        self._target_to_sources = target_to_sources
+        self._source_to_targets = source_to_targets
 
     # ------------------------------------------------------------------
     # Incremental updates
@@ -70,7 +75,9 @@ class BacklinkIndex:
         """Re-index *file_path* after its content changed."""
         path_str = str(file_path)
         self._remove_source(path_str)
-        self._index_file(path_str, text)
+        _index_file_into(
+            self._target_to_sources, self._source_to_targets, path_str, text,
+        )
 
     def remove_file(self, file_path: str | Path) -> None:
         """Remove *file_path* from the index entirely."""
@@ -131,7 +138,7 @@ class BacklinkIndex:
 
         def repl(m):
             info = wikilink_info_from_match(m)
-            if self._link_key(info, source_file) == key:
+            if _link_key(info, source_file) == key:
                 return ""
             return m.group(0)
 
@@ -191,7 +198,7 @@ class BacklinkIndex:
 
         def repl(m):
             info = wikilink_info_from_match(m)
-            if self._link_key(info, source_file) != old_key:
+            if _link_key(info, source_file) != old_key:
                 return m.group(0)
             alias = f"|{info.alias}" if info.alias else ""
             source_vault = find_vault_name_for_path(source_file)
@@ -243,37 +250,6 @@ class BacklinkIndex:
     # Internals
     # ------------------------------------------------------------------
 
-    def _index_file(self, path_str: str, text: str) -> None:
-        """Parse wikilinks in *text* and add them to the index.
-
-        Every target is fully vault-qualified: a link without an explicit
-        ``Vault>`` prefix resolves against the source file's own vault.
-        """
-        targets: set[str] = set()
-        for info in parse_wikilinks(text):
-            key = self._link_key(info, path_str)
-            if not key:
-                continue
-            targets.add(key)
-            self._target_to_sources.setdefault(key, set()).add(path_str)
-        if targets:
-            self._source_to_targets[path_str] = targets
-
-    def _link_key(self, info, source_file: str) -> str | None:
-        """Return the canonical ``vault:`` key for a parsed link.
-
-        Links without an explicit vault prefix are qualified with the
-        source file's vault.  ``None`` means the link cannot be resolved
-        (source file outside any vault) — never an empty vault.
-        """
-        if info.vault:
-            return wikilink_url(info.vault, info.stem)
-        vault = find_vault_name_for_path(source_file)
-        if not vault:
-            logger.error("Source file not in any vault: %s", source_file)
-            return None
-        return wikilink_url(vault, info.stem)
-
     def _file_key(self, file_path: str) -> str | None:
         """Return the canonical ``vault:`` key a file is targeted by."""
         parts = self._file_key_parts(file_path)
@@ -301,3 +277,74 @@ class BacklinkIndex:
                 sources.discard(path_str)
                 if not sources:
                     del self._target_to_sources[key]
+
+
+# ----------------------------------------------------------------------
+# Pure functions (no instance state, no GTK/GLib) — safe to run in a
+# background thread.  Used by BacklinkIndex.build() and by the async
+# scan scheduled from the app window (R5.3).
+# ----------------------------------------------------------------------
+
+def _link_key(info, source_file: str) -> str | None:
+    """Return the canonical ``vault:`` key for a parsed link.
+
+    Links without an explicit vault prefix are qualified with the
+    source file's vault.  ``None`` means the link cannot be resolved
+    (source file outside any vault) — never an empty vault.
+    """
+    if info.vault:
+        return wikilink_url(info.vault, info.stem)
+    vault = find_vault_name_for_path(source_file)
+    if not vault:
+        logger.error("Source file not in any vault: %s", source_file)
+        return None
+    return wikilink_url(vault, info.stem)
+
+
+def _index_file_into(
+    target_to_sources: dict[str, set[str]],
+    source_to_targets: dict[str, set[str]],
+    path_str: str,
+    text: str,
+) -> None:
+    """Parse wikilinks in *text* and add them to the given maps.
+
+    Every target is fully vault-qualified: a link without an explicit
+    ``Vault>`` prefix resolves against the source file's own vault.
+    """
+    targets: set[str] = set()
+    for info in parse_wikilinks(text):
+        key = _link_key(info, path_str)
+        if not key:
+            continue
+        targets.add(key)
+        target_to_sources.setdefault(key, set()).add(path_str)
+    if targets:
+        source_to_targets[path_str] = targets
+
+
+def scan_vaults(
+    vaults: list[dict[str, str]],
+) -> tuple[dict[str, set[str]], dict[str, set[str]]]:
+    """Scan all vaults and return ``(target_to_sources, source_to_targets)``.
+
+    Pure function — no instance state, no GTK/GLib — safe to run in a
+    background thread.  Returns freshly built maps so callers can swap
+    them in atomically on the main thread.
+    """
+    target_to_sources: dict[str, set[str]] = {}
+    source_to_targets: dict[str, set[str]] = {}
+    for v in vaults:
+        vp = v["path"]
+        for root, _dirs, files in os.walk(vp):
+            for fname in files:
+                if not fname.endswith(".md"):
+                    continue
+                fpath = str(Path(root) / fname)
+                try:
+                    text = Path(fpath).read_text(encoding="utf-8")
+                except (OSError, UnicodeDecodeError):
+                    logger.debug("Cannot read %s for indexing", fpath, exc_info=True)
+                    continue
+                _index_file_into(target_to_sources, source_to_targets, fpath, text)
+    return target_to_sources, source_to_targets

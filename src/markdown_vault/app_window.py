@@ -24,6 +24,7 @@ from gi.repository import Gtk, Adw, Gio, GLib, Gdk
 import traceback
 import sys
 import faulthandler
+import threading
 
 from . import logging_setup
 from .vault_tree import VaultTree
@@ -52,7 +53,7 @@ from . import history
 from . import path_utils
 from . import validation
 from . import vault_monitor
-from .backlink_index import BacklinkIndex
+from .backlink_index import BacklinkIndex, scan_vaults
 from .event_router import FileEventDispatcher
 from .file_index import FileIndex
 
@@ -723,9 +724,40 @@ class MainWindow(Adw.ApplicationWindow):
         self._vault_tree.set_vaults(vaults)
         self._vault_monitor.set_vaults(paths)
         self._sidebar.set_vault_paths(paths)
-        self._backlink_index.build(vaults)
+        self._schedule_backlink_build(vaults)
         self._file_index.build(vaults)
-        self._dump_debug(["file_index", "backlink_index", "vault_tree"])
+        self._dump_debug(["file_index", "vault_tree"])
+
+    def _schedule_backlink_build(self, vaults: list[dict[str, str]]) -> None:
+        """Scan vaults for backlinks off the main thread (R5.3).
+
+        The disk scan (walk every vault, read every ``.md``) runs in a
+        daemon thread so large vaults do not freeze the UI at startup or
+        on vault add.  The result is swapped into the index atomically
+        on the main thread via ``GLib.idle_add``.
+        """
+
+        def worker() -> None:
+            try:
+                target_to_sources, source_to_targets = scan_vaults(vaults)
+            except Exception:
+                logger.error("Backlink scan failed", exc_info=True)
+                return
+            GLib.idle_add(
+                self._apply_backlink_build, target_to_sources, source_to_targets,
+            )
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _apply_backlink_build(
+        self,
+        target_to_sources: dict[str, set[str]],
+        source_to_targets: dict[str, set[str]],
+    ) -> bool:
+        """Swap the scanned index in on the main thread (idle callback)."""
+        self._backlink_index.set_index(target_to_sources, source_to_targets)
+        self._dump_debug(["backlink_index"])
+        return False  # remove idle handler
 
     # ── Vault switching ──────────────────────────────────────────
 
@@ -863,9 +895,9 @@ class MainWindow(Adw.ApplicationWindow):
         """Handle a new vault being added."""
         vault_entry = next((v for v in self._vault_tree._vaults if v["path"] == vault_path), None)
         if vault_entry:
-            self._backlink_index.build([vault_entry])
+            self._schedule_backlink_build([vault_entry])
             self._file_index.build([vault_entry])
-        self._dump_debug(["file_index", "backlink_index", "vault_tree"])
+        self._dump_debug(["file_index", "vault_tree"])
         self._switch_vault(vault_path)
 
     def _on_tab_changed(self, _tab_bar, file_path: str) -> None:

@@ -6,7 +6,91 @@ import unittest
 from pathlib import Path
 
 import markdown_vault.config as _cfg
-from markdown_vault.backlink_index import BacklinkIndex
+from markdown_vault.backlink_index import BacklinkIndex, scan_vaults
+
+
+class TestScanVaults(unittest.TestCase):
+    """Tests for the pure scan_vaults() function (R5.3 off-thread build)."""
+
+    def setUp(self):
+        self._tmp = tempfile.mkdtemp()
+        self._vault = Path(self._tmp) / "vault"
+        self._vault.mkdir()
+        _cfg._vaults_cache = [{"name": "vault", "path": str(self._vault)}]
+
+    def tearDown(self):
+        _cfg._vaults_cache = None
+        shutil.rmtree(self._tmp, ignore_errors=True)
+
+    def test_scan_vaults_returns_backlink_maps(self):
+        (self._vault / "Page.md").write_text("# Page\n")
+        (self._vault / "Note.md").write_text("See [[Page]].\n")
+        target_to_sources, source_to_targets = scan_vaults(
+            [{"name": "vault", "path": str(self._vault)}]
+        )
+        self.assertIn(
+            str(self._vault / "Note.md"),
+            next(iter(target_to_sources.values())),
+        )
+        self.assertEqual(
+            len(source_to_targets[str(self._vault / "Note.md")]), 1,
+        )
+
+    def test_scan_vaults_returns_fresh_dicts(self):
+        t1, s1 = scan_vaults([{"name": "vault", "path": str(self._vault)}])
+        t2, s2 = scan_vaults([{"name": "vault", "path": str(self._vault)}])
+        self.assertIsNot(t1, t2)
+        self.assertIsNot(s1, s2)
+
+    def test_scan_vaults_empty_vault(self):
+        target_to_sources, source_to_targets = scan_vaults(
+            [{"name": "vault", "path": str(self._vault)}]
+        )
+        self.assertEqual(target_to_sources, {})
+        self.assertEqual(source_to_targets, {})
+
+    def test_build_matches_scan_vaults(self):
+        (self._vault / "Page.md").write_text("# Page\n")
+        (self._vault / "Note.md").write_text("See [[Page]].\n")
+        target_to_sources, source_to_targets = scan_vaults(
+            [{"name": "vault", "path": str(self._vault)}]
+        )
+        idx = BacklinkIndex()
+        idx.build([{"name": "vault", "path": str(self._vault)}])
+        self.assertEqual(idx._target_to_sources, target_to_sources)
+        self.assertEqual(idx._source_to_targets, source_to_targets)
+
+    def test_set_index_swaps_maps(self):
+        idx = BacklinkIndex()
+        idx.set_index({}, {})
+        t, s = scan_vaults([{"name": "vault", "path": str(self._vault)}])
+        idx.set_index(t, s)
+        self.assertIs(idx._target_to_sources, t)
+        self.assertIs(idx._source_to_targets, s)
+
+
+class TestApplyBacklinkBuild(unittest.TestCase):
+    """R5.3: main-thread swap callback for the async backlink scan."""
+
+    def test_apply_backlink_build_swaps_index(self):
+        import unittest.mock
+        import markdown_vault.app_window as aw
+
+        class FakeWindow:
+            def __init__(self):
+                self._backlink_index = BacklinkIndex()
+                self._dump_debug = unittest.mock.Mock()
+
+            _apply_backlink_build = aw.MainWindow._apply_backlink_build
+
+        win = FakeWindow()
+        target_to_sources = {"vault:VaultA?path=Page": {"/tmp/VaultA/Note.md"}}
+        source_to_targets = {"/tmp/VaultA/Note.md": {"vault:VaultA?path=Page"}}
+        result = win._apply_backlink_build(target_to_sources, source_to_targets)
+        self.assertFalse(result)
+        self.assertIs(win._backlink_index._target_to_sources, target_to_sources)
+        self.assertIs(win._backlink_index._source_to_targets, source_to_targets)
+        win._dump_debug.assert_called_once_with(["backlink_index"])
 
 
 class TestBacklinkIndexBuild(unittest.TestCase):
