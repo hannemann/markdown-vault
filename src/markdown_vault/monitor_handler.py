@@ -20,6 +20,7 @@ gi.require_version("Adw", "1")
 from gi.repository import GLib
 
 from .event_router import FileEventDispatcher
+from .vault_monitor import _is_valid_md_file
 
 logger = logging.getLogger(__name__)
 
@@ -134,7 +135,9 @@ class MonitorHandler:
         Distinguishes three cases:
 
         1. **Genuine rename** — *other_path* is a tracked file (open tab or
-           in the file index). Update index paths and tree (existing behaviour).
+           in the file index) or both paths are valid ``.md`` files under the
+           vault (R14.3: subdirectory files are not in the root-only
+           FileIndex). Update index paths and tree and rewrite backlinks.
 
         2. **Atomic save** — *other_path* is an untracked temp file, but
            *file_path* is tracked (open tab or in the index). Treat as a
@@ -153,7 +156,18 @@ class MonitorHandler:
                 or self._file_index.has_path(file_path)
             )
 
-            if source_tracked:
+            # R14.3: FileIndex is root-only, so a subdirectory .md that is
+            # not in an open tab is never "tracked" via has_path. A rename
+            # whose source and destination are both valid .md files under
+            # this vault is a genuine rename regardless of index tracking —
+            # inbound backlinks must be rewritten, not left dangling.
+            genuine_md_rename = (
+                not source_tracked
+                and self._is_vault_md(other_path, vault_path)
+                and self._is_vault_md(file_path, vault_path)
+            )
+
+            if source_tracked or genuine_md_rename:
                 self._handle_genuine_rename(vault_path, file_path, other_path)
             elif dest_tracked:
                 self._notify_external_change(vault_path, file_path)
@@ -177,6 +191,20 @@ class MonitorHandler:
         GLib.idle_add(_update)
 
     # ── Helpers ──────────────────────────────────────────────────────
+
+    @staticmethod
+    def _is_vault_md(path: str, vault_path: str) -> bool:
+        """Return ``True`` if *path* is a valid ``.md`` file under *vault_path*.
+
+        On-disk classification (no index lookup) so subdirectory files —
+        which the root-only FileIndex does not track — are still
+        recognized as genuine renames (R14.3).
+        """
+        return (
+            path is not None
+            and path.startswith(vault_path + os.sep)
+            and _is_valid_md_file(path)
+        )
 
     @staticmethod
     def _purge_index_prefix(index, prefix: str) -> None:

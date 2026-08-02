@@ -387,6 +387,24 @@ class TestMonitorHandlerFileMoved(unittest.TestCase):
             self.mock_file_index.add_file.assert_called_once_with(str(p), vault_path="/vault")
             self.mock_backlink.update_file.assert_called_once_with(str(p), "# New")
 
+    def test_subdir_md_to_md_rename_rewrites_wikilinks_when_untracked(self):
+        """R14.3: an external rename of a subdirectory .md that is not in an
+        open tab (and not in the root-only FileIndex) must still rewrite
+        inbound backlinks — not be treated as a brand-new file."""
+        with patch("markdown_vault.monitor_handler.GLib", _GLibMock):
+            h = self._make()
+            self.mock_tab_bar.get_all_paths.return_value = []
+            self.mock_file_index.has_path.return_value = False
+            h.on_file_moved("/vault", "/vault/sub/New.md", "/vault/sub/Old.md")
+            self.mock_backlink.rename_wikilinks.assert_called_once_with(
+                "/vault/sub/Old.md", "/vault/sub/New.md",
+            )
+            self.mock_backlink.rename_file.assert_called_once_with(
+                "/vault/sub/Old.md", "/vault/sub/New.md",
+            )
+            self.mock_file_index.remove_file.assert_not_called()
+            self.mock_dispatcher.on_content_changed.assert_not_called()
+
     # ── Atomic-save tests ────────────────────────────────────────────
 
     def test_atomic_save_over_open_file_triggers_external_change(self):
