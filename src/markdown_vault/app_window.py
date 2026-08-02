@@ -1372,8 +1372,8 @@ class MainWindow(Adw.ApplicationWindow):
         tab = self._tab_bar.get_current_tab()
         if not tab:
             return
+        self._vault_monitor.skip_next_event(tab.editor.file_path)
         if tab.editor.save():
-            self._vault_monitor.skip_next_event(tab.editor.file_path)
             self._tab_bar.clear_tab_error(tab.file_path)
             self._tab_bar.hide_error_banner(tab.file_path)
         else:
@@ -1455,10 +1455,8 @@ class MainWindow(Adw.ApplicationWindow):
 
     def _autosave_save_tab(self, tab) -> bool:
         """Save a single tab and notify the vault monitor. Returns True on success."""
-        ok = tab.editor.save()
-        if ok:
-            self._vault_monitor.skip_next_event(tab.editor.file_path)
-        return ok
+        self._vault_monitor.skip_next_event(tab.editor.file_path)
+        return tab.editor.save()
 
     def _autosave_on_failed(self, file_path: str, msg: str) -> None:
         """Handle autosave failure — show error banner and dialog."""
