@@ -179,6 +179,9 @@ class MainWindow(Adw.ApplicationWindow):
 
         self._backlink_index = BacklinkIndex()
         self._file_index = FileIndex()
+        # R16.2: monotonic generation for the async backlink build — a worker
+        # result from a superseded schedule is discarded on apply.
+        self._build_generation = 0
 
         self._sidebar = Sidebar(
             backlink_index=self._backlink_index,
@@ -735,7 +738,17 @@ class MainWindow(Adw.ApplicationWindow):
         daemon thread so large vaults do not freeze the UI at startup or
         on vault add.  The result is swapped into the index atomically
         on the main thread via ``GLib.idle_add``.
+
+        R16: a monotonic build generation is captured here and re-checked
+        in :meth:`_apply_backlink_build`, so a worker result from a
+        superseded schedule (e.g. a vault add racing the startup build) is
+        discarded instead of replacing the index.  The mutation sequence of
+        the live index is captured too: if incremental edits land during the
+        scan window, the snapshot is stale and a fresh scan is rescheduled.
         """
+        self._build_generation += 1
+        generation = self._build_generation
+        start_mutation_seq = self._backlink_index.mutation_seq
 
         def worker() -> None:
             try:
@@ -744,18 +757,40 @@ class MainWindow(Adw.ApplicationWindow):
                 logger.error("Backlink scan failed", exc_info=True)
                 return
             GLib.idle_add(
-                self._apply_backlink_build, target_to_sources, source_to_targets,
+                self._apply_backlink_build,
+                generation, start_mutation_seq,
+                target_to_sources, source_to_targets,
             )
 
         threading.Thread(target=worker, daemon=True).start()
 
     def _apply_backlink_build(
         self,
+        generation: int,
+        start_mutation_seq: int,
         target_to_sources: dict[str, set[str]],
         source_to_targets: dict[str, set[str]],
     ) -> bool:
-        """Swap the scanned index in on the main thread (idle callback)."""
+        """Swap the scanned index in on the main thread (idle callback).
+
+        Discards the result if a newer build was scheduled (R16.2) or if the
+        live index mutated during the scan window (R16.1) — in the latter
+        case a fresh scan of the full vault list is rescheduled so no
+        incremental edits are lost.  On success the sidebar backlinks are
+        refreshed for the active file (R16.3).
+        """
+        if generation != self._build_generation:
+            # A newer build superseded this worker — drop the stale result.
+            return False
+        if self._backlink_index.mutation_seq != start_mutation_seq:
+            # Incremental edits landed during the scan; a wholesale swap
+            # would discard them.  Re-scan the full vault list instead.
+            self._schedule_backlink_build(self._vault_tree._vaults)
+            return False
         self._backlink_index.set_index(target_to_sources, source_to_targets)
+        file_path, _text = self._get_active_tab_info()
+        if file_path:
+            self._sidebar.refresh_backlinks(file_path)
         self._dump_debug(["backlink_index"])
         return False  # remove idle handler
 
@@ -893,10 +928,12 @@ class MainWindow(Adw.ApplicationWindow):
 
     def _on_vault_added(self, _tree, vault_path: str) -> None:
         """Handle a new vault being added."""
-        vault_entry = next((v for v in self._vault_tree._vaults if v["path"] == vault_path), None)
-        if vault_entry:
-            self._schedule_backlink_build([vault_entry])
-            self._file_index.build([vault_entry])
+        if any(v["path"] == vault_path for v in self._vault_tree._vaults):
+            # R16.2: rebuild from the full vault list, never a single vault —
+            # a partial build racing the startup build would replace the
+            # whole index (same applies to the root-only FileIndex).
+            self._schedule_backlink_build(self._vault_tree._vaults)
+            self._file_index.build(self._vault_tree._vaults)
         self._dump_debug(["file_index", "vault_tree"])
         self._switch_vault(vault_path)
 

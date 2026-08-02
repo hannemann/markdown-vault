@@ -39,6 +39,18 @@ class BacklinkIndex:
     def __init__(self) -> None:
         self._target_to_sources: dict[str, set[str]] = {}
         self._source_to_targets: dict[str, set[str]] = {}
+        # R16.1: bumped by every incremental mutation so the async build can
+        # detect edits applied during its scan window (and re-scan instead of
+        # overwriting them with a stale disk snapshot).
+        self._mutation_seq = 0
+
+    @property
+    def mutation_seq(self) -> int:
+        """Monotonic counter of incremental mutations since construction."""
+        return self._mutation_seq
+
+    def _bump_mutation_seq(self) -> None:
+        self._mutation_seq += 1
 
     # ------------------------------------------------------------------
     # Bulk operations
@@ -73,6 +85,7 @@ class BacklinkIndex:
 
     def update_file(self, file_path: str | Path, text: str) -> None:
         """Re-index *file_path* after its content changed."""
+        self._bump_mutation_seq()
         path_str = str(file_path)
         self._remove_source(path_str)
         _index_file_into(
@@ -81,10 +94,12 @@ class BacklinkIndex:
 
     def remove_file(self, file_path: str | Path) -> None:
         """Remove *file_path* from the index entirely."""
+        self._bump_mutation_seq()
         self._remove_source(str(file_path))
 
     def rename_file(self, old_path: str | Path, new_path: str | Path) -> None:
         """Update the index for a file rename / move."""
+        self._bump_mutation_seq()
         old_str = str(old_path)
         new_str = str(new_path)
         targets = self._source_to_targets.pop(old_str, set())
@@ -100,6 +115,7 @@ class BacklinkIndex:
         Only links whose canonical target is exactly *file_path* are removed.
         Returns list of modified file paths.
         """
+        self._bump_mutation_seq()
         key = self._file_key(str(file_path))
         if not key:
             return []
@@ -150,6 +166,7 @@ class BacklinkIndex:
         Also updates ``_target_to_sources`` keys so ``find_backlinks`` works.
         Returns list of modified file paths.
         """
+        self._bump_mutation_seq()
         old_key = self._file_key(str(old_path))
         new_key = self._file_key(str(new_path))
         if not old_key or not new_key or old_key == new_key:

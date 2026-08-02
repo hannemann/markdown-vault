@@ -70,27 +70,93 @@ class TestScanVaults(unittest.TestCase):
 
 
 class TestApplyBacklinkBuild(unittest.TestCase):
-    """R5.3: main-thread swap callback for the async backlink scan."""
+    """R5.3/R16: main-thread swap callback for the async backlink scan."""
 
-    def test_apply_backlink_build_swaps_index(self):
+    def _make_fake_window(self, **overrides):
         import unittest.mock
         import markdown_vault.app_window as aw
 
         class FakeWindow:
             def __init__(self):
                 self._backlink_index = BacklinkIndex()
+                self._build_generation = 1
                 self._dump_debug = unittest.mock.Mock()
+                self._sidebar = unittest.mock.Mock()
+                self._schedule_backlink_build = unittest.mock.Mock()
+                self._file_index = unittest.mock.Mock()
+                self._vault_tree = unittest.mock.Mock()
+                self._vault_tree._vaults = []
 
             _apply_backlink_build = aw.MainWindow._apply_backlink_build
 
         win = FakeWindow()
+        for key, value in overrides.items():
+            setattr(win, key, value)
+        win._get_active_tab_info = unittest.mock.Mock(return_value=("/vault/file.md", ""))
+        return win
+
+    def test_apply_backlink_build_swaps_index(self):
+        win = self._make_fake_window()
         target_to_sources = {"vault:VaultA?path=Page": {"/tmp/VaultA/Note.md"}}
         source_to_targets = {"/tmp/VaultA/Note.md": {"vault:VaultA?path=Page"}}
-        result = win._apply_backlink_build(target_to_sources, source_to_targets)
+        result = win._apply_backlink_build(1, 0, target_to_sources, source_to_targets)
         self.assertFalse(result)
         self.assertIs(win._backlink_index._target_to_sources, target_to_sources)
         self.assertIs(win._backlink_index._source_to_targets, source_to_targets)
         win._dump_debug.assert_called_once_with(["backlink_index"])
+
+    def test_apply_backlink_build_discards_stale_generation(self):
+        """R16.2: a worker result from an older generation must be discarded."""
+        win = self._make_fake_window()
+        win._build_generation = 2
+        result = win._apply_backlink_build(
+            1, 0, {"k": {"s"}}, {"s": {"k"}},
+        )
+        self.assertFalse(result)
+        self.assertEqual(win._backlink_index._target_to_sources, {})
+        self.assertEqual(win._backlink_index._source_to_targets, {})
+        win._dump_debug.assert_not_called()
+        win._schedule_backlink_build.assert_not_called()
+
+    def test_apply_backlink_build_reschedules_on_mutation(self):
+        """R16.1: incremental mutations during the build window must not be
+        lost — discard the stale snapshot and re-scan the full vault list."""
+        win = self._make_fake_window()
+        win._backlink_index._mutation_seq = 6
+        result = win._apply_backlink_build(
+            1, 5, {"k": {"s"}}, {"s": {"k"}},
+        )
+        self.assertFalse(result)
+        self.assertEqual(win._backlink_index._target_to_sources, {})
+        win._schedule_backlink_build.assert_called_once_with(win._vault_tree._vaults)
+        win._dump_debug.assert_not_called()
+
+    def test_apply_backlink_build_refreshes_sidebar_backlinks(self):
+        """R16.3: applying the build must refresh sidebar backlinks for the
+        active file (a panel open at startup would otherwise stay empty)."""
+        win = self._make_fake_window()
+        result = win._apply_backlink_build(
+            1, 0, {"k": {"s"}}, {"s": {"k"}},
+        )
+        self.assertFalse(result)
+        win._sidebar.refresh_backlinks.assert_called_once_with("/vault/file.md")
+
+    def test_on_vault_added_builds_full_vault_list(self):
+        """R16.2: adding a vault must rebuild the full vault list, never a
+        single vault, so one vault can never replace the whole index."""
+        import unittest.mock
+        import markdown_vault.app_window as aw
+
+        vaults = [
+            {"name": "A", "path": "/A"},
+            {"name": "B", "path": "/B"},
+        ]
+        win = self._make_fake_window()
+        win._vault_tree._vaults = vaults
+        win._switch_vault = unittest.mock.Mock()
+        aw.MainWindow._on_vault_added(win, None, "/B")
+        win._schedule_backlink_build.assert_called_once_with(vaults)
+        win._file_index.build.assert_called_once_with(vaults)
 
 
 class TestBacklinkIndexBuild(unittest.TestCase):
@@ -236,6 +302,28 @@ class TestBacklinkIndexIncremental(unittest.TestCase):
         # Internal state should be clean.
         self.assertEqual(len(self._idx._target_to_sources), 0)
         self.assertEqual(len(self._idx._source_to_targets), 0)
+
+    def test_mutation_seq_increments_on_mutations(self):
+        """R16.1: every incremental mutation bumps the sequence so the async
+        build can detect edits made during its scan window."""
+        before = self._idx.mutation_seq
+        self._idx.update_file("/vault/Note.md", "[[Page]].\n")
+        self.assertEqual(self._idx.mutation_seq, before + 1)
+        self._idx.remove_file("/vault/Note.md")
+        self.assertEqual(self._idx.mutation_seq, before + 2)
+        self._idx.rename_file("/vault/A.md", "/vault/B.md")
+        self.assertEqual(self._idx.mutation_seq, before + 3)
+        self._idx.remove_wikilinks("/vault/C.md")
+        self.assertEqual(self._idx.mutation_seq, before + 4)
+        self._idx.rename_wikilinks("/vault/D.md", "/vault/E.md")
+        self.assertEqual(self._idx.mutation_seq, before + 5)
+
+    def test_mutation_seq_untouched_by_set_index(self):
+        """R16.1: set_index is the build swap itself, not a user mutation —
+        it must not advance the sequence or the reconciliation would loop."""
+        before = self._idx.mutation_seq
+        self._idx.set_index({"k": {"s"}}, {"s": {"k"}})
+        self.assertEqual(self._idx.mutation_seq, before)
 
 
 class TestBacklinkIndexAlias(unittest.TestCase):
