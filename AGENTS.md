@@ -1,10 +1,14 @@
 # AGENTS.md
 
-> **graphify gate.** For ANY question about how the code is structured, your
-> FIRST tool call MUST be `/graphify` (see **Code Exploration**). If you are
-> about to run grep/rg/find/read to *understand* code, STOP — that urge is the
-> signal to call `/graphify` instead. Grepping a structural question before
-> graphify has run is a process error, even if grep would "work".
+## 🚨 MANDATORY TOOL CHOICE RULES (HIGH PRIORITY)
+
+Before exploring code, searching for symbols, or tracing dependencies:
+
+1. **ALWAYS use Graphify FIRST:** Execute `graphify query "<question>"` or read `graphify-out/GRAPH_REPORT.md`.
+2. **STRICT FALLBACK:** Do NOT use `grep`, `ripgrep`, `find`, or direct file browsing until Graphify has been checked.
+3. Only fall back to `grep` if Graphify does not return sufficient line-level details.
+
+---
 
 ## Project
 
@@ -48,13 +52,13 @@ Markdown Vault — a GNOME desktop app for editing and previewing Markdown files
 ## Features
 
 - **Multiple vaults**: freely selectable directories; add/remove via UI.
-- **Tabs**: open multiple files simultaneously in center panel. Each tab owns its own ``Editor`` + ``Preview`` instance.
-- **Dark mode**: ``Adw.StyleManager`` with System / Light / Dark toggle in hamburger menu. WebView CSS uses ``@theme_*`` named colours for automatic adaptation.
+- **Tabs**: open multiple files simultaneously in center panel. Each tab owns its own `Editor` + `Preview` instance.
+- **Dark mode**: `Adw.StyleManager` with System / Light / Dark toggle in hamburger menu. WebView CSS uses `@theme_*` named colours for automatic adaptation.
 - **Git integration**: status indicators in file tree, diff view, commit from app.
 - **Tags/backlinks**: wikilink-style `[[page]]` parsing and backlink discovery.
 - **Keybindings**: GNOME-style defaults, vim/emacs modes optional.
 - **Markdown + images**: `![alt](path)` with relative and absolute path resolution.
-- **Preferences dialog**: ``Adw.PreferencesDialog`` for autosave interval, default view mode, editor font size/tab width/wrap, preview zoom.
+- **Preferences dialog**: `Adw.PreferencesDialog` for autosave interval, default view mode, editor font size/tab width/wrap, preview zoom.
 - **Zoom**: Ctrl+plus/minus/0 keyboard shortcuts; Ctrl+Wheel zoom on content area; per-tab zoom persisted in session.
 - **Session persistence**: window size, sidebar, tabs (view modes + split positions), active tab, expanded vaults, editor/preview zoom.
 - **Rich Markdown (pymdown-extensions)**: strikethrough `~~text~~`, highlight `==text==`, superscript `^sup^`, subscript `~sub~`, task lists `- [ ]`, tasklist `- [x]`, superfences (tabs, line numbers, highlight lines), magic links (auto URLs, @mentions, #issues), keyboard keys `++ctrl+c++`, smart symbols (quotes, dashes, ellipsis), emoji shortcodes `:smile:`, math formulas `$...$`, task lists with checkboxes.
@@ -126,6 +130,7 @@ tests/                   — unit tests (unittest); run with PYTHONPATH=src
 <!-- DEPENDENCY_MAP_END -->
 
 **Installation paths:**
+
 - **Binaries:** `~/.local/bin/` (user) or `/usr/bin/` (system)
 - **Python code:** `<datadir>/markdown-vault/python/markdown_vault/` — a private directory, not the
   interpreter's `site-packages`, which may sit outside the install prefix. The generated launcher puts
@@ -141,7 +146,7 @@ exit, so the tool call blocks until timeout. `scripts/app.sh` detaches the
 process and returns immediately — always use it.
 
 | Task                        | Command (run VERBATIM)     |
-|-----------------------------|----------------------------|
+| --------------------------- | -------------------------- |
 | Start / restart the app     | `./scripts/app.sh restart` |
 | Stop the app                | `./scripts/app.sh stop`    |
 | Check if running            | `./scripts/app.sh status`  |
@@ -284,13 +289,13 @@ accurate than reading files.
 
 Commands (run VERBATIM — these are the ONLY graphify forms; do not invent others):
 
-| Task                                             | Command                                       |
-|--------------------------------------------------|-----------------------------------------------|
-| Build/refresh the graph (first use, big changes) | `/graphify .`                                  |
-| Incremental update after edits                   | `/graphify . --update`                         |
+| Task                                             | Command                                                   |
+| ------------------------------------------------ | --------------------------------------------------------- |
+| Build/refresh the graph (first use, big changes) | `/graphify .`                                             |
+| Incremental update after edits                   | `/graphify . --update`                                    |
 | "How does X work?" / how does A connect to B?    | `/graphify query "how does the preview render markdown?"` |
-| Call chain / dependency path between two symbols | `/graphify path "Editor" "Preview"`           |
-| Explain / locate a symbol and how it is wired    | `/graphify explain "TabManager"`              |
+| Call chain / dependency path between two symbols | `/graphify path "Editor" "Preview"`                       |
+| Explain / locate a symbol and how it is wired    | `/graphify explain "TabManager"`                          |
 
 Rules:
 
@@ -304,7 +309,7 @@ Rules:
 
 **How to comply — every structural task:**
 
-1. Ask yourself: is this about *where / how / why* the code is structured, or who
+1. Ask yourself: is this about _where / how / why_ the code is structured, or who
    calls / depends on what? If yes → graphify is your first tool call.
 2. Issue `/graphify query|path|explain …` FIRST. Not grep. Not read. Not glob.
 3. Only after graphify has actually run and did not answer may you grep/read the
@@ -326,6 +331,7 @@ This project has a knowledge graph at graphify-out/ with god nodes, community st
 When the user types `/graphify`, use the installed graphify skill or instructions before doing anything else.
 
 Rules:
+
 - For codebase questions, first run `graphify query "<question>"` when graphify-out/graph.json exists. Use `graphify path "<A>" "<B>"` for relationships and `graphify explain "<concept>"` for focused concepts. These return a scoped subgraph, usually much smaller than GRAPH_REPORT.md or raw grep output.
 - Dirty graphify-out/ files are expected after hooks or incremental updates; dirty graph files are not a reason to skip graphify. Only skip graphify if the task is about stale or incorrect graph output, or the user explicitly says not to use it.
 - If graphify-out/wiki/index.md exists, use it for broad navigation instead of raw source browsing.

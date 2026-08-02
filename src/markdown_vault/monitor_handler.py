@@ -90,20 +90,25 @@ class MonitorHandler:
         """Handle file deleted event from VaultMonitor."""
         self._vault_tree._handle_file_deleted(file_path)
         if not file_path.endswith(".md"):
-            # Directory deleted — close tabs inside it and purge ALL index
-            # entries for .md files under the directory (R9.2).
+            # Directory deleted — defer tab-close and index purge to idle
+            # to avoid synchronous multi-WebView teardown (R13.2).
             prefix = file_path + os.sep
-            for path in list(self._tab_bar.get_all_paths()):
-                if path.startswith(prefix):
-                    self._tab_bar.close_tab(path)
-                    self._backlink_index.remove_wikilinks(path)
-                    self._backlink_index.remove_file(path)
-                    self._file_index.remove_file(path)
-            # Purge non-open .md files from indexes
-            self._purge_index_prefix(self._file_index, prefix)
-            self._purge_index_prefix(self._backlink_index, prefix)
-            self._dispatcher.on_file_deleted(vault_path, file_path)
-            self._debug_fn(["file_index", "backlink_index", "vault_tree", "tabs", "sidebar"])
+
+            def _cleanup_dir():
+                all_paths = self._tab_bar.get_all_paths() if self._tab_bar else []
+                for path in all_paths:
+                    if path.startswith(prefix):
+                        self._tab_bar.close_tab(path)
+                        self._backlink_index.remove_wikilinks(path)
+                        self._backlink_index.remove_file(path)
+                        self._file_index.remove_file(path)
+                self._purge_index_prefix(self._file_index, prefix)
+                self._purge_index_prefix(self._backlink_index, prefix)
+                self._dispatcher.on_file_deleted(vault_path, file_path)
+                self._debug_fn(["file_index", "backlink_index", "vault_tree", "tabs", "sidebar"])
+                return False
+
+            GLib.idle_add(_cleanup_dir)
             return
 
         # Remove wikilinks BEFORE index update
