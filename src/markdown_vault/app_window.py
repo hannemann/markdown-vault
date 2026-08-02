@@ -21,6 +21,11 @@ gi.require_version("Adw", "1")
 
 from gi.repository import Gtk, Adw, Gio, GLib, Gdk
 
+import traceback
+import sys
+import faulthandler
+
+from . import logging_setup
 from .vault_tree import VaultTree
 from .editor import Editor
 from .preview import Preview
@@ -95,12 +100,12 @@ class MainWindow(Adw.ApplicationWindow):
         super().__init__(application=app, title="Markdown Vault")
 
         _load_gtk_css()
+        self._settings = config.load_settings()
 
         self._view_mode: str = "edit"
         self._setup_complete = False
         self._view_toggle_buttons: dict[str, Gtk.ToggleButton] = {}
         self._active_vault: str | None = None
-        self._settings = config.load_settings()
 
         # Guard against re-entrant position clamping.
         self._paned_clamping: bool = False
@@ -1487,7 +1492,9 @@ class MainWindow(Adw.ApplicationWindow):
         except OSError as e:
             self._show_error("Cannot Open Preferences", str(e))
             return
-        dlg = PreferencesDialog()
+        dlg = PreferencesDialog(
+            glib_loglevel_callback=logging_setup.update_glib_loglevel,
+        )
         dlg.connect("settings-changed", self._on_preferences_changed)
         dlg.present(self)
 

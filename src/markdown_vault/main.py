@@ -108,29 +108,6 @@ class MarkdownVaultApp(Adw.Application):
         """Present the main window when the application is activated."""
         logger.info("activate signal received")
 
-        # Set up file logging (RotatingFileHandler, 1 MB, 3 backups)
-        root = logging.getLogger()
-        has_file_handler = any(
-            isinstance(h, logging.handlers.RotatingFileHandler)
-            for h in root.handlers
-        )
-        if not has_file_handler:
-            try:
-                config.STATE_DIR.mkdir(parents=True, exist_ok=True)
-                file_handler = logging.handlers.RotatingFileHandler(
-                    str(config.LOG_FILE),
-                    maxBytes=1_000_000,
-                    backupCount=3,
-                    encoding="utf-8",
-                )
-                file_handler.setFormatter(
-                    logging.Formatter("%(asctime)s %(name)s %(levelname)s %(message)s")
-                )
-                root.addHandler(file_handler)
-                logger.info("Log file: %s", config.LOG_FILE)
-            except OSError as exc:
-                logger.warning("Could not set up file logging: %s", exc)
-
         # Apply loglevel from config
         settings = config.load_settings()
         loglevel_str = settings.get("loglevel", "info").lower()
@@ -142,6 +119,10 @@ class MarkdownVaultApp(Adw.Application):
         # Third-party log level (separate from app level)
         tp_level_str = settings.get("third_party_loglevel", "warning").lower()
         set_third_party_loglevel(tp_level_str)
+
+        # Set up central logging (file, stderr tee-stream, GLib handler)
+        from . import logging_setup
+        logging_setup.init(settings)
 
         win = MainWindow(app)
         self._window = win

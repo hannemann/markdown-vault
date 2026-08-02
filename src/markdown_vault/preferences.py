@@ -22,6 +22,7 @@ from . import dialogs
 
 _VIEW_MODES = {"edit": "Edit", "render": "Render", "split": "Split"}
 _LOGLEVELS = {"debug": "Debug", "info": "Info", "warning": "Warning", "error": "Error"}
+_GLIB_LOGLEVELS = {"error": "Error only", "warning": "Warning", "critical": "Critical", "all": "All"}
 _LOGLEVEL_MAP = {
     "debug": logging.DEBUG,
     "info": logging.INFO,
@@ -71,10 +72,17 @@ class PreferencesDialog(Adw.PreferencesDialog):
         "settings-changed": (GObject.SignalFlags.RUN_LAST, None, ()),
     }
 
-    def __init__(self) -> None:
+    def __init__(self, *, glib_loglevel_callback=None) -> None:
+        """Initialize preferences dialog.
+
+        *glib_loglevel_callback* is an optional callable that is invoked
+        when the GLib log level changes (allows live reconfiguration
+        without restart).
+        """
         super().__init__(title="Preferences")
 
         self._settings = config.load_settings()
+        self._glib_loglevel_callback = glib_loglevel_callback
 
         # ── General page ────────────────────────────────────────────
         general = Adw.PreferencesPage(title="General", icon_name="preferences-other-symbolic")
@@ -277,6 +285,20 @@ class PreferencesDialog(Adw.PreferencesDialog):
         self._tp_loglevel_row.connect("notify::selected", self._on_tp_loglevel_changed)
         log_group.add(self._tp_loglevel_row)
 
+        # GLib log level (for Gtk/WebKit/GJS messages).
+        self._glib_loglevel_row = Adw.ComboRow(
+            title="GLib log level",
+            subtitle="Gtk, WebKit, Gjs messages",
+            model=Gtk.StringList.new(list(_GLIB_LOGLEVELS.values())),
+        )
+        glib_level = self._settings.get("glib_loglevel", "error")
+        glib_levels = list(_GLIB_LOGLEVELS.keys())
+        self._glib_loglevel_row.set_selected(
+            glib_levels.index(glib_level) if glib_level in glib_levels else 0
+        )
+        self._glib_loglevel_row.connect("notify::selected", self._on_glib_loglevel_changed)
+        log_group.add(self._glib_loglevel_row)
+
         # Debug dump toggles (only useful in debug mode).
         dump_group = Adw.PreferencesGroup(title="Debug Dumps")
         debug.add(dump_group)
@@ -344,6 +366,16 @@ class PreferencesDialog(Adw.PreferencesDialog):
     def _on_zoom_changed(self, _row: Adw.SpinRow, _pspec) -> None:
         self._settings["preview_zoom"] = round(self._zoom_row.get_adjustment().get_value(), 2)
         self._persist()
+
+    def _on_glib_loglevel_changed(self, row: Adw.ComboRow, _pspec) -> None:
+        levels = list(_GLIB_LOGLEVELS.keys())
+        idx = row.get_selected()
+        if idx < len(levels):
+            self._settings["glib_loglevel"] = levels[idx]
+            self._persist()
+            # Notify caller to reconfigure GLib logging (live).
+            if self._glib_loglevel_callback:
+                self._glib_loglevel_callback(levels[idx])
 
     # ── Keybinding capture ──────────────────────────────────────────
 
