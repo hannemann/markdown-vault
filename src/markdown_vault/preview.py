@@ -587,7 +587,6 @@ class Preview(Gtk.ScrolledWindow):
         are resolved against the file system.  Wikilinks use the ``vault:``
         scheme and are handled by ``_resolve_wikilink_page`` instead.
         """
-        logger.debug("_resolve_wikilink path_str=%r", path_str)
         target = Path(path_str)
         name = target.name
 
