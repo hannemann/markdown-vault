@@ -92,6 +92,7 @@ class TestApplyBacklinkBuild(unittest.TestCase):
             _apply_backlink_build = aw.MainWindow._apply_backlink_build
             _coalesce_backlink_rebuild = aw.MainWindow._coalesce_backlink_rebuild
             _do_backlink_rebuild = aw.MainWindow._do_backlink_rebuild
+            _cancel_backlink_rebuild = aw.MainWindow._cancel_backlink_rebuild
 
         win = FakeWindow()
         for key, value in overrides.items():
@@ -169,6 +170,24 @@ class TestApplyBacklinkBuild(unittest.TestCase):
         self.assertFalse(result)
         self.assertIsNone(win._rebuild_timeout)
         win._schedule_backlink_build.assert_called_once_with(vaults)
+
+    def test_cancel_backlink_rebuild_removes_pending_timer(self):
+        """R18.1: cancelling a pending debounced rebuild must remove the GLib
+        timer source so it cannot fire after window teardown."""
+        win = self._make_fake_window()
+        win._rebuild_timeout = 99
+        with patch("markdown_vault.app_window.GLib") as glib:
+            win._cancel_backlink_rebuild()
+        glib.source_remove.assert_called_once_with(99)
+        self.assertIsNone(win._rebuild_timeout)
+
+    def test_cancel_backlink_rebuild_noop_when_none(self):
+        """R18.1: cancelling with no pending timer must be a no-op."""
+        win = self._make_fake_window()
+        with patch("markdown_vault.app_window.GLib") as glib:
+            win._cancel_backlink_rebuild()
+        glib.source_remove.assert_not_called()
+        self.assertIsNone(win._rebuild_timeout)
 
     def test_apply_backlink_build_refreshes_sidebar_backlinks(self):
         """R16.3: applying the build must refresh sidebar backlinks for the

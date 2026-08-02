@@ -821,6 +821,16 @@ class MainWindow(Adw.ApplicationWindow):
         self._schedule_backlink_build(config.load_vaults())
         return False  # remove timer source
 
+    def _cancel_backlink_rebuild(self) -> None:
+        """Cancel a pending debounced backlink rebuild (R18.1).
+
+        Called on window close so a pending timer cannot fire after teardown
+        and spawn a worker + idle callback against the closing window.
+        """
+        if self._rebuild_timeout is not None:
+            GLib.source_remove(self._rebuild_timeout)
+            self._rebuild_timeout = None
+
     # ── Vault switching ──────────────────────────────────────────
 
     def _find_vault_for_file(self, file_path: str) -> str | None:
@@ -1519,6 +1529,7 @@ class MainWindow(Adw.ApplicationWindow):
             return True
         self._autosave.cancel()
         self._view_mode_manager.cancel_preview_debounce()
+        self._cancel_backlink_rebuild()
 
         # Collect dirty tabs across all open files.
         all_paths = self._tab_bar.get_all_paths()

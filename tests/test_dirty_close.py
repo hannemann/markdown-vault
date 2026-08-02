@@ -476,6 +476,7 @@ class TestOnCloseRequestDirtyCheck(unittest.TestCase):
                 self._autosave = unittest.mock.Mock()
                 self._close_window_pending = False
                 self._switch_vault_pending = False
+                self._rebuild_timeout = None
                 self._surface = unittest.mock.Mock()
                 self._restart_autosave = lambda: None
                 self._active_vault = "/tmp/vault"
@@ -486,6 +487,7 @@ class TestOnCloseRequestDirtyCheck(unittest.TestCase):
             _save_dirty_tabs = aw.MainWindow._save_dirty_tabs
             _show_save_dialog = aw.MainWindow._show_save_dialog
             _on_save_dialog_response = aw.MainWindow._on_save_dialog_response
+            _cancel_backlink_rebuild = aw.MainWindow._cancel_backlink_rebuild
             _session_mgr = unittest.mock.Mock()
 
             def get_surface(self):
@@ -549,6 +551,18 @@ class TestOnCloseRequestDirtyCheck(unittest.TestCase):
 
         win._on_close_request()
         win._autosave.cancel.assert_called_once()
+
+    def test_close_request_cancels_backlink_rebuild(self):
+        """R18.1: a pending debounced backlink rebuild is cancelled on close."""
+        import unittest.mock
+        win = self._make_fake_window()
+        win._rebuild_timeout = 99
+        win._tab_bar.get_all_paths.return_value = []
+        with unittest.mock.patch("markdown_vault.app_window.GLib.source_remove") as source_remove:
+            result = win._on_close_request()
+        self.assertFalse(result)
+        source_remove.assert_called_once_with(99)
+        self.assertIsNone(win._rebuild_timeout)
 
     def test_restart_autosave_sets_up_new_timer(self):
         """_restart_autosave cancels old and sets up new timer."""
