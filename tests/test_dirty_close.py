@@ -387,6 +387,26 @@ class TestSaveDirtyTabsFailure(unittest.TestCase):
             win._on_save_dialog_response("save", ["/tmp/fail.md"], on_confirm=None)
             win._do_close_paths.assert_not_called()
 
+    def test_save_dialog_response_save_failure_resets_switch_vault_pending(self):
+        """R13.3: after a failed save, _switch_vault_pending is reset so a
+        later vault switch is not blocked."""
+        win = self._make_fake_window()
+        win._switch_vault_pending = True
+
+        failing_editor = unittest.mock.Mock()
+        failing_editor.is_modified = True
+        failing_editor.file_path = "/tmp/fail.md"
+        failing_editor.save.return_value = False
+
+        tab = unittest.mock.Mock()
+        tab.editor = failing_editor
+        win._tab_bar.get_tab.return_value = tab
+
+        with unittest.mock.patch("markdown_vault.app_window.Adw.AlertDialog"):
+            win._on_save_dialog_response("save", ["/tmp/fail.md"], on_confirm=None)
+
+        self.assertFalse(win._switch_vault_pending)
+
     def test_save_dialog_response_save_success_closes_tabs(self):
         """When save succeeds, _on_save_dialog_response closes the tabs."""
         win = self._make_fake_window()

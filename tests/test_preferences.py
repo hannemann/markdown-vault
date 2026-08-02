@@ -49,6 +49,14 @@ class TestPreferencesModuleStructure(unittest.TestCase):
         self.assertIn("WEBKIT_DISABLE_DMABUF_RENDERER", source)
         self.assertIn("WEBKIT_DISABLE_COMPOSITING_MODE", source)
 
+    def test_spin_rows_initialized_from_settings(self):
+        """R14.4: SpinRow values read from settings, not hardcoded literals."""
+        src = Path(__file__).resolve().parent.parent / "src" / "markdown_vault" / "preferences.py"
+        source = src.read_text(encoding="utf-8")
+        for key in ("autosave_interval", "editor_font_size",
+                    "editor_tab_width", "tab_min_width"):
+            self.assertIn(f'self._settings.get("{key}"', source)
+
 
 if __name__ == "__main__":
     unittest.main()

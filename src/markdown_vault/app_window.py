@@ -971,6 +971,7 @@ class MainWindow(Adw.ApplicationWindow):
                     if self._close_window_pending:
                         self._close_window_pending = False
                         self._autosave.restart()
+                    self._switch_vault_pending = False
 
                 dialogs.show_error(self, "Save Failed", body)
                 _on_error_dismissed()

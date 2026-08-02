@@ -67,7 +67,12 @@ def resolve_wikilink(vault_name: str, relative_path: str) -> str | None:
     vault_path = resolve_vault_path(vault_name)
     if vault_path is None:
         return None
-    return os.path.join(vault_path, relative_path) + ".md"
+    if os.path.isabs(relative_path):
+        return None
+    result = os.path.normpath(os.path.join(vault_path, relative_path)) + ".md"
+    if not _path_is_within(vault_path, result):
+        return None
+    return result
 
 
 def _path_is_within(vault_root: str, target: str) -> bool:

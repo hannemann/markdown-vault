@@ -93,7 +93,9 @@ class PreferencesDialog(Adw.PreferencesDialog):
 
         self._autosave_row = Adw.SpinRow(
             title="Autosave interval (seconds)",
-            adjustment=Gtk.Adjustment.new(30, 0, 600, 5, 10, 0),
+            adjustment=Gtk.Adjustment.new(
+                self._settings.get("autosave_interval", 30), 0, 600, 5, 10, 0,
+            ),
         )
         self._autosave_row.connect("notify::value", self._on_autosave_changed)
         autosave_group.add(self._autosave_row)
@@ -122,14 +124,18 @@ class PreferencesDialog(Adw.PreferencesDialog):
 
         self._font_row = Adw.SpinRow(
             title="Font size",
-            adjustment=Gtk.Adjustment.new(14, 8, 72, 1, 5, 0),
+            adjustment=Gtk.Adjustment.new(
+                self._settings.get("editor_font_size", 14), 8, 72, 1, 5, 0,
+            ),
         )
         self._font_row.connect("notify::value", self._on_font_size_changed)
         font_group.add(self._font_row)
 
         self._tab_row = Adw.SpinRow(
             title="Tab width",
-            adjustment=Gtk.Adjustment.new(4, 1, 16, 1, 4, 0),
+            adjustment=Gtk.Adjustment.new(
+                self._settings.get("editor_tab_width", 4), 1, 16, 1, 4, 0,
+            ),
         )
         self._tab_row.connect("notify::value", self._on_tab_width_changed)
         font_group.add(self._tab_row)
@@ -145,7 +151,9 @@ class PreferencesDialog(Adw.PreferencesDialog):
 
         self._tab_width_row = Adw.SpinRow(
             title="Minimum tab width (px)",
-            adjustment=Gtk.Adjustment.new(100, 50, 300, 10, 50, 0),
+            adjustment=Gtk.Adjustment.new(
+                self._settings.get("tab_min_width", 150), 50, 300, 10, 50, 0,
+            ),
         )
         self._tab_width_row.connect("notify::value", self._on_tab_min_width_changed)
         tabs_group.add(self._tab_width_row)

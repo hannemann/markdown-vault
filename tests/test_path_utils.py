@@ -193,6 +193,32 @@ class TestResolveWikilink(_TempConfigMixin, unittest.TestCase):
         result = self._resolve("VaultA", "sub/Page")
         self.assertEqual(result, "/tmp/Vault-A/sub/Page.md")
 
+    def test_rejects_parent_traversal_outside_vault(self):
+        """R14.1: ``..`` segments must not escape the vault root."""
+        _cfg.CONFIG_FILE.write_text(
+            "vaults:\n  - name: VaultA\n    path: /tmp/Vault-A\n",
+            encoding="utf-8",
+        )
+        self.assertIsNone(self._resolve("VaultA", "../secret/Page"))
+        self.assertIsNone(self._resolve("VaultA", "sub/../../secret/Page"))
+
+    def test_rejects_absolute_relative_path(self):
+        """R14.1: an absolute relative_path must not resolve outside the vault."""
+        _cfg.CONFIG_FILE.write_text(
+            "vaults:\n  - name: VaultA\n    path: /tmp/Vault-A\n",
+            encoding="utf-8",
+        )
+        self.assertIsNone(self._resolve("VaultA", "/etc/hostname"))
+
+    def test_resolves_subdir_with_dot_segments_still_valid(self):
+        """R14.1: harmless dot segments inside the vault keep working."""
+        _cfg.CONFIG_FILE.write_text(
+            "vaults:\n  - name: VaultA\n    path: /tmp/Vault-A\n",
+            encoding="utf-8",
+        )
+        result = self._resolve("VaultA", "sub/./Page")
+        self.assertEqual(result, "/tmp/Vault-A/sub/Page.md")
+
 
 class TestWikilinkUrl(unittest.TestCase):
     """Tests for wikilink_url()/parse_wikilink_url() — canonical vault: URLs."""
