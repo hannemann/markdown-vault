@@ -797,9 +797,16 @@ class Preview(Gtk.ScrolledWindow):
     # ------------------------------------------------------------------
 
     def cleanup(self) -> None:
-        """Explicitly unparent WebView to release WebKitGTK child processes."""
+        """Detach and release the WebView to free WebKitGTK child processes.
+
+        Uses the container API (``set_child(None)``) instead of calling
+        ``unparent()`` directly on the WebView: calling ``unparent()`` on
+        the child leaves a stale child pointer in the ScrolledWindow's
+        internal Viewport, which triggers ``gtk_widget_unparent``
+        assertions when the Preview widget is later finalized.
+        """
         if self._web_view:
-            self._web_view.unparent()
+            self.set_child(None)
             self._web_view = None
 
     # ------------------------------------------------------------------

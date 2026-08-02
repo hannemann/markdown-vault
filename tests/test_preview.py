@@ -635,14 +635,15 @@ class TestPreviewCleanup(unittest.TestCase):
         preview.cleanup()
         self.assertIsNone(preview._web_view)
 
-    def test_cleanup_calls_unparent(self):
-        """cleanup() must call unparent() on WebView to release WebKitGTK child processes."""
+    def test_cleanup_clears_container_child(self):
+        """cleanup() must detach the WebView via the container API so no
+        stale child pointer remains in the ScrolledWindow (prevents the
+        ``gtk_widget_unparent: assertion 'GTK_IS_WIDGET (widget)'`` failure
+        when the Preview widget is finalized)."""
         preview = Preview()
-        mock_web_view = MagicMock()
-        preview._web_view = mock_web_view
+        self.assertIsNotNone(preview.get_child())
         preview.cleanup()
-        mock_web_view.unparent.assert_called_once()
-        self.assertIsNone(preview._web_view)
+        self.assertIsNone(preview.get_child())
 
     def test_cleanup_no_unparent_when_none(self):
         """cleanup() must not crash when _web_view is already None."""
