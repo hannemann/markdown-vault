@@ -279,7 +279,7 @@ def show_remove_vault_dialog(
     *on_remove* is called with *vault_path* when the user confirms.
     """
     msg = Adw.AlertDialog.new(
-        f'Remove vault "{vault_name}"?',
+        f'Remove Vault "{vault_name}"?',
         "The files on disk are left untouched.",
     )
     msg.add_response("cancel", "Cancel")

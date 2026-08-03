@@ -217,8 +217,15 @@ class Editor(Gtk.ScrolledWindow):
         return (a, b) if a.compare(b) <= 0 else (b, a)
 
     def search_set_text(self, text: str) -> None:
-        """Set the search term (empty string clears highlighting)."""
+        """Set the search term and select the first match at/after the current
+        selection start, so typing tightens the match in place instead of
+        walking to the next one (R21.9).  Empty text clears highlighting."""
         self._search_settings.set_search_text(text or None)
+        if text:
+            lo, _hi = self._selection_iters()
+            found, ms, me, _wrapped = self._search_context.forward(lo)
+            if found:
+                self._select_match(ms, me)
 
     def search_clear(self) -> None:
         """Clear the search term and its match highlighting."""

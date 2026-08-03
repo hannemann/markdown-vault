@@ -64,6 +64,20 @@ class TestEditorSearch(unittest.TestCase):
         lo, hi = ed._selection_iters()
         return ed._buffer.get_text(lo, hi, False)
 
+    def test_search_set_text_selects_first_match(self):
+        ed = self._editor("bar foo baz foo")
+        ed.search_set_text("foo")
+        self.assertEqual(self._selected(ed), "foo")
+        self.assertEqual(ed._selection_iters()[0].get_offset(), 4)
+
+    def test_incremental_typing_tightens_in_place(self):
+        # R21.9: refining the query keeps the current match, not the next one.
+        ed = self._editor("foo bar foo")
+        ed.search_set_text("f")
+        ed.search_set_text("fo")
+        ed.search_set_text("foo")
+        self.assertEqual(ed._selection_iters()[0].get_offset(), 0)
+
     def test_search_next_selects_match(self):
         ed = self._editor("foo bar foo")
         ed.search_set_text("foo")
@@ -72,8 +86,7 @@ class TestEditorSearch(unittest.TestCase):
 
     def test_search_next_advances_then_wraps(self):
         ed = self._editor("a X b X c")
-        ed.search_set_text("X")
-        ed.search_next()
+        ed.search_set_text("X")  # already selects the first match
         first = ed._selection_iters()[0].get_offset()
         ed.search_next()
         second = ed._selection_iters()[0].get_offset()

@@ -578,7 +578,7 @@ class MainWindow(Adw.ApplicationWindow):
 
         # Search toggle button (left of sidebar).
         self._search_toggle = Gtk.ToggleButton(icon_name="edit-find-symbolic")
-        self._search_toggle.set_tooltip_text("Full-Text Search (Ctrl+F)")
+        self._search_toggle.set_tooltip_text("Full-Text Search (Ctrl+Shift+F)")
         self._search_toggle.connect("toggled", self._on_search_toggled)
         header.pack_end(self._search_toggle)
 
@@ -1596,6 +1596,11 @@ class MainWindow(Adw.ApplicationWindow):
         return tab.preview if mode == "render" else tab.editor
 
     def _find_in_view(self) -> None:
+        # Already open: just refocus the entry — don't recompute the target
+        # (focus is in the find entry, which would flip the target — R21.11).
+        if self._find_bar.get_visible() and self._find_target is not None:
+            self._find_bar.open()
+            return
         target = self._active_find_target()
         if target is None:
             return
@@ -1622,8 +1627,10 @@ class MainWindow(Adw.ApplicationWindow):
     def _set_find_target(self, target) -> None:
         if target is self._find_target:
             return
-        if self._find_target is not None and self._find_info_handler:
-            self._find_target.disconnect(self._find_info_handler)
+        if self._find_target is not None:
+            self._find_target.search_clear()  # drop the old pane's highlight (R21.10)
+            if self._find_info_handler:
+                self._find_target.disconnect(self._find_info_handler)
         self._find_target = target
         self._find_info_handler = target.connect(
             "search-info-changed", lambda *_: self._update_find_count(),
@@ -1637,9 +1644,9 @@ class MainWindow(Adw.ApplicationWindow):
     def _on_find_text_changed(self, _bar, text: str) -> None:
         if self._find_target is None:
             return
+        # search_set_text already positions on the first match; do NOT advance
+        # again or refining the query walks matches away (R21.9).
         self._find_target.search_set_text(text)
-        if text:
-            self._find_target.search_next()
         self._update_find_count()
 
     def _on_find_nav(self, forward: bool) -> None:

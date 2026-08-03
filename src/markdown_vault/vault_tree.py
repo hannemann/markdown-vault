@@ -491,6 +491,9 @@ class VaultTree(Gtk.Box):
                 old_name = v["name"]
             elif v["name"] == new_name:
                 return
+        if not old_name:  # vault vanished between dialog open and confirm (R21.19)
+            dialog.close()
+            return
         updated = config.rename_vault(vault_path, new_name)
         self.set_vaults(updated)
         self.emit("vault-renamed", vault_path, old_name, new_name)
