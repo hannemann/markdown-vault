@@ -224,3 +224,13 @@ headerbar button {
     color: @accent_color;
     transform: scale(1.15);
 }
+
+.find-bar {
+    padding: 4px 8px;
+    background: @card_bg_color;
+}
+
+.find-bar .find-counter {
+    margin: 0 4px;
+    font-size: 0.85em;
+}

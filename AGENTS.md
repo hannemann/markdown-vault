@@ -47,7 +47,8 @@ Markdown Vault — a GNOME desktop app for editing and previewing Markdown files
   - Backlinks / `[[wikilink]]` references
   - Git panel (status, diff, commit)
   - File details (metadata, word count, last modified)
-- **Bottom bar**: full-text search across all vaults (Ctrl+F expands to vault-wide search).
+- **Bottom bar**: full-text search across all vaults (Ctrl+Shift+F expands to vault-wide search).
+- **In-view find** (Ctrl+F): a find bar (`find_bar.py`) that searches whichever view is focused — the editor (GtkSource search: highlight, next/prev, current/total counter) or the preview (WebKit find controller: total count). Enter / Shift+Enter step matches, Esc closes; the non-searched view is dimmed while open.
 
 ## Features
 
@@ -92,6 +93,7 @@ src/
     preview.py                — WebView-based Markdown renderer
     tabs.py                   — TabBar + Tab widgets
     sidebar.py                — right sidebar (outline, backlinks, git, details)
+    find_bar.py               — in-view find bar (Ctrl+F), editor/preview search
     search.py                 — bottom bar: full-text search across vaults
     search_logic.py           — search worker (runs in daemon thread)
     git_integration.py        — git status, diff, commit

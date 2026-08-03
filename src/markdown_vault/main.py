@@ -75,7 +75,8 @@ class MarkdownVaultApp(Adw.Application):
     def _setup_accels(self) -> None:
         """Register global keyboard shortcuts."""
         self.set_accels_for_action("win.toggle-sidebar", ["<Control>b"])
-        self.set_accels_for_action("win.toggle-search", ["<Control>f"])
+        self.set_accels_for_action("win.toggle-search", ["<Shift><Control>f"])
+        self.set_accels_for_action("win.find-in-view", ["<Control>f"])
         self.set_accels_for_action("win.save", ["<Control>s"])
         self.set_accels_for_action("win.close-tab", ["<Control>w"])
         self.set_accels_for_action("win.new-file", ["<Control>n"])

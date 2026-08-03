@@ -415,6 +415,8 @@ class Preview(Gtk.ScrolledWindow):
         "link-clicked": (GObject.SignalFlags.RUN_LAST, None, (str,)),
         "link-not-found": (GObject.SignalFlags.RUN_LAST, None, (str,)),
         "checkbox-toggled": (GObject.SignalFlags.RUN_LAST, None, (int, bool)),
+        # Emitted when the in-preview search match count becomes available.
+        "search-info-changed": (GObject.SignalFlags.RUN_LAST, None, ()),
     }
 
     def __init__(self, css_path: str = "") -> None:
@@ -434,6 +436,13 @@ class Preview(Gtk.ScrolledWindow):
         self._setup_web_view(self._web_view)
         self._connect_preview_signals()
         self.set_child(self._web_view)
+
+        # In-preview search (Ctrl+F find bar).
+        self._search_text: str = ""
+        self._search_matches: int = 0
+        self._web_view.get_find_controller().connect(
+            "counted-matches", self._on_counted_matches,
+        )
 
     @staticmethod
     def _setup_web_view(wv: WebKit.WebView) -> None:
@@ -750,6 +759,52 @@ class Preview(Gtk.ScrolledWindow):
                 self._web_view.evaluate_javascript,
                 js, -1, None, None, None, None,
             )
+
+    # ── In-preview search ───────────────────────────────────────────
+
+    _FIND_OPTS = None  # set lazily to avoid importing flags at module load
+
+    def _find_options(self):
+        if Preview._FIND_OPTS is None:
+            Preview._FIND_OPTS = (
+                WebKit.FindOptions.CASE_INSENSITIVE
+                | WebKit.FindOptions.WRAP_AROUND
+            )
+        return Preview._FIND_OPTS
+
+    def _on_counted_matches(self, _fc, count: int) -> None:
+        self._search_matches = count
+        self.emit("search-info-changed")
+
+    def search_set_text(self, text: str) -> None:
+        """Search *text* in the rendered page (empty string clears)."""
+        self._search_text = text or ""
+        fc = self._web_view.get_find_controller()
+        if not text:
+            fc.search_finish()
+            self._search_matches = 0
+            self.emit("search-info-changed")
+            return
+        opts = self._find_options()
+        fc.count_matches(text, opts, 1000)
+        fc.search(text, opts, 1000)
+
+    def search_next(self) -> None:
+        if self._search_text:
+            self._web_view.get_find_controller().search_next()
+
+    def search_prev(self) -> None:
+        if self._search_text:
+            self._web_view.get_find_controller().search_previous()
+
+    def search_clear(self) -> None:
+        self._web_view.get_find_controller().search_finish()
+        self._search_text = ""
+        self._search_matches = 0
+
+    def search_info(self) -> tuple[int, int]:
+        """Return ``(current, total)``; WebKit exposes only the total."""
+        return (0, self._search_matches)
 
     def set_current_vault_path(self, vault_path: str) -> None:
         """Set the current vault path for wikilink resolution."""

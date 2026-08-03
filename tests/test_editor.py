@@ -50,5 +50,57 @@ class TestEditorModuleStructure(unittest.TestCase):
         self.assertIn("text-changed", source)
 
 
+class TestEditorSearch(unittest.TestCase):
+    """Behavioural tests for the in-editor GtkSource search backend."""
+
+    def _editor(self, text):
+        from markdown_vault.editor import Editor
+        ed = Editor()
+        ed._buffer.set_text(text)
+        ed._buffer.place_cursor(ed._buffer.get_start_iter())
+        return ed
+
+    def _selected(self, ed):
+        lo, hi = ed._selection_iters()
+        return ed._buffer.get_text(lo, hi, False)
+
+    def test_search_next_selects_match(self):
+        ed = self._editor("foo bar foo")
+        ed.search_set_text("foo")
+        self.assertTrue(ed.search_next())
+        self.assertEqual(self._selected(ed), "foo")
+
+    def test_search_next_advances_then_wraps(self):
+        ed = self._editor("a X b X c")
+        ed.search_set_text("X")
+        ed.search_next()
+        first = ed._selection_iters()[0].get_offset()
+        ed.search_next()
+        second = ed._selection_iters()[0].get_offset()
+        self.assertGreater(second, first)
+        ed.search_next()  # wrap around (set_wrap_around True)
+        self.assertEqual(ed._selection_iters()[0].get_offset(), first)
+
+    def test_search_prev_goes_backward(self):
+        ed = self._editor("X y X y X")
+        ed.search_set_text("X")
+        ed.search_next()
+        ed.search_next()
+        mid = ed._selection_iters()[0].get_offset()
+        ed.search_prev()
+        self.assertLess(ed._selection_iters()[0].get_offset(), mid)
+
+    def test_no_match_returns_false(self):
+        ed = self._editor("hello world")
+        ed.search_set_text("zzz")
+        self.assertFalse(ed.search_next())
+
+    def test_clear_disables_search(self):
+        ed = self._editor("foo foo")
+        ed.search_set_text("foo")
+        ed.search_clear()
+        self.assertFalse(ed.search_next())
+
+
 if __name__ == "__main__":
     unittest.main()

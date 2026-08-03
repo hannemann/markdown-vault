@@ -774,5 +774,21 @@ class TestPreviewCleanupGuard(unittest.TestCase):
         preview.update_theme()
 
 
+class TestPreviewSearch(unittest.TestCase):
+    """In-preview WebKit find backend surface."""
+
+    def test_search_methods_exist(self):
+        preview = Preview()
+        for m in ("search_set_text", "search_next", "search_prev",
+                  "search_clear", "search_info"):
+            self.assertTrue(callable(getattr(preview, m, None)))
+
+    def test_clear_and_empty_query_report_zero(self):
+        preview = Preview()
+        preview.search_set_text("")   # must not raise on an empty page
+        preview.search_clear()
+        self.assertEqual(preview.search_info(), (0, 0))
+
+
 if __name__ == "__main__":
     unittest.main()

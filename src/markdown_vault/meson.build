@@ -12,6 +12,7 @@ py_sources = files(
   'event_router.py',
   'file_index.py',
   'file_ops.py',
+  'find_bar.py',
   'file_manager.py',
   'git_integration.py',
    'history.py',

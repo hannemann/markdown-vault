@@ -33,6 +33,8 @@ class Editor(Gtk.ScrolledWindow):
         "file-changed": (GObject.SignalFlags.RUN_LAST, None, (str,)),
         "modified-changed": (GObject.SignalFlags.RUN_LAST, None, (bool,)),
         "text-changed": (GObject.SignalFlags.RUN_LAST, None, ()),
+        # Emitted when the in-editor search match count becomes available.
+        "search-info-changed": (GObject.SignalFlags.RUN_LAST, None, ()),
     }
 
     def __init__(self, base_font_size: int = 14, tab_width: int = 4,
@@ -51,6 +53,18 @@ class Editor(Gtk.ScrolledWindow):
         md_lang = lang_manager.get_language("markdown")
         if md_lang:
             self._buffer.set_language(md_lang)
+
+        # In-editor search (Ctrl+F find bar).
+        self._search_settings = GtkSource.SearchSettings()
+        self._search_settings.set_wrap_around(True)
+        self._search_context = GtkSource.SearchContext.new(
+            self._buffer, self._search_settings,
+        )
+        self._search_context.set_highlight(True)
+        self._search_context.connect(
+            "notify::occurrences-count",
+            lambda *_: self.emit("search-info-changed"),
+        )
 
         self._view = GtkSource.View(buffer=self._buffer)
         self._view.set_monospace(True)
@@ -192,6 +206,54 @@ class Editor(Gtk.ScrolledWindow):
             si = self._buffer.get_iter_at_offset(fix.start)
             self._buffer.insert(si, fix.new)
         self._buffer.end_user_action()
+
+    # ── In-editor search ────────────────────────────────────────────
+
+    def _selection_iters(self) -> tuple:
+        """Return the current selection as ``(lo, hi)`` iters (cursor if none)."""
+        buf = self._buffer
+        a = buf.get_iter_at_mark(buf.get_insert())
+        b = buf.get_iter_at_mark(buf.get_selection_bound())
+        return (a, b) if a.compare(b) <= 0 else (b, a)
+
+    def search_set_text(self, text: str) -> None:
+        """Set the search term (empty string clears highlighting)."""
+        self._search_settings.set_search_text(text or None)
+
+    def search_clear(self) -> None:
+        """Clear the search term and its match highlighting."""
+        self._search_settings.set_search_text(None)
+
+    def _select_match(self, match_start, match_end) -> None:
+        self._buffer.select_range(match_start, match_end)
+        self._view.scroll_to_iter(match_start, 0.2, False, 0.0, 0.5)
+
+    def search_next(self) -> bool:
+        """Select the next match after the current selection/cursor."""
+        _lo, hi = self._selection_iters()
+        found, ms, me, _wrapped = self._search_context.forward(hi)
+        if found:
+            self._select_match(ms, me)
+        return found
+
+    def search_prev(self) -> bool:
+        """Select the previous match before the current selection/cursor."""
+        lo, _hi = self._selection_iters()
+        found, ms, me, _wrapped = self._search_context.backward(lo)
+        if found:
+            self._select_match(ms, me)
+        return found
+
+    def search_info(self) -> tuple[int, int]:
+        """Return ``(current_1based, total)`` matches; ``current`` may be 0.
+
+        ``total`` is ``-1`` while the count is still being computed
+        (``search-info-changed`` fires when it is ready).
+        """
+        total = self._search_context.get_occurrences_count()
+        lo, hi = self._selection_iters()
+        pos = self._search_context.get_occurrence_position(lo, hi)
+        return (max(pos, 0), total)
 
     def scroll_to_line(self, line: int) -> None:
         """Scroll the view to *line* (0-based) and place the cursor there."""
