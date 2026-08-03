@@ -203,6 +203,37 @@ class TestApplyFixes(unittest.TestCase):
         self.assertEqual(apply_fixes("hello", []), "hello")
 
 
+class TestCodeMasking(unittest.TestCase):
+    """R21.12: wikilinks inside code fences / inline code must be left alone."""
+
+    def test_fenced_code_wikilink_ignored(self):
+        text = "```\n[[ Foo ]]\n```"
+        fixes, broken = analyze(text, normalize=True, relink=True)
+        self.assertEqual(fixes, [])
+        self.assertEqual(broken, [])
+
+    def test_inline_code_wikilink_ignored(self):
+        text = "see `[[old/path]]` here"
+        fixes, broken = analyze(
+            text, candidates={"path": [("V", "new/path")]}, relink=True,
+        )
+        self.assertEqual(fixes, [])
+        self.assertEqual(broken, [])
+
+    def test_link_outside_code_still_processed(self):
+        text = "`code` and [[gone]]"
+        _fixes, broken = analyze(text, relink=False)
+        self.assertEqual(len(broken), 1)
+        self.assertEqual(broken[0].stem, "gone")
+
+    def test_find_broken_ranges_skips_code(self):
+        text = "```\n[[nope]]\n```\n[[real]]"
+        ranges = find_broken_ranges(text, make_resolve(set()))
+        self.assertEqual(len(ranges), 1)
+        s, e = ranges[0]
+        self.assertEqual(text[s:e], "[[real]]")
+
+
 class TestWikilinkResolverFragment(unittest.TestCase):
     """R21.2: heading-anchor links must not be classified broken."""
 

@@ -67,11 +67,16 @@ class Tab:
         """
         try:
             new_text = Path(file_path).read_text(encoding="utf-8")
-            start = self.editor._buffer.get_start_iter()
-            end = self.editor._buffer.get_end_iter()
-            self.editor._buffer.delete(start, end)
-            self.editor._buffer.insert(start, new_text)
-            self.editor._buffer.set_modified(False)
+            buf = self.editor._buffer
+            # Preserve the caret across the full-content replace so a silent
+            # reload doesn't jump the reader to the top (R21.18).
+            cursor_offset = buf.get_iter_at_mark(buf.get_insert()).get_offset()
+            buf.delete(buf.get_start_iter(), buf.get_end_iter())
+            buf.insert(buf.get_start_iter(), new_text)
+            buf.set_modified(False)
+            target = buf.get_iter_at_offset(min(cursor_offset, buf.get_char_count()))
+            buf.place_cursor(target)
+            self.editor._view.scroll_to_iter(target, 0.2, False, 0.0, 0.5)
             return True
         except OSError:
             logger.warning("Could not reload editor from %s", file_path, exc_info=True)

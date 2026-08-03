@@ -198,14 +198,20 @@ class Editor(Gtk.ScrolledWindow):
         """
         if not fixes:
             return
-        self._buffer.begin_user_action()
+        buf = self._buffer
+        # Anchor the cursor on a mark so it rides along with the edits instead
+        # of collapsing to a rewritten link's position (R21.18).
+        cursor = buf.create_mark(None, buf.get_iter_at_mark(buf.get_insert()), True)
+        buf.begin_user_action()
         for fix in sorted(fixes, key=lambda f: f.start, reverse=True):
-            si = self._buffer.get_iter_at_offset(fix.start)
-            ei = self._buffer.get_iter_at_offset(fix.end)
-            self._buffer.delete(si, ei)
-            si = self._buffer.get_iter_at_offset(fix.start)
-            self._buffer.insert(si, fix.new)
-        self._buffer.end_user_action()
+            si = buf.get_iter_at_offset(fix.start)
+            ei = buf.get_iter_at_offset(fix.end)
+            buf.delete(si, ei)
+            si = buf.get_iter_at_offset(fix.start)
+            buf.insert(si, fix.new)
+        buf.end_user_action()
+        buf.place_cursor(buf.get_iter_at_mark(cursor))
+        buf.delete_mark(cursor)
 
     # ── In-editor search ────────────────────────────────────────────
 

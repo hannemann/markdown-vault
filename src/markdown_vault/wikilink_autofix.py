@@ -20,6 +20,7 @@ to ``Foo.md``, so it is broken and the unique candidate ``Foo`` repairs it.
 """
 
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -58,6 +59,51 @@ class WikilinkFix:
     old: str
     new: str
     kind: str
+
+
+# Inline code: a run of N backticks, then the shortest content, then N
+# backticks. `(?!\1)` keeps the closing run out of the content.
+_INLINE_CODE_RE = re.compile(r"(`+)(?:(?!\1).)*?\1", re.DOTALL)
+# A fenced-code opening/closing line: ``` or ~~~ (3+), optionally indented.
+_FENCE_RE = re.compile(r"^[ \t]*(`{3,}|~{3,})")
+
+
+def _code_spans(text: str) -> list[tuple[int, int]]:
+    """Return ``(start, end)`` char ranges of fenced and inline code.
+
+    Wikilinks inside these must not be autofixed or marked (the preview
+    renders them as literal code, not links — R21.12).
+    """
+    spans: list[tuple[int, int]] = []
+    # Fenced code blocks — line-based, robust against inline backticks.
+    offset = 0
+    fence_char = None
+    fence_start = 0
+    for line in text.split("\n"):
+        line_end = offset + len(line)
+        stripped = line.strip()
+        if fence_char is None:
+            m = _FENCE_RE.match(line)
+            if m:
+                fence_char = m.group(1)[0]
+                fence_start = offset
+        elif stripped and set(stripped) == {fence_char} and len(stripped) >= 3:
+            spans.append((fence_start, line_end))
+            fence_char = None
+        offset = line_end + 1  # account for the newline
+    if fence_char is not None:  # unterminated fence → to end of text
+        spans.append((fence_start, len(text)))
+    # Inline code, excluding anything already inside a fenced block.
+    for m in _INLINE_CODE_RE.finditer(text):
+        s, e = m.start(), m.end()
+        if not any(fs <= s < fe for fs, fe in spans):
+            spans.append((s, e))
+    return spans
+
+
+def _in_code(start: int, end: int, spans: list[tuple[int, int]]) -> bool:
+    """True if ``[start, end)`` overlaps any code span."""
+    return any(start < ce and end > cs for cs, ce in spans)
 
 
 def _basename_stem(stem: str) -> str:
@@ -132,11 +178,14 @@ def analyze_text(
     """
     fixes: list[WikilinkFix] = []
     broken: list[BrokenLink] = []
+    code = _code_spans(text)
     for m in WIKILINK_RE.finditer(text):
         info = wikilink_info_from_match(m)
         if not info.stem or not info.stem.strip():
             continue
         start, end, full = m.start(), m.end(), m.group(0)
+        if _in_code(start, end, code):  # documented [[…]] inside code — leave it
+            continue
         if resolve(info) is not None:
             if normalize:
                 new = _normalized_link(info)
@@ -170,9 +219,12 @@ def find_broken_ranges(text: str, resolve) -> list[tuple[int, int]]:
     regardless of whether a link would be auto-fixable on save.
     """
     ranges: list[tuple[int, int]] = []
+    code = _code_spans(text)
     for m in WIKILINK_RE.finditer(text):
         info = wikilink_info_from_match(m)
         if not info.stem or not info.stem.strip():
+            continue
+        if _in_code(m.start(), m.end(), code):
             continue
         if resolve(info) is None:
             ranges.append((m.start(), m.end()))

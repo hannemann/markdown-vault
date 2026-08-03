@@ -92,7 +92,9 @@ class FindBar(Gtk.Box):
         """Update the match counter. ``total`` < 0 means 'still counting'."""
         if not self._entry.get_text():
             self._counter.set_text("")
-        elif total < 0:
+        elif total < 0 or current > total:
+            # Count not settled yet (async) — a match is already selected but
+            # the total is still being computed; show "…" not a bogus "0/0".
             self._counter.set_text("…")
         elif total == 0:
             self._counter.set_text("0/0")
