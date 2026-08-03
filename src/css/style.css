@@ -441,14 +441,14 @@ body {
   margin-right: 0.5em;
 }
 
-/* In-preview find highlighting (Ctrl+F) via the CSS Custom Highlight API —
-   WebKit's native find highlight rendered matches inconsistently. Ranges are
-   registered from JS; these style them. Current match wins by priority. */
-::highlight(mv-find) {
-  background-color: #ffe066;
+/* In-preview find highlighting (Ctrl+F) — JS wraps matches in <mark>. The
+   current match wins via the more specific selector. */
+.markdown-body mark.mv-find {
+  background: #ffe066;
   color: #000;
+  border-radius: 2px;
 }
-::highlight(mv-find-current) {
-  background-color: #ff9d3c;
+.markdown-body mark.mv-find.mv-find-current {
+  background: #ff9d3c;
   color: #000;
 }

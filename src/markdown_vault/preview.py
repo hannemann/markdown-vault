@@ -403,21 +403,24 @@ MARKDOWN_EXTENSIONS = [
 ]
 
 
-# In-preview find (Ctrl+F): custom highlighting via the CSS Custom Highlight
-# API (CSS.highlights + ::highlight()). WebKit's native find highlight rendered
-# matches inconsistently and has no "highlight all" option; this registers a
-# Range per match ourselves. Driven through evaluate_javascript (bypasses CSP).
-# Evaluating this expression returns window.__mvfind; append .search(q)/.step(d)/
-# .clear(), each returning a JSON string {total, current}.
+# In-preview find (Ctrl+F): custom highlighting by wrapping matches in <mark>
+# elements. The CSS Custom Highlight API works but WebKit does not reliably
+# repaint when highlights are removed/changed (stale highlights lingered after
+# a 0-match query); DOM mutation always repaints. Driven through
+# evaluate_javascript (bypasses the page CSP). Evaluating this returns
+# window.__mvfind; append .search(q)/.step(d)/.clear(), each returning a JSON
+# string {total, current}.
 _FIND_JS = r"""
 (function () {
   if (!window.__mvfind) {
     window.__mvfind = {
-      ranges: [], current: -1,
+      marks: [], current: -1,
       clear: function () {
-        CSS.highlights.delete('mv-find');
-        CSS.highlights.delete('mv-find-current');
-        this.ranges = []; this.current = -1;
+        for (var i = 0; i < this.marks.length; i++) {
+          var m = this.marks[i], p = m.parentNode;
+          if (p) { p.replaceChild(document.createTextNode(m.textContent), m); p.normalize(); }
+        }
+        this.marks = []; this.current = -1;
       },
       search: function (q) {
         this.clear();
@@ -427,42 +430,40 @@ _FIND_JS = r"""
         var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
           acceptNode: function (n) {
             var pn = n.parentNode ? n.parentNode.nodeName : '';
-            if (pn === 'SCRIPT' || pn === 'STYLE') return NodeFilter.FILTER_REJECT;
-            return n.nodeValue ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
+            if (pn === 'SCRIPT' || pn === 'STYLE' || pn === 'MARK') return NodeFilter.FILTER_REJECT;
+            return (n.nodeValue && n.nodeValue.toLowerCase().indexOf(ql) >= 0)
+              ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
           }
         });
-        var n;
-        while ((n = walker.nextNode())) {
-          var lower = n.nodeValue.toLowerCase(), idx = lower.indexOf(ql);
+        var nodes = [], n;
+        while ((n = walker.nextNode())) nodes.push(n);
+        for (var i = 0; i < nodes.length; i++) {
+          var node = nodes[i], text = node.nodeValue, lower = text.toLowerCase();
+          var frag = document.createDocumentFragment(), last = 0, idx = lower.indexOf(ql);
           while (idx >= 0) {
-            var r = document.createRange();
-            r.setStart(n, idx); r.setEnd(n, idx + q.length);
-            this.ranges.push(r);
-            idx = lower.indexOf(ql, idx + q.length);
+            if (idx > last) frag.appendChild(document.createTextNode(text.slice(last, idx)));
+            var mk = document.createElement('mark');
+            mk.className = 'mv-find';
+            mk.textContent = text.slice(idx, idx + q.length);
+            frag.appendChild(mk); this.marks.push(mk);
+            last = idx + q.length; idx = lower.indexOf(ql, last);
           }
+          if (last < text.length) frag.appendChild(document.createTextNode(text.slice(last)));
+          node.parentNode.replaceChild(frag, node);
         }
-        if (this.ranges.length) { this.current = 0; this._activate(); }
-        return JSON.stringify({ total: this.ranges.length, current: this.ranges.length ? 1 : 0 });
+        if (this.marks.length) { this.current = 0; this._activate(); }
+        return JSON.stringify({ total: this.marks.length, current: this.marks.length ? 1 : 0 });
       },
       _activate: function () {
-        // Rebuild BOTH highlights so the previous current reverts to plain —
-        // each range is in exactly one highlight (no overlap to repaint wrong).
-        var others = new Highlight();
-        for (var i = 0; i < this.ranges.length; i++) {
-          if (i !== this.current) others.add(this.ranges[i]);
-        }
-        CSS.highlights.set('mv-find', others);
-        var r = this.ranges[this.current];
-        if (!r) return;
-        CSS.highlights.set('mv-find-current', new Highlight(r));
-        var el = r.startContainer.parentElement;
-        if (el) el.scrollIntoView({ block: 'center' });
+        for (var i = 0; i < this.marks.length; i++) this.marks[i].classList.remove('mv-find-current');
+        var m = this.marks[this.current];
+        if (m) { m.classList.add('mv-find-current'); m.scrollIntoView({ block: 'center' }); }
       },
       step: function (d) {
-        if (!this.ranges.length) return JSON.stringify({ total: 0, current: 0 });
-        this.current = (this.current + d + this.ranges.length) % this.ranges.length;
+        if (!this.marks.length) return JSON.stringify({ total: 0, current: 0 });
+        this.current = (this.current + d + this.marks.length) % this.marks.length;
         this._activate();
-        return JSON.stringify({ total: this.ranges.length, current: this.current + 1 });
+        return JSON.stringify({ total: this.marks.length, current: this.current + 1 });
       }
     };
   }
