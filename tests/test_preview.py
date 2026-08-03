@@ -13,6 +13,7 @@ from markdown_vault.preview import (
     EXTENSION_CONFIGS,
     WikiLinkExtension,
     _heading_to_slug,
+    _build_csp,
     LanguageExtractorPreprocessor,
     PygmentsCodePostprocessor,
 )
@@ -20,6 +21,7 @@ import markdown as md
 
 
 _TEMPLATE_KWARGS = dict(
+    csp="default-src 'none'",
     css_content=".markdown-body { color: red; }",
     content="<p>Hi</p>",
     bg_color="#ffffff",
@@ -37,6 +39,36 @@ class TestHtmlTemplate(unittest.TestCase):
     def test_template_contains_markers(self):
         self.assertIn("{css_content}", HTML_TEMPLATE)
         self.assertIn("{content}", HTML_TEMPLATE)
+        self.assertIn("{csp}", HTML_TEMPLATE)
+
+    def test_template_has_csp_meta(self):
+        rendered = HTML_TEMPLATE.format(**_TEMPLATE_KWARGS)
+        self.assertIn('http-equiv="Content-Security-Policy"', rendered)
+
+
+class TestBuildCsp(unittest.TestCase):
+    """Content-Security-Policy assembly (5.1)."""
+
+    def test_strict_blocks_remote_images(self):
+        csp = _build_csp(False)
+        self.assertIn("default-src 'none'", csp)
+        self.assertIn("img-src file: data:", csp)
+        self.assertNotIn("https:", csp)
+
+    def test_opt_in_allows_https_images_only(self):
+        csp = _build_csp(True)
+        self.assertIn("img-src file: data: https:", csp)
+        # Scripts/frames/connections stay blocked even when images are allowed.
+        self.assertIn("default-src 'none'", csp)
+        self.assertIn("script-src 'none'", csp)
+
+    def test_styles_always_inline_allowed(self):
+        for flag in (False, True):
+            self.assertIn("style-src 'unsafe-inline'", _build_csp(flag))
+
+    def test_emoji_generator_is_to_alt(self):
+        from pymdownx.emoji import to_alt
+        self.assertIs(EXTENSION_CONFIGS["pymdownx.emoji"]["emoji_generator"], to_alt)
 
     def test_template_is_valid_html(self):
         rendered = HTML_TEMPLATE.format(**_TEMPLATE_KWARGS)

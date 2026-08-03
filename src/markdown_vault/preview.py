@@ -27,6 +27,8 @@ from markdown.preprocessors import Preprocessor
 import xml.etree.ElementTree as etree
 from pygments.formatters import HtmlFormatter
 from urllib.parse import unquote
+from pymdownx.emoji import to_alt
+from markdown_vault import config
 from markdown_vault.latex_mathml import MathMLPostprocessor
 from markdown_vault.path_utils import (
     HEADING_RE,
@@ -69,6 +71,7 @@ HTML_TEMPLATE = """\
 <html>
 <head>
 <meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="{csp}">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
 :root {{ --bg: {bg_color}; --fg: {fg_color}; --accent: {accent_color}; --dim: {dim_color}; --card-bg: {card_bg_color}; --borders: {borders_color}; }}
@@ -93,7 +96,34 @@ EXTENSION_CONFIGS = {
     "markdown.extensions.toc": {
         "slugify": _toc_slugify,
     },
+    # Render :emoji: as the Unicode glyph (system emoji font) instead of the
+    # default remote <img src="https://cdnjs…emojione…png"> — no network fetch.
+    "pymdownx.emoji": {
+        "emoji_generator": to_alt,
+    },
 }
+
+
+def _build_csp(allow_remote_images: bool) -> str:
+    """Return the preview document's Content-Security-Policy (5.1).
+
+    ``default-src 'none'`` denies everything not explicitly listed.
+    ``style-src 'unsafe-inline'`` is required — the whole stylesheet and the
+    theme JS set inline styles (all first-party).  ``img-src`` permits local
+    ``file:`` images and inline ``data:`` URIs; ``https:`` is added only when
+    the user opts in to remote images, and even then scripts, frames and
+    connections stay blocked so a note can only ever fetch an image, never
+    beacon via fetch/XHR or run remote code.  Page scripts are already off
+    (``enable_javascript_markup(False)``); the checkbox/theme JS runs through
+    privileged WebKit APIs, not the page's ``script-src``.
+    """
+    img = "file: data: https:" if allow_remote_images else "file: data:"
+    return (
+        "default-src 'none'; "
+        "style-src 'unsafe-inline'; "
+        "script-src 'none'; "
+        f"img-src {img}"
+    )
 
 
 class LanguageExtractorPreprocessor(Preprocessor):
@@ -394,6 +424,7 @@ class Preview(Gtk.ScrolledWindow):
         self._current_vault_path: str | None = None
         self._loaded: bool = False
         self._base_uri: str | None = None
+        self._csp: str = _build_csp(False)
         self._last_html_hash: str = ""
         self._last_html: str = ""
         self._active: bool = True
@@ -685,9 +716,16 @@ class Preview(Gtk.ScrolledWindow):
         base_uri = GLib.filename_to_uri(base_dir + "/") if base_dir else None
 
         if not self._loaded:
+            # CSP is fixed at load_html (a <meta> in <head>); read the opt-in
+            # only here, on full load. Toggling the setting calls reset() so
+            # the next full load rebuilds with the new policy.
+            self._csp = _build_csp(
+                config.load_settings().get("preview_allow_remote_images", False)
+            )
             css_content = self._load_css_content()
             colors = self._get_theme_colors()
             full_html = HTML_TEMPLATE.format(
+                csp=self._csp,
                 css_content=css_content,
                 content=html_content,
                 **colors,
@@ -700,7 +738,8 @@ class Preview(Gtk.ScrolledWindow):
             css_content = self._load_css_content()
             colors = self._get_theme_colors()
             self._last_html = HTML_TEMPLATE.format(
-                css_content=css_content, content=html_content, **colors,
+                csp=self._csp, css_content=css_content, content=html_content,
+                **colors,
             )
             html_json = json.dumps(html_content, ensure_ascii=False)
             js = (

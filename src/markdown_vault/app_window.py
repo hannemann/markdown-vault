@@ -1739,6 +1739,12 @@ class MainWindow(Adw.ApplicationWindow):
                 )
                 # Reflect a changed broken-link marking toggle immediately.
                 self._refresh_broken_marks(tab.editor)
+                # The remote-image CSP lives in the document <head>, fixed at
+                # load; force a full reload so a toggled setting takes effect.
+                tab.preview.reset()
+                text = tab.editor.get_text()
+                base_dir = str(Path(tab.editor.file_path).parent) if tab.editor.file_path else ""
+                tab.preview.update_from_text(text, base_dir)
         # Restart autosave with new interval.
         self._autosave.update_interval(self._settings.get("autosave_interval", 30))
 

@@ -231,6 +231,7 @@ _DEFAULT_SETTINGS = {
     "wikilink_autofix_relink": False,
     "wikilink_warn_on_save": False,
     "wikilink_mark_broken": False,
+    "preview_allow_remote_images": False,
 }
 
 # Setting key → environment variable consumed by WebKitGTK at startup.
