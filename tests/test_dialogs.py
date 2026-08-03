@@ -356,7 +356,7 @@ class TestShowRenameVaultDialog(unittest.TestCase):
         MockAlertDialog.assert_called_once_with(
             heading="Rename Vault",
             body="Enter a new name for the vault.\n"
-                 "Name cannot contain any of: / \\ > | # [ ]",
+                 "Name cannot contain spaces or: / \\ > | # [ ]",
         )
         dialog = MockAlertDialog.return_value
         dialog.set_extra_child.assert_called_once()
@@ -450,7 +450,7 @@ class TestShowAddVaultNameDialog(unittest.TestCase):
         MockAlertDialog.assert_called_once_with(
             heading="Vault Name Collision",
             body="Enter a unique vault name.\n"
-                 "Name cannot contain any of: / \\ > | # [ ]",
+                 "Name cannot contain spaces or: / \\ > | # [ ]",
         )
         dialog = MockAlertDialog.return_value
         dialog.set_extra_child.assert_called_once()

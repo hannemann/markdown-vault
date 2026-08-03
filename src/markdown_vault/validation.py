@@ -15,23 +15,25 @@ from pathlib import Path
 #   |      alias delimiter in [[name>stem|alias]]
 #   #      fragment delimiter in the vault: URL / [[stem#heading]]
 #   [  ]   wikilink brackets — break [[name>stem]] link text
+# Whitespace is also forbidden: WIKILINK_RE's vault group is [^>\s]+, so any
+# space in the name makes [[name>stem]] unparseable as a qualified link (R21.7).
 _INVALID_VAULT_NAME_CHARS = ("/", "\\", ">", "|", "#", "[", "]")
 # Public so dialogs can show it as a persistent hint, not only on error.
-INVALID_VAULT_NAME_HINT = "Name cannot contain any of: / \\ > | # [ ]"
+INVALID_VAULT_NAME_HINT = "Name cannot contain spaces or: / \\ > | # [ ]"
 
 
 def validate_vault_name(name: str) -> str | None:
     """Validate a vault name for the wikilink key / link-text formats.
 
     Returns an error message string on failure, ``None`` on success.
-    Rejects empty/whitespace-only names, leading/trailing whitespace, and
+    Rejects empty names, any whitespace (leading, trailing, or interior), and
     names containing any of ``_INVALID_VAULT_NAME_CHARS`` — see that constant
-    for why each one corrupts resolution (R19.4).
+    and the whitespace note above for why each corrupts resolution.
     """
     if not name or not name.strip():
         return "Name cannot be empty."
-    if name.strip() != name:
-        return "Name cannot have leading/trailing whitespace."
+    if any(ch.isspace() for ch in name):
+        return "Name cannot contain spaces."
     for ch in _INVALID_VAULT_NAME_CHARS:
         if ch in name:
             return INVALID_VAULT_NAME_HINT
@@ -39,15 +41,15 @@ def validate_vault_name(name: str) -> str | None:
 
 
 def sanitize_vault_name(name: str) -> str:
-    """Strip forbidden characters and surrounding whitespace from *name*.
+    """Strip forbidden characters and all whitespace from *name*.
 
     Used on load to make a hand-edited ``vaults.yaml`` name safe for the
-    wikilink key formats (R19.4).  May return an empty string — callers must
-    fall back to another source (e.g. the directory name).
+    wikilink key formats (R19.4/R21.7).  May return an empty string — callers
+    must fall back to another source (e.g. the directory name).
     """
     for ch in _INVALID_VAULT_NAME_CHARS:
         name = name.replace(ch, "")
-    return name.strip()
+    return "".join(name.split())  # drop all whitespace (regex forbids it)
 
 
 def validate_rename(

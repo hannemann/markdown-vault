@@ -17,10 +17,10 @@ class TestValidateVaultName(unittest.TestCase):
     """Tests for validate_vault_name() — R19.4 key-format safety."""
 
     def test_accepts_plain_name(self):
-        self.assertIsNone(validate_vault_name("My Notes"))
+        self.assertIsNone(validate_vault_name("My-Notes"))
 
     def test_accepts_uniquified_suffix(self):
-        self.assertIsNone(validate_vault_name("Notes (2)"))
+        self.assertIsNone(validate_vault_name("Notes(2)"))
 
     def test_rejects_empty_and_whitespace(self):
         self.assertIsNotNone(validate_vault_name(""))
@@ -29,6 +29,11 @@ class TestValidateVaultName(unittest.TestCase):
     def test_rejects_surrounding_whitespace(self):
         self.assertIsNotNone(validate_vault_name(" Notes"))
         self.assertIsNotNone(validate_vault_name("Notes "))
+
+    def test_rejects_interior_space(self):
+        # WIKILINK_RE's vault prefix forbids whitespace (R21.7).
+        self.assertIsNotNone(validate_vault_name("My Notes"))
+        self.assertIsNotNone(validate_vault_name("a\tb"))
 
     def test_rejects_forbidden_chars(self):
         for bad in ("a/b", "a\\b", "a>b", "a|b", "a#b", "a[b", "a]b"):
@@ -42,11 +47,11 @@ class TestSanitizeVaultName(unittest.TestCase):
     def test_strips_forbidden_chars(self):
         self.assertEqual(sanitize_vault_name("a>b|c#d/e[f]"), "abcdef")
 
-    def test_strips_surrounding_whitespace(self):
-        self.assertEqual(sanitize_vault_name("  Notes  "), "Notes")
+    def test_strips_all_whitespace(self):
+        self.assertEqual(sanitize_vault_name("  My  Notes  "), "MyNotes")
 
     def test_plain_name_unchanged(self):
-        self.assertEqual(sanitize_vault_name("My Notes (2)"), "My Notes (2)")
+        self.assertEqual(sanitize_vault_name("Notes(2)"), "Notes(2)")
 
     def test_all_forbidden_returns_empty(self):
         self.assertEqual(sanitize_vault_name(">>||"), "")

@@ -113,13 +113,17 @@ def _read_vaults_from_disk() -> list[dict[str, str]]:
 
 
 def _uniquify_vault_name(name: str, used: set[str]) -> str:
-    """Return *name*, or ``"name (n)"`` with the lowest free *n* if taken."""
+    """Return *name*, or ``"name(n)"`` with the lowest free *n* if taken.
+
+    The suffix is whitespace-free on purpose: vault names must contain no
+    spaces (WIKILINK_RE's vault prefix forbids whitespace — R21.7).
+    """
     if name not in used:
         return name
     n = 2
-    while f"{name} ({n})" in used:
+    while f"{name}({n})" in used:
         n += 1
-    return f"{name} ({n})"
+    return f"{name}({n})"
 
 
 def _invalidate_cache() -> None:

@@ -76,7 +76,7 @@ class TestLoadVaults(_TempConfigMixin, unittest.TestCase):
         result = _cfg.load_vaults()
         # All three paths survive (distinct), names are made unique.
         self.assertEqual([v["path"] for v in result], ["/tmp/a", "/tmp/b", "/tmp/c"])
-        self.assertEqual([v["name"] for v in result], ["Notes", "Notes (2)", "Notes (3)"])
+        self.assertEqual([v["name"] for v in result], ["Notes", "Notes(2)", "Notes(3)"])
 
     def test_uniquify_avoids_clashing_with_existing_suffix(self):
         _cfg.CONFIG_FILE.write_text(
@@ -87,8 +87,9 @@ class TestLoadVaults(_TempConfigMixin, unittest.TestCase):
             encoding="utf-8",
         )
         names = [v["name"] for v in _cfg.load_vaults()]
-        # The second plain "Notes" must not collide with the pre-existing "(2)".
-        self.assertEqual(names, ["Notes", "Notes (2)", "Notes (3)"])
+        # Pre-existing "Notes (2)" sanitizes to "Notes(2)"; the second plain
+        # "Notes" must then not collide with it.
+        self.assertEqual(names, ["Notes", "Notes(2)", "Notes(3)"])
         self.assertEqual(len(set(names)), 3)
 
     def test_sanitizes_forbidden_chars_in_name(self):

@@ -136,6 +136,27 @@ class TestRelink(unittest.TestCase):
         )
         self.assertEqual(fixes[0].new, "[[x/foo|Bar]]")
 
+    def test_qualified_link_not_relinked_across_vaults(self):
+        # R21.6: [[W>foo]] must NOT be redirected to a same-named file in V.
+        fixes, broken = analyze(
+            "[[W>foo]]",
+            candidates={"foo": [("V", "x/foo")]},
+            source_vault="V",
+            relink=True,
+        )
+        self.assertEqual(fixes, [])
+        self.assertEqual(len(broken), 1)
+
+    def test_qualified_link_relinks_only_within_its_vault(self):
+        # Candidate in the stated vault W is chosen; the V one is ignored.
+        fixes, _ = analyze(
+            "[[W>foo]]",
+            candidates={"foo": [("W", "sub/foo"), ("V", "x/foo")]},
+            source_vault="V",
+            relink=True,
+        )
+        self.assertEqual(fixes[0].new, "[[W>sub/foo]]")
+
     def test_casing_repaired_via_unique_candidate(self):
         # [[foo]] does not resolve (case-sensitive), unique candidate is Foo.
         fixes, broken = analyze(

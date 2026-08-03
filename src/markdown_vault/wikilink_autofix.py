@@ -146,6 +146,10 @@ def analyze_text(
         # Broken: only touch it to repair when the target is unambiguous.
         if relink:
             candidates = _unique(find_candidates(_basename_stem(info.stem)))
+            # A vault-qualified link may only relink WITHIN its stated vault —
+            # never silently redirect [[W>foo]] to a same-named file in V (R21.6).
+            if info.vault:
+                candidates = [c for c in candidates if c[0] == info.vault]
             if len(candidates) == 1:
                 target_vault, target_rel = candidates[0]
                 new = _build_relink(info, source_vault, target_vault, target_rel)

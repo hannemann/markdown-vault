@@ -1838,7 +1838,14 @@ class MainWindow(Adw.ApplicationWindow):
         dlg.present(self)
 
     def _on_preferences_changed(self, _dlg) -> None:
+        # settings-changed fires on EVERY preference row change; only reload
+        # previews when the remote-image CSP actually changed (R21.8).
+        old_remote_images = self._settings.get("preview_allow_remote_images", False)
         self._settings = config.load_settings()
+        remote_images_changed = (
+            self._settings.get("preview_allow_remote_images", False)
+            != old_remote_images
+        )
         self._apply_keybindings()
         self._tab_bar.set_tab_min_width(self._settings.get("tab_min_width", 100))
         # Update debug toggle visibility and state.
@@ -1860,11 +1867,13 @@ class MainWindow(Adw.ApplicationWindow):
                 # Reflect a changed broken-link marking toggle immediately.
                 self._refresh_broken_marks(tab.editor)
                 # The remote-image CSP lives in the document <head>, fixed at
-                # load; force a full reload so a toggled setting takes effect.
-                tab.preview.reset()
-                text = tab.editor.get_text()
-                base_dir = str(Path(tab.editor.file_path).parent) if tab.editor.file_path else ""
-                tab.preview.update_from_text(text, base_dir)
+                # load; force a full reload ONLY when that setting changed, so
+                # unrelated tweaks don't reload previews and drop scroll (R21.8).
+                if remote_images_changed:
+                    tab.preview.reset()
+                    text = tab.editor.get_text()
+                    base_dir = str(Path(tab.editor.file_path).parent) if tab.editor.file_path else ""
+                    tab.preview.update_from_text(text, base_dir)
         # Restart autosave with new interval.
         self._autosave.update_interval(self._settings.get("autosave_interval", 30))
 
