@@ -279,12 +279,14 @@ def show_remove_vault_dialog(
     *on_remove* is called with *vault_path* when the user confirms.
     """
     msg = Adw.AlertDialog.new(
-        f'Vault "{vault_name}" entfernen?',
-        "Die Dateien bleiben unangetastet.",
+        f'Remove vault "{vault_name}"?',
+        "The files on disk are left untouched.",
     )
-    msg.add_response("cancel", "Abbrechen")
+    msg.add_response("cancel", "Cancel")
+    msg.add_response("remove", "Remove")
+    # Appearance must be set AFTER the response exists, else Adw emits a
+    # g_critical and the destructive styling is silently dropped (R19.5).
     msg.set_response_appearance("remove", Adw.ResponseAppearance.DESTRUCTIVE)
-    msg.add_response("remove", "Entfernen")
     msg.set_default_response("cancel")
     msg.set_close_response("cancel")
 

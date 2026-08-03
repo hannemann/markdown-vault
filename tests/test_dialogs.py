@@ -410,6 +410,28 @@ class TestShowRemoveVaultDialog(unittest.TestCase):
         response_cb(dlg, "cancel")
         on_remove.assert_not_called()
 
+    @patch("markdown_vault.dialogs.Adw.AlertDialog")
+    def test_remove_response_added_before_appearance(self, MockAlertDialog):
+        # R19.5: set_response_appearance must run AFTER add_response("remove").
+        dialogs.show_remove_vault_dialog(MagicMock(), "/a", "MyVault", lambda p: None)
+        calls = MockAlertDialog.new.return_value.mock_calls
+        add_idx = next(
+            i for i, c in enumerate(calls)
+            if c[0] == "add_response" and c.args and c.args[0] == "remove"
+        )
+        app_idx = next(
+            i for i, c in enumerate(calls) if c[0] == "set_response_appearance"
+        )
+        self.assertLess(add_idx, app_idx)
+
+    @patch("markdown_vault.dialogs.Adw.AlertDialog")
+    def test_english_response_labels(self, MockAlertDialog):
+        dialogs.show_remove_vault_dialog(MagicMock(), "/a", "MyVault", lambda p: None)
+        dlg = MockAlertDialog.new.return_value
+        labels = {c.args for c in dlg.add_response.call_args_list}
+        self.assertIn(("cancel", "Cancel"), labels)
+        self.assertIn(("remove", "Remove"), labels)
+
 
 # ---------------------------------------------------------------------------
 # show_add_vault_name_dialog
