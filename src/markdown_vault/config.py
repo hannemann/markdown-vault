@@ -84,6 +84,7 @@ def _read_vaults_from_disk() -> list[dict[str, str]]:
         return []
     vaults = data.get("vaults") or []
     seen: set[str] = set()
+    used_names: set[str] = set()
     unique: list[dict[str, str]] = []
     for entry in vaults:
         raw_path = entry.get("path", "")
@@ -95,9 +96,24 @@ def _read_vaults_from_disk() -> list[dict[str, str]]:
             continue
         seen.add(abs_path)
         name = entry.get("name") or Path(abs_path).name
+        # Names are the key for backlink/file-index lookups
+        # (vault:{name}?path=… / {name}>stem), so duplicates must not survive:
+        # uniquify colliding names on load (R19.3), first occurrence wins.
+        name = _uniquify_vault_name(name, used_names)
+        used_names.add(name)
         unique.append({"name": name, "path": abs_path})
     logger.debug("Loaded %d vault(s) from config", len(unique))
     return unique
+
+
+def _uniquify_vault_name(name: str, used: set[str]) -> str:
+    """Return *name*, or ``"name (n)"`` with the lowest free *n* if taken."""
+    if name not in used:
+        return name
+    n = 2
+    while f"{name} ({n})" in used:
+        n += 1
+    return f"{name} ({n})"
 
 
 def _invalidate_cache() -> None:

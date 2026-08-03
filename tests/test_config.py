@@ -65,6 +65,32 @@ class TestLoadVaults(_TempConfigMixin, unittest.TestCase):
         result = _cfg.load_vaults()
         self.assertEqual(len(result), 1)
 
+    def test_uniquifies_duplicate_names(self):
+        _cfg.CONFIG_FILE.write_text(
+            "vaults:\n"
+            "  - name: Notes\n    path: /tmp/a\n"
+            "  - name: Notes\n    path: /tmp/b\n"
+            "  - name: Notes\n    path: /tmp/c\n",
+            encoding="utf-8",
+        )
+        result = _cfg.load_vaults()
+        # All three paths survive (distinct), names are made unique.
+        self.assertEqual([v["path"] for v in result], ["/tmp/a", "/tmp/b", "/tmp/c"])
+        self.assertEqual([v["name"] for v in result], ["Notes", "Notes (2)", "Notes (3)"])
+
+    def test_uniquify_avoids_clashing_with_existing_suffix(self):
+        _cfg.CONFIG_FILE.write_text(
+            "vaults:\n"
+            "  - name: Notes\n    path: /tmp/a\n"
+            "  - name: Notes (2)\n    path: /tmp/b\n"
+            "  - name: Notes\n    path: /tmp/c\n",
+            encoding="utf-8",
+        )
+        names = [v["name"] for v in _cfg.load_vaults()]
+        # The second plain "Notes" must not collide with the pre-existing "(2)".
+        self.assertEqual(names, ["Notes", "Notes (2)", "Notes (3)"])
+        self.assertEqual(len(set(names)), 3)
+
     def test_skips_empty_paths(self):
         _cfg.CONFIG_FILE.write_text(
             "vaults:\n  - name: Empty\n    path: ''\n", encoding="utf-8"
