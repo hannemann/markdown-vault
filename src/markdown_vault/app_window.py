@@ -34,6 +34,7 @@ from .tabs import TabBar
 from .sidebar import Sidebar
 from .search import SearchBar
 from .preferences import PreferencesDialog
+from .wikilink_autofix import WikilinkResolver, analyze_text, find_broken_ranges
 from .monitor_handler import MonitorHandler
 from .tab_manager import TabOrchestrator
 from .session_manager import SessionManager
@@ -1107,6 +1108,9 @@ class MainWindow(Adw.ApplicationWindow):
         for path in paths:
             tab = self._tab_bar.get_tab(path)
             if tab and tab.editor.is_modified:
+                # Autofix runs on close-save too; the warn dialog does not
+                # (returned broken list intentionally ignored here).
+                self._apply_wikilink_autofix(tab)
                 self._vault_monitor.skip_next_event(tab.editor.file_path)
                 if not tab.editor.save():
                     failed.append(path)
@@ -1433,6 +1437,59 @@ class MainWindow(Adw.ApplicationWindow):
 
     def _on_editor_text_changed(self, editor: Editor) -> None:
         self._view_mode_manager.on_editor_text_changed(editor)
+        self._refresh_broken_marks(editor)
+
+    # ── Wikilink autofix / diagnostics ──────────────────────────────
+
+    def _refresh_broken_marks(self, editor: Editor) -> None:
+        """Re-scan *editor* for broken wikilinks and update its markers.
+
+        No-op (marks cleared) when marking is disabled or the file is not
+        inside a vault.
+        """
+        if not self._settings.get("wikilink_mark_broken", False):
+            editor.set_broken_link_ranges([])
+            return
+        path = editor.file_path
+        if not path or path_utils.find_vault_name_for_path(path) is None:
+            editor.set_broken_link_ranges([])
+            return
+        resolver = WikilinkResolver()
+        ranges = find_broken_ranges(
+            editor.get_text(), lambda info: resolver.resolve(info, path),
+        )
+        editor.set_broken_link_ranges(ranges)
+
+    def _apply_wikilink_autofix(self, tab) -> list:
+        """Run pre-save wikilink autofix on *tab*'s buffer.
+
+        Applies the enabled fixes (normalize/relink) directly to the buffer
+        and returns the broken links that could not be auto-fixed — but only
+        when the warn-on-save notice is enabled (empty otherwise, so callers
+        that ignore the return value pay nothing).
+        """
+        editor = tab.editor
+        path = editor.file_path
+        normalize = self._settings.get("wikilink_autofix_normalize", False)
+        relink = self._settings.get("wikilink_autofix_relink", False)
+        warn = self._settings.get("wikilink_warn_on_save", False)
+        if not path or not (normalize or relink or warn):
+            return []
+        source_vault = path_utils.find_vault_name_for_path(path)
+        if source_vault is None:
+            return []
+        resolver = WikilinkResolver()
+        fixes, broken = analyze_text(
+            editor.get_text(), path,
+            source_vault=source_vault,
+            resolve=lambda info: resolver.resolve(info, path),
+            find_candidates=resolver.find_candidates,
+            normalize=normalize,
+            relink=relink,
+        )
+        if fixes:
+            editor.apply_wikilink_fixes(fixes)
+        return broken if warn else []
 
     # ── Preview ────────────────────────────────────────────────────
 
@@ -1510,10 +1567,13 @@ class MainWindow(Adw.ApplicationWindow):
         tab = self._tab_bar.get_current_tab()
         if not tab:
             return
+        broken = self._apply_wikilink_autofix(tab)
         self._vault_monitor.skip_next_event(tab.editor.file_path)
         if tab.editor.save():
             self._tab_bar.clear_tab_error(tab.file_path)
             self._tab_bar.hide_error_banner(tab.file_path)
+            if broken:
+                dialogs.show_broken_wikilinks(self, [b.display for b in broken])
         else:
             msg = f'Could not save "{Path(tab.file_path).name}"'
             self._tab_bar.set_tab_error(tab.file_path, "save_error", msg)
@@ -1657,6 +1717,8 @@ class MainWindow(Adw.ApplicationWindow):
                     tab_width=self._settings.get("editor_tab_width", 4),
                     wrap_text=self._settings.get("editor_wrap_text", True),
                 )
+                # Reflect a changed broken-link marking toggle immediately.
+                self._refresh_broken_marks(tab.editor)
         # Restart autosave with new interval.
         self._autosave.update_interval(self._settings.get("autosave_interval", 30))
 

@@ -56,9 +56,10 @@ Markdown Vault — a GNOME desktop app for editing and previewing Markdown files
 - **Dark mode**: `Adw.StyleManager` with System / Light / Dark toggle in hamburger menu. WebView CSS uses `@theme_*` named colours for automatic adaptation.
 - **Git integration**: status indicators in file tree, diff view, commit from app.
 - **Tags/backlinks**: wikilink-style `[[page]]` parsing and backlink discovery.
+- **Wikilink autofix**: opt-in pre-save handling of `[[wikilinks]]` (all off by default) — normalize whitespace, redirect a broken link when exactly one vault file matches the basename (moved/renamed/casing), inform after a manual save about links that stay unresolved, and mark broken links live in the editor (gutter warning triangle + red underline). Runs on manual and close saves, never on autosave. Logic in `wikilink_autofix.py`.
 - **Keybindings**: GNOME-style defaults, vim/emacs modes optional.
 - **Markdown + images**: `![alt](path)` with relative and absolute path resolution.
-- **Preferences dialog**: `Adw.PreferencesDialog` for autosave interval, default view mode, editor font size/tab width/wrap, preview zoom.
+- **Preferences dialog**: `Adw.PreferencesDialog` for autosave interval, default view mode, editor font size/tab width/wrap, preview zoom, and wikilink autofix (normalize / auto-fix moved links / warn on save / mark broken links).
 - **Zoom**: Ctrl+plus/minus/0 keyboard shortcuts; Ctrl+Wheel zoom on content area; per-tab zoom persisted in session.
 - **Session persistence**: window size, sidebar, tabs (view modes + split positions), active tab, expanded vaults, editor/preview zoom.
 - **Rich Markdown (pymdown-extensions)**: strikethrough `~~text~~`, highlight `==text==`, superscript `^sup^`, subscript `~sub~`, task lists `- [ ]`, tasklist `- [x]`, superfences (tabs, line numbers, highlight lines), magic links (auto URLs, @mentions, #issues), keyboard keys `++ctrl+c++`, smart symbols (quotes, dashes, ellipsis), emoji shortcodes `:smile:`, math formulas `$...$`, task lists with checkboxes.
@@ -95,6 +96,7 @@ src/
     search_logic.py           — search worker (runs in daemon thread)
     git_integration.py        — git status, diff, commit
     tags.py                   — [[wikilink]] parsing, backlinks
+    wikilink_autofix.py       — pre-save wikilink autofix + broken-link detection (pure logic + WikilinkResolver glue)
     backlink_index.py         — O(1) backlink lookup, built on startup
     file_index.py             — O(1) wikilink resolution (single index shared across previews)
     config.py                 — vaults.yaml reader/writer + settings

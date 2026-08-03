@@ -59,6 +59,7 @@ class TestSaveDialogResponse(unittest.TestCase):
             _on_save_dialog_response = aw.MainWindow._on_save_dialog_response
             _save_dirty_tabs = aw.MainWindow._save_dirty_tabs
             _do_close_paths = aw.MainWindow._do_close_paths
+            _apply_wikilink_autofix = unittest.mock.Mock(return_value=[])
 
         fw = FakeWindow(self._tab_bar)
         fw._tab_bar = self._tab_bar

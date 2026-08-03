@@ -205,6 +205,10 @@ _DEFAULT_SETTINGS = {
     "glib_loglevel": "warning",
     "webkit_disable_dmabuf": False,
     "webkit_disable_compositing": False,
+    "wikilink_autofix_normalize": False,
+    "wikilink_autofix_relink": False,
+    "wikilink_warn_on_save": False,
+    "wikilink_mark_broken": False,
 }
 
 # Setting key → environment variable consumed by WebKitGTK at startup.

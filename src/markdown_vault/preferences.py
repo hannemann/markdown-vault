@@ -163,6 +163,30 @@ class PreferencesDialog(Adw.PreferencesDialog):
         self._tab_wrap_row.connect("notify::active", self._on_tab_wrap_changed)
         tabs_group.add(self._tab_wrap_row)
 
+        # Wikilinks group.
+        wikilink_group = Adw.PreferencesGroup(
+            title="Wikilinks",
+            description="Autofix and validation of [[wikilinks]] when saving.",
+        )
+        editor.add(wikilink_group)
+
+        self._wl_rows: dict[str, Adw.SwitchRow] = {}
+        for key, title, subtitle in (
+            ("wikilink_autofix_normalize", "Normalize on save",
+             "Trim whitespace inside [[…]] when saving."),
+            ("wikilink_autofix_relink", "Auto-fix moved links",
+             "Redirect a broken link when exactly one matching file exists."),
+            ("wikilink_warn_on_save", "Warn about broken links",
+             "After saving, show a notice for links that can't be resolved."),
+            ("wikilink_mark_broken", "Mark broken links in the editor",
+             "Gutter warning triangle and red underline on unresolved links."),
+        ):
+            row = Adw.SwitchRow(title=title, subtitle=subtitle)
+            row.set_active(self._settings.get(key, False))
+            row.connect("notify::active", self._on_wikilink_toggle_changed, key)
+            wikilink_group.add(row)
+            self._wl_rows[key] = row
+
         self.add(editor)
 
         # ── Preview page ────────────────────────────────────────────
@@ -467,6 +491,12 @@ class PreferencesDialog(Adw.PreferencesDialog):
         self._persist()
 
     def _on_webkit_toggle_changed(
+        self, row: Adw.SwitchRow, _pspec, key: str,
+    ) -> None:
+        self._settings[key] = row.get_active()
+        self._persist()
+
+    def _on_wikilink_toggle_changed(
         self, row: Adw.SwitchRow, _pspec, key: str,
     ) -> None:
         self._settings[key] = row.get_active()

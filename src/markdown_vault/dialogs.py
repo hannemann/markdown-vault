@@ -29,6 +29,22 @@ def show_error(parent: Gtk.Widget, heading: str, body: str) -> None:
     dialog.present(parent)
 
 
+def show_broken_wikilinks(parent: Gtk.Widget, names: list[str]) -> None:
+    """Inform (non-blocking) that a saved file still has broken wikilinks.
+
+    The file has already been saved; this is a notice, not a gatekeeper.
+    *names* are user-facing link labels (``stem`` or ``stem|alias``).
+    """
+    listed = "\n".join(f"– {n}" for n in names)
+    dialog = Adw.AlertDialog(
+        heading="Broken wikilinks",
+        body=f"The file was saved, but these links could not be resolved:\n{listed}",
+    )
+    dialog.set_prefer_wide_layout(True)
+    dialog.add_response("ok", "OK")
+    dialog.present(parent)
+
+
 def show_link_not_found(parent: Gtk.Widget, path_str: str) -> None:
     """Show a dialog when a ``[[wikilink]]`` cannot be resolved."""
     dialog = Adw.AlertDialog(

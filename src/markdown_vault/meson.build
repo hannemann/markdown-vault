@@ -37,6 +37,7 @@ py_sources = files(
    'view_mode_manager.py',
    'vault_monitor.py',
   'vault_tree.py',
+  'wikilink_autofix.py',
 )
 
 install_data(

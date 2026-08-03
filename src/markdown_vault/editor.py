@@ -13,9 +13,12 @@ import gi
 gi.require_version("Gtk", "4.0")
 gi.require_version("GtkSource", "5")
 
-from gi.repository import Gtk, GtkSource, GObject, GLib, Adw
+from gi.repository import Gtk, GtkSource, GObject, GLib, Adw, Gdk, Pango
 
 logger = logging.getLogger(__name__)
+
+# Source-mark category / text-tag name for broken wikilinks.
+_BROKEN_CATEGORY = "broken-wikilink"
 
 
 class Editor(Gtk.ScrolledWindow):
@@ -66,9 +69,27 @@ class Editor(Gtk.ScrolledWindow):
         self._css_provider: Gtk.CssProvider | None = None
         self._apply_font_size()
 
+        self._setup_broken_link_markers()
+
         self.update_color_scheme()
 
         self.set_child(self._view)
+
+    def _setup_broken_link_markers(self) -> None:
+        """Configure gutter warning marks + red underline for broken links."""
+        attrs = GtkSource.MarkAttributes()
+        attrs.set_icon_name("dialog-warning-symbolic")
+        attrs.connect("query-tooltip-text", lambda _a, _m: "Broken wikilink")
+        self._view.set_mark_attributes(_BROKEN_CATEGORY, attrs, 10)
+        # LOW sits the underline below the text's ink extents (a visible gap),
+        # and unlike the themed ERROR squiggle its colour can be set reliably.
+        underline_color = Gdk.RGBA()
+        underline_color.parse("rgb(255,64,64)")
+        self._broken_tag = self._buffer.create_tag(
+            _BROKEN_CATEGORY,
+            underline=Pango.Underline.LOW,
+            underline_rgba=underline_color,
+        )
 
     # ------------------------------------------------------------------
     # Properties
@@ -135,6 +156,42 @@ class Editor(Gtk.ScrolledWindow):
         except (OSError, UnicodeDecodeError) as exc:
             logger.warning("Failed to save %s: %s", self._file_path, exc)
             return False
+
+    def set_broken_link_ranges(self, ranges: list[tuple[int, int]]) -> None:
+        """Highlight broken wikilinks with gutter marks and a red underline.
+
+        *ranges* is a list of ``(start_offset, end_offset)`` character pairs.
+        Passing an empty list clears all existing markers.  Applying tags and
+        marks does not modify the text, so the buffer's modified flag is
+        untouched.
+        """
+        start = self._buffer.get_start_iter()
+        end = self._buffer.get_end_iter()
+        self._buffer.remove_source_marks(start, end, _BROKEN_CATEGORY)
+        self._buffer.remove_tag(self._broken_tag, start, end)
+        for offset_start, offset_end in ranges:
+            si = self._buffer.get_iter_at_offset(offset_start)
+            ei = self._buffer.get_iter_at_offset(offset_end)
+            self._buffer.apply_tag(self._broken_tag, si, ei)
+            self._buffer.create_source_mark(None, _BROKEN_CATEGORY, si)
+
+    def apply_wikilink_fixes(self, fixes: list) -> None:
+        """Apply offset-based text replacements to the buffer.
+
+        Each fix carries ``start``/``end`` character offsets and ``new`` text.
+        Replacements are applied right-to-left so earlier offsets stay valid,
+        wrapped in a single user action so the whole autofix is one undo step.
+        """
+        if not fixes:
+            return
+        self._buffer.begin_user_action()
+        for fix in sorted(fixes, key=lambda f: f.start, reverse=True):
+            si = self._buffer.get_iter_at_offset(fix.start)
+            ei = self._buffer.get_iter_at_offset(fix.end)
+            self._buffer.delete(si, ei)
+            si = self._buffer.get_iter_at_offset(fix.start)
+            self._buffer.insert(si, fix.new)
+        self._buffer.end_user_action()
 
     def scroll_to_line(self, line: int) -> None:
         """Scroll the view to *line* (0-based) and place the cursor there."""
