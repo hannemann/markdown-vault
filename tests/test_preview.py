@@ -789,6 +789,16 @@ class TestPreviewSearch(unittest.TestCase):
         preview.search_clear()
         self.assertEqual(preview.search_info(), (0, 0))
 
+    def test_search_after_cleanup_does_not_crash(self):
+        # R21.1: cleanup() nulls _web_view; search_* must no-op, not crash.
+        preview = Preview()
+        preview.cleanup()
+        preview.search_set_text("foo")
+        preview.search_next()
+        preview.search_prev()
+        preview.search_clear()
+        self.assertEqual(preview.search_info(), (0, 0))
+
 
 if __name__ == "__main__":
     unittest.main()

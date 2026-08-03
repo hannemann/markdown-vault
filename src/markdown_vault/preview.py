@@ -779,6 +779,8 @@ class Preview(Gtk.ScrolledWindow):
     def search_set_text(self, text: str) -> None:
         """Search *text* in the rendered page (empty string clears)."""
         self._search_text = text or ""
+        if self._web_view is None:  # torn down (e.g. tab closed)
+            return
         fc = self._web_view.get_find_controller()
         if not text:
             fc.search_finish()
@@ -790,15 +792,16 @@ class Preview(Gtk.ScrolledWindow):
         fc.search(text, opts, 1000)
 
     def search_next(self) -> None:
-        if self._search_text:
+        if self._search_text and self._web_view is not None:
             self._web_view.get_find_controller().search_next()
 
     def search_prev(self) -> None:
-        if self._search_text:
+        if self._search_text and self._web_view is not None:
             self._web_view.get_find_controller().search_previous()
 
     def search_clear(self) -> None:
-        self._web_view.get_find_controller().search_finish()
+        if self._web_view is not None:
+            self._web_view.get_find_controller().search_finish()
         self._search_text = ""
         self._search_matches = 0
 

@@ -177,6 +177,7 @@ class MainWindow(Adw.ApplicationWindow):
         self._find_bar = FindBar()
         self._find_target = None
         self._find_info_handler = 0
+        self._find_dimmed = None
         self._find_bar.connect("search-changed", self._on_find_text_changed)
         self._find_bar.connect("search-next", lambda *_: self._on_find_nav(True))
         self._find_bar.connect("search-prev", lambda *_: self._on_find_nav(False))
@@ -1019,6 +1020,9 @@ class MainWindow(Adw.ApplicationWindow):
 
     def _on_tab_closed(self, _tab_bar, file_path: str) -> None:
         """Cleanup after a tab has been closed (tab-closed signal)."""
+        # The find bar may target the closed tab's editor/preview — close it.
+        if self._find_bar.get_visible():
+            self._find_bar.close()
         self.mru.remove(file_path)
         child = self._content_stack.get_child_by_name(file_path)
         if child:
@@ -1131,7 +1135,9 @@ class MainWindow(Adw.ApplicationWindow):
                 # (returned broken list intentionally ignored here).
                 self._apply_wikilink_autofix(tab)
                 self._vault_monitor.skip_next_event(tab.editor.file_path)
-                if not tab.editor.save():
+                if tab.editor.save():
+                    self._clear_external_conflict(tab)
+                else:
                     failed.append(path)
         return failed
 
@@ -1470,6 +1476,10 @@ class MainWindow(Adw.ApplicationWindow):
         self._view_mode_manager.sync_view_toggle(mode)
 
     def _set_view_mode(self, mode: str) -> None:
+        # Find targets/dims a specific view; a mode switch would leave it
+        # pointing at (or dimming) a now-hidden view — close it first (R21.5).
+        if self._find_bar.get_visible():
+            self._find_bar.close()
         self._view_mode_manager.set_view_mode(mode)
 
     # ── Editor callbacks ────────────────────────────────────────────
@@ -1595,19 +1605,19 @@ class MainWindow(Adw.ApplicationWindow):
 
     def _dim_inactive_view(self, target) -> None:
         """Fade the view that is NOT being searched so it reads as inactive."""
+        self._restore_dimmed()
         tab = self._tab_bar.get_current_tab()
         if tab is None:
             return
-        tab.editor.set_opacity(1.0)
-        tab.preview.set_opacity(1.0)
         other = tab.preview if target is tab.editor else tab.editor
         other.set_opacity(0.35)
+        self._find_dimmed = other
 
-    def _restore_views(self) -> None:
-        tab = self._tab_bar.get_current_tab()
-        if tab is not None:
-            tab.editor.set_opacity(1.0)
-            tab.preview.set_opacity(1.0)
+    def _restore_dimmed(self) -> None:
+        """Un-dim the exact widget we dimmed (independent of the current tab)."""
+        if self._find_dimmed is not None:
+            self._find_dimmed.set_opacity(1.0)
+            self._find_dimmed = None
 
     def _set_find_target(self, target) -> None:
         if target is self._find_target:
@@ -1644,7 +1654,11 @@ class MainWindow(Adw.ApplicationWindow):
     def _on_find_closed(self, _bar) -> None:
         if self._find_target is not None:
             self._find_target.search_clear()
-        self._restore_views()
+            if self._find_info_handler:
+                self._find_target.disconnect(self._find_info_handler)
+                self._find_info_handler = 0
+            self._find_target = None
+        self._restore_dimmed()
 
     def _on_search_toggled(self, btn: Gtk.ToggleButton) -> None:
         self._search_bar.set_visible(btn.get_active())
@@ -1681,6 +1695,13 @@ class MainWindow(Adw.ApplicationWindow):
             paned.set_position(max_pos)
             self._paned_clamping = False
 
+    def _clear_external_conflict(self, tab) -> None:
+        """A successful save resolves an external-change conflict (R21.3):
+        clear the pending flag (so autosave resumes) and drop the banner."""
+        if tab.external_change_pending:
+            tab.external_change_pending = False
+            self._tab_bar.hide_warning_banner(tab.file_path)
+
     def _save_current(self) -> None:
         tab = self._tab_bar.get_current_tab()
         if not tab:
@@ -1690,6 +1711,7 @@ class MainWindow(Adw.ApplicationWindow):
         if tab.editor.save():
             self._tab_bar.clear_tab_error(tab.file_path)
             self._tab_bar.hide_error_banner(tab.file_path)
+            self._clear_external_conflict(tab)
             if broken:
                 dialogs.show_broken_wikilinks(self, [b.display for b in broken])
         else:

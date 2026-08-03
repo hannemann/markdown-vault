@@ -5,6 +5,7 @@ callables, so these tests need no config, filesystem, or GTK.
 """
 
 import unittest
+from pathlib import Path
 
 from markdown_vault.wikilink_autofix import (
     analyze_text,
@@ -179,6 +180,48 @@ class TestApplyFixes(unittest.TestCase):
 
     def test_apply_no_fixes_is_identity(self):
         self.assertEqual(apply_fixes("hello", []), "hello")
+
+
+class TestWikilinkResolverFragment(unittest.TestCase):
+    """R21.2: heading-anchor links must not be classified broken."""
+
+    def setUp(self):
+        import tempfile
+        import markdown_vault.config as cfg
+        self._cfg = cfg
+        self._tmp = tempfile.mkdtemp()
+        self._vault = Path(self._tmp) / "V"
+        self._vault.mkdir()
+        (self._vault / "Note.md").write_text("# Note\n")
+        cfg._vaults_cache = [{"name": "V", "path": str(self._vault)}]
+
+    def tearDown(self):
+        import shutil
+        self._cfg._vaults_cache = None
+        shutil.rmtree(self._tmp, ignore_errors=True)
+
+    def _info(self, stem):
+        from markdown_vault.tags import WikilinkInfo
+        return WikilinkInfo(raw=stem, stem=stem, vault=None, alias=None, display=stem)
+
+    def _resolver(self):
+        from markdown_vault.wikilink_autofix import WikilinkResolver
+        return WikilinkResolver()
+
+    def test_heading_anchor_on_existing_file_resolves(self):
+        src = str(self._vault / "Other.md")
+        self.assertIsNotNone(
+            self._resolver().resolve(self._info("Note#Section"), src))
+
+    def test_same_file_anchor_resolves_to_source(self):
+        src = str(self._vault / "Note.md")
+        self.assertEqual(
+            self._resolver().resolve(self._info("#Heading"), src), src)
+
+    def test_missing_target_with_anchor_is_broken(self):
+        src = str(self._vault / "Note.md")
+        self.assertIsNone(
+            self._resolver().resolve(self._info("Nope#Section"), src))
 
 
 if __name__ == "__main__":

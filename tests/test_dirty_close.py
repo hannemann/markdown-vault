@@ -328,6 +328,7 @@ class TestSaveDirtyTabsFailure(unittest.TestCase):
             _show_save_dialog = aw.MainWindow._show_save_dialog
             _do_close_paths = unittest.mock.Mock()
             _apply_wikilink_autofix = unittest.mock.Mock(return_value=[])
+            _clear_external_conflict = unittest.mock.Mock()
 
         return FakeWindow()
 
@@ -490,6 +491,7 @@ class TestOnCloseRequestDirtyCheck(unittest.TestCase):
             _on_save_dialog_response = aw.MainWindow._on_save_dialog_response
             _cancel_backlink_rebuild = aw.MainWindow._cancel_backlink_rebuild
             _apply_wikilink_autofix = unittest.mock.Mock(return_value=[])
+            _clear_external_conflict = unittest.mock.Mock()
             _session_mgr = unittest.mock.Mock()
 
             def get_surface(self):

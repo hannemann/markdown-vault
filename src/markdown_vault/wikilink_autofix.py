@@ -194,11 +194,20 @@ class WikilinkResolver:
         self._index: dict[str, list[tuple[str, str]]] | None = None
 
     def resolve(self, info, source_file: str) -> str | None:
-        """Return the existing target path for *info*, or ``None``."""
+        """Return the existing target path for *info*, or ``None``.
+
+        A trailing ``#heading`` anchor is stripped before resolving (the
+        preview does the same); a bare ``[[#Heading]]`` same-file anchor
+        resolves to the source file itself, so neither is ever flagged
+        broken (R21.2).
+        """
+        page = info.stem.split("#", 1)[0].strip()
+        if not page:
+            return source_file  # same-file heading anchor
         vault = info.vault or find_vault_name_for_path(source_file)
         if not vault:
             return None
-        target = resolve_wikilink(vault, info.stem.strip())
+        target = resolve_wikilink(vault, page)
         if target and os.path.exists(target):
             return target
         return None
