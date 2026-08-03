@@ -148,6 +148,26 @@ class TestRemoveVault(_TempConfigMixin, unittest.TestCase):
         result = _cfg.remove_vault("/nonexistent")
         self.assertEqual(len(result), 0)
 
+    def test_rename_vault(self):
+        _cfg.add_vault("Notes", "/tmp/notes")
+        result = _cfg.rename_vault("/tmp/notes", "Documents")
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]["name"], "Documents")
+        self.assertEqual(result[0]["path"], "/tmp/notes")
+
+    def test_rename_vault_preserves_other_vaults(self):
+        _cfg.add_vault("A", "/tmp/a")
+        _cfg.add_vault("B", "/tmp/b")
+        result = _cfg.rename_vault("/tmp/a", "Alpha")
+        self.assertEqual(len(result), 2)
+        names = {v["name"]: v["path"] for v in result}
+        self.assertEqual(names["Alpha"], "/tmp/a")
+        self.assertEqual(names["B"], "/tmp/b")
+
+    def test_rename_nonexistent_is_noop(self):
+        result = _cfg.rename_vault("/nonexistent", "X")
+        self.assertEqual(len(result), 0)
+
 
 class TestSettings(_TempConfigMixin, unittest.TestCase):
     """Tests for ``load_settings`` and ``save_settings``."""

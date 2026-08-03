@@ -150,6 +150,8 @@ class MainWindow(Adw.ApplicationWindow):
         self._vault_tree.connect("delete-requested", self._on_delete_requested)
         self._vault_tree.connect("close-file-requested", self._on_close_file_requested)
         self._vault_tree.connect("file-renamed", self._on_file_renamed)
+        self._vault_tree.connect("vault-renamed", self._on_vault_renamed)
+        self._vault_tree.connect("vault-removed", self._on_vault_removed)
         self._vault_tree.connect("focus-current-file", self._on_focus_current_file_clicked)
 
         self._vault_monitor = vault_monitor.VaultMonitor()
@@ -1294,6 +1296,24 @@ class MainWindow(Adw.ApplicationWindow):
                 self.mru.rename(tab_path, new_tab_path)
 
         self._refresh_sidebar_backlinks()
+
+    def _on_vault_renamed(self, _tree, _vault_path: str, new_name: str) -> None:
+        """Handle vault rename from the vault tree."""
+        # Vault path unchanged — no index updates needed.
+        logger.info("Vault renamed: %s → %s", _vault_path, new_name)
+
+    def _on_vault_removed(self, _tree, vault_path: str) -> None:
+        """Handle vault removal from the vault tree."""
+        logger.info("Vault removed: %s", vault_path)
+        # Close all tabs belonging to the removed vault.
+        for tab_path in list(self._tab_bar.get_all_paths()):
+            if tab_path.startswith(vault_path + os.sep) or tab_path == vault_path:
+                self._tab_bar._on_close_button_clicked(tab_path)
+        # Remove vault from vault monitor.
+        self._vault_monitor.remove_vault(vault_path)
+        # Purge backlink/file index entries.
+        self._backlink_index.remove_vault(vault_path)
+        self._file_index.remove_vault(vault_path)
 
     def _on_focus_current_file_clicked(self, _tree) -> None:
         """Focus the current file in the vault tree."""

@@ -13,6 +13,7 @@ Hidden file/directory filtering:
 """
 
 import json
+import os
 import logging
 from pathlib import Path
 
@@ -104,6 +105,13 @@ class FileIndex:
         stem = self._path_to_stem.pop(file_path, None)
         if stem is not None:
             self._remove_stem_key(stem, file_path)
+
+    def remove_vault(self, vault_path: str) -> None:
+        """Remove all entries under *vault_path* from the file index."""
+        abs_path = os.path.abspath(vault_path)
+        paths_to_remove = [p for p in self._path_to_stem if p.startswith(abs_path + os.sep) or p == abs_path]
+        for p in paths_to_remove:
+            self.remove_file(p)
 
     def rename_file(self, old_path: str, new_path: str) -> None:
         """Update the index for a file rename/move."""

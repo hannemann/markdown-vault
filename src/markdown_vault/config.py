@@ -172,6 +172,20 @@ def remove_vault(path: str) -> list[dict[str, str]]:
     return load_vaults()
 
 
+def rename_vault(path: str, new_name: str) -> list[dict[str, str]]:
+    """Rename the vault at *path* to *new_name* and return the updated list."""
+    abs_path = os.path.abspath(path)
+    vaults = load_vaults()
+    for vault in vaults:
+        if vault["path"] == abs_path:
+            vault["name"] = new_name
+            save_vaults(vaults)
+            logger.info("Vault renamed: %s → %s", path, new_name)
+            return load_vaults()
+    logger.warning("Vault not found for rename: %s", path)
+    return vaults
+
+
 # ── App settings ────────────────────────────────────────────────────
 
 _DEFAULT_SETTINGS = {

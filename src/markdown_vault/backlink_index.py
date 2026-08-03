@@ -97,6 +97,23 @@ class BacklinkIndex:
         self._bump_mutation_seq()
         self._remove_source(str(file_path))
 
+    def remove_vault(self, vault_path: str) -> None:
+        """Remove all entries under *vault_path* from the index."""
+        self._bump_mutation_seq()
+        abs_path = os.path.abspath(vault_path) + os.sep
+        keys_to_remove = [
+            k for k in self._target_to_sources
+            if k.startswith(f"vault:{abs_path}") or k.startswith(f"vault:?path={abs_path}")
+        ]
+        for key in keys_to_remove:
+            del self._target_to_sources[key]
+        keys_to_remove = [
+            k for k in self._source_to_targets
+            if k.startswith(abs_path)
+        ]
+        for key in keys_to_remove:
+            del self._source_to_targets[key]
+
     def rename_file(self, old_path: str | Path, new_path: str | Path) -> None:
         """Update the index for a file rename / move."""
         self._bump_mutation_seq()

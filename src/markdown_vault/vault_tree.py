@@ -67,6 +67,8 @@ class VaultTree(Gtk.Box):
         "file-selected": (GObject.SignalFlags.RUN_LAST, None, (str,)),
         "vault-activated": (GObject.SignalFlags.RUN_LAST, None, (str,)),
         "vault-added": (GObject.SignalFlags.RUN_LAST, None, (str,)),
+        "vault-renamed": (GObject.SignalFlags.RUN_LAST, None, (str, str)),
+        "vault-removed": (GObject.SignalFlags.RUN_LAST, None, (str,)),
         "new-file-requested": (GObject.SignalFlags.RUN_LAST, None, (str,)),
         "new-folder-requested": (GObject.SignalFlags.RUN_LAST, None, (str,)),
         "delete-requested": (GObject.SignalFlags.RUN_LAST, None, (str,)),
@@ -157,7 +159,7 @@ class VaultTree(Gtk.Box):
         self._icon_renderer.set_property("mode", Gtk.CellRendererMode.INERT)
         self._cell_renderer = Gtk.CellRendererText()
         self._cell_renderer.set_property("ellipsize", 3)
-        self._cell_renderer.set_property("editable", True)
+        self._cell_renderer.set_property("editable", False)
         self._cell_renderer.connect("edited", self._on_inline_edited)
         self._cell_renderer.connect("editing-canceled", self._on_inline_editing_canceled)
 
@@ -315,6 +317,8 @@ class VaultTree(Gtk.Box):
             cell.set_property("weight", Pango.Weight.BOLD)
         else:
             cell.set_property("weight", Pango.Weight.NORMAL)
+        # Vault roots are not inline-editable (use context menu instead).
+        cell.set_property("editable", not is_vault_root)
         # Drop target highlight.
         if is_dir and path == self._drop_hover_path:
             ctx = self._tree_view.get_style_context()
@@ -413,6 +417,28 @@ class VaultTree(Gtk.Box):
             action.connect("activate", lambda *_: self.emit("close-file-requested", path))
             action_group.add_action(action)
 
+        if is_vault_root and self._context_path:
+            menu.append("Rename Vault", "ctx.rename-vault")
+            menu.append("Remove Vault", "ctx.remove-vault")
+
+            vault_name = self._context_path
+            for v in self._vaults:
+                if v["path"] == self._context_path:
+                    vault_name = v["name"]
+                    break
+
+            ctx_path = self._context_path
+            ctx_vault_name = vault_name
+            action = Gio.SimpleAction.new("rename-vault", None)
+            action.connect("activate", lambda *_: self._show_rename_dialog(ctx_path, ctx_vault_name))
+            action_group.add_action(action)
+
+            ctx_path = self._context_path
+            ctx_vault_name = vault_name
+            action = Gio.SimpleAction.new("remove-vault", None)
+            action.connect("activate", lambda *_: self._show_remove_dialog(ctx_path, ctx_vault_name))
+            action_group.add_action(action)
+
         # Parent the action group on the ScrolledWindow (parent of PopoverMenu
         # in the widget hierarchy, so PopoverMenu can resolve ctx.* actions).
         # PopoverMenu is also parented on ScrolledWindow to fix hover highlighting
@@ -442,6 +468,42 @@ class VaultTree(Gtk.Box):
             self._scrolled.insert_action_group("ctx", None)
             return False
         GLib.timeout_add(50, _cleanup)
+
+    def _show_rename_dialog(self, vault_path: str, vault_name: str) -> None:
+        """Show a dialog to rename the vault."""
+        win = self.get_root()
+        if win is None:
+            return
+        dialogs.show_rename_vault_dialog(
+            win, vault_path, vault_name, self._do_rename_vault,
+        )
+
+    def _do_rename_vault(self, vault_path: str, new_name: str, dialog: Adw.Dialog) -> None:
+        """Execute the vault rename."""
+        new_name = new_name.strip()
+        if not new_name:
+            return
+        # Double-check uniqueness (safety net).
+        for v in config.load_vaults():
+            if v["path"] != vault_path and v["name"] == new_name:
+                return
+        updated = config.rename_vault(vault_path, new_name)
+        self.set_vaults(updated)
+        self.emit("vault-renamed", vault_path, new_name)
+        dialog.close()
+
+    def _show_remove_dialog(self, vault_path: str, vault_name: str) -> None:
+        """Show a confirmation dialog to remove the vault."""
+        win = self.get_root()
+        if win is None:
+            return
+        dialogs.show_remove_vault_dialog(win, vault_path, vault_name, self._do_remove_vault)
+
+    def _do_remove_vault(self, vault_path: str) -> None:
+        """Execute the vault removal."""
+        updated = config.remove_vault(vault_path)
+        self.set_vaults(updated)
+        self.emit("vault-removed", vault_path)
 
     def _is_open_file(self, file_path: str) -> bool:
         """Check if *file_path* is currently open in a tab.
@@ -883,15 +945,57 @@ class VaultTree(Gtk.Box):
         if folder:
             path = folder.get_path()
             if path and path not in self._vault_paths:
-                self._vault_paths.append(path)
-                self._populate_directory(Path(path), None)
-                # Persist the new vault.
-                try:
-                    config.add_vault(Path(path).name, path)
-                except OSError as e:
-                    dialogs.show_error(self.get_root(), "Save Failed", str(e))
+                default_name = Path(path).name
+                if self._name_collision(default_name):
+                    self._show_add_vault_name_dialog(path, default_name)
                     return
-                self.emit("vault-added", path)
+                self._add_vault(path, default_name)
+
+    def _name_collision(self, name: str) -> bool:
+        """Check if *name* collides with an existing vault name."""
+        for v in config.load_vaults():
+            if v["name"] == name:
+                return True
+        return False
+
+    def _add_vault(self, path: str, name: str) -> None:
+        """Add a vault to the tree and persist it."""
+        self._vault_paths.append(path)
+        self._populate_directory(Path(path), None, name=name)
+        try:
+            updated = config.add_vault(name, path)
+        except OSError as e:
+            dialogs.show_error(self.get_root(), "Save Failed", str(e))
+            self._vault_paths.remove(path)
+            # Remove the row we just added.
+            model, iter_ = self._store.get_iter_first()
+            while iter_ is not None:
+                p = self._store.get_value(iter_, _COL_PATH)
+                if p == path:
+                    self._store.remove(iter_)
+                    break
+                iter_ = self._store.iter_next(iter_)
+            return
+        self.set_vaults(updated)
+        self.emit("vault-added", path)
+
+    def _show_add_vault_name_dialog(self, vault_path: str, default_name: str) -> None:
+        """Show dialog to resolve a vault name collision."""
+        win = self.get_root()
+        if win is None:
+            return
+        dialogs.show_add_vault_name_dialog(
+            win, vault_path, default_name, self._do_add_vault_with_name,
+        )
+
+    def _do_add_vault_with_name(self, vault_path: str, _default_name: str,
+                                 new_name: str, dialog: Adw.Dialog) -> None:
+        """Execute adding a vault with a user-specified name."""
+        new_name = new_name.strip()
+        if not new_name or self._name_collision(new_name):
+            return
+        dialog.close()
+        self._add_vault(vault_path, new_name)
 
     # ------------------------------------------------------------------
     # Debug

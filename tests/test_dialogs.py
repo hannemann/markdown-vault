@@ -339,5 +339,142 @@ class TestConfirmDiscardUnsaved(unittest.TestCase):
         self.assertNotIn("tabs", kwargs["body"])
 
 
+# ---------------------------------------------------------------------------
+# show_rename_vault_dialog
+# ---------------------------------------------------------------------------
+
+class TestShowRenameVaultDialog(unittest.TestCase):
+
+    @patch("markdown_vault.dialogs.Adw.AlertDialog")
+    @patch("markdown_vault.dialogs.Gtk.Entry")
+    @patch("markdown_vault.config")
+    def test_creates_dialog_with_entry(self, MockConfig, MockEntry, MockAlertDialog):
+        MockConfig.load_vaults.return_value = [{"path": "/a", "name": "A"}]
+        parent = MagicMock()
+        on_rename = MagicMock()
+        dialogs.show_rename_vault_dialog(parent, "/a", "A", on_rename)
+        MockAlertDialog.assert_called_once_with(
+            heading="Rename Vault",
+            body="Enter a new name for the vault.",
+        )
+        dialog = MockAlertDialog.return_value
+        dialog.set_extra_child.assert_called_once()
+        MockEntry.assert_called_once_with(placeholder_text="Enter new vault name")
+        entry = MockEntry.return_value
+        entry.set_text.assert_called_once_with("A")
+
+    @patch("markdown_vault.dialogs.Adw.AlertDialog")
+    @patch("markdown_vault.dialogs.Gtk.Entry")
+    @patch("markdown_vault.dialogs.GLib.idle_add")
+    @patch("markdown_vault.config")
+    def test_presents_to_parent(self, MockConfig, MockIdleAdd, MockEntry, MockAlertDialog):
+        MockConfig.load_vaults.return_value = [{"path": "/a", "name": "A"}]
+        parent = MagicMock()
+        dialogs.show_rename_vault_dialog(parent, "/a", "A", lambda *a: None)
+        dialog = MockAlertDialog.return_value
+        dialog.present.assert_called_once_with(parent)
+
+
+# ---------------------------------------------------------------------------
+# show_remove_vault_dialog
+# ---------------------------------------------------------------------------
+
+class TestShowRemoveVaultDialog(unittest.TestCase):
+
+    @patch("markdown_vault.dialogs.Adw.AlertDialog")
+    def test_presents_with_vault_name(self, MockAlertDialog):
+        parent = MagicMock()
+        dialogs.show_remove_vault_dialog(parent, "/a", "MyVault", lambda p: None)
+        MockAlertDialog.new.assert_called_once()
+        call_args = MockAlertDialog.new.call_args
+        self.assertIn("MyVault", str(call_args))
+
+    @patch("markdown_vault.dialogs.Adw.AlertDialog")
+    def test_calls_on_remove_on_confirm(self, MockAlertDialog):
+        parent = MagicMock()
+        on_remove = MagicMock()
+        dialogs.show_remove_vault_dialog(parent, "/a", "MyVault", on_remove)
+        dlg = MockAlertDialog.new.return_value
+        response_cb = dlg.connect.call_args[0][1]
+        response_cb(dlg, "remove")
+        on_remove.assert_called_once_with("/a")
+
+    @patch("markdown_vault.dialogs.Adw.AlertDialog")
+    def test_noop_on_cancel(self, MockAlertDialog):
+        parent = MagicMock()
+        on_remove = MagicMock()
+        dialogs.show_remove_vault_dialog(parent, "/a", "MyVault", on_remove)
+        dlg = MockAlertDialog.new.return_value
+        response_cb = dlg.connect.call_args[0][1]
+        response_cb(dlg, "cancel")
+        on_remove.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# show_add_vault_name_dialog
+# ---------------------------------------------------------------------------
+
+class TestShowAddVaultNameDialog(unittest.TestCase):
+
+    @patch("markdown_vault.dialogs.Adw.AlertDialog")
+    @patch("markdown_vault.dialogs.Gtk.Entry")
+    @patch("markdown_vault.dialogs.GLib.idle_add")
+    @patch("markdown_vault.config")
+    def test_creates_dialog_with_default_name(self, MockConfig, MockIdleAdd, MockEntry, MockAlertDialog):
+        MockConfig.load_vaults.return_value = [{"path": "/a", "name": "A"}]
+        parent = MagicMock()
+        dialogs.show_add_vault_name_dialog(parent, "/b", "MyVault", lambda *a: None)
+        MockAlertDialog.assert_called_once_with(
+            heading="Vault Name Collision",
+            body="Enter a unique vault name.",
+        )
+        dialog = MockAlertDialog.return_value
+        dialog.set_extra_child.assert_called_once()
+        MockEntry.assert_called_once_with(placeholder_text="Enter a unique vault name")
+        entry = MockEntry.return_value
+        entry.set_text.assert_called_once_with("MyVault")
+
+    @patch("markdown_vault.dialogs.Adw.AlertDialog")
+    @patch("markdown_vault.dialogs.Gtk.Entry")
+    @patch("markdown_vault.dialogs.GLib.idle_add")
+    @patch("markdown_vault.config")
+    def test_presents_to_parent(self, MockConfig, MockIdleAdd, MockEntry, MockAlertDialog):
+        MockConfig.load_vaults.return_value = [{"path": "/a", "name": "A"}]
+        parent = MagicMock()
+        dialogs.show_add_vault_name_dialog(parent, "/b", "MyVault", lambda *a: None)
+        dialog = MockAlertDialog.return_value
+        dialog.present.assert_called_once_with(parent)
+
+    @patch("markdown_vault.dialogs.Adw.AlertDialog")
+    @patch("markdown_vault.dialogs.Gtk.Entry")
+    @patch("markdown_vault.dialogs.GLib.idle_add")
+    @patch("markdown_vault.config")
+    def test_calls_on_add_on_confirm(self, MockConfig, MockIdleAdd, MockEntry, MockAlertDialog):
+        MockConfig.load_vaults.return_value = [{"path": "/a", "name": "A"}]
+        parent = MagicMock()
+        on_add = MagicMock()
+        entry_mock = MockEntry.return_value
+        entry_mock.get_text.return_value.strip.return_value = "MyVault"
+        dialogs.show_add_vault_name_dialog(parent, "/b", "MyVault", on_add)
+        dialog = MockAlertDialog.return_value
+        response_cb = dialog.connect.call_args[0][1]
+        response_cb(dialog, "add")
+        on_add.assert_called_once_with("/b", "MyVault", "MyVault", dialog)
+
+    @patch("markdown_vault.dialogs.Adw.AlertDialog")
+    @patch("markdown_vault.dialogs.Gtk.Entry")
+    @patch("markdown_vault.dialogs.GLib.idle_add")
+    @patch("markdown_vault.config")
+    def test_noop_on_cancel(self, MockConfig, MockIdleAdd, MockEntry, MockAlertDialog):
+        MockConfig.load_vaults.return_value = [{"path": "/a", "name": "A"}]
+        parent = MagicMock()
+        on_add = MagicMock()
+        dialogs.show_add_vault_name_dialog(parent, "/b", "MyVault", on_add)
+        dialog = MockAlertDialog.return_value
+        response_cb = dialog.connect.call_args[0][1]
+        response_cb(dialog, "cancel")
+        on_add.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()

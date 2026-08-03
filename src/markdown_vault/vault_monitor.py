@@ -259,6 +259,20 @@ class VaultMonitor:
         for path in list(self._monitors.keys()):
             self._stop_monitor(path)
 
+    def remove_vault(self, vault_path: str) -> None:
+        """Entfernt alle Monitore und Timer für einen Vault."""
+        abs_path = os.path.abspath(vault_path)
+        for monitor_path, monitor in list(self._monitors.items()):
+            if monitor_path == abs_path or monitor_path.startswith(abs_path + os.sep):
+                monitor.cancel()
+                del self._monitors[monitor_path]
+        timers_to_remove = [
+            t for t in self._debounce_timers
+            if t.startswith(abs_path + os.sep) or t == abs_path
+        ]
+        for t in timers_to_remove:
+            del self._debounce_timers[t]
+
     def cleanup(self):
         """Raumt alle Ressourcen auf (Monitore + Timer)."""
         self._stop_all_monitors()

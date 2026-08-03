@@ -184,3 +184,146 @@ def confirm_discard_unsaved(
 
     dialog.connect("response", _on_response)
     dialog.present(parent)
+
+
+# ── Vault CRUD dialogs ──────────────────────────────────────────────
+
+
+def show_rename_vault_dialog(
+    parent: Gtk.Widget,
+    vault_path: str,
+    vault_name: str,
+    on_rename,
+) -> None:
+    """Show a dialog to rename a vault.
+
+    *on_rename* is called with (vault_path, new_name, dialog) when the
+    user confirms with a unique name.
+    """
+    from . import config
+
+    dialog = Adw.AlertDialog(heading="Rename Vault", body="Enter a new name for the vault.")
+    dialog.set_prefer_wide_layout(True)
+    dialog.add_response("cancel", "Cancel")
+    dialog.add_response("rename", "Rename")
+    dialog.set_response_appearance("rename", Adw.ResponseAppearance.SUGGESTED)
+    dialog.set_default_response("rename")
+    dialog.set_close_response("cancel")
+
+    entry = Gtk.Entry(placeholder_text="Enter new vault name")
+    entry.set_text(vault_name)
+    entry.set_activates_default(True)
+    dialog.set_extra_child(entry)
+
+    def _check_name():
+        new_name = entry.get_text().strip()
+        if new_name and new_name != vault_name:
+            for v in config.load_vaults():
+                if v["path"] != vault_path and v["name"] == new_name:
+                    dialog.set_response_enabled("rename", False)
+                    return
+            dialog.set_response_enabled("rename", True)
+        else:
+            dialog.set_response_enabled("rename", False)
+
+    entry.connect("changed", lambda *_: _check_name())
+    _check_name()
+
+    def _on_response(_dlg, response):
+        if response == "rename":
+            new_name = entry.get_text().strip()
+            if new_name and new_name != vault_name:
+                on_rename(vault_path, new_name, dialog)
+
+    dialog.connect("response", _on_response)
+    dialog.present(parent)
+
+    def _focus():
+        entry.grab_focus_without_selecting()
+        return False
+    GLib.idle_add(_focus)
+
+
+def show_remove_vault_dialog(
+    parent: Gtk.Widget,
+    vault_path: str,
+    vault_name: str,
+    on_remove,
+) -> None:
+    """Show a confirmation dialog to remove a vault.
+
+    *on_remove* is called with *vault_path* when the user confirms.
+    """
+    msg = Adw.AlertDialog.new(
+        f'Vault "{vault_name}" entfernen?',
+        "Die Dateien bleiben unangetastet.",
+    )
+    msg.add_response("cancel", "Abbrechen")
+    msg.set_response_appearance("remove", Adw.ResponseAppearance.DESTRUCTIVE)
+    msg.add_response("remove", "Entfernen")
+    msg.set_default_response("cancel")
+    msg.set_close_response("cancel")
+
+    def _on_response(_dialog, response: str) -> None:
+        if response == "remove":
+            on_remove(vault_path)
+
+    msg.connect("response", _on_response)
+    msg.present(parent)
+
+
+def show_add_vault_name_dialog(
+    parent: Gtk.Widget,
+    vault_path: str,
+    default_name: str,
+    on_add,
+) -> None:
+    """Show a dialog to resolve a vault name collision.
+
+    *on_add* is called with (vault_path, default_name, new_name, dialog)
+    when the user confirms with a unique name.
+    """
+    from . import config
+
+    dialog = Adw.AlertDialog(
+        heading="Vault Name Collision",
+        body="Enter a unique vault name.",
+    )
+    dialog.set_prefer_wide_layout(True)
+    dialog.add_response("cancel", "Cancel")
+    dialog.add_response("add", "Add")
+    dialog.set_response_appearance("add", Adw.ResponseAppearance.SUGGESTED)
+    dialog.set_default_response("add")
+    dialog.set_close_response("cancel")
+
+    entry = Gtk.Entry(placeholder_text="Enter a unique vault name")
+    entry.set_text(default_name)
+    entry.set_activates_default(True)
+    dialog.set_extra_child(entry)
+
+    def _check_name():
+        new_name = entry.get_text().strip()
+        if new_name and not any(
+            v["name"] == new_name
+            for v in config.load_vaults()
+        ):
+            dialog.set_response_enabled("add", True)
+        else:
+            dialog.set_response_enabled("add", False)
+
+    entry.connect("changed", lambda *_: _check_name())
+    _check_name()
+
+    def _on_response(_dlg, response):
+        if response == "add":
+            new_name = entry.get_text().strip()
+            if new_name:
+                on_add(vault_path, default_name, new_name, dialog)
+
+    dialog.connect("response", _on_response)
+    dialog.present(parent)
+
+    def _focus():
+        entry.grab_focus_without_selecting()
+        return False
+    GLib.idle_add(_focus)
