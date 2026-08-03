@@ -403,6 +403,74 @@ MARKDOWN_EXTENSIONS = [
 ]
 
 
+# In-preview find (Ctrl+F): custom highlighting via the CSS Custom Highlight
+# API (CSS.highlights + ::highlight()). WebKit's native find highlight rendered
+# matches inconsistently and has no "highlight all" option; this registers a
+# Range per match ourselves. Driven through evaluate_javascript (bypasses CSP).
+# Evaluating this expression returns window.__mvfind; append .search(q)/.step(d)/
+# .clear(), each returning a JSON string {total, current}.
+_FIND_JS = r"""
+(function () {
+  if (!window.__mvfind) {
+    window.__mvfind = {
+      ranges: [], current: -1,
+      clear: function () {
+        CSS.highlights.delete('mv-find');
+        CSS.highlights.delete('mv-find-current');
+        this.ranges = []; this.current = -1;
+      },
+      search: function (q) {
+        this.clear();
+        if (!q) return JSON.stringify({ total: 0, current: 0 });
+        var root = document.querySelector('.markdown-body') || document.body;
+        var ql = q.toLowerCase();
+        var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+          acceptNode: function (n) {
+            var pn = n.parentNode ? n.parentNode.nodeName : '';
+            if (pn === 'SCRIPT' || pn === 'STYLE') return NodeFilter.FILTER_REJECT;
+            return n.nodeValue ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
+          }
+        });
+        var n;
+        while ((n = walker.nextNode())) {
+          var lower = n.nodeValue.toLowerCase(), idx = lower.indexOf(ql);
+          while (idx >= 0) {
+            var r = document.createRange();
+            r.setStart(n, idx); r.setEnd(n, idx + q.length);
+            this.ranges.push(r);
+            idx = lower.indexOf(ql, idx + q.length);
+          }
+        }
+        if (this.ranges.length) { this.current = 0; this._activate(); }
+        return JSON.stringify({ total: this.ranges.length, current: this.ranges.length ? 1 : 0 });
+      },
+      _activate: function () {
+        // Rebuild BOTH highlights so the previous current reverts to plain —
+        // each range is in exactly one highlight (no overlap to repaint wrong).
+        var others = new Highlight();
+        for (var i = 0; i < this.ranges.length; i++) {
+          if (i !== this.current) others.add(this.ranges[i]);
+        }
+        CSS.highlights.set('mv-find', others);
+        var r = this.ranges[this.current];
+        if (!r) return;
+        CSS.highlights.set('mv-find-current', new Highlight(r));
+        var el = r.startContainer.parentElement;
+        if (el) el.scrollIntoView({ block: 'center' });
+      },
+      step: function (d) {
+        if (!this.ranges.length) return JSON.stringify({ total: 0, current: 0 });
+        this.current = (this.current + d + this.ranges.length) % this.ranges.length;
+        this._activate();
+        return JSON.stringify({ total: this.ranges.length, current: this.current + 1 });
+      }
+    };
+  }
+  return window.__mvfind;
+})()
+"""
+
+
 class Preview(Gtk.ScrolledWindow):
     """Widget that renders Markdown as styled HTML.
 
@@ -437,12 +505,11 @@ class Preview(Gtk.ScrolledWindow):
         self._connect_preview_signals()
         self.set_child(self._web_view)
 
-        # In-preview search (Ctrl+F find bar).
+        # In-preview search (Ctrl+F find bar) — see _FIND_JS. current/total are
+        # reported by the injected JS, so the preview counter shows "n/m" too.
         self._search_text: str = ""
         self._search_matches: int = 0
-        self._web_view.get_find_controller().connect(
-            "counted-matches", self._on_counted_matches,
-        )
+        self._search_current: int = 0
 
     @staticmethod
     def _setup_web_view(wv: WebKit.WebView) -> None:
@@ -760,54 +827,56 @@ class Preview(Gtk.ScrolledWindow):
                 js, -1, None, None, None, None,
             )
 
-    # ── In-preview search ───────────────────────────────────────────
+    # ── In-preview search (custom Highlight-API find, see _FIND_JS) ──
 
-    _FIND_OPTS = None  # set lazily to avoid importing flags at module load
+    def _run_find(self, call: str, store: bool) -> None:
+        """Evaluate ``_FIND_JS`` + *call* in the page; *store* routes the JSON
+        result ({total, current}) back into the counter."""
+        if self._web_view is None:  # torn down (e.g. tab closed)
+            return
+        cb = self._on_find_result if store else None
+        self._web_view.evaluate_javascript(
+            _FIND_JS + call, -1, None, None, None, cb, None,
+        )
 
-    def _find_options(self):
-        if Preview._FIND_OPTS is None:
-            Preview._FIND_OPTS = (
-                WebKit.FindOptions.CASE_INSENSITIVE
-                | WebKit.FindOptions.WRAP_AROUND
-            )
-        return Preview._FIND_OPTS
-
-    def _on_counted_matches(self, _fc, count: int) -> None:
-        self._search_matches = count
+    def _on_find_result(self, web_view, result, _data) -> None:
+        try:
+            value = web_view.evaluate_javascript_finish(result)
+            data = json.loads(value.to_string()) if value is not None else {}
+        except Exception:
+            data = {}
+        self._search_matches = int(data.get("total", 0))
+        self._search_current = int(data.get("current", 0))
         self.emit("search-info-changed")
 
     def search_set_text(self, text: str) -> None:
         """Search *text* in the rendered page (empty string clears)."""
         self._search_text = text or ""
-        if self._web_view is None:  # torn down (e.g. tab closed)
-            return
-        fc = self._web_view.get_find_controller()
         if not text:
-            fc.search_finish()
+            self._run_find(".clear()", store=False)
             self._search_matches = 0
+            self._search_current = 0
             self.emit("search-info-changed")
             return
-        opts = self._find_options()
-        fc.count_matches(text, opts, 1000)
-        fc.search(text, opts, 1000)
+        self._run_find(".search(" + json.dumps(text) + ")", store=True)
 
     def search_next(self) -> None:
-        if self._search_text and self._web_view is not None:
-            self._web_view.get_find_controller().search_next()
+        if self._search_text:
+            self._run_find(".step(1)", store=True)
 
     def search_prev(self) -> None:
-        if self._search_text and self._web_view is not None:
-            self._web_view.get_find_controller().search_previous()
+        if self._search_text:
+            self._run_find(".step(-1)", store=True)
 
     def search_clear(self) -> None:
-        if self._web_view is not None:
-            self._web_view.get_find_controller().search_finish()
+        self._run_find(".clear()", store=False)
         self._search_text = ""
         self._search_matches = 0
+        self._search_current = 0
 
     def search_info(self) -> tuple[int, int]:
-        """Return ``(current, total)``; WebKit exposes only the total."""
-        return (0, self._search_matches)
+        """Return ``(current, total)`` matches."""
+        return (self._search_current, self._search_matches)
 
     def set_current_vault_path(self, vault_path: str) -> None:
         """Set the current vault path for wikilink resolution."""

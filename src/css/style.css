@@ -440,3 +440,15 @@ body {
 .markdown-body .task-list-item input[type="checkbox"] {
   margin-right: 0.5em;
 }
+
+/* In-preview find highlighting (Ctrl+F) via the CSS Custom Highlight API —
+   WebKit's native find highlight rendered matches inconsistently. Ranges are
+   registered from JS; these style them. Current match wins by priority. */
+::highlight(mv-find) {
+  background-color: #ffe066;
+  color: #000;
+}
+::highlight(mv-find-current) {
+  background-color: #ff9d3c;
+  color: #000;
+}
