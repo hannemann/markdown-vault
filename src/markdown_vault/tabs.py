@@ -15,7 +15,7 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 gi.require_version("Gdk", "4.0")
 
-from gi.repository import Gtk, GObject, Gio, Gdk
+from gi.repository import Gtk, GObject, Gio, Gdk, GLib
 
 from .path_utils import find_vault_for_dir
 
@@ -68,15 +68,23 @@ class Tab:
         try:
             new_text = Path(file_path).read_text(encoding="utf-8")
             buf = self.editor._buffer
-            # Preserve the caret across the full-content replace so a silent
-            # reload doesn't jump the reader to the top (R21.18).
+            # Preserve caret + scroll across the full-content replace so a
+            # silent reload doesn't jump the reader to the top (R21.18).
             cursor_offset = buf.get_iter_at_mark(buf.get_insert()).get_offset()
+            vadj = self.editor.get_vadjustment()
+            scroll = vadj.get_value() if vadj is not None else 0.0
             buf.delete(buf.get_start_iter(), buf.get_end_iter())
             buf.insert(buf.get_start_iter(), new_text)
             buf.set_modified(False)
-            target = buf.get_iter_at_offset(min(cursor_offset, buf.get_char_count()))
-            buf.place_cursor(target)
-            self.editor._view.scroll_to_iter(target, 0.2, False, 0.0, 0.5)
+            buf.place_cursor(
+                buf.get_iter_at_offset(min(cursor_offset, buf.get_char_count())))
+            if vadj is not None:
+                # Restore after the view re-lays out (scrolling now is ignored).
+                def _restore(adj=vadj, value=scroll):
+                    adj.set_value(
+                        min(value, max(0.0, adj.get_upper() - adj.get_page_size())))
+                    return False
+                GLib.idle_add(_restore)
             return True
         except OSError:
             logger.warning("Could not reload editor from %s", file_path, exc_info=True)
