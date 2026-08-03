@@ -252,9 +252,16 @@ class TabBar(Gtk.Box):
         self.emit("tab-changed", file_path)
 
     def close_tab(self, file_path: str) -> None:
-        """Remove the tab for *file_path* and emit ``tab-closed``."""
+        """Remove the tab for *file_path* and emit ``tab-closed``.
+
+        If the closed tab was the active one, its right neighbour (or the
+        left one, if it was the last tab) becomes active so the content of
+        the now-current tab actually renders.
+        """
         if file_path not in self._tabs:
             return
+        was_current = self._current_path == file_path
+        close_index = list(self._tabs.keys()).index(file_path)
         tab = self._tabs.pop(file_path)
         # Cleanup Python-side resources BEFORE removing from container
         # (container removal triggers GTK widget destruction)
@@ -271,8 +278,14 @@ class TabBar(Gtk.Box):
         # Now remove from container (triggers GTK unparent)
         self._remove_tab_widget(file_path)
         self.emit("tab-closed", file_path)
-        if self._current_path == file_path:
+        if was_current:
             self._current_path = None
+            remaining = list(self._tabs.keys())
+            if remaining:
+                neighbour = (remaining[close_index]
+                             if close_index < len(remaining)
+                             else remaining[-1])
+                self.set_active_tab(neighbour)
 
     def close_others(self, file_path: str) -> None:
         """Close all tabs except the one at *file_path*.
