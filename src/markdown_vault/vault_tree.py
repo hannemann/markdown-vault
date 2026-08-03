@@ -67,7 +67,7 @@ class VaultTree(Gtk.Box):
         "file-selected": (GObject.SignalFlags.RUN_LAST, None, (str,)),
         "vault-activated": (GObject.SignalFlags.RUN_LAST, None, (str,)),
         "vault-added": (GObject.SignalFlags.RUN_LAST, None, (str,)),
-        "vault-renamed": (GObject.SignalFlags.RUN_LAST, None, (str, str)),
+        "vault-renamed": (GObject.SignalFlags.RUN_LAST, None, (str, str, str)),
         "vault-removed": (GObject.SignalFlags.RUN_LAST, None, (str,)),
         "new-file-requested": (GObject.SignalFlags.RUN_LAST, None, (str,)),
         "new-folder-requested": (GObject.SignalFlags.RUN_LAST, None, (str,)),
@@ -483,13 +483,17 @@ class VaultTree(Gtk.Box):
         new_name = new_name.strip()
         if not new_name:
             return
-        # Double-check uniqueness (safety net).
+        # Capture the current (old) name before the config is updated, and
+        # double-check uniqueness (safety net).
+        old_name = ""
         for v in config.load_vaults():
-            if v["path"] != vault_path and v["name"] == new_name:
+            if v["path"] == vault_path:
+                old_name = v["name"]
+            elif v["name"] == new_name:
                 return
         updated = config.rename_vault(vault_path, new_name)
         self.set_vaults(updated)
-        self.emit("vault-renamed", vault_path, new_name)
+        self.emit("vault-renamed", vault_path, old_name, new_name)
         dialog.close()
 
     def _show_remove_dialog(self, vault_path: str, vault_name: str) -> None:

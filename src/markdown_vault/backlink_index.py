@@ -250,6 +250,64 @@ class BacklinkIndex:
 
         return WIKILINK_RE.sub(repl, text)
 
+    def rename_vault_wikilinks(
+        self, old_name: str, new_name: str, vaults: list[dict[str, str]],
+    ) -> list[str]:
+        """Rewrite vault-qualified links ``[[old_name>…]]`` → ``[[new_name>…]]``.
+
+        Backlink and file-index keys are vault-*name*-based, so a vault rename
+        must also update the link text that names the vault explicitly;
+        otherwise those links become unresolvable and their backlinks are lost
+        on the next full rebuild.  Unqualified links (``[[foo]]``) need no
+        rewrite — they resolve against the source file's vault by name at query
+        time.  Only the vault prefix changes; path and alias are preserved.
+
+        Walks every file in *vaults* and returns the modified file paths.
+        Open files are rewritten on disk like :meth:`rename_wikilinks`, so a
+        clean tab reloads silently and a dirty tab raises the external-change
+        banner — intended.
+        """
+        self._bump_mutation_seq()
+        if not old_name or not new_name or old_name == new_name:
+            return []
+        modified: list[str] = []
+        for entry in vaults:
+            for root, _dirs, files in os.walk(entry["path"]):
+                for fname in files:
+                    if not fname.endswith(".md"):
+                        continue
+                    path_str = str(Path(root) / fname)
+                    try:
+                        text = Path(path_str).read_text(encoding="utf-8")
+                    except (OSError, UnicodeDecodeError):
+                        logger.warning("Cannot read %s for vault rename",
+                                       path_str, exc_info=True)
+                        continue
+                    new_text = self._rename_vault_prefix(text, old_name, new_name)
+                    if new_text == text:
+                        continue
+                    try:
+                        Path(path_str).write_text(new_text, encoding="utf-8")
+                    except OSError:
+                        logger.warning("Cannot write %s after vault rename",
+                                       path_str, exc_info=True)
+                        continue
+                    modified.append(path_str)
+        return modified
+
+    @staticmethod
+    def _rename_vault_prefix(text: str, old_name: str, new_name: str) -> str:
+        """Return *text* with ``[[old_name>…]]`` prefixes changed to *new_name*."""
+
+        def repl(m):
+            info = wikilink_info_from_match(m)
+            if info.vault != old_name:
+                return m.group(0)
+            alias = f"|{info.alias}" if info.alias else ""
+            return f"[[{new_name}>{info.stem}{alias}]]"
+
+        return WIKILINK_RE.sub(repl, text)
+
     # ------------------------------------------------------------------
     # Query
     # ------------------------------------------------------------------

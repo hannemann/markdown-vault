@@ -407,5 +407,69 @@ class TestBacklinkIndexAlias(unittest.TestCase):
         self.assertEqual(len(backlinks), 1)
 
 
+class TestRenameVaultPrefix(unittest.TestCase):
+    """Pure text rewrite of vault-qualified link prefixes (R19.1)."""
+
+    def _rewrite(self, text):
+        return BacklinkIndex._rename_vault_prefix(text, "Old", "New")
+
+    def test_qualified_prefix_is_rewritten(self):
+        self.assertEqual(self._rewrite("see [[Old>foo]]"), "see [[New>foo]]")
+
+    def test_path_and_alias_preserved(self):
+        self.assertEqual(
+            self._rewrite("[[Old>sub/foo|Bar]]"), "[[New>sub/foo|Bar]]",
+        )
+
+    def test_unqualified_link_untouched(self):
+        self.assertEqual(self._rewrite("[[foo]]"), "[[foo]]")
+
+    def test_other_vault_untouched(self):
+        self.assertEqual(self._rewrite("[[Other>foo]]"), "[[Other>foo]]")
+
+
+class TestRenameVaultWikilinks(unittest.TestCase):
+    """Disk rewrite across vaults on a vault rename (R19.1)."""
+
+    def setUp(self):
+        self._tmp = tempfile.mkdtemp()
+        self._vault = Path(self._tmp) / "vault"
+        (self._vault / "sub").mkdir(parents=True)
+        _cfg._vaults_cache = [{"name": "Journal", "path": str(self._vault)}]
+
+    def tearDown(self):
+        _cfg._vaults_cache = None
+        shutil.rmtree(self._tmp, ignore_errors=True)
+
+    def _vaults(self):
+        return [{"name": "Journal", "path": str(self._vault)}]
+
+    def test_rewrites_qualified_links_and_returns_modified(self):
+        note = self._vault / "sub" / "Note.md"
+        note.write_text("[[Notes>foo]] and [[bar]] and [[Notes>x|A]]\n")
+        other = self._vault / "Other.md"
+        other.write_text("no links here\n")
+
+        modified = BacklinkIndex().rename_vault_wikilinks(
+            "Notes", "Journal", self._vaults(),
+        )
+
+        self.assertEqual(modified, [str(note)])
+        self.assertEqual(
+            note.read_text(),
+            "[[Journal>foo]] and [[bar]] and [[Journal>x|A]]\n",
+        )
+        self.assertEqual(other.read_text(), "no links here\n")
+
+    def test_noop_when_names_equal(self):
+        note = self._vault / "Note.md"
+        note.write_text("[[Notes>foo]]\n")
+        modified = BacklinkIndex().rename_vault_wikilinks(
+            "Notes", "Notes", self._vaults(),
+        )
+        self.assertEqual(modified, [])
+        self.assertEqual(note.read_text(), "[[Notes>foo]]\n")
+
+
 if __name__ == "__main__":
     unittest.main()

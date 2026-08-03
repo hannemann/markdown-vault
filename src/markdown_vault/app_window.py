@@ -1306,10 +1306,27 @@ class MainWindow(Adw.ApplicationWindow):
 
         self._refresh_sidebar_backlinks()
 
-    def _on_vault_renamed(self, _tree, _vault_path: str, new_name: str) -> None:
-        """Handle vault rename from the vault tree."""
-        # Vault path unchanged — no index updates needed.
-        logger.info("Vault renamed: %s → %s", _vault_path, new_name)
+    def _on_vault_renamed(
+        self, _tree, vault_path: str, old_name: str, new_name: str,
+    ) -> None:
+        """Handle vault rename from the vault tree.
+
+        The vault directory is unchanged, so file paths (tabs, MRU, nav,
+        session) need no update.  But backlink and file-index keys are
+        vault-*name*-based (``vault:{name}?path=…`` / ``{name}>stem``), so a
+        rename must rekey both indexes — otherwise every backlink in the
+        renamed vault returns empty until restart (R19.1).  Vault-qualified
+        link text ``[[old_name>…]]`` is rewritten on disk first so the rebuild
+        (and future rebuilds) key it under the new name and clicks resolve.
+        """
+        logger.info("Vault renamed: %s (%s → %s)", vault_path, old_name, new_name)
+        vaults = config.load_vaults()
+        self._backlink_index.rename_vault_wikilinks(old_name, new_name, vaults)
+        # Rebuild both name-based indexes against the rewritten files.
+        self._schedule_backlink_build(vaults)
+        self._file_index.build(vaults)
+        self._dump_debug(["file_index", "backlink_index"])
+        self._refresh_sidebar_backlinks()
 
     def _on_vault_removed(self, _tree, vault_path: str) -> None:
         """Handle vault removal from the vault tree."""
