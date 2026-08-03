@@ -65,10 +65,53 @@ class TestExternalChangesBanner(unittest.TestCase):
     def test_content_changed_shows_banner(self):
         tab_file = "/tmp/vault/test.md"
         handler, tab_bar, tabs = self._make_handler([tab_file])
+        tabs[tab_file].editor.is_modified = True
 
         handler.handle_external_change(tab_file)
 
         tab_bar.show_warning_banner.assert_called_once()
+
+    def test_clean_tab_reloads_silently_without_banner(self):
+        """Clean tab + external change → silent reload, no banner, no flag."""
+        tab_file = "/tmp/vault/test.md"
+        handler, tab_bar, tabs = self._make_handler([tab_file])
+        tabs[tab_file].editor.is_modified = False
+
+        handler.handle_external_change(tab_file)
+
+        tabs[tab_file].reload_editor.assert_called_once_with(tab_file)
+        tab_bar.show_warning_banner.assert_not_called()
+        self.assertFalse(tabs[tab_file].external_change_pending)
+
+    def test_dirty_tab_shows_banner_and_sets_pending_flag(self):
+        """Dirty tab + external change → banner + conflict flag set."""
+        tab_file = "/tmp/vault/test.md"
+        handler, tab_bar, tabs = self._make_handler([tab_file])
+        tabs[tab_file].editor.is_modified = True
+
+        handler.handle_external_change(tab_file)
+
+        tab_bar.show_warning_banner.assert_called_once()
+        tabs[tab_file].reload_editor.assert_not_called()
+        self.assertTrue(tabs[tab_file].external_change_pending)
+
+    def test_reload_clears_pending_flag(self):
+        tab_file = "/tmp/vault/test.md"
+        handler, tab_bar, tabs = self._make_handler([tab_file])
+        tabs[tab_file].external_change_pending = True
+
+        handler.reload_content(tab_file)
+
+        self.assertFalse(tabs[tab_file].external_change_pending)
+
+    def test_dismiss_clears_pending_flag(self):
+        tab_file = "/tmp/vault/test.md"
+        handler, tab_bar, tabs = self._make_handler([tab_file])
+        tabs[tab_file].external_change_pending = True
+
+        handler.dismiss_content(tab_file)
+
+        self.assertFalse(tabs[tab_file].external_change_pending)
 
     def test_multiple_changes_updates_banner(self):
         tab_file = "/tmp/vault/test.md"

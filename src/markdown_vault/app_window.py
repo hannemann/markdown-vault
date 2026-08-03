@@ -599,9 +599,11 @@ class MainWindow(Adw.ApplicationWindow):
         config.save_settings(self._settings)
 
     def _dump_debug(self, components: list[str]) -> None:
-        """Write enabled debug dumps to JSON files."""
-        if not self._debug_toggle.get_active():
-            return
+        """Write enabled debug dumps to JSON files.
+
+        Gated only by ``loglevel: debug`` plus the per-component
+        ``debug_dump_*`` flags — no separate toggle.
+        """
         if self._settings.get("loglevel", "info") != "debug":
             return
         state = config.STATE_DIR
@@ -1275,7 +1277,10 @@ class MainWindow(Adw.ApplicationWindow):
 
     def _on_file_renamed(self, _tree, old_path: str, new_path: str) -> None:
         """Handle file/folder rename from the vault tree."""
-        # Update wikilinks in other files BEFORE index update
+        # Update wikilinks in other files BEFORE index update.  This rewrites
+        # link text on disk; for an OPEN file that raises the "modified
+        # externally" banner so the user can reload the now-stale buffer — this
+        # is intended, do not suppress it.
         self._backlink_index.rename_wikilinks(old_path, new_path)
         self._backlink_index.rename_file(old_path, new_path)
         self._file_index.rename_file(old_path, new_path)
@@ -1579,11 +1584,16 @@ class MainWindow(Adw.ApplicationWindow):
     # ── Autosave ───────────────────────────────────────────────────
 
     def _get_autosave_dirty_tabs(self) -> list:
-        """Return all tabs whose editor buffer is modified."""
+        """Return all tabs whose editor buffer is modified.
+
+        Tabs with an unresolved external-change conflict
+        (``external_change_pending``) are excluded so autosave cannot silently
+        overwrite the external change before the user reloads or dismisses it.
+        """
         dirty = []
         for path in self._tab_bar.get_all_paths():
             tab = self._tab_bar.get_tab(path)
-            if tab and tab.editor.is_modified:
+            if tab and tab.editor.is_modified and not tab.external_change_pending:
                 dirty.append(tab)
         return dirty
 

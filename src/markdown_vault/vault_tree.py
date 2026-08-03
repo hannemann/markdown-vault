@@ -724,12 +724,23 @@ class VaultTree(Gtk.Box):
             logger.warning("Failed to move %s → %s", source_path, dest_path, exc_info=True)
             return False
 
-        # Update the tree store.
-        self.refresh()
-
-        # Emit rename signal so MainWindow updates tabs.
+        # Emit the rename FIRST so MainWindow updates tabs, indexes and the
+        # sidebar.  This must not depend on — or be skipped by — the tree
+        # rebuild below (rebuilding synchronously here left the moved file's
+        # tab/sidebar pointing at the old path when the rebuild disrupted the
+        # handler).
         self.emit("file-renamed", source_path, dest_path)
+
+        # Rebuild the tree store AFTER the drop completes.  Rebuilding it
+        # inside the drop handler triggers a GtkCssNode assertion
+        # (gtk_css_node_insert_after), so defer it to the main loop.
+        GLib.idle_add(self._refresh_after_drop)
         return True
+
+    def _refresh_after_drop(self) -> bool:
+        """Deferred tree rebuild after a drag-and-drop move (idle callback)."""
+        self.refresh()
+        return False  # one-shot
 
     def _on_row_activated(self, _tree_view, path, _column) -> None:
         """Handle double-click / Enter on a tree row."""

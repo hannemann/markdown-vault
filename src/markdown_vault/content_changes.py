@@ -28,9 +28,23 @@ class ContentChangeHandler:
         self._parent = parent
 
     def handle_external_change(self, file_path: str) -> None:
-        """Show warning banner when *file_path* was modified externally."""
+        """React to an external modification of an open file.
+
+        A **clean** tab (no unsaved edits) is reloaded silently so its buffer
+        stays in sync with disk — no banner, no interruption. A tab with
+        **unsaved edits** is a real conflict: show the reload/dismiss banner and
+        flag the tab so autosave cannot clobber the external change before the
+        user resolves it.
+        """
         if file_path not in self._tab_bar.get_all_paths():
             return
+        tab = self._tab_bar.get_tab(file_path)
+        if tab is None:
+            return
+        if not tab.editor.is_modified:
+            self.reload_content(file_path)
+            return
+        tab.external_change_pending = True
         name = Path(file_path).name
         self._tab_bar.show_warning_banner(
             file_path,
@@ -64,8 +78,17 @@ class ContentChangeHandler:
             tab.editor.get_text(),
             str(Path(tab.editor.file_path).parent) if tab.editor.file_path else "",
         )
+        tab.external_change_pending = False
         self._tab_bar.hide_warning_banner(file_path)
 
     def dismiss_content(self, file_path: str) -> None:
-        """Dismiss the banner without reloading."""
+        """Dismiss the banner without reloading.
+
+        The user chose to keep their version; clear the conflict flag so
+        autosave resumes for this tab (saving will overwrite the external
+        change — their explicit choice).
+        """
+        tab = self._tab_bar.get_tab(file_path)
+        if tab is not None:
+            tab.external_change_pending = False
         self._tab_bar.hide_warning_banner(file_path)

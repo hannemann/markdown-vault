@@ -255,6 +255,18 @@ class TestMonitorHandlerFileMoved(unittest.TestCase):
         self.mock_dispatcher = MagicMock()
         self.mock_debug_fn = MagicMock()
         self._Handler = _handler_class()
+        # These are logic tests using synthetic paths. A real move leaves the
+        # file at the new path, so on_file_moved ignores moves whose new path
+        # is missing on disk (guard tested separately); pretend it exists here.
+        _exists = patch("markdown_vault.monitor_handler.os.path.exists",
+                        return_value=True)
+        _exists.start()
+        self.addCleanup(_exists.stop)
+        # Vault membership is config-based; treat any /vault path as a vault.
+        _vault = patch("markdown_vault.monitor_handler.find_vault_name_for_path",
+                       side_effect=lambda p: "vault" if p and p.startswith("/vault") else None)
+        _vault.start()
+        self.addCleanup(_vault.stop)
 
     def tearDown(self):
         shutil.rmtree(self._tmp, ignore_errors=True)
@@ -455,6 +467,41 @@ class TestMonitorHandlerFileMoved(unittest.TestCase):
             self.mock_file_index.add_file.assert_called_once_with(
                 "/vault/neues.md", vault_path="/vault",
             )
+
+    def test_cross_subdir_rename_is_genuine_not_content_replace(self):
+        """A rename across subdirectories (monitored dir = the new subdir, so
+        the old path isn't under it) must be classified as a genuine rename,
+        NOT an atomic-save content replacement — otherwise a duplicate monitor
+        event for an already-handled move raises a false 'modified externally'
+        banner. vault_path here is the *projects* subdir; other_path is in
+        *inbox*."""
+        with patch("markdown_vault.monitor_handler.GLib", _GLibMock):
+            h = self._make()
+            # dest is an open tab, source is not tracked (root-only index).
+            self.mock_tab_bar.get_all_paths.return_value = ["/vault/projects/x.md"]
+            self.mock_file_index.has_path.return_value = False
+            h.on_file_moved(
+                "/vault/projects", "/vault/projects/x.md", "/vault/inbox/x.md",
+            )
+            # genuine rename → rewrites wikilinks, NO banner/content-change notify
+            self.mock_backlink.rename_wikilinks.assert_called_once_with(
+                "/vault/inbox/x.md", "/vault/projects/x.md"
+            )
+            self.mock_dispatcher.on_content_changed.assert_not_called()
+
+    def test_stale_moved_event_ignored_when_new_path_missing(self):
+        """A moved event whose new path doesn't exist is stale (e.g. an
+        app-initiated move already handled, or a late reverse-direction
+        duplicate) — it must not revert live state."""
+        with patch("markdown_vault.monitor_handler.GLib", _GLibMock), \
+                patch("markdown_vault.monitor_handler.os.path.exists",
+                      return_value=False):
+            h = self._make()
+            h.on_file_moved("/vault", "/vault/New.md", "/vault/Old.md")
+            self.mock_backlink.rename_wikilinks.assert_not_called()
+            self.mock_backlink.rename_file.assert_not_called()
+            self.mock_file_index.rename_file.assert_not_called()
+            self.mock_vault_tree._handle_file_moved.assert_not_called()
 
     def test_genuine_rename_still_works(self):
         """Source-tracked rename still takes the rename path (no banner)."""

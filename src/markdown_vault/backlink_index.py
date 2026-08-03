@@ -115,16 +115,24 @@ class BacklinkIndex:
             del self._source_to_targets[key]
 
     def rename_file(self, old_path: str | Path, new_path: str | Path) -> None:
-        """Update the index for a file rename / move."""
+        """Update the index for a file rename / move.
+
+        Idempotent: the vault monitor may deliver duplicate move events, so a
+        second call for an already-renamed file must be a no-op rather than
+        clobbering the good ``new_path`` entry with an empty set.
+        """
         self._bump_mutation_seq()
         old_str = str(old_path)
         new_str = str(new_path)
-        targets = self._source_to_targets.pop(old_str, set())
-        self._source_to_targets[new_str] = targets
+        if old_str not in self._source_to_targets:
+            return  # already renamed (or was never a source) — nothing to do
+        targets = self._source_to_targets.pop(old_str)
+        self._source_to_targets.setdefault(new_str, set()).update(targets)
         for stem in targets:
-            sources = self._target_to_sources.get(stem, set())
-            sources.discard(old_str)
-            sources.add(new_str)
+            sources = self._target_to_sources.get(stem)
+            if sources is not None:
+                sources.discard(old_str)
+                sources.add(new_str)
 
     def remove_wikilinks(self, file_path: str | Path) -> list[str]:
         """Remove all ``[[wikilink]]`` references to *file_path* from linking files.

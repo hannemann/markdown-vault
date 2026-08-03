@@ -55,6 +55,10 @@ class Tab:
         self.error_banner = error_banner
         self.save_error: str | None = None
         self.save_error_message: str = ""
+        # True while an unacknowledged external change conflicts with unsaved
+        # edits in this tab. Blocks autosave so it cannot clobber the external
+        # change before the user reloads or dismisses it.
+        self.external_change_pending: bool = False
 
     def reload_editor(self, file_path: str) -> bool:
         """Reload editor content from disk.

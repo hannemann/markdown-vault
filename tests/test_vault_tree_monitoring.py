@@ -584,5 +584,65 @@ class TestVaultTreeContextMenuFallback(unittest.TestCase):
         self.assertEqual(result, self.vault_b)
 
 
+class TestDropDeferredRefresh(unittest.TestCase):
+    """Drag-and-drop move: emit ``file-renamed`` and defer the tree rebuild.
+
+    Regression: rebuilding the tree synchronously inside the drop handler threw
+    a GtkCssNode assertion and could skip the ``file-renamed`` emit, leaving the
+    moved file's tab/sidebar stat-ing the old path (FileNotFoundError spam).
+    """
+
+    def setUp(self):
+        self._tmpdir = Path(tempfile.mkdtemp())
+        mock_gio = _make_mock_gio()
+        self.mod = _load_vaulttree(mock_gio)
+        self.tree = self.mod.VaultTree()
+
+    def tearDown(self):
+        shutil.rmtree(self._tmpdir, ignore_errors=True)
+
+    def test_drop_emits_rename_and_defers_refresh(self):
+        mod = self.mod
+        (self._tmpdir / "note.md").write_text("x")
+        (self._tmpdir / "sub").mkdir()
+        src = str(self._tmpdir / "note.md")
+        target_dir = str(self._tmpdir / "sub")
+        expected_dest = str(Path(target_dir) / "note.md")
+
+        # Simulate a drop onto a directory row.
+        self.tree._tree_view = MagicMock()
+        self.tree._tree_view.get_path_at_pos.return_value = ("p", None, 0, 0)
+        self.tree._store = MagicMock()
+        self.tree._store.get_iter.return_value = "iter"
+
+        def _get_value(_iter, col):
+            if col == mod._COL_IS_DIR:
+                return True
+            if col == mod._COL_PATH:
+                return target_dir
+            return None
+
+        self.tree._store.get_value.side_effect = _get_value
+
+        emitted = []
+        self.tree.connect("file-renamed", lambda _t, o, n: emitted.append((o, n)))
+        deferred = []
+
+        with patch.object(mod.GLib, "idle_add",
+                          side_effect=lambda cb, *a: deferred.append(cb)), \
+                patch.object(mod.validation, "validate_drop", return_value=None), \
+                patch("shutil.move") as mv, \
+                patch.object(self.tree, "refresh") as refresh:
+            result = self.tree._on_drop(None, src, 5, 5)
+
+        self.assertTrue(result)
+        mv.assert_called_once_with(src, expected_dest)
+        # rename emitted so MainWindow can repoint tab/index/sidebar
+        self.assertEqual(emitted, [(src, expected_dest)])
+        # tree rebuild is deferred, NOT run synchronously inside the drop
+        refresh.assert_not_called()
+        self.assertEqual(deferred, [self.tree._refresh_after_drop])
+
+
 if __name__ == "__main__":
     unittest.main()

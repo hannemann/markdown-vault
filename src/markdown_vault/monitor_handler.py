@@ -20,6 +20,7 @@ gi.require_version("Adw", "1")
 from gi.repository import GLib
 
 from .event_router import FileEventDispatcher
+from .path_utils import find_vault_name_for_path
 from .vault_monitor import _is_valid_md_file
 
 logger = logging.getLogger(__name__)
@@ -147,6 +148,19 @@ class MonitorHandler:
            (same as MOVED_IN without *other_path*).
         """
         if other_path is not None:
+            # A genuine move leaves the file at *file_path* (the new path).
+            # If it isn't there, this is a stale/duplicate monitor event — e.g.
+            # an app-initiated move that was already handled via the tree's
+            # ``file-renamed`` signal and whose ``skip_next_event`` leaked, or a
+            # reverse-direction event arriving late. Applying it would revert
+            # live state (moving the tree node / backlinks back to a path that
+            # no longer exists). Ignore it.
+            if not os.path.exists(file_path):
+                logger.debug(
+                    "Ignoring stale moved event; new path missing: %s -> %s",
+                    other_path, file_path,
+                )
+                return
             source_tracked = (
                 other_path in self._tab_bar.get_all_paths()
                 or self._file_index.has_path(other_path)
@@ -194,16 +208,22 @@ class MonitorHandler:
 
     @staticmethod
     def _is_vault_md(path: str, vault_path: str) -> bool:
-        """Return ``True`` if *path* is a valid ``.md`` file under *vault_path*.
+        """Return ``True`` if *path* is a valid ``.md`` file under a vault.
 
-        On-disk classification (no index lookup) so subdirectory files —
-        which the root-only FileIndex does not track — are still
-        recognized as genuine renames (R14.3).
+        Checks the path against its actual vault **root** (via config), not the
+        *vault_path* the monitor reported — that is the specific monitored
+        subdirectory, so a cross-subdirectory rename's old path (e.g.
+        ``inbox/x.md`` when the monitor fired on ``projects/``) would wrongly
+        fail a ``startswith(vault_path)`` test and get misclassified as an
+        atomic save (raising a false "modified externally" banner). Name-based
+        and tolerant of the path no longer existing (a rename's old path is
+        gone). Temp files (hidden / non-``.md``) are still rejected by
+        ``_is_valid_md_file``, so atomic-save detection is preserved.
         """
         return (
             path is not None
-            and path.startswith(vault_path + os.sep)
             and _is_valid_md_file(path)
+            and find_vault_name_for_path(path) is not None
         )
 
     @staticmethod
