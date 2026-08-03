@@ -11,8 +11,16 @@ import json
 import logging
 import markdown as md
 import re
+import unicodedata
+from collections.abc import MutableSet
 from pathlib import Path
 from markdown.extensions import Extension
+from markdown.extensions.toc import slugify, unique as toc_unique
+
+
+def _toc_slugify(value: str, separator: str) -> str:
+    """Slugify function for toc extension that preserves Unicode (CJK, Arabic, etc.)."""
+    return slugify(value, separator, unicode=True)
 from markdown.inlinepatterns import InlineProcessor
 from markdown.postprocessors import Postprocessor
 from markdown.preprocessors import Preprocessor
@@ -41,28 +49,17 @@ import unicodedata
 logger = logging.getLogger(__name__)
 
 
-def _heading_to_slug(heading: str, seen: dict[str, int] | None = None,
+def _heading_to_slug(heading: str, seen: MutableSet[str] | None = None,
                      unicode: bool = True) -> str:
     """Convert a heading text to a slug matching the toc extension's output.
 
-    The toc extension lowercases, removes punctuation, replaces spaces with
-    hyphens, and appends _1, _2 for duplicates.
+    Delegates to the toc extension's slugify and unique functions to ensure
+    identical slug generation for TOC links and heading IDs.
     """
-    value = unicodedata.normalize("NFKD", heading)
-    if not unicode:
-        value = re.sub(r"[^\x00-\x7F]", "", value)
-    value = re.sub(r"[^\w\s-]", "", value).strip()
-    value = re.sub(r"[-\s]+", "-", value)
-    base_slug = value.lower()
+    base_slug = slugify(heading, "-", unicode=unicode)
 
     if seen is not None:
-        count = seen.get(base_slug, 0)
-        if count > 0:
-            slug = f"{base_slug}_{count}"
-        else:
-            slug = base_slug
-        seen[base_slug] = count + 1
-        return slug
+        return toc_unique(base_slug, seen)
 
     return base_slug
 
@@ -92,6 +89,9 @@ EXTENSION_CONFIGS = {
     },
     "pymdownx.tasklist": {
         "clickable_checkbox": True,
+    },
+    "markdown.extensions.toc": {
+        "slugify": _toc_slugify,
     },
 }
 
@@ -726,13 +726,13 @@ class Preview(Gtk.ScrolledWindow):
             return
         # Find the nearest heading at or before the target line.
         # Track seen slugs to match toc extension's duplicate handling.
-        seen: dict[str, int] = {}
+        seen: set[str] = set()
         target_slug = None
         for m in HEADING_RE.finditer(text):
             heading_line = text[:m.start()].count("\n")
             heading_text = m.group(2)
             # Compute slug and update counter (matches toc behavior)
-            slug = _heading_to_slug(heading_text, seen, unicode=False)
+            slug = _heading_to_slug(heading_text, seen, unicode=True)
             if heading_line <= line:
                 target_slug = slug
             else:

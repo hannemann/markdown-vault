@@ -59,7 +59,9 @@ class TestHeadingToSlug(unittest.TestCase):
         self.assertEqual(_heading_to_slug("Hello World"), "hello-world")
 
     def test_umlauts(self):
-        self.assertEqual(_heading_to_slug("Ünïcödé"), "unicode")
+        # With unicode=True (default), slugify preserves Unicode letters
+        # (no NFKD decomposition), so ü→ü, ö→ö, etc.
+        self.assertEqual(_heading_to_slug("Ünïcödé"), "ünïcödé")
 
     def test_punctuation_stripped(self):
         self.assertEqual(_heading_to_slug("Hello, World!"), "hello-world")
@@ -68,7 +70,6 @@ class TestHeadingToSlug(unittest.TestCase):
         self.assertEqual(_heading_to_slug("Hello   World"), "hello-world")
 
     def test_leading_trailing_hyphens(self):
-        # The slug function doesn't strip standalone leading/trailing hyphens
         result = _heading_to_slug("-Hello-")
         self.assertEqual(result, "-hello-")
 
@@ -88,6 +89,20 @@ class TestHeadingToSlug(unittest.TestCase):
 
     def test_mixed_case(self):
         self.assertEqual(_heading_to_slug("HELLO WORLD"), "hello-world")
+
+    def test_duplicate_slug(self):
+        seen: set[str] = set()
+        self.assertEqual(_heading_to_slug("Hello", seen), "hello")
+        self.assertEqual(_heading_to_slug("Hello", seen), "hello_1")
+        self.assertEqual(_heading_to_slug("Hello", seen), "hello_2")
+
+    def test_empty_heading_with_seen(self):
+        seen: set[str] = set()
+        self.assertEqual(_heading_to_slug("", seen), "_1")
+        self.assertEqual(_heading_to_slug("", seen), "_2")
+
+    def test_unicode_false(self):
+        self.assertEqual(_heading_to_slug("Ünïcödé", unicode=False), "unicode")
 
 
 class TestLanguageExtractorPreprocessor(unittest.TestCase):
