@@ -141,7 +141,6 @@ class MainWindow(Adw.ApplicationWindow):
         root_box.append(self._build_header())
 
         self._main_paned = Gtk.Paned(orientation=Gtk.Orientation.HORIZONTAL)
-        self._main_paned.set_wide_handle(True)
 
         self._vault_tree = VaultTree()
         self._vault_tree.connect("file-selected", self._on_file_selected_from_tree)
@@ -310,20 +309,21 @@ class MainWindow(Adw.ApplicationWindow):
         )
 
         self._sidebar_paned = Gtk.Paned(orientation=Gtk.Orientation.HORIZONTAL)
-        self._sidebar_paned.set_wide_handle(True)
+        self._sidebar_paned.add_css_class("sidebar-divider")
         self._sidebar_paned.set_start_child(self._main_paned)
         self._sidebar_paned.set_resize_start_child(True)
         self._sidebar_paned.set_shrink_start_child(False)
         self._sidebar_paned.set_end_child(self._sidebar)
         self._sidebar_paned.set_resize_end_child(False)
-        self._sidebar_paned.set_shrink_end_child(True)
+        # Don't let the sidebar shrink below its natural width, otherwise the
+        # icon rail gets pushed off the right edge of the window.
+        self._sidebar_paned.set_shrink_end_child(False)
 
         self._search_bar = SearchBar(get_vault_paths=self._vault_tree.get_vault_paths)
         self._search_bar.connect("file-selected", self._on_search_result_selected)
         self._search_bar.connect("close-requested", self._on_search_close_requested)
 
         self._search_paned = Gtk.Paned(orientation=Gtk.Orientation.VERTICAL)
-        self._search_paned.set_wide_handle(True)
         self._search_paned.set_start_child(self._sidebar_paned)
         self._search_paned.set_resize_start_child(True)
         self._search_paned.set_shrink_start_child(False)
@@ -555,21 +555,6 @@ class MainWindow(Adw.ApplicationWindow):
         menu_btn.set_menu_model(menu)
         header.pack_end(menu_btn)
 
-        # Debug dump toggle (only visible in debug loglevel).
-        self._debug_toggle = Gtk.ToggleButton(icon_name="applications-utilities-symbolic")
-        self._debug_toggle.set_tooltip_text("Dump FileIndex on changes")
-        self._debug_toggle.connect("toggled", self._on_debug_toggled)
-        is_debug = self._settings.get("loglevel", "info") == "debug"
-        self._debug_toggle.set_visible(is_debug)
-        if is_debug:
-            # Block signal during restore — widgets don't exist yet.
-            self._debug_toggle.handler_block_by_func(self._on_debug_toggled)
-            self._debug_toggle.set_active(self._settings.get("debug_active", False))
-            self._debug_toggle.handler_unblock_by_func(self._on_debug_toggled)
-            if self._debug_toggle.get_active():
-                self._debug_toggle.add_css_class("suggested-action")
-        header.pack_end(self._debug_toggle)
-
         # Sidebar toggle button (left of hamburger).
         self._sidebar_toggle = Gtk.ToggleButton(icon_name="user-bookmarks-symbolic")
         self._sidebar_toggle.set_tooltip_text("Toggle Sidebar (Ctrl+B)")
@@ -600,17 +585,6 @@ class MainWindow(Adw.ApplicationWindow):
         self._forward_btn.set_visible(not medium)
 
     # ── Debug dump ─────────────────────────────────────────────────
-
-    def _on_debug_toggled(self, toggle: Gtk.ToggleButton) -> None:
-        """Toggle debug index dump mode."""
-        if toggle.get_active():
-            toggle.add_css_class("suggested-action")
-            self._dump_debug(["file_index", "backlink_index", "vault_tree",
-                              "tabs", "sidebar", "preview_html"])
-        else:
-            toggle.remove_css_class("suggested-action")
-        self._settings["debug_active"] = toggle.get_active()
-        config.save_settings(self._settings)
 
     def _dump_debug(self, components: list[str]) -> None:
         """Write enabled debug dumps to JSON files.
@@ -1180,7 +1154,7 @@ class MainWindow(Adw.ApplicationWindow):
         tab = self._tab_bar.get_current_tab()
         if not tab:
             return
-        tab.editor.scroll_to_line(line)
+        tab.editor.scroll_to_line(line, yalign=0.0)
         text = tab.editor.get_text()
         tab.preview.scroll_to_line(line, text)
 
@@ -1855,13 +1829,6 @@ class MainWindow(Adw.ApplicationWindow):
         )
         self._apply_keybindings()
         self._tab_bar.set_tab_min_width(self._settings.get("tab_min_width", 100))
-        # Update debug toggle visibility and state.
-        is_debug = self._settings.get("loglevel", "info") == "debug"
-        self._debug_toggle.set_visible(is_debug)
-        if is_debug:
-            self._debug_toggle.set_active(self._settings.get("debug_active", False))
-        elif self._debug_toggle.get_active():
-            self._debug_toggle.set_active(False)
         # Apply to all open editors.
         for path in self._tab_bar.get_all_paths():
             tab = self._tab_bar.get_tab(path)

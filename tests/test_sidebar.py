@@ -9,6 +9,11 @@ from markdown_vault.event_router import FileEvent
 from markdown_vault.sidebar import Sidebar
 
 
+def _outline_text(row):
+    """Extract heading text from an outline row (indent guides + a button)."""
+    return list(row)[-1].get_child().get_text()
+
+
 class TestSidebarOutline(unittest.TestCase):
     """Tests for outline (heading) extraction."""
 
@@ -26,7 +31,7 @@ class TestSidebarOutline(unittest.TestCase):
         self.sidebar._refresh_outline(text)
         children = list(self.sidebar._outline_list["list"])
         self.assertEqual(len(children), 1)
-        self.assertIn("Title", children[0].get_text())
+        self.assertIn("Title", _outline_text(children[0]))
 
     def test_outline_multiple_levels(self):
         text = "# H1\n\n## H2\n\n### H3"
@@ -49,8 +54,8 @@ def foo():
         children = list(self.sidebar._outline_list["list"])
         # Should only find "Real Title" and "Real H2"
         self.assertEqual(len(children), 2)
-        self.assertIn("Real Title", children[0].get_text())
-        self.assertIn("Real H2", children[1].get_text())
+        self.assertIn("Real Title", _outline_text(children[0]))
+        self.assertIn("Real H2", _outline_text(children[1]))
 
     def test_outline_skips_indented_fences(self):
         """Indented fenced code blocks (in lists) should also be tracked."""
@@ -67,8 +72,8 @@ print("hello")
         self.sidebar._refresh_outline(text)
         children = list(self.sidebar._outline_list["list"])
         self.assertEqual(len(children), 2)
-        self.assertIn("Title", children[0].get_text())
-        self.assertIn("Real H2", children[1].get_text())
+        self.assertIn("Title", _outline_text(children[0]))
+        self.assertIn("Real H2", _outline_text(children[1]))
 
     def test_outline_tilde_fences(self):
         """~~~ fences should also be tracked."""

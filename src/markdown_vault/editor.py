@@ -268,11 +268,17 @@ class Editor(Gtk.ScrolledWindow):
         pos = self._search_context.get_occurrence_position(lo, hi)
         return (max(pos, 0), total)
 
-    def scroll_to_line(self, line: int) -> None:
-        """Scroll the view to *line* (0-based) and place the cursor there."""
+    def scroll_to_line(self, line: int, yalign: float = 0.5) -> None:
+        """Scroll the view to *line* (0-based) and place the cursor there.
+
+        *yalign* positions the line vertically: ``0.0`` puts it at the top
+        (matching the preview's heading jump), ``0.5`` centres it (used for
+        search matches so surrounding context stays visible).
+        """
         _ok, iter = self._buffer.get_iter_at_line(line)
         if _ok:
-            self._view.scroll_to_iter(iter, 0.25, True, 0.0, 0.5)
+            margin = 0.0 if yalign <= 0.0 else 0.25
+            self._view.scroll_to_iter(iter, margin, True, 0.0, yalign)
             self._buffer.place_cursor(iter)
             self._view.grab_focus()
 

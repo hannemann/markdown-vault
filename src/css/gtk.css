@@ -234,3 +234,56 @@ headerbar button {
     margin: 0 4px;
     font-size: 0.85em;
 }
+
+/* Paned resize handles: one subtle, consistent 1px divider everywhere. */
+paned > separator {
+    background-color: alpha(@borders_color, 0.25);
+    background-image: none;
+    border: none;
+}
+
+/* Sidebar shares the darker "view" background of the vault tree / editor so no
+   divider line is needed between them. */
+.app-sidebar {
+    background-color: @view_bg_color;
+}
+
+/* Outline (TOC): typographic hierarchy instead of repeated bullets. */
+.outline-item {
+    padding: 2px 8px;
+    border-radius: 6px;
+}
+.outline-guide {
+    /* Draw the guide 8px in (matching the button's text inset) so it lines up
+       with the first character of the parent heading, not the panel edge. */
+    background-image: linear-gradient(to right,
+        transparent 8px,
+        alpha(@window_fg_color, 0.14) 8px,
+        alpha(@window_fg_color, 0.14) 9px,
+        transparent 9px);
+}
+.outline-l1 label { font-weight: 700; }
+.outline-l2 label { font-weight: 600; }
+.outline-l3 label { opacity: 0.82; }
+.outline-l4 label {
+    opacity: 0.68;
+    font-size: 0.95em;
+}
+
+/* JetBrains-style vertical section rail on the far right of the sidebar. */
+.sidebar-rail {
+    padding: 6px 4px;
+}
+.sidebar-rail-btn {
+    padding: 4px 6px;
+    min-width: 30px;
+    min-height: 30px;
+    border-radius: 6px;
+    -gtk-icon-size: 18px;
+}
+.sidebar-rail-btn:hover {
+    background: alpha(@window_fg_color, 0.08);
+}
+.sidebar-rail-btn:checked {
+    background: alpha(@window_fg_color, 0.15);
+}

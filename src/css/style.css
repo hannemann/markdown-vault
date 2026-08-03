@@ -452,3 +452,9 @@ body {
   background: #ff9d3c;
   color: #000;
 }
+
+/* Frontmatter is shown in the sidebar "Metadaten" tab; keep it in the DOM
+   for debugging but don't render it in the preview. */
+.markdown-body .mv-frontmatter {
+  display: none;
+}

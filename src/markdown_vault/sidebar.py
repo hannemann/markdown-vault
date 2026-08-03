@@ -15,6 +15,8 @@ import threading
 from datetime import datetime
 from pathlib import Path
 
+import yaml
+
 import gi
 
 gi.require_version("Gtk", "4.0")
@@ -28,6 +30,43 @@ from .event_router import FileEvent
 from .path_utils import HEADING_RE
 
 logger = logging.getLogger(__name__)
+
+
+# Leading YAML frontmatter block: --- ... --- at the very top of the file.
+_FRONTMATTER_RE = re.compile(r"^---[ \t]*\n(.*?)\n---[ \t]*(?:\n|$)", re.DOTALL)
+
+# (name, symbolic icon, tooltip) for the vertical section rail — icons are
+# placeholders and can be swapped later.
+_SIDEBAR_SECTIONS = [
+    ("outline", "view-list-symbolic", "Outline"),
+    ("backlinks", "insert-link-symbolic", "Backlinks"),
+    ("metadata", "document-properties-symbolic", "Metadaten"),
+    ("git", "media-flash-symbolic", "Git"),
+    ("details", "dialog-information-symbolic", "Details"),
+]
+
+
+def _parse_frontmatter(text: str) -> dict:
+    """Return the leading YAML frontmatter as a dict, or ``{}`` if none/invalid."""
+    if not text:
+        return {}
+    m = _FRONTMATTER_RE.match(text)
+    if not m:
+        return {}
+    try:
+        data = yaml.safe_load(m.group(1))
+    except yaml.YAMLError:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _format_meta_value(value) -> str:
+    """Render a frontmatter value as a compact string."""
+    if isinstance(value, list):
+        return ", ".join(str(v) for v in value)
+    if value is None:
+        return ""
+    return str(value)
 
 
 class Sidebar(Gtk.Box):
@@ -50,9 +89,10 @@ class Sidebar(Gtk.Box):
         backlink_index: BacklinkIndex | None = None,
         get_active_tab_info=None,
     ) -> None:
-        super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=0)
-        self.set_size_request(260, -1)
+        super().__init__(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
+        self.set_size_request(280, -1)
         self.set_visible(False)
+        self.add_css_class("app-sidebar")
 
         self._current_file: str | None = None
         self._vault_paths: list[str] = []
@@ -66,10 +106,14 @@ class Sidebar(Gtk.Box):
         self._stack.set_vexpand(True)
 
         self._outline_list = self._make_scrollable_list()
+        self._outline_list["list"].set_spacing(0)  # continuous indent guides
         self._stack.add_titled(self._outline_list["parent"], "outline", "Outline")
 
         self._backlinks_list = self._make_scrollable_list()
         self._stack.add_titled(self._backlinks_list["parent"], "backlinks", "Backlinks")
+
+        self._metadata_list = self._make_scrollable_list()
+        self._stack.add_titled(self._metadata_list["parent"], "metadata", "Metadaten")
 
         self._git_page = self._build_git_page()
         self._stack.add_titled(self._git_page, "git", "Git")
@@ -77,16 +121,39 @@ class Sidebar(Gtk.Box):
         self._details_page = self._build_details_page()
         self._stack.add_titled(self._details_page, "details", "Details")
 
-        switcher = Gtk.StackSwitcher(stack=self._stack)
-        switcher.set_margin_top(6)
-        switcher.set_margin_bottom(6)
-        self.append(switcher)
+        self._stack.set_hexpand(True)
         self.append(self._stack)
+        self.append(self._build_rail())
 
         # Lazy git refresh: load when user switches to Git tab.
         self._stack.connect(
             "notify::visible-child-name", self._on_stack_page_changed,
         )
+
+    def _build_rail(self) -> Gtk.Box:
+        """Vertical icon rail (JetBrains-style) that switches the section stack."""
+        rail = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+        rail.add_css_class("sidebar-rail")
+        self._rail_buttons: dict[str, Gtk.ToggleButton] = {}
+        group: Gtk.ToggleButton | None = None
+        for name, icon, tooltip in _SIDEBAR_SECTIONS:
+            btn = Gtk.ToggleButton(icon_name=icon)
+            btn.set_tooltip_text(tooltip)
+            btn.add_css_class("flat")
+            btn.add_css_class("sidebar-rail-btn")
+            if group is None:
+                group = btn
+            else:
+                btn.set_group(group)
+            btn.connect("toggled", self._on_rail_toggled, name)
+            rail.append(btn)
+            self._rail_buttons[name] = btn
+        self._rail_buttons["outline"].set_active(True)
+        return rail
+
+    def _on_rail_toggled(self, btn: Gtk.ToggleButton, name: str) -> None:
+        if btn.get_active():
+            self._stack.set_visible_child_name(name)
 
     # ------------------------------------------------------------------
     # Public API
@@ -104,14 +171,16 @@ class Sidebar(Gtk.Box):
         self._current_file = file_path
         self._refresh_outline(text)
         self._refresh_backlinks(file_path)
+        self._refresh_metadata(text)
         if self.get_visible() and self._stack.get_visible_child_name() == "git":
             self._refresh_git(file_path)
         self._refresh_details(file_path, text)
 
     def update_text_only(self, file_path: str | None, text: str = "") -> None:
-        """Refresh only outline and details (cheap, safe for every keystroke)."""
+        """Refresh only outline, metadata and details (cheap, per keystroke)."""
         self._current_file = file_path
         self._refresh_outline(text)
+        self._refresh_metadata(text)
         self._refresh_details(file_path, text)
 
     def refresh_backlinks(self, file_path: str | None) -> None:
@@ -186,17 +255,26 @@ class Sidebar(Gtk.Box):
                 if match:
                     level = len(match.group(1))
                     heading = match.group(2)
-                    label = Gtk.Label(label=f"{'  ' * (level - 1)}\u25cf {heading}")
+                    row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
+                    for _ in range(level - 1):
+                        guide = Gtk.Box()
+                        guide.set_size_request(20, -1)
+                        guide.add_css_class("outline-guide")
+                        row.append(guide)
+                    label = Gtk.Label(label=heading)
                     label.set_xalign(0)
-                    label.add_css_class("outline-item")
-                    label.set_size_request(-1, 28)
-                    gesture = Gtk.GestureClick()
-                    gesture.connect(
-                        "released",
-                        lambda _g, _n, _x, _y, ln=line_num: self.emit("outline-clicked", ln),
+                    btn = Gtk.Button()
+                    btn.set_child(label)
+                    btn.add_css_class("flat")
+                    btn.add_css_class("outline-item")
+                    btn.add_css_class(f"outline-l{min(level, 4)}")
+                    btn.set_halign(Gtk.Align.START)
+                    btn.connect(
+                        "clicked",
+                        lambda _b, ln=line_num: self.emit("outline-clicked", ln),
                     )
-                    label.add_controller(gesture)
-                    self._outline_list["list"].append(label)
+                    row.append(btn)
+                    self._outline_list["list"].append(row)
 
     # ------------------------------------------------------------------
     # Backlinks
@@ -218,16 +296,34 @@ class Sidebar(Gtk.Box):
                 self._empty_label("No backlinks found")
             )
             return
+        box = self._backlinks_list["list"]
+        vault_roots = [Path(v) for v in self._vault_paths]
+        groups: dict[str, list[Path]] = {}
         for bl in backlinks:
-            btn = Gtk.Button(label=bl.name)
-            btn.add_css_class("flat")
-            btn.set_halign(Gtk.Align.START)
-            btn.set_tooltip_text(str(bl))
-            btn.connect(
-                "clicked",
-                lambda _b, p=str(bl): self.emit("file-open-requested", p),
-            )
-            self._backlinks_list["list"].append(btn)
+            groups.setdefault(
+                self._vault_for_path(bl, vault_roots), []
+            ).append(bl)
+        first = True
+        for vault_name in sorted(groups):
+            header = Gtk.Label(label=vault_name)
+            header.set_xalign(0)
+            header.add_css_class("dim-label")
+            header.add_css_class("heading")
+            if not first:
+                header.set_margin_top(8)
+            first = False
+            box.append(header)
+            for bl in sorted(groups[vault_name], key=lambda p: p.name.lower()):
+                btn = Gtk.Button(label=bl.name)
+                btn.add_css_class("flat")
+                btn.set_halign(Gtk.Align.START)
+                btn.set_margin_start(8)
+                btn.set_tooltip_text(str(bl))
+                btn.connect(
+                    "clicked",
+                    lambda _b, p=str(bl): self.emit("file-open-requested", p),
+                )
+                box.append(btn)
 
     # ------------------------------------------------------------------
     # Git
@@ -347,6 +443,33 @@ class Sidebar(Gtk.Box):
         )
 
     # ------------------------------------------------------------------
+    # Metadata (frontmatter)
+    # ------------------------------------------------------------------
+
+    def _refresh_metadata(self, text: str) -> None:
+        """Show the file's YAML frontmatter as key/value rows."""
+        box = self._metadata_list["list"]
+        self._clear_list(box)
+        fields = _parse_frontmatter(text)
+        if not fields:
+            box.append(self._empty_label("No frontmatter"))
+            return
+        for key, value in fields.items():
+            row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+            key_lbl = Gtk.Label(label=str(key))
+            key_lbl.set_xalign(0)
+            key_lbl.set_valign(Gtk.Align.START)
+            key_lbl.add_css_class("dim-label")
+            val_lbl = Gtk.Label(label=_format_meta_value(value))
+            val_lbl.set_xalign(0)
+            val_lbl.set_wrap(True)
+            val_lbl.set_selectable(True)
+            val_lbl.set_hexpand(True)
+            row.append(key_lbl)
+            row.append(val_lbl)
+            box.append(row)
+
+    # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
 
@@ -367,6 +490,20 @@ class Sidebar(Gtk.Box):
         """Remove all children from *box*."""
         for child in list(box):
             box.remove(child)
+
+    @staticmethod
+    def _vault_for_path(path: Path, vault_roots: list[Path]) -> str:
+        """Return the name of the vault containing *path*.
+
+        Picks the most specific (longest) matching vault root; falls back to
+        "Other" when the path lies outside every known vault.
+        """
+        best: Path | None = None
+        for root in vault_roots:
+            if path == root or path.is_relative_to(root):
+                if best is None or len(str(root)) > len(str(best)):
+                    best = root
+        return best.name if best is not None else "Other"
 
     @staticmethod
     def _empty_label(text: str) -> Gtk.Label:

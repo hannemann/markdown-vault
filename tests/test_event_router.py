@@ -141,6 +141,7 @@ class TestSidebarRefreshEvent(unittest.TestCase):
         sidebar._vault_paths = []
         sidebar._refresh_outline = MagicMock()
         sidebar._refresh_backlinks = MagicMock()
+        sidebar._refresh_metadata = MagicMock()
         sidebar._refresh_details = MagicMock()
         sidebar._refresh_git = MagicMock()
         sidebar.get_visible = MagicMock(return_value=False)

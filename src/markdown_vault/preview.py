@@ -472,6 +472,22 @@ _FIND_JS = r"""
 """
 
 
+# Leading YAML frontmatter (--- … ---). It is shown in the sidebar's "Metadaten"
+# tab, so in the preview we keep it in the DOM (hidden via CSS, still debuggable)
+# but render the body with the block blanked to an equal number of newlines so
+# source-line mapping (checkbox toggles, outline) stays aligned.
+_FRONTMATTER_RE = re.compile(r"^---[ \t]*\n.*?\n---[ \t]*(?:\n|$)", re.DOTALL)
+
+
+def _split_frontmatter(text: str) -> tuple[str, str]:
+    """Return ``(body_for_render, raw_frontmatter)``."""
+    m = _FRONTMATTER_RE.match(text)
+    if not m:
+        return text, ""
+    raw = m.group(0)
+    return "\n" * raw.count("\n") + text[m.end():], raw
+
+
 class Preview(Gtk.ScrolledWindow):
     """Widget that renders Markdown as styled HTML.
 
@@ -776,14 +792,23 @@ class Preview(Gtk.ScrolledWindow):
             WikiLinkExtension(source_vault) if isinstance(e, WikiLinkExtension) else e
             for e in MARKDOWN_EXTENSIONS
         ]
+        body, frontmatter = _split_frontmatter(text)
         html_content = md.markdown(
-            text,
+            body,
             extensions=extensions,
             extension_configs=EXTENSION_CONFIGS,
         )
         # Convert <script type="math/tex"> tags to native MathML
         mathml_pp = MathMLPostprocessor()
         html_content = mathml_pp.run(html_content)
+        # Keep the frontmatter in the DOM (hidden via CSS) so it stays
+        # debuggable, without rendering it as literal text.
+        if frontmatter:
+            escaped = (frontmatter.replace("&", "&amp;")
+                       .replace("<", "&lt;").replace(">", "&gt;"))
+            html_content = (
+                f'<pre class="mv-frontmatter">{escaped}</pre>' + html_content
+            )
 
         html_hash = hashlib.md5(html_content.encode()).hexdigest()
         if html_hash == self._last_html_hash:
