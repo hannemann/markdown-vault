@@ -1340,6 +1340,9 @@ class MainWindow(Adw.ApplicationWindow):
         # Purge backlink/file index entries.
         self._backlink_index.remove_vault(vault_path)
         self._file_index.remove_vault(vault_path)
+        self._dump_debug(["backlink_index", "file_index"])
+        # A surviving tab may have lost a backlink from a removed-vault file.
+        self._refresh_sidebar_backlinks()
 
     def _on_focus_current_file_clicked(self, _tree) -> None:
         """Focus the current file in the vault tree."""

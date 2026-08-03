@@ -471,5 +471,57 @@ class TestRenameVaultWikilinks(unittest.TestCase):
         self.assertEqual(note.read_text(), "[[Notes>foo]]\n")
 
 
+class TestRemoveVault(unittest.TestCase):
+    """remove_vault must purge dangling cross-vault back-references (R19.2)."""
+
+    def setUp(self):
+        self._tmp = tempfile.mkdtemp()
+        self._va = Path(self._tmp) / "VA"
+        self._vb = Path(self._tmp) / "VB"
+        self._va.mkdir()
+        self._vb.mkdir()
+        self._vaults = [
+            {"name": "VA", "path": str(self._va)},
+            {"name": "VB", "path": str(self._vb)},
+        ]
+        _cfg._vaults_cache = self._vaults
+
+    def tearDown(self):
+        _cfg._vaults_cache = None
+        shutil.rmtree(self._tmp, ignore_errors=True)
+
+    def test_removes_dangling_cross_vault_backlink(self):
+        # A note in VA links to a target in VB.
+        (self._vb / "bar.md").write_text("# bar\n")
+        (self._va / "note.md").write_text("See [[VB>bar]].\n")
+        idx = BacklinkIndex()
+        idx.build(self._vaults)
+        before = idx.find_backlinks(self._vb / "bar.md")
+        self.assertEqual([Path(p).name for p in before], ["note.md"])
+
+        idx.remove_vault(str(self._va))
+
+        # The removed vault's file no longer dangles as a backlink of VB/bar.
+        self.assertEqual(idx.find_backlinks(self._vb / "bar.md"), [])
+
+    def test_purges_source_entries_of_removed_vault(self):
+        (self._vb / "bar.md").write_text("# bar\n")
+        note = self._va / "note.md"
+        note.write_text("[[VB>bar]]\n")
+        idx = BacklinkIndex()
+        idx.build(self._vaults)
+
+        idx.remove_vault(str(self._va))
+
+        self.assertNotIn(str(note), idx._source_to_targets)
+
+    def test_bumps_mutation_seq(self):
+        idx = BacklinkIndex()
+        idx.build(self._vaults)
+        seq = idx.mutation_seq
+        idx.remove_vault(str(self._va))
+        self.assertNotEqual(idx.mutation_seq, seq)
+
+
 if __name__ == "__main__":
     unittest.main()

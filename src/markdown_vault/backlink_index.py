@@ -98,21 +98,24 @@ class BacklinkIndex:
         self._remove_source(str(file_path))
 
     def remove_vault(self, vault_path: str) -> None:
-        """Remove all entries under *vault_path* from the index."""
+        """Remove every entry contributed by files inside *vault_path*.
+
+        Each source file under the vault is purged via :meth:`_remove_source`,
+        which also discards it from the reverse ``_target_to_sources`` sets — so
+        a backlink from a removed vault's file no longer dangles against a
+        surviving target in another vault (R19.2).  The old target filter keyed
+        on ``vault:{abs_path}`` was dead code (keys are ``vault:{name}?path=…``)
+        and left those back-references behind.
+
+        Target entries keyed by the removed vault's *name* are intentionally
+        kept: they record links that still exist in the text of *other* vaults'
+        files (now broken), a rescan would re-add them, and a removed file is
+        never queried for backlinks.
+        """
         self._bump_mutation_seq()
-        abs_path = os.path.abspath(vault_path) + os.sep
-        keys_to_remove = [
-            k for k in self._target_to_sources
-            if k.startswith(f"vault:{abs_path}") or k.startswith(f"vault:?path={abs_path}")
-        ]
-        for key in keys_to_remove:
-            del self._target_to_sources[key]
-        keys_to_remove = [
-            k for k in self._source_to_targets
-            if k.startswith(abs_path)
-        ]
-        for key in keys_to_remove:
-            del self._source_to_targets[key]
+        prefix = os.path.abspath(vault_path) + os.sep
+        for source in [k for k in self._source_to_targets if k.startswith(prefix)]:
+            self._remove_source(source)
 
     def rename_file(self, old_path: str | Path, new_path: str | Path) -> None:
         """Update the index for a file rename / move.
