@@ -13,6 +13,8 @@ from pathlib import Path
 
 import yaml
 
+from . import validation
+
 logger = logging.getLogger(__name__)
 
 # In-memory cache for vaults loaded from vaults.yaml.
@@ -95,10 +97,14 @@ def _read_vaults_from_disk() -> list[dict[str, str]]:
             logger.debug("Skipping duplicate vault path: %s", abs_path)
             continue
         seen.add(abs_path)
-        name = entry.get("name") or Path(abs_path).name
-        # Names are the key for backlink/file-index lookups
-        # (vault:{name}?path=… / {name}>stem), so duplicates must not survive:
-        # uniquify colliding names on load (R19.3), first occurrence wins.
+        raw_name = entry.get("name") or Path(abs_path).name
+        # Names key backlink/file-index lookups (vault:{name}?path=… /
+        # {name}>stem). Sanitize forbidden characters out of a hand-edited
+        # config (R19.4), fall back to the directory name, then uniquify
+        # colliding names (R19.3, first occurrence wins).
+        name = (validation.sanitize_vault_name(raw_name)
+                or validation.sanitize_vault_name(Path(abs_path).name)
+                or "vault")
         name = _uniquify_vault_name(name, used_names)
         used_names.add(name)
         unique.append({"name": name, "path": abs_path})

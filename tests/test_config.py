@@ -91,6 +91,20 @@ class TestLoadVaults(_TempConfigMixin, unittest.TestCase):
         self.assertEqual(names, ["Notes", "Notes (2)", "Notes (3)"])
         self.assertEqual(len(set(names)), 3)
 
+    def test_sanitizes_forbidden_chars_in_name(self):
+        _cfg.CONFIG_FILE.write_text(
+            "vaults:\n  - name: 'a>b|c'\n    path: /tmp/x\n", encoding="utf-8"
+        )
+        result = _cfg.load_vaults()
+        self.assertEqual(result[0]["name"], "abc")
+
+    def test_sanitize_falls_back_to_dir_name(self):
+        _cfg.CONFIG_FILE.write_text(
+            "vaults:\n  - name: '>>||'\n    path: /tmp/RealDir\n", encoding="utf-8"
+        )
+        result = _cfg.load_vaults()
+        self.assertEqual(result[0]["name"], "RealDir")
+
     def test_skips_empty_paths(self):
         _cfg.CONFIG_FILE.write_text(
             "vaults:\n  - name: Empty\n    path: ''\n", encoding="utf-8"

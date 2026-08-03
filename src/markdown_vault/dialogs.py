@@ -217,8 +217,10 @@ def show_rename_vault_dialog(
     user confirms with a unique name.
     """
     from . import config
+    from . import validation
 
-    dialog = Adw.AlertDialog(heading="Rename Vault", body="Enter a new name for the vault.")
+    base_body = "Enter a new name for the vault.\n" + validation.INVALID_VAULT_NAME_HINT
+    dialog = Adw.AlertDialog(heading="Rename Vault", body=base_body)
     dialog.set_prefer_wide_layout(True)
     dialog.add_response("cancel", "Cancel")
     dialog.add_response("rename", "Rename")
@@ -232,15 +234,21 @@ def show_rename_vault_dialog(
     dialog.set_extra_child(entry)
 
     def _check_name():
+        # Surface why the button is disabled (invalid chars / collision) in the
+        # dialog body so the user knows which characters aren't allowed (R19.4).
         new_name = entry.get_text().strip()
-        if new_name and new_name != vault_name:
+        err = validation.validate_vault_name(new_name)
+        if err is None and new_name == vault_name:
+            dialog.set_body(base_body)  # current name, unchanged — no error
+            dialog.set_response_enabled("rename", False)
+            return
+        if err is None:
             for v in config.load_vaults():
                 if v["path"] != vault_path and v["name"] == new_name:
-                    dialog.set_response_enabled("rename", False)
-                    return
-            dialog.set_response_enabled("rename", True)
-        else:
-            dialog.set_response_enabled("rename", False)
+                    err = "A vault with this name already exists."
+                    break
+        dialog.set_body(err or base_body)
+        dialog.set_response_enabled("rename", err is None)
 
     entry.connect("changed", lambda *_: _check_name())
     _check_name()
@@ -300,10 +308,12 @@ def show_add_vault_name_dialog(
     when the user confirms with a unique name.
     """
     from . import config
+    from . import validation
 
+    base_body = "Enter a unique vault name.\n" + validation.INVALID_VAULT_NAME_HINT
     dialog = Adw.AlertDialog(
         heading="Vault Name Collision",
-        body="Enter a unique vault name.",
+        body=base_body,
     )
     dialog.set_prefer_wide_layout(True)
     dialog.add_response("cancel", "Cancel")
@@ -318,14 +328,13 @@ def show_add_vault_name_dialog(
     dialog.set_extra_child(entry)
 
     def _check_name():
+        # Show the reason (invalid chars / collision) in the body (R19.4).
         new_name = entry.get_text().strip()
-        if new_name and not any(
-            v["name"] == new_name
-            for v in config.load_vaults()
-        ):
-            dialog.set_response_enabled("add", True)
-        else:
-            dialog.set_response_enabled("add", False)
+        err = validation.validate_vault_name(new_name)
+        if err is None and any(v["name"] == new_name for v in config.load_vaults()):
+            err = "A vault with this name already exists."
+        dialog.set_body(err or base_body)
+        dialog.set_response_enabled("add", err is None)
 
     entry.connect("changed", lambda *_: _check_name())
     _check_name()

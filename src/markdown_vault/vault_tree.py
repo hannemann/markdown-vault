@@ -481,7 +481,7 @@ class VaultTree(Gtk.Box):
     def _do_rename_vault(self, vault_path: str, new_name: str, dialog: Adw.Dialog) -> None:
         """Execute the vault rename."""
         new_name = new_name.strip()
-        if not new_name:
+        if not new_name or validation.validate_vault_name(new_name):
             return
         # Capture the current (old) name before the config is updated, and
         # double-check uniqueness (safety net).
@@ -961,7 +961,11 @@ class VaultTree(Gtk.Box):
             path = folder.get_path()
             if path and path not in self._vault_paths:
                 default_name = Path(path).name
-                if self._name_collision(default_name):
+                # A folder name may collide with an existing vault or contain
+                # characters that corrupt the wikilink key format (R19.4); both
+                # route through the name dialog so the user picks a valid name.
+                if (self._name_collision(default_name)
+                        or validation.validate_vault_name(default_name)):
                     self._show_add_vault_name_dialog(path, default_name)
                     return
                 self._add_vault(path, default_name)
@@ -1007,7 +1011,8 @@ class VaultTree(Gtk.Box):
                                  new_name: str, dialog: Adw.Dialog) -> None:
         """Execute adding a vault with a user-specified name."""
         new_name = new_name.strip()
-        if not new_name or self._name_collision(new_name):
+        if (not new_name or validation.validate_vault_name(new_name)
+                or self._name_collision(new_name)):
             return
         dialog.close()
         self._add_vault(vault_path, new_name)

@@ -8,6 +8,48 @@ import os
 from pathlib import Path
 
 
+# Characters that corrupt the vault-name-based key / wikilink formats and
+# make a vault's files unresolvable (R19.4):
+#   /  \   path separators (and {name}>stem key / path handling)
+#   >      vault-prefix delimiter in [[name>stem]] and the {name}>stem key
+#   |      alias delimiter in [[name>stem|alias]]
+#   #      fragment delimiter in the vault: URL / [[stem#heading]]
+#   [  ]   wikilink brackets — break [[name>stem]] link text
+_INVALID_VAULT_NAME_CHARS = ("/", "\\", ">", "|", "#", "[", "]")
+# Public so dialogs can show it as a persistent hint, not only on error.
+INVALID_VAULT_NAME_HINT = "Name cannot contain any of: / \\ > | # [ ]"
+
+
+def validate_vault_name(name: str) -> str | None:
+    """Validate a vault name for the wikilink key / link-text formats.
+
+    Returns an error message string on failure, ``None`` on success.
+    Rejects empty/whitespace-only names, leading/trailing whitespace, and
+    names containing any of ``_INVALID_VAULT_NAME_CHARS`` — see that constant
+    for why each one corrupts resolution (R19.4).
+    """
+    if not name or not name.strip():
+        return "Name cannot be empty."
+    if name.strip() != name:
+        return "Name cannot have leading/trailing whitespace."
+    for ch in _INVALID_VAULT_NAME_CHARS:
+        if ch in name:
+            return INVALID_VAULT_NAME_HINT
+    return None
+
+
+def sanitize_vault_name(name: str) -> str:
+    """Strip forbidden characters and surrounding whitespace from *name*.
+
+    Used on load to make a hand-edited ``vaults.yaml`` name safe for the
+    wikilink key formats (R19.4).  May return an empty string — callers must
+    fall back to another source (e.g. the directory name).
+    """
+    for ch in _INVALID_VAULT_NAME_CHARS:
+        name = name.replace(ch, "")
+    return name.strip()
+
+
 def validate_rename(
     new_name: str,
     old_name: str,

@@ -355,7 +355,8 @@ class TestShowRenameVaultDialog(unittest.TestCase):
         dialogs.show_rename_vault_dialog(parent, "/a", "A", on_rename)
         MockAlertDialog.assert_called_once_with(
             heading="Rename Vault",
-            body="Enter a new name for the vault.",
+            body="Enter a new name for the vault.\n"
+                 "Name cannot contain any of: / \\ > | # [ ]",
         )
         dialog = MockAlertDialog.return_value
         dialog.set_extra_child.assert_called_once()
@@ -426,7 +427,8 @@ class TestShowAddVaultNameDialog(unittest.TestCase):
         dialogs.show_add_vault_name_dialog(parent, "/b", "MyVault", lambda *a: None)
         MockAlertDialog.assert_called_once_with(
             heading="Vault Name Collision",
-            body="Enter a unique vault name.",
+            body="Enter a unique vault name.\n"
+                 "Name cannot contain any of: / \\ > | # [ ]",
         )
         dialog = MockAlertDialog.return_value
         dialog.set_extra_child.assert_called_once()
