@@ -48,6 +48,20 @@ class TestLoadVaults(_TempConfigMixin, unittest.TestCase):
         self.assertEqual(result[0]["name"], "Notes")
         self.assertEqual(result[0]["path"], "/tmp/notes")
 
+    def test_loads_vault_icon(self):
+        _cfg.CONFIG_FILE.write_text(
+            "vaults:\n  - name: Notes\n    path: /tmp/notes\n    icon: 🧠\n",
+            encoding="utf-8",
+        )
+        result = _cfg.load_vaults()
+        self.assertEqual(result[0].get("icon"), "🧠")
+
+    def test_missing_icon_absent(self):
+        _cfg.CONFIG_FILE.write_text(
+            "vaults:\n  - name: Notes\n    path: /tmp/notes\n", encoding="utf-8"
+        )
+        self.assertNotIn("icon", _cfg.load_vaults()[0])
+
     def test_resolves_paths_to_absolute(self):
         _cfg.CONFIG_FILE.write_text(
             "vaults:\n  - name: Rel\n    path: relative/path\n", encoding="utf-8"
@@ -208,6 +222,40 @@ class TestRemoveVault(_TempConfigMixin, unittest.TestCase):
     def test_rename_nonexistent_is_noop(self):
         result = _cfg.rename_vault("/nonexistent", "X")
         self.assertEqual(len(result), 0)
+
+    def test_set_vault_icon_roundtrips(self):
+        _cfg.add_vault("Notes", "/tmp/notes")
+        _cfg.set_vault_icon("/tmp/notes", "🧠")
+        _cfg._vaults_cache = None  # force re-read from disk
+        self.assertEqual(_cfg.load_vaults()[0].get("icon"), "🧠")
+
+    def test_clear_vault_icon(self):
+        _cfg.add_vault("Notes", "/tmp/notes")
+        _cfg.set_vault_icon("/tmp/notes", "🧠")
+        _cfg.set_vault_icon("/tmp/notes", None)
+        _cfg._vaults_cache = None
+        self.assertNotIn("icon", _cfg.load_vaults()[0])
+
+    def test_set_icon_preserves_name(self):
+        _cfg.add_vault("Notes", "/tmp/notes")
+        result = _cfg.set_vault_icon("/tmp/notes", "📚")
+        self.assertEqual(result[0]["name"], "Notes")
+        self.assertEqual(result[0]["path"], "/tmp/notes")
+
+    def test_set_vault_icon_mono_roundtrips(self):
+        _cfg.add_vault("Notes", "/tmp/notes")
+        _cfg.set_vault_icon("/tmp/notes", "🧠", mono=True)
+        _cfg._vaults_cache = None
+        v = _cfg.load_vaults()[0]
+        self.assertEqual(v.get("icon"), "🧠")
+        self.assertTrue(v.get("mono"))
+
+    def test_mono_cleared_when_false(self):
+        _cfg.add_vault("Notes", "/tmp/notes")
+        _cfg.set_vault_icon("/tmp/notes", "🧠", mono=True)
+        _cfg.set_vault_icon("/tmp/notes", "🧠", mono=False)
+        _cfg._vaults_cache = None
+        self.assertNotIn("mono", _cfg.load_vaults()[0])
 
 
 class TestSettings(_TempConfigMixin, unittest.TestCase):

@@ -977,6 +977,8 @@ class MainWindow(Adw.ApplicationWindow):
         if self._find_bar.get_visible():
             self._find_bar.close()
         self._tab_orchestrator.on_tab_changed(file_path)
+        # Mark the open file in the tree.
+        self._vault_tree.set_open_file(file_path)
         # Keep active vault in sync with the open tab.
         vault = self._find_vault_for_file(file_path)
         if vault and vault != self._active_vault:
@@ -1004,6 +1006,7 @@ class MainWindow(Adw.ApplicationWindow):
         self._update_content_visibility()
         if not self._tab_bar.has_tabs():
             self._sidebar.update_for_file(None)
+            self._vault_tree.set_open_file(None)
 
     def _on_tab_close_requested(self, paths_to_close, on_confirm=None) -> None:
         """Handle tab close request with dirty-check (R4.2).
@@ -1280,13 +1283,32 @@ class MainWindow(Adw.ApplicationWindow):
 
     def _on_file_renamed(self, _tree, old_path: str, new_path: str) -> None:
         """Handle file/folder rename from the vault tree."""
-        # Update wikilinks in other files BEFORE index update.  This rewrites
+        # Update wikilinks in other files BEFORE the index update.  This rewrites
         # link text on disk; for an OPEN file that raises the "modified
         # externally" banner so the user can reload the now-stale buffer — this
         # is intended, do not suppress it.
-        self._backlink_index.rename_wikilinks(old_path, new_path)
-        self._backlink_index.rename_file(old_path, new_path)
-        self._file_index.rename_file(old_path, new_path)
+        #
+        # A directory rename changes the path-based key of every descendant file
+        # at once, so a single (old_dir → new_dir) remap covers nothing.  Apply
+        # the proven per-file rename to each child instead.
+        if os.path.isdir(new_path):
+            pairs = []
+            for child in sorted(Path(new_path).rglob("*")):
+                if child.is_file() and child.suffix.lower() == ".md":
+                    rel = child.relative_to(new_path)
+                    pairs.append((str(Path(old_path) / rel), str(child)))
+        else:
+            pairs = [(old_path, new_path)]
+        # Two passes: first repoint every child's index entry to its new on-disk
+        # path, so the second pass can read each linking file — which may itself
+        # be a moved child — from its real location when rewriting path-qualified
+        # links.  (A single pass rewrites links to a co-moved sibling against the
+        # sibling's stale old path → FileNotFound → the link is left dangling.)
+        for old_child, new_child in pairs:
+            self._backlink_index.rename_file(old_child, new_child)
+            self._file_index.rename_file(old_child, new_child)
+        for old_child, new_child in pairs:
+            self._backlink_index.rename_wikilinks(old_child, new_child)
         self._dump_debug(["file_index", "backlink_index", "vault_tree", "tabs"])
         # Update all open tabs whose path starts with old_path (dir rename).
         for tab_path in list(self._tab_bar.get_all_paths()):

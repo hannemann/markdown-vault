@@ -208,6 +208,84 @@ headerbar button {
     padding: 4px 20px 12px 20px;
 }
 
+/* ── VaultTree (ListView) ──────────────────────────────────────── */
+
+/* Compact rows.  Keep the row padless and put vertical spacing on the label so
+   the guide columns span the full row height and their lines stay continuous
+   between rows. */
+.vault-tree row {
+    padding: 0;
+    min-height: 0;
+}
+.vault-tree treeexpander {
+    padding: 0;
+}
+.vault-tree .tree-label {
+    padding-top: 3px;
+    padding-bottom: 3px;
+}
+
+/* Folder vs. file emphasis. */
+.vault-tree .tree-folder { font-weight: 600; }
+.vault-tree .tree-file { opacity: 0.9; }
+.vault-tree .tree-folder-icon { color: @accent_color; }
+.vault-tree .tree-file-icon { opacity: 0.55; }
+.vault-tree .tree-arrow { color: alpha(@window_fg_color, 0.55); }
+.vault-tree .vault-emoji { font-size: 15px; }
+/* Opt-in per vault (see "Monochrome" in the icon dialog). */
+.vault-tree .vault-emoji-mono { filter: grayscale(1); }
+
+/* Emoji buttons in the vault-icon picker dialog — ~1.5× the tree size. */
+.vault-icon-choice {
+    font-size: 22px;
+    padding: 4px;
+}
+
+/* One continuous indent guide per level, drawn down the CENTRE of each guide
+   column (which is the same width as the chevron column).  A parent's chevron
+   column and its children's matching guide column share the same centre x, so
+   when a folder is expanded the line continues straight down from the chevron's
+   tip through all its children. */
+.vault-tree .tree-guide-cell {
+    background-image: linear-gradient(to right,
+        transparent 7px,
+        alpha(@window_fg_color, 0.16) 7px,
+        alpha(@window_fg_color, 0.16) 8px,
+        transparent 8px);
+}
+
+/* Vault root: full-width background bar (section-header look) with a little
+   breathing room above and a light divider below. */
+.vault-tree .vault-root-row {
+    background: alpha(@window_fg_color, 0.07);
+    margin-top: 2px;
+    border-bottom: 1px solid alpha(@window_fg_color, 0.12);
+}
+
+/* Active vault root: bold + accent colour so the current workspace stands out. */
+.vault-tree .vault-root-active {
+    font-weight: bold;
+    color: @accent_color;
+}
+
+/* Currently open file: persistent highlight (replaces the noisy row hover as
+   the primary emphasis). */
+.vault-tree .open-file {
+    background: alpha(@accent_bg_color, 0.22);
+    border-radius: 6px;
+}
+
+/* Row hover. */
+.vault-tree row:hover {
+    background: alpha(@window_fg_color, 0.06);
+}
+
+/* Drag-and-drop target directory highlight. */
+.vault-tree .drop-target {
+    background: alpha(@accent_bg_color, 0.3);
+    border-radius: 6px;
+}
+
 /* ── VaultTree Kebab Button ────────────────────────────────────── */
 
 .kebab-btn {

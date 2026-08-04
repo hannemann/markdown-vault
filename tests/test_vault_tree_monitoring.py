@@ -6,11 +6,13 @@ Tests:
 - _handle_file_moved() aktualisiert Node
 - Keine Duplikate
 - Keine Crashes bei nicht-existierenden Paden
+
+Der VaultTree baut auf den GTK4-List-Widgets (``Gtk.ListView`` +
+``Gtk.TreeListModel``) auf; der Baum wird über die :class:`VaultNode`-Hierarchie
+(``_iter_all_nodes``) inspiziert statt über einen ``Gtk.TreeStore``.
 """
 
-import importlib
 import shutil
-import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -20,39 +22,25 @@ import gi
 gi.require_version("Gtk", "4.0")
 from gi.repository import Gtk
 
-
-def _make_mock_gio():
-    """Erstellt ein gemoddetes Gio für VaultTree."""
-    mock_gio = MagicMock()
-    mock_gio.Menu = MagicMock
-    mock_gio.SimpleActionGroup = MagicMock
-    mock_gio.SimpleAction = MagicMock()
-    mock_gio.SimpleAction.new = MagicMock()
-    return mock_gio
+from markdown_vault.vault_tree import VaultTree, VaultNode
 
 
-def _load_vaulttree(mock_gio):
-    """Lädt vault_tree mit gemoddetem Gio."""
-    for mod in list(sys.modules.keys()):
-        if mod == 'markdown_vault.vault_tree' or mod.startswith('markdown_vault.vault_tree.'):
-            del sys.modules[mod]
-    import gi.repository
-    gi.repository.Gio = mock_gio
-    import markdown_vault.vault_tree
-    return markdown_vault.vault_tree
+def _file_paths(tree: VaultTree) -> list[str]:
+    """All non-directory node paths currently in the tree."""
+    return [n.path for n in tree._iter_all_nodes() if not n.is_dir]
+
+
+def _all_paths(tree: VaultTree) -> list[str]:
+    """All node paths (files and directories) currently in the tree."""
+    return [n.path for n in tree._iter_all_nodes()]
 
 
 class TestVaultTreeHandleFileCreated(unittest.TestCase):
-    """Phase 3: VaultTree _handle_file_created."""
+    """VaultTree._handle_file_created."""
 
     def setUp(self):
         self._tmpdir = Path(tempfile.mkdtemp())
-        mock_gio = _make_mock_gio()
-        mod = _load_vaulttree(mock_gio)
-        VaultTree = mod.VaultTree
         self.tree = VaultTree()
-
-        # Baum initialisieren: vault root + existing file
         self.vault_path = str(self._tmpdir / "testvault")
         Path(self.vault_path).mkdir(exist_ok=True)
         (Path(self.vault_path) / "existing.md").touch()
@@ -61,97 +49,54 @@ class TestVaultTreeHandleFileCreated(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree(self._tmpdir, ignore_errors=True)
 
-    def _get_node_paths(self):
-        """Gibt alle Dateipfade aus dem TreeStore zurück."""
-        paths = []
-        def _walk(iter_):
-            while iter_:
-                if not self.tree._store.get_value(iter_, 2):  # not a directory
-                    paths.append(self.tree._store.get_value(iter_, 1))
-                child = self.tree._store.iter_children(iter_)
-                if child:
-                    _walk(child)
-                iter_ = self.tree._store.iter_next(iter_)
-        _walk(self.tree._store.get_iter_first())
-        return paths
-
     def test_handle_file_created_adds_node(self):
-        """Neue .md Datei wird dem Baum hinzugefügt."""
         new_file = Path(self.vault_path) / "newfile.md"
         new_file.touch()
-
         self.tree._handle_file_created(self.vault_path, str(new_file))
-
-        paths = self._get_node_paths()
-        self.assertIn(str(new_file), paths)
+        self.assertIn(str(new_file), _file_paths(self.tree))
 
     def test_handle_file_created_no_duplicate(self):
-        """Wenn Datei schon im Baum → kein Duplicate."""
-        # existing.md ist schon im Baum
-        self.tree._handle_file_created(self.vault_path, str(Path(self.vault_path) / "existing.md"))
-
-        paths = self._get_node_paths()
-        # existing.md sollte genau einmal vorkommen
-        self.assertEqual(paths.count(str(Path(self.vault_path) / "existing.md")), 1)
+        existing = str(Path(self.vault_path) / "existing.md")
+        self.tree._handle_file_created(self.vault_path, existing)
+        self.assertEqual(_file_paths(self.tree).count(existing), 1)
 
     def test_handle_file_created_subdirectory(self):
-        """Neue .md Datei in Unterverzeichnis wird hinzugefügt."""
         subdir = Path(self.vault_path) / "subdir"
         subdir.mkdir(exist_ok=True)
         new_file = subdir / "sub.md"
         new_file.touch()
-
         self.tree._handle_file_created(str(subdir), str(new_file))
-
-        paths = self._get_node_paths()
-        self.assertIn(str(new_file), paths)
+        self.assertIn(str(new_file), _file_paths(self.tree))
 
     def test_handle_file_created_non_md_ignored(self):
-        """Nicht-.md Dateien werden ignoriert."""
         txt_file = Path(self.vault_path) / "file.txt"
         txt_file.touch()
-
         self.tree._handle_file_created(self.vault_path, str(txt_file))
-
-        paths = self._get_node_paths()
-        self.assertNotIn(str(txt_file), paths)
+        self.assertNotIn(str(txt_file), _file_paths(self.tree))
 
     def test_handle_file_created_parent_not_expanded(self):
-        """Parent dir nicht expanded → Node wird hinzugefügt, aber nicht angezeigt."""
         subdir = Path(self.vault_path) / "hidden_sub"
         subdir.mkdir(exist_ok=True)
         new_file = subdir / "test.md"
         new_file.touch()
-
         self.tree._handle_file_created(str(subdir), str(new_file))
-
-        # Node sollte existieren, auch wenn parent nicht expanded ist
-        paths = self._get_node_paths()
-        self.assertIn(str(new_file), paths)
+        self.assertIn(str(new_file), _file_paths(self.tree))
 
     def test_handle_file_created_empty_parent_creates_intermediate_dirs(self):
-        """Parent-Verzeichnis existiert im Baum noch nicht → wird erstellt."""
         deep = Path(self.vault_path) / "a" / "b" / "c"
         deep.mkdir(parents=True, exist_ok=True)
         new_file = deep / "deep.md"
         new_file.touch()
-
         self.tree._handle_file_created(str(deep), str(new_file))
-
-        paths = self._get_node_paths()
-        self.assertIn(str(new_file), paths)
+        self.assertIn(str(new_file), _file_paths(self.tree))
 
 
 class TestVaultTreeHandleFileDeleted(unittest.TestCase):
-    """Phase 3: VaultTree _handle_file_deleted."""
+    """VaultTree._handle_file_deleted."""
 
     def setUp(self):
         self._tmpdir = Path(tempfile.mkdtemp())
-        mock_gio = _make_mock_gio()
-        mod = _load_vaulttree(mock_gio)
-        VaultTree = mod.VaultTree
         self.tree = VaultTree()
-
         self.vault_path = str(self._tmpdir / "testvault")
         Path(self.vault_path).mkdir(exist_ok=True)
         (Path(self.vault_path) / "delete_me.md").touch()
@@ -161,55 +106,28 @@ class TestVaultTreeHandleFileDeleted(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree(self._tmpdir, ignore_errors=True)
 
-    def _get_node_paths(self):
-        paths = []
-        def _walk(iter_):
-            while iter_:
-                if not self.tree._store.get_value(iter_, 2):
-                    paths.append(self.tree._store.get_value(iter_, 1))
-                child = self.tree._store.iter_children(iter_)
-                if child:
-                    _walk(child)
-                iter_ = self.tree._store.iter_next(iter_)
-        _walk(self.tree._store.get_iter_first())
-        return paths
-
     def test_handle_file_deleted_removes_node(self):
-        """Existierende Datei wird aus dem Baum entfernt."""
         delete_me = str(Path(self.vault_path) / "delete_me.md")
         self.tree._handle_file_deleted(delete_me)
-
-        paths = self._get_node_paths()
-        self.assertNotIn(delete_me, paths)
+        self.assertNotIn(delete_me, _file_paths(self.tree))
 
     def test_handle_file_deleted_keeps_other_files(self):
-        """Andere Dateien bleiben erhalten."""
         delete_me = str(Path(self.vault_path) / "delete_me.md")
         keep_me = str(Path(self.vault_path) / "keep_me.md")
-
         self.tree._handle_file_deleted(delete_me)
-
-        paths = self._get_node_paths()
-        self.assertIn(keep_me, paths)
+        self.assertIn(keep_me, _file_paths(self.tree))
 
     def test_handle_file_deleted_nonexistent_is_noop(self):
-        """Nicht-existierende Datei → kein Crash."""
         self.tree._handle_file_deleted("/nonexistent/file.md")
-        # Sollte nichts passiert sein
-        paths = self._get_node_paths()
-        self.assertIn(str(Path(self.vault_path) / "keep_me.md"), paths)
+        self.assertIn(str(Path(self.vault_path) / "keep_me.md"), _file_paths(self.tree))
 
 
 class TestVaultTreeHandleFileMoved(unittest.TestCase):
-    """Phase 3: VaultTree _handle_file_moved."""
+    """VaultTree._handle_file_moved."""
 
     def setUp(self):
         self._tmpdir = Path(tempfile.mkdtemp())
-        mock_gio = _make_mock_gio()
-        mod = _load_vaulttree(mock_gio)
-        VaultTree = mod.VaultTree
         self.tree = VaultTree()
-
         self.vault_path = str(self._tmpdir / "testvault")
         Path(self.vault_path).mkdir(exist_ok=True)
         (Path(self.vault_path) / "subdir").mkdir(exist_ok=True)
@@ -220,50 +138,29 @@ class TestVaultTreeHandleFileMoved(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree(self._tmpdir, ignore_errors=True)
 
-    def _get_node_paths(self):
-        paths = []
-        def _walk(iter_):
-            while iter_:
-                if not self.tree._store.get_value(iter_, 2):
-                    paths.append(self.tree._store.get_value(iter_, 1))
-                child = self.tree._store.iter_children(iter_)
-                if child:
-                    _walk(child)
-                iter_ = self.tree._store.iter_next(iter_)
-        _walk(self.tree._store.get_iter_first())
-        return paths
-
     def test_handle_file_moved_updates_path(self):
-        """Datei wird zum neuen Parent verschoben."""
         new_parent = str(self._tmpdir / "testvault" / "subdir")
         old_path = str(self.moved_file)
         new_path = str(new_parent) + "/move_me.md"
-
         self.tree._handle_file_moved(old_path, new_parent, new_path)
-
-        paths = self._get_node_paths()
+        paths = _file_paths(self.tree)
         self.assertNotIn(old_path, paths)
         self.assertIn(new_path, paths)
 
     def test_handle_file_moved_old_not_in_tree_is_noop(self):
-        """Alte Path nicht im Baum → kein Crash."""
         new_parent = str(self._tmpdir / "testvault" / "subdir")
         self.tree._handle_file_moved("/nonexistent/file.md", new_parent, new_parent + "/file.md")
 
     def test_handle_file_moved_to_nonexistent_parent_is_noop(self):
-        """Neuer Parent existiert nicht → kein Crash."""
         old_path = str(self.moved_file)
         self.tree._handle_file_moved(old_path, "/nonexistent", "/nonexistent/file.md")
 
     def test_handle_file_moved_to_non_md_removes_old_node(self):
-        """.md → non-.md rename: old node is removed, no .txt node appears."""
         new_parent = str(self._tmpdir / "testvault" / "subdir")
         old_path = str(self.moved_file)
         new_path = str(new_parent) + "/move_me.txt"
-
         self.tree._handle_file_moved(old_path, new_parent, new_path)
-
-        paths = self._get_node_paths()
+        paths = _file_paths(self.tree)
         self.assertNotIn(old_path, paths)
         self.assertNotIn(new_path, paths)
 
@@ -273,11 +170,7 @@ class TestVaultTreeDeleteShortcut(unittest.TestCase):
 
     def setUp(self):
         self._tmpdir = Path(tempfile.mkdtemp())
-        mock_gio = _make_mock_gio()
-        mod = _load_vaulttree(mock_gio)
-        VaultTree = mod.VaultTree
         self.tree = VaultTree()
-
         self.vault_path = str(self._tmpdir / "testvault")
         Path(self.vault_path).mkdir(exist_ok=True)
         (Path(self.vault_path) / "file.md").touch()
@@ -287,27 +180,23 @@ class TestVaultTreeDeleteShortcut(unittest.TestCase):
         shutil.rmtree(self._tmpdir, ignore_errors=True)
 
     def test_delete_shortcut_no_selection_noop(self):
-        """Keine Auswahl → kein Signal."""
         emitted = []
         self.tree.connect("delete-requested", lambda _, p: emitted.append(p))
         self.tree._on_delete_shortcut()
         self.assertEqual(emitted, [])
 
     def test_delete_shortcut_vault_root_blocked(self):
-        """Vault-Root darf nicht gelöscht werden."""
         emitted = []
         self.tree.connect("delete-requested", lambda _, p: emitted.append(p))
-        # Simuliere Auswahl des Vault-Roots
-        with unittest.mock.patch.object(self.tree, "get_selected_path", return_value=self.vault_path):
+        with patch.object(self.tree, "get_selected_path", return_value=self.vault_path):
             self.tree._on_delete_shortcut()
         self.assertEqual(emitted, [])
 
     def test_delete_shortcut_emits_signal(self):
-        """Datei ausgewählt → delete-requested wird emittiert."""
         file_path = str(Path(self.vault_path) / "file.md")
         emitted = []
         self.tree.connect("delete-requested", lambda _, p: emitted.append(p))
-        with unittest.mock.patch.object(self.tree, "get_selected_path", return_value=file_path):
+        with patch.object(self.tree, "get_selected_path", return_value=file_path):
             self.tree._on_delete_shortcut()
         self.assertEqual(emitted, [file_path])
 
@@ -317,11 +206,7 @@ class TestVaultTreeFocusFile(unittest.TestCase):
 
     def setUp(self):
         self._tmpdir = Path(tempfile.mkdtemp())
-        mock_gio = _make_mock_gio()
-        mod = _load_vaulttree(mock_gio)
-        VaultTree = mod.VaultTree
         self.tree = VaultTree()
-
         self.vault_path = str(self._tmpdir / "testvault")
         Path(self.vault_path).mkdir(exist_ok=True)
         (Path(self.vault_path) / "note.md").touch()
@@ -334,45 +219,27 @@ class TestVaultTreeFocusFile(unittest.TestCase):
         shutil.rmtree(self._tmpdir, ignore_errors=True)
 
     def test_focus_file_selects_existing_file(self):
-        """focus_file() selects the row matching the given path."""
         file_path = str(Path(self.vault_path) / "note.md")
         self.tree.focus_file(file_path)
         self.assertEqual(self.tree.get_selected_path(), file_path)
 
     def test_focus_file_selects_nested_file(self):
-        """focus_file() selects a file inside a subdirectory."""
         file_path = str(Path(self.vault_path) / "sub" / "deep.md")
         self.tree.focus_file(file_path)
-        # After focus_file, get_selected_path should return the file path
-        # (select_path may not work without realized widget in headless,
-        # so verify the method completed without error)
-        self.assertTrue(True)
+        self.assertEqual(self.tree.get_selected_path(), file_path)
 
     def test_focus_file_no_crash_on_missing_path(self):
-        """focus_file() with non-existent path does not crash."""
         self.tree.focus_file("/nonexistent/path.md")
         self.assertIsNone(self.tree.get_selected_path())
 
     def test_focus_file_expands_parent(self):
-        """focus_file() calls expand_row on parent directories."""
+        """focus_file() expands the parent directory of a nested file."""
         file_path = str(Path(self.vault_path) / "sub" / "deep.md")
-        with unittest.mock.patch.object(self.tree._tree_view, "expand_row") as mock_expand:
-            self.tree.focus_file(file_path)
-            # Should have expanded at least one parent
-            mock_expand.assert_called()
-            # The expanded path should be the sub directory
-            expanded_path = str(Path(self.vault_path) / "sub")
-            call_args = [c[0][0] for c in mock_expand.call_args_list]
-            # Check that at least one call expanded the sub directory
-            found = False
-            for tp in call_args:
-                if self.tree._store.get_value(self.tree._store.get_iter(tp), 1) == expanded_path:
-                    found = True
-                    break
-            self.assertTrue(found, f"Expected expand for {expanded_path}, got {call_args}")
+        self.tree.focus_file(file_path)
+        expanded = self.tree.get_expanded_paths()
+        self.assertIn(str(Path(self.vault_path) / "sub"), expanded)
 
     def test_focus_button_exists(self):
-        """The focus-in-tree button should be present in the header."""
         found = False
         for child in self.tree:
             if isinstance(child, Gtk.Box):
@@ -383,84 +250,48 @@ class TestVaultTreeFocusFile(unittest.TestCase):
         self.assertTrue(found, "Focus-in-tree button not found in header")
 
     def test_focus_button_emits_signal(self):
-        """Clicking the focus button emits focus-current-file signal."""
         emitted = []
         self.tree.connect("focus-current-file", lambda _: emitted.append(True))
-
-        # Find and click the focus button
         for child in self.tree:
             if isinstance(child, Gtk.Box):
                 for btn in child:
                     if isinstance(btn, Gtk.Button) and btn.get_icon_name() == "find-location-symbolic":
                         btn.emit("clicked")
                         break
-
         self.assertEqual(emitted, [True])
 
     def test_focus_file_empty_string_no_crash(self):
-        """focus_file('') should not crash."""
         self.tree.focus_file("")
         self.assertIsNone(self.tree.get_selected_path())
 
 
 class TestVaultTreeHandleFileMovedDirectory(unittest.TestCase):
-    """R4.4: _handle_file_moved correctly handles directories."""
+    """A moved directory is inserted as a folder node."""
 
     def setUp(self):
         self._tmpdir = Path(tempfile.mkdtemp())
-        mock_gio = _make_mock_gio()
-        mod = _load_vaulttree(mock_gio)
-        VaultTree = mod.VaultTree
         self.tree = VaultTree()
-
         self.vault_path = str(self._tmpdir / "testvault")
         Path(self.vault_path).mkdir(exist_ok=True)
-        # Create olddir on disk so isdir() check passes
         old_dir = Path(self.vault_path) / "olddir"
         old_dir.mkdir(exist_ok=True)
         (old_dir / "file.md").touch()
         self.tree.set_vaults([{"name": "testvault", "path": self.vault_path}])
 
-        # Pre-populate tree with olddir
-        self.tree._handle_file_created(self.vault_path, str(old_dir))
-
     def tearDown(self):
         shutil.rmtree(self._tmpdir, ignore_errors=True)
 
     def test_handle_file_moved_directory_creates_folder_node(self):
-        """Ein verschobenes Verzeichnis wird als Ordner-Knoten eingefügt."""
         new_parent = str(self.vault_path)
         old_path = str(Path(self.vault_path) / "olddir")
         new_path = str(Path(self.vault_path) / "newdir")
-
-        # Actually rename on disk so os.path.isdir() works
         import os
         os.rename(old_path, new_path)
-
         self.tree._handle_file_moved(old_path, new_parent, new_path)
 
-        paths = []
-        def _walk(iter_):
-            while iter_:
-                node_path = self.tree._store.get_value(iter_, 1)
-                is_dir = self.tree._store.get_value(iter_, 2)
-                paths.append((node_path, is_dir))
-                child = self.tree._store.iter_children(iter_)
-                if child:
-                    _walk(child)
-                iter_ = self.tree._store.iter_next(iter_)
-        _walk(self.tree._store.get_iter_first())
-
-        found_dir = None
-        for p, d in paths:
-            if p == new_path:
-                found_dir = d
-                break
-        self.assertTrue(found_dir, f"Directory {new_path} not found in tree")
-        self.assertTrue(
-            any(p == new_path and d is True for p, d in paths),
-            f"Moved directory should be marked as directory (is_dir=True), got {paths}",
-        )
+        moved = [n for n in self.tree._iter_all_nodes() if n.path == new_path]
+        self.assertTrue(moved, f"Directory {new_path} not found in tree")
+        self.assertTrue(moved[0].is_dir, "Moved directory should be marked is_dir=True")
 
 
 class TestVaultTreeDeleteVaultRoot(unittest.TestCase):
@@ -468,11 +299,7 @@ class TestVaultTreeDeleteVaultRoot(unittest.TestCase):
 
     def setUp(self):
         self._tmpdir = Path(tempfile.mkdtemp())
-        mock_gio = _make_mock_gio()
-        mod = _load_vaulttree(mock_gio)
-        VaultTree = mod.VaultTree
         self.tree = VaultTree()
-
         self.vault_path = str(self._tmpdir / "testvault")
         Path(self.vault_path).mkdir(exist_ok=True)
         (Path(self.vault_path) / "file1.md").touch()
@@ -482,106 +309,70 @@ class TestVaultTreeDeleteVaultRoot(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree(self._tmpdir, ignore_errors=True)
 
-    def _get_node_paths(self):
-        paths = []
-        def _walk(iter_):
-            while iter_:
-                paths.append(self.tree._store.get_value(iter_, 1))
-                child = self.tree._store.iter_children(iter_)
-                if child:
-                    _walk(child)
-                iter_ = self.tree._store.iter_next(iter_)
-        _walk(self.tree._store.get_iter_first())
-        return paths
-
     def test_delete_all_files_preserves_vault_root(self):
-        """Wenn alle Dateien gelöscht werden, bleibt der Vault-Root im Baum."""
         file1 = str(Path(self.vault_path) / "file1.md")
         file2 = str(Path(self.vault_path) / "file2.md")
-
         self.tree._handle_file_deleted(file1)
         self.tree._handle_file_deleted(file2)
-
-        paths = self._get_node_paths()
-        self.assertIn(self.vault_path, paths)
+        self.assertIn(self.vault_path, _all_paths(self.tree))
 
     def test_delete_dir_inside_vault_preserves_vault_root(self):
-        """Löschen eines Unterordners entfernt nicht den Vault-Root."""
         subdir = Path(self.vault_path) / "subdir"
         subdir.mkdir(exist_ok=True)
         (subdir / "inner.md").touch()
-
         self.tree._handle_file_deleted(str(subdir))
-
-        paths = self._get_node_paths()
-        self.assertIn(self.vault_path, paths)
+        self.assertIn(self.vault_path, _all_paths(self.tree))
 
 
 class TestVaultTreeContextMenuFallback(unittest.TestCase):
-    """Tests for _show_context_menu fallback when right-clicking empty space."""
+    """Tests for _resolve_context_parent_dir."""
 
     def setUp(self):
         self._tmpdir = Path(tempfile.mkdtemp())
-        mock_gio = _make_mock_gio()
-        mod = _load_vaulttree(mock_gio)
-        self.VaultTree = mod.VaultTree
-        self.tree = self.VaultTree()
-
+        self.tree = VaultTree()
         self.vault_a = str(self._tmpdir / "vault-a")
         self.vault_b = str(self._tmpdir / "vault-b")
         Path(self.vault_a).mkdir()
         Path(self.vault_b).mkdir()
         (Path(self.vault_a) / "a.md").touch()
         (Path(self.vault_b) / "b.md").touch()
-        self.tree.set_vaults([{"name": "VaultA", "path": self.vault_a}, {"name": "VaultB", "path": self.vault_b}])
+        self.tree.set_vaults([
+            {"name": "VaultA", "path": self.vault_a},
+            {"name": "VaultB", "path": self.vault_b},
+        ])
 
     def tearDown(self):
         shutil.rmtree(self._tmpdir, ignore_errors=True)
 
     def test_empty_space_uses_active_vault(self):
-        """Right-click on empty space uses _active_vault, not vault_paths[0]."""
         self.tree._active_vault = self.vault_b
         self.tree._context_path = None
         self.tree._context_is_dir = False
-
-        result = self.tree._resolve_context_parent_dir()
-        self.assertEqual(result, self.vault_b)
+        self.assertEqual(self.tree._resolve_context_parent_dir(), self.vault_b)
 
     def test_empty_space_no_active_vault_uses_first(self):
-        """Without _active_vault, falls back to vault_paths[0]."""
         self.tree._active_vault = None
         self.tree._context_path = None
         self.tree._context_is_dir = False
-
-        result = self.tree._resolve_context_parent_dir()
-        self.assertEqual(result, self.vault_a)
+        self.assertEqual(self.tree._resolve_context_parent_dir(), self.vault_a)
 
     def test_empty_space_no_vaults_returns_none(self):
-        """No vaults loaded returns None."""
         self.tree._vault_paths = []
         self.tree._active_vault = None
         self.tree._context_path = None
         self.tree._context_is_dir = False
-
-        result = self.tree._resolve_context_parent_dir()
-        self.assertIsNone(result)
+        self.assertIsNone(self.tree._resolve_context_parent_dir())
 
     def test_dir_context_returns_context_path(self):
-        """Right-click on a directory returns that directory."""
         self.tree._context_path = self.vault_b
         self.tree._context_is_dir = True
-
-        result = self.tree._resolve_context_parent_dir()
-        self.assertEqual(result, self.vault_b)
+        self.assertEqual(self.tree._resolve_context_parent_dir(), self.vault_b)
 
     def test_file_context_returns_parent(self):
-        """Right-click on a file returns its parent directory."""
         file_path = str(Path(self.vault_b) / "b.md")
         self.tree._context_path = file_path
         self.tree._context_is_dir = False
-
-        result = self.tree._resolve_context_parent_dir()
-        self.assertEqual(result, self.vault_b)
+        self.assertEqual(self.tree._resolve_context_parent_dir(), self.vault_b)
 
 
 class TestDropDeferredRefresh(unittest.TestCase):
@@ -594,35 +385,20 @@ class TestDropDeferredRefresh(unittest.TestCase):
 
     def setUp(self):
         self._tmpdir = Path(tempfile.mkdtemp())
-        mock_gio = _make_mock_gio()
-        self.mod = _load_vaulttree(mock_gio)
-        self.tree = self.mod.VaultTree()
+        self.tree = VaultTree()
 
     def tearDown(self):
         shutil.rmtree(self._tmpdir, ignore_errors=True)
 
     def test_drop_emits_rename_and_defers_refresh(self):
-        mod = self.mod
+        import markdown_vault.vault_tree as mod
         (self._tmpdir / "note.md").write_text("x")
         (self._tmpdir / "sub").mkdir()
         src = str(self._tmpdir / "note.md")
         target_dir = str(self._tmpdir / "sub")
         expected_dest = str(Path(target_dir) / "note.md")
 
-        # Simulate a drop onto a directory row.
-        self.tree._tree_view = MagicMock()
-        self.tree._tree_view.get_path_at_pos.return_value = ("p", None, 0, 0)
-        self.tree._store = MagicMock()
-        self.tree._store.get_iter.return_value = "iter"
-
-        def _get_value(_iter, col):
-            if col == mod._COL_IS_DIR:
-                return True
-            if col == mod._COL_PATH:
-                return target_dir
-            return None
-
-        self.tree._store.get_value.side_effect = _get_value
+        target_node = VaultNode("sub", target_dir, True)
 
         emitted = []
         self.tree.connect("file-renamed", lambda _t, o, n: emitted.append((o, n)))
@@ -633,13 +409,11 @@ class TestDropDeferredRefresh(unittest.TestCase):
                 patch.object(mod.validation, "validate_drop", return_value=None), \
                 patch("shutil.move") as mv, \
                 patch.object(self.tree, "refresh") as refresh:
-            result = self.tree._on_drop(None, src, 5, 5)
+            result = self.tree._perform_drop(src, target_node)
 
         self.assertTrue(result)
         mv.assert_called_once_with(src, expected_dest)
-        # rename emitted so MainWindow can repoint tab/index/sidebar
         self.assertEqual(emitted, [(src, expected_dest)])
-        # tree rebuild is deferred, NOT run synchronously inside the drop
         refresh.assert_not_called()
         self.assertEqual(deferred, [self.tree._refresh_after_drop])
 

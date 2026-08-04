@@ -100,6 +100,104 @@ def prompt_new_item(
     GLib.idle_add(_focus)
 
 
+def prompt_rename(parent: Gtk.Widget, current_name: str, on_response) -> None:
+    """Show a dialog with a text entry to rename a file or folder.
+
+    *on_response* is called with the entered name (stripped), or ``None``
+    when the dialog is cancelled or the input is empty/unchanged.
+    """
+    dialog = Adw.AlertDialog(heading="Rename", body=f"Rename “{current_name}”")
+    dialog.set_prefer_wide_layout(True)
+    dialog.add_response("cancel", "Cancel")
+    dialog.add_response("rename", "Rename")
+    dialog.set_response_appearance("rename", Adw.ResponseAppearance.SUGGESTED)
+    dialog.set_default_response("rename")
+    dialog.set_close_response("cancel")
+
+    entry = Gtk.Entry(text=current_name)
+    entry.set_activates_default(True)
+    dialog.set_extra_child(entry)
+
+    def _on_response(_dlg, response):
+        if response == "rename":
+            name = entry.get_text().strip()
+            on_response(name if name and name != current_name else None)
+        else:
+            on_response(None)
+
+    dialog.connect("response", _on_response)
+    dialog.present(parent)
+
+    def _focus():
+        entry.grab_focus()
+        # Preselect the basename (before the extension) for quick editing.
+        dot = current_name.rfind(".")
+        entry.select_region(0, dot if dot > 0 else len(current_name))
+        return False
+    GLib.idle_add(_focus)
+
+
+_VAULT_ICON_PALETTE = [
+    "🗄️", "🗂️", "🗃️", "📁", "📚", "📓", "📔", "🧠",
+    "🔖", "🏛️", "💎", "🔒", "⭐", "🌐", "🔬", "💼",
+    "🎯", "📦", "🗒️", "🧩", "🚀", "🏰",
+]
+
+
+def show_vault_icon_dialog(
+    parent: Gtk.Widget, current_icon: str, current_mono: bool, on_choose,
+) -> None:
+    """Pick a vault icon from a palette or free text, plus a monochrome toggle.
+
+    *on_choose* is called with ``(icon, mono)`` — *icon* is the chosen
+    emoji/character (stripped) or ``None`` to reset to the default, *mono* is a
+    bool.  Not called on cancel.
+    """
+    dialog = Adw.AlertDialog(heading="Vault Icon", body="Pick a symbol or type your own.")
+    dialog.add_response("cancel", "Cancel")
+    dialog.add_response("apply", "Apply")
+    dialog.set_response_appearance("apply", Adw.ResponseAppearance.SUGGESTED)
+    dialog.set_default_response("apply")
+    dialog.set_close_response("cancel")
+
+    box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
+    entry = Gtk.Entry(text=current_icon or "")
+    entry.set_activates_default(True)
+    entry.set_placeholder_text("e.g. 🗄️ (empty = default)")
+
+    flow = Gtk.FlowBox()
+    flow.set_max_children_per_line(8)
+    flow.set_selection_mode(Gtk.SelectionMode.NONE)
+    flow.set_row_spacing(2)
+    flow.set_column_spacing(2)
+    for emoji in _VAULT_ICON_PALETTE:
+        btn = Gtk.Button(label=emoji)
+        btn.add_css_class("flat")
+        btn.add_css_class("vault-icon-choice")
+        btn.connect("clicked", lambda _b, e=emoji: entry.set_text(e))
+        flow.append(btn)
+
+    mono_check = Gtk.CheckButton(label="Monochrome")
+    mono_check.set_active(bool(current_mono))
+
+    box.append(flow)
+    box.append(entry)
+    box.append(mono_check)
+    dialog.set_extra_child(box)
+
+    def _on_response(_dlg, response):
+        if response == "apply":
+            on_choose(entry.get_text().strip() or None, mono_check.get_active())
+
+    dialog.connect("response", _on_response)
+    dialog.present(parent)
+
+    def _focus():
+        entry.grab_focus_without_selecting()
+        return False
+    GLib.idle_add(_focus)
+
+
 # ── Delete confirmation ────────────────────────────────────────────
 
 

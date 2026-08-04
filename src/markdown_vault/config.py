@@ -107,7 +107,13 @@ def _read_vaults_from_disk() -> list[dict[str, str]]:
                 or "vault")
         name = _uniquify_vault_name(name, used_names)
         used_names.add(name)
-        unique.append({"name": name, "path": abs_path})
+        vault: dict = {"name": name, "path": abs_path}
+        icon = entry.get("icon")
+        if icon:
+            vault["icon"] = str(icon)
+        if entry.get("mono"):
+            vault["mono"] = True
+        unique.append(vault)
     logger.debug("Loaded %d vault(s) from config", len(unique))
     return unique
 
@@ -162,7 +168,13 @@ def save_vaults(vaults: list[dict[str, str]]) -> None:
             continue
         seen.add(abs_path)
         name = entry.get("name") or Path(abs_path).name
-        unique.append({"name": name, "path": abs_path})
+        vault = {"name": name, "path": abs_path}
+        icon = entry.get("icon")
+        if icon:
+            vault["icon"] = str(icon)
+        if entry.get("mono"):
+            vault["mono"] = True
+        unique.append(vault)
     existing: dict = {}
     if CONFIG_FILE.exists():
         try:
@@ -209,6 +221,31 @@ def rename_vault(path: str, new_name: str) -> list[dict[str, str]]:
             logger.info("Vault renamed: %s → %s", path, new_name)
             return load_vaults()
     logger.warning("Vault not found for rename: %s", path)
+    return vaults
+
+
+def set_vault_icon(path: str, icon: str | None, mono: bool = False) -> list[dict]:
+    """Set the display icon (and monochrome flag) for the vault at *path*.
+
+    Pass ``icon=None`` to clear the icon (fall back to the default) and
+    ``mono=False`` to render it in colour.
+    """
+    abs_path = os.path.abspath(path)
+    vaults = load_vaults()
+    for vault in vaults:
+        if vault["path"] == abs_path:
+            if icon:
+                vault["icon"] = icon
+            else:
+                vault.pop("icon", None)
+            if mono:
+                vault["mono"] = True
+            else:
+                vault.pop("mono", None)
+            save_vaults(vaults)
+            logger.info("Vault icon set: %s → %s (mono=%s)", path, icon, mono)
+            return load_vaults()
+    logger.warning("Vault not found for icon change: %s", path)
     return vaults
 
 
