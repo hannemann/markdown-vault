@@ -979,6 +979,12 @@ class MainWindow(Adw.ApplicationWindow):
         self._tab_orchestrator.on_tab_changed(file_path)
         # Mark the open file in the tree.
         self._vault_tree.set_open_file(file_path)
+        # Broken-link marks otherwise only refresh on edit/prefs-change, so a
+        # freshly opened (or externally created) file would stay unmarked until
+        # the first keystroke — refresh on activation too.
+        tab = self._tab_bar.get_tab(file_path)
+        if tab:
+            self._refresh_broken_marks(tab.editor)
         # Keep active vault in sync with the open tab.
         vault = self._find_vault_for_file(file_path)
         if vault and vault != self._active_vault:

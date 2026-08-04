@@ -183,11 +183,21 @@ class Editor(Gtk.ScrolledWindow):
         end = self._buffer.get_end_iter()
         self._buffer.remove_source_marks(start, end, _BROKEN_CATEGORY)
         self._buffer.remove_tag(self._broken_tag, start, end)
+        marked_lines: set[int] = set()
         for offset_start, offset_end in ranges:
             si = self._buffer.get_iter_at_offset(offset_start)
             ei = self._buffer.get_iter_at_offset(offset_end)
             self._buffer.apply_tag(self._broken_tag, si, ei)
-            self._buffer.create_source_mark(None, _BROKEN_CATEGORY, si)
+            # The red underline marks the exact link span; the gutter icon is a
+            # per-line indicator.  GtkSourceView only renders a mark's icon when
+            # the mark sits at the line start, so anchor it to column 0 (once per
+            # line) — otherwise a link with any text before it shows no icon.
+            line = si.get_line()
+            if line not in marked_lines:
+                marked_lines.add(line)
+                line_start = si.copy()
+                line_start.set_line_offset(0)
+                self._buffer.create_source_mark(None, _BROKEN_CATEGORY, line_start)
 
     def apply_wikilink_fixes(self, fixes: list) -> None:
         """Apply offset-based text replacements to the buffer.
