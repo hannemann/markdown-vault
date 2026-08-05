@@ -175,17 +175,23 @@ class ThirdPartyLevelTest(unittest.TestCase):
 
 
 class GlibHandlerTest(unittest.TestCase):
-    """Handler registration/removal in _setup_glib_logging."""
+    """Threshold + one-time handler install in _setup_glib_logging."""
 
-    def test_reregistration_removes_only_owned_domains(self):
+    def test_handlers_installed_once(self):
+        """Handlers are registered exactly once; a level change must not
+        re-register (they catch every level; only the threshold moves)."""
         calls = []
-        handlers = []
 
         class FakeFlags:
-            LEVEL_ERROR = 1
-            LEVEL_WARNING = 2
-            LEVEL_CRITICAL = 4
-            LEVEL_MASK = 0xFFFF
+            LEVEL_ERROR = 4
+            LEVEL_CRITICAL = 8
+            LEVEL_WARNING = 16
+            LEVEL_MESSAGE = 32
+            LEVEL_INFO = 64
+            LEVEL_DEBUG = 128
+            LEVEL_MASK = 0xFC
+            FLAG_FATAL = 2
+            FLAG_RECURSION = 1
 
         class FakeGLib:
             LogLevelFlags = FakeFlags
@@ -193,41 +199,79 @@ class GlibHandlerTest(unittest.TestCase):
             @staticmethod
             def log_set_handler(domain, level, func, data):
                 calls.append(("set", domain))
-                handlers.append((domain, len(calls)))
                 return len(calls)
 
             @staticmethod
             def log_set_default_handler(func, data):
                 calls.append(("set_default", None))
-                handlers.append((None, len(calls)))
                 return len(calls)
 
-            @staticmethod
-            def log_remove_handler(domain, hid):
-                calls.append(("remove", domain, hid))
-
-            @staticmethod
-            def log_remove_default_handler(hid):
-                calls.append(("remove_default", hid))
-
         saved_glib = logging_setup.GLib
-        saved_level = logging_setup._glib_log_level
+        saved_rank = logging_setup._glib_min_rank
         saved_ids = list(logging_setup._glib_handler_id)
         logging_setup.GLib = FakeGLib
-        logging_setup._glib_log_level = None
         logging_setup._glib_handler_id = []
         try:
             logging_setup._setup_glib_logging("warning")
-            logging_setup._setup_glib_logging("error")
-            for call in calls:
-                if call[0] == "remove":
-                    self.assertIn((call[1], call[2]), handlers)
-                elif call[0] == "remove_default":
-                    self.assertIn((None, call[1]), handlers)
+            after_first = len(calls)
+            logging_setup._setup_glib_logging("critical")  # must not re-register
+            self.assertEqual(len(calls), after_first)
+            self.assertEqual(sum(1 for c in calls if c[0] == "set"), 6)
+            self.assertEqual(sum(1 for c in calls if c[0] == "set_default"), 1)
         finally:
             logging_setup.GLib = saved_glib
-            logging_setup._glib_log_level = saved_level
+            logging_setup._glib_min_rank = saved_rank
             logging_setup._glib_handler_id = saved_ids
+
+    def test_threshold_updates_with_level(self):
+        saved_rank = logging_setup._glib_min_rank
+        saved_ids = list(logging_setup._glib_handler_id)
+        logging_setup._glib_handler_id = [("x", 1)]  # pretend already installed
+        try:
+            logging_setup._setup_glib_logging("critical")
+            self.assertEqual(
+                logging_setup._glib_min_rank,
+                logging_setup._GLIB_THRESHOLD["critical"],
+            )
+            logging_setup._setup_glib_logging("warning")
+            self.assertEqual(
+                logging_setup._glib_min_rank,
+                logging_setup._GLIB_THRESHOLD["warning"],
+            )
+            logging_setup._setup_glib_logging("bogus")  # unknown -> default
+            self.assertEqual(
+                logging_setup._glib_min_rank, logging_setup._DEFAULT_GLIB_RANK,
+            )
+        finally:
+            logging_setup._glib_min_rank = saved_rank
+            logging_setup._glib_handler_id = saved_ids
+
+    def test_threshold_filters_handler(self):
+        """Below-threshold messages are dropped; at/above are logged."""
+        from gi.repository import GLib as _G
+
+        saved_rank = logging_setup._glib_min_rank
+        logger = logging.getLogger("markdown-vault")
+        records: list[int] = []
+
+        class _Capture(logging.Handler):
+            def emit(self, record):
+                records.append(record.levelno)
+
+        cap = _Capture()
+        logger.addHandler(cap)
+        try:
+            logging_setup._glib_min_rank = logging_setup._GLIB_THRESHOLD["critical"]
+            logging_setup._glib_log_handler("Gdk", _G.LogLevelFlags.LEVEL_WARNING, "noise")
+            self.assertEqual(records, [])  # WARNING < critical -> dropped
+
+            logging_setup._glib_min_rank = logging_setup._GLIB_THRESHOLD["warning"]
+            records.clear()
+            logging_setup._glib_log_handler("Gdk", _G.LogLevelFlags.LEVEL_WARNING, "kept")
+            self.assertEqual(records, [logging.WARNING])  # at threshold -> logged
+        finally:
+            logger.removeHandler(cap)
+            logging_setup._glib_min_rank = saved_rank
 
 
 class RotationTest(unittest.TestCase):

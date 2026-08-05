@@ -22,7 +22,12 @@ from . import dialogs
 
 _VIEW_MODES = {"edit": "Edit", "render": "Render", "split": "Split"}
 _LOGLEVELS = {"debug": "Debug", "info": "Info", "warning": "Warning", "error": "Error"}
-_GLIB_LOGLEVELS = {"error": "Error only", "warning": "Warning", "critical": "Critical", "all": "All"}
+_GLIB_LOGLEVELS = {
+    "all": "All (debug+)",
+    "warning": "Warning and up",
+    "critical": "Critical and up",
+    "error": "Error only",
+}
 _LOGLEVEL_MAP = {
     "debug": logging.DEBUG,
     "info": logging.INFO,
@@ -341,10 +346,11 @@ class PreferencesDialog(Adw.PreferencesDialog):
             subtitle="Gtk, WebKit, Gjs messages",
             model=Gtk.StringList.new(list(_GLIB_LOGLEVELS.values())),
         )
-        glib_level = self._settings.get("glib_loglevel", "error")
+        glib_level = self._settings.get("glib_loglevel", "critical")
         glib_levels = list(_GLIB_LOGLEVELS.keys())
         self._glib_loglevel_row.set_selected(
-            glib_levels.index(glib_level) if glib_level in glib_levels else 0
+            glib_levels.index(glib_level) if glib_level in glib_levels
+            else glib_levels.index("warning")
         )
         self._glib_loglevel_row.connect("notify::selected", self._on_glib_loglevel_changed)
         log_group.add(self._glib_loglevel_row)

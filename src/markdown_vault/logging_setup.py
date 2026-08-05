@@ -39,11 +39,45 @@ _LOGLEVEL_MAP = {
 }
 
 # Global state.
-_glib_log_level = GLib.LogLevelFlags.LEVEL_WARNING
+# GLib log levels are bitflags, not an ordinal scale, so rank them by severity
+# to implement a real "this level and above" threshold.
+_GLIB_LEVEL_RANK = {
+    GLib.LogLevelFlags.LEVEL_DEBUG: 10,
+    GLib.LogLevelFlags.LEVEL_INFO: 20,
+    GLib.LogLevelFlags.LEVEL_MESSAGE: 30,
+    GLib.LogLevelFlags.LEVEL_WARNING: 40,
+    GLib.LogLevelFlags.LEVEL_CRITICAL: 50,
+    GLib.LogLevelFlags.LEVEL_ERROR: 60,
+}
+# Config string -> minimum severity rank that still gets logged.
+_GLIB_THRESHOLD = {
+    "all": 0,
+    "debug": 10,
+    "info": 20,
+    "message": 30,
+    "warning": 40,
+    "critical": 50,
+    "error": 60,
+}
+_DEFAULT_GLIB_RANK = _GLIB_THRESHOLD["warning"]
+
+_glib_min_rank = _DEFAULT_GLIB_RANK  # messages below this rank are dropped
 _glib_handler_id = []  # Handler IDs for each domain
 _installed_handlers = []
 _file_setup_done = False
 _console_setup_done = False
+
+
+def _glib_severity_rank(log_level) -> int:
+    """Return the severity rank of a GLib log level (higher = more severe)."""
+    lvl = int(log_level) & int(GLib.LogLevelFlags.LEVEL_MASK)
+    best = 0
+    for flag, rank in _GLIB_LEVEL_RANK.items():
+        if lvl & int(flag):
+            best = max(best, rank)
+    # A message with no known level bit is treated as top severity so nothing
+    # is ever silently dropped.
+    return best or _GLIB_LEVEL_RANK[GLib.LogLevelFlags.LEVEL_ERROR]
 
 
 class _MaxLevelFilter(logging.Filter):
@@ -125,6 +159,10 @@ class _StdoutRotatingFileHandler(_FdRedirectRotatingFileHandler):
 
 def _glib_log_handler(log_domain, log_level, message, user_data=None):
     """GLib log handler — routes through the Python logger."""
+    # Real "level and above" threshold: drop anything below the configured
+    # minimum severity (handlers themselves catch every level).
+    if _glib_severity_rank(log_level) < _glib_min_rank:
+        return
     timestamp = GLib.DateTime.new_now_local().format("%Y-%m-%d %H:%M:%S")
     msg = f"[{timestamp}] [{log_domain}] {log_level}: {message}"
 
@@ -278,56 +316,41 @@ def _setup_console_logging(redirect_stdout=True, redirect_stderr=True):
 
 
 def _setup_glib_logging(level_str="warning"):
-    """Register the GLib log handler.
+    """Register the GLib log handler and set the severity threshold.
 
-    Args:
-        level_str: Log level string (error, warning, critical, all).
+    *level_str* is a real "this level and above" threshold — one of
+    ``all``/``debug``/``info``/``message``/``warning``/``critical``/``error``.
+    Messages below it are dropped (see :func:`_glib_severity_rank`).
+
+    The handlers catch *every* level and are installed once; re-running this
+    (e.g. from Preferences) only updates the threshold.
     """
-    global _glib_log_level, _glib_handler_id
+    global _glib_min_rank, _glib_handler_id
 
-    level_map = {
-        "error": GLib.LogLevelFlags.LEVEL_ERROR,
-        "warning": GLib.LogLevelFlags.LEVEL_WARNING,
-        "critical": GLib.LogLevelFlags.LEVEL_CRITICAL,
-        "all": GLib.LogLevelFlags.LEVEL_MASK,
-    }
-    new_level = level_map.get(level_str, GLib.LogLevelFlags.LEVEL_WARNING)
+    _glib_min_rank = _GLIB_THRESHOLD.get(
+        str(level_str).lower(), _DEFAULT_GLIB_RANK
+    )
 
-    # Only (re)register if the level actually changed.
-    if new_level == _glib_log_level and _glib_handler_id:
-        return
-
-    # Remove old handlers. Each id belongs to exactly one domain (or the
-    # default handler), so only remove it there.
     if _glib_handler_id:
-        for domain, hid in _glib_handler_id:
-            try:
-                if domain is None:
-                    GLib.log_remove_default_handler(hid)
-                else:
-                    GLib.log_remove_handler(domain, hid)
-            except Exception:
-                pass
-        _glib_handler_id = []
+        return  # already installed; threshold updated above
 
-    # Register new handler for the selected level (and above).
-    _glib_log_level = new_level
+    all_levels = (
+        GLib.LogLevelFlags.LEVEL_MASK
+        | GLib.LogLevelFlags.FLAG_FATAL
+        | GLib.LogLevelFlags.FLAG_RECURSION
+    )
     for domain in ("Gtk", "Gdk", "JavascriptCore", "WebKit", "GtkSource", "Adwaita"):
         try:
             handler_id = GLib.log_set_handler(
-                domain,
-                _glib_log_level,
-                _glib_log_handler,
-                None,
+                domain, all_levels, _glib_log_handler, None,
             )
             _glib_handler_id.append((domain, handler_id))
         except Exception:
             pass
-    # Also set default handler to catch all other domains.
+    # Default handler catches every other domain.
     try:
         default_handler_id = GLib.log_set_default_handler(
-            _glib_log_handler,
-            None,
+            _glib_log_handler, None,
         )
         _glib_handler_id.append((None, default_handler_id))
     except Exception:
@@ -391,14 +414,14 @@ def init(settings, redirect_stdout=None, redirect_stderr=None, setup_glib=True):
     faulthandler.enable(sys.stderr)
 
     if setup_glib:
-        glib_level = str(get("glib_loglevel", "warning")).lower() or "warning"
+        glib_level = str(get("glib_loglevel", "critical")).lower() or "critical"
         _setup_glib_logging(glib_level)
 
 
 def update_glib_loglevel(level_str):
-    """Update GLib log level from Preferences dialog.
+    """Update the GLib severity threshold from the Preferences dialog.
 
     Args:
-        level_str: Log level string (error, warning, critical, all).
+        level_str: threshold — all/debug/info/message/warning/critical/error.
     """
     _setup_glib_logging(level_str)

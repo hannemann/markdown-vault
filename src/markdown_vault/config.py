@@ -265,7 +265,7 @@ _DEFAULT_SETTINGS = {
     "tab_wrap": False,
     "loglevel": "info",
     "third_party_loglevel": "warning",
-    "glib_loglevel": "warning",
+    "glib_loglevel": "critical",
     "webkit_disable_dmabuf": False,
     "webkit_disable_compositing": False,
     "wikilink_autofix_normalize": False,
