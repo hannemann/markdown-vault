@@ -161,6 +161,69 @@ class TestSearchOptions(unittest.TestCase):
         )
 
 
+class TestSearchGrouped(unittest.TestCase):
+    """Grouping per file + relevance ranking (Phase 2)."""
+
+    def setUp(self):
+        self._tmp = Path(tempfile.mkdtemp())
+
+    def tearDown(self):
+        shutil.rmtree(self._tmp, ignore_errors=True)
+
+    def _write(self, name, text):
+        p = self._tmp / name
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(text, encoding="utf-8")
+        return p
+
+    def _grouped(self, query, **kw):
+        return sb.search_grouped(query, [str(self._tmp)], **kw)
+
+    def test_groups_matches_by_file(self):
+        self._write("a.md", "needle\nneedle\nother")
+        res = self._grouped("needle")
+        self.assertEqual(len(res), 1)
+        self.assertEqual(res[0].total_matches, 2)
+        self.assertEqual(len(res[0].matches), 2)
+
+    def test_filename_only_match_included(self):
+        self._write("needle-notes.md", "nothing relevant")
+        res = self._grouped("needle")
+        self.assertEqual(len(res), 1)
+        self.assertTrue(res[0].name_hit)
+        self.assertEqual(res[0].total_matches, 0)
+
+    def test_name_hit_outranks_body_hit(self):
+        self._write("needle.md", "unrelated body")          # name hit
+        self._write("other.md", "needle needle needle")     # body hits only
+        res = self._grouped("needle")
+        self.assertEqual(Path(res[0].path).name, "needle.md")
+
+    def test_heading_outranks_plain_body(self):
+        self._write("head.md", "# needle heading")           # heading hit
+        self._write("body.md", "a needle in the body")       # body hit
+        res = self._grouped("needle")
+        self.assertEqual(Path(res[0].path).name, "head.md")
+        self.assertEqual(res[0].heading_hits, 1)
+
+    def test_title_hit_detected(self):
+        self._write("t.md", "---\ntitle: needle doc\n---\nbody")
+        res = self._grouped("needle")
+        self.assertTrue(res[0].title_hit)
+
+    def test_max_lines_caps_shown_but_keeps_total(self):
+        self._write("many.md", "\n".join(["needle"] * 30))
+        res = self._grouped("needle", max_lines=5)
+        self.assertEqual(len(res[0].matches), 5)
+        self.assertEqual(res[0].total_matches, 30)
+
+    def test_max_files_caps_files(self):
+        for i in range(10):
+            self._write(f"f{i}.md", "needle")
+        res = self._grouped("needle", max_files=3)
+        self.assertEqual(len(res), 3)
+
+
 class TestSubmatchSpans(unittest.TestCase):
     def test_byte_to_char_multibyte(self):
         # "aéb": 'é' is 2 bytes, so byte span 1..3 -> char span 1..2.

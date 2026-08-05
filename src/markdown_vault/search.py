@@ -169,30 +169,73 @@ class SearchBar(Gtk.Box):
         return False  # one-shot
 
     def _worker(self, generation, query, vault_paths, options) -> None:
-        matches = search_backend.search(query, vault_paths, self.MAX_RESULTS, options)
-        GLib.idle_add(self._on_complete, generation, matches)
+        results = search_backend.search_grouped(
+            query, vault_paths, options, max_files=self.MAX_RESULTS,
+        )
+        GLib.idle_add(self._on_complete, generation, results)
 
-    def _on_complete(self, generation: int, matches: list) -> bool:
+    def _on_complete(self, generation: int, file_results: list) -> bool:
         if generation != self._generation:
             return False  # superseded by a newer search
         self._stop_spinner()
         self._clear_results()
-        if not matches:
+        if not file_results:
             self._results.append(self._message_row("No results found"))
             return False
-        for match in matches:
-            self._results.append(self._build_result_row(match))
+        for fr in file_results:
+            self._results.append(self._build_file_header(fr))
+            for match in fr.matches:
+                self._results.append(self._build_match_row(match))
+            if fr.total_matches > len(fr.matches):
+                self._results.append(self._more_row(fr))
         return False
 
     # ------------------------------------------------------------------
     # Result rows
     # ------------------------------------------------------------------
 
-    def _build_result_row(self, match: search_backend.Match) -> Gtk.ListBoxRow:
+    def _build_file_header(self, fr) -> Gtk.ListBoxRow:
         row = Gtk.ListBoxRow()
-        row._mv_match = match  # stash for activation
+        open_line = fr.matches[0].line if fr.matches else 1
+        row._mv_open = (fr.path, open_line)
+        box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        box.add_css_class("search-file-header")
+
+        name = Gtk.Label(label=Path(fr.path).name)
+        name.add_css_class("search-file-name")
+        name.set_xalign(0)
+        box.append(name)
+
+        folder = Gtk.Label(label=str(Path(fr.path).parent))
+        folder.add_css_class("dim-label")
+        folder.add_css_class("mono")
+        folder.set_xalign(0)
+        folder.set_ellipsize(1)  # PANGO_ELLIPSIZE_START — keep the tail visible
+        folder.set_hexpand(True)
+        box.append(folder)
+
+        if fr.total_matches:
+            count = Gtk.Label(label=str(fr.total_matches))
+            count.add_css_class("dim-label")
+            count.set_halign(Gtk.Align.END)
+            box.append(count)
+
+        row.set_child(box)
+        return row
+
+    def _build_match_row(self, match: search_backend.Match) -> Gtk.ListBoxRow:
+        row = Gtk.ListBoxRow()
+        row._mv_open = (match.path, match.line)
         box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         box.add_css_class("search-result")
+        box.set_margin_start(16)  # indent under the file header
+
+        lineno = Gtk.Label(label=str(match.line))
+        lineno.add_css_class("dim-label")
+        lineno.add_css_class("mono")
+        lineno.set_xalign(1)
+        lineno.set_width_chars(4)
+        box.append(lineno)
 
         preview = Gtk.Label()
         preview.set_xalign(0)
@@ -201,14 +244,18 @@ class SearchBar(Gtk.Box):
         preview.set_markup(_highlight_markup(match.text, match.spans))
         box.append(preview)
 
-        location = Gtk.Label(label=f"{Path(match.path).name}:{match.line}")
-        location.add_css_class("dim-label")
-        location.add_css_class("mono")
-        location.set_xalign(1)
-        location.set_halign(Gtk.Align.END)
-        box.append(location)
-
         row.set_child(box)
+        return row
+
+    def _more_row(self, fr) -> Gtk.ListBoxRow:
+        row = Gtk.ListBoxRow()
+        row._mv_open = (fr.path, fr.matches[0].line if fr.matches else 1)
+        extra = fr.total_matches - len(fr.matches)
+        label = Gtk.Label(label=f"+{extra} more…")
+        label.set_xalign(0)
+        label.set_margin_start(16)
+        label.add_css_class("dim-label")
+        row.set_child(label)
         return row
 
     def _message_row(self, text: str) -> Gtk.ListBoxRow:
@@ -240,15 +287,16 @@ class SearchBar(Gtk.Box):
     # ------------------------------------------------------------------
 
     def _on_row_activated(self, _list_box, row) -> None:
-        match = getattr(row, "_mv_match", None)
-        if match is not None:
-            self.emit("file-selected", match.path, match.line)
+        target = getattr(row, "_mv_open", None)
+        if target is not None:
+            self.emit("file-selected", target[0], target[1])
 
     def _on_entry_activate(self, _entry) -> None:
         """Enter in the entry opens the selected (or first) result."""
         row = self._results.get_selected_row() or self._first_result_row()
-        if row is not None and getattr(row, "_mv_match", None) is not None:
-            self.emit("file-selected", row._mv_match.path, row._mv_match.line)
+        target = getattr(row, "_mv_open", None) if row is not None else None
+        if target is not None:
+            self.emit("file-selected", target[0], target[1])
 
     def _on_entry_key(self, _ctrl, keyval, _keycode, _state) -> bool:
         """Down moves into the result list; Up stays put (never escape upward)."""
@@ -275,7 +323,7 @@ class SearchBar(Gtk.Box):
 
     def _first_result_row(self):
         row = self._results.get_row_at_index(0)
-        if row is not None and getattr(row, "_mv_match", None) is None:
+        if row is not None and getattr(row, "_mv_open", None) is None:
             return None  # the "no results" message row
         return row
 

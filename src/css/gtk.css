@@ -75,6 +75,16 @@ headerbar button {
     background: alpha(@accent_bg_color, 0.12);
 }
 
+/* Grouped-by-file header row. */
+.search-file-header {
+    padding: 4px 12px;
+    margin: 4px 8px 0px 8px;
+}
+
+.search-file-name {
+    font-weight: bold;
+}
+
 .mono {
     font-family: monospace;
 }
