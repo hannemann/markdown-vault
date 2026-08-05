@@ -61,14 +61,14 @@ class TestEditorSearch(unittest.TestCase):
         return ed
 
     def _selected(self, ed):
-        lo, hi = ed._selection_iters()
+        lo, hi = ed._current_match_iters()
         return ed._buffer.get_text(lo, hi, False)
 
     def test_search_set_text_selects_first_match(self):
         ed = self._editor("bar foo baz foo")
         ed.search_set_text("foo")
         self.assertEqual(self._selected(ed), "foo")
-        self.assertEqual(ed._selection_iters()[0].get_offset(), 4)
+        self.assertEqual(ed._current_match_iters()[0].get_offset(), 4)
 
     def test_incremental_typing_tightens_in_place(self):
         # R21.9: refining the query keeps the current match, not the next one.
@@ -76,7 +76,7 @@ class TestEditorSearch(unittest.TestCase):
         ed.search_set_text("f")
         ed.search_set_text("fo")
         ed.search_set_text("foo")
-        self.assertEqual(ed._selection_iters()[0].get_offset(), 0)
+        self.assertEqual(ed._current_match_iters()[0].get_offset(), 0)
 
     def test_search_next_selects_match(self):
         ed = self._editor("foo bar foo")
@@ -87,21 +87,21 @@ class TestEditorSearch(unittest.TestCase):
     def test_search_next_advances_then_wraps(self):
         ed = self._editor("a X b X c")
         ed.search_set_text("X")  # already selects the first match
-        first = ed._selection_iters()[0].get_offset()
+        first = ed._current_match_iters()[0].get_offset()
         ed.search_next()
-        second = ed._selection_iters()[0].get_offset()
+        second = ed._current_match_iters()[0].get_offset()
         self.assertGreater(second, first)
         ed.search_next()  # wrap around (set_wrap_around True)
-        self.assertEqual(ed._selection_iters()[0].get_offset(), first)
+        self.assertEqual(ed._current_match_iters()[0].get_offset(), first)
 
     def test_search_prev_goes_backward(self):
         ed = self._editor("X y X y X")
         ed.search_set_text("X")
         ed.search_next()
         ed.search_next()
-        mid = ed._selection_iters()[0].get_offset()
+        mid = ed._current_match_iters()[0].get_offset()
         ed.search_prev()
-        self.assertLess(ed._selection_iters()[0].get_offset(), mid)
+        self.assertLess(ed._current_match_iters()[0].get_offset(), mid)
 
     def test_no_match_returns_false(self):
         ed = self._editor("hello world")

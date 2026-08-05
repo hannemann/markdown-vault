@@ -60,10 +60,30 @@ class Editor(Gtk.ScrolledWindow):
         self._search_context = GtkSource.SearchContext.new(
             self._buffer, self._search_settings,
         )
-        self._search_context.set_highlight(True)
+        # Highlight matches ourselves (GtkSource's built-in highlight draws
+        # above text tags, so a per-match style would be hidden).  All matches
+        # get the yellow tag; the current match an orange tag on top (created
+        # last → higher priority).  Tracked via marks so navigation / replace
+        # never depend on the text selection.
+        self._search_context.set_highlight(False)
         self._search_context.connect(
             "notify::occurrences-count",
             lambda *_: self.emit("search-info-changed"),
+        )
+        _fg = Gdk.RGBA(); _fg.parse("#000000")
+        _match_bg = Gdk.RGBA(); _match_bg.parse("#ffe066")
+        self._match_tag = self._buffer.create_tag(
+            "search-match", background_rgba=_match_bg, foreground_rgba=_fg,
+        )
+        _cur_bg = Gdk.RGBA(); _cur_bg.parse("#ff9d3c")
+        self._current_match_tag = self._buffer.create_tag(
+            "current-search-match", background_rgba=_cur_bg, foreground_rgba=_fg,
+        )
+        self._match_start_mark = self._buffer.create_mark(
+            None, self._buffer.get_start_iter(), True,
+        )
+        self._match_end_mark = self._buffer.create_mark(
+            None, self._buffer.get_start_iter(), False,
         )
 
         self._view = GtkSource.View(buffer=self._buffer)
@@ -233,35 +253,88 @@ class Editor(Gtk.ScrolledWindow):
         return (a, b) if a.compare(b) <= 0 else (b, a)
 
     def search_set_text(self, text: str) -> None:
-        """Set the search term and select the first match at/after the current
-        selection start, so typing tightens the match in place instead of
-        walking to the next one (R21.9).  Empty text clears highlighting."""
+        """Set the search term and mark the first match at/after the current
+        match, so typing tightens the match in place instead of walking to the
+        next one (R21.9).  Empty text clears highlighting."""
         self._search_settings.set_search_text(text or None)
         if text:
-            lo, _hi = self._selection_iters()
+            lo, _hi = self._current_match_iters()
             found, ms, me, _wrapped = self._search_context.forward(lo)
             if found:
                 self._select_match(ms, me)
+            self._refresh_match_highlights()
+        else:
+            self._clear_current_match()
 
     def search_clear(self) -> None:
         """Clear the search term and its match highlighting."""
         self._search_settings.set_search_text(None)
+        self._clear_current_match()
+
+    def _current_match_iters(self) -> tuple:
+        """Return the current match as ``(start, end)`` iters (both at the buffer
+        start when there is no current match)."""
+        buf = self._buffer
+        return (
+            buf.get_iter_at_mark(self._match_start_mark),
+            buf.get_iter_at_mark(self._match_end_mark),
+        )
+
+    def _clear_current_match(self) -> None:
+        buf = self._buffer
+        lo, hi = buf.get_bounds()
+        buf.remove_tag(self._match_tag, lo, hi)
+        buf.remove_tag(self._current_match_tag, lo, hi)
+        buf.move_mark(self._match_start_mark, buf.get_start_iter())
+        buf.move_mark(self._match_end_mark, buf.get_start_iter())
+
+    def _refresh_match_highlights(self) -> None:
+        """Tag every occurrence, then re-apply the current-match tag on top."""
+        buf = self._buffer
+        lo, hi = buf.get_bounds()
+        buf.remove_tag(self._match_tag, lo, hi)
+        if not self._search_settings.get_search_text():
+            return
+        wrap = self._search_settings.get_wrap_around()
+        self._search_settings.set_wrap_around(False)
+        it = buf.get_start_iter()
+        while True:
+            found, ms, me, _w = self._search_context.forward(it)
+            if not found or me.compare(it) <= 0:
+                break
+            buf.apply_tag(self._match_tag, ms, me)
+            it = me
+        self._search_settings.set_wrap_around(wrap)
+        self._apply_current_highlight()
+
+    def _apply_current_highlight(self) -> None:
+        buf = self._buffer
+        lo, hi = buf.get_bounds()
+        buf.remove_tag(self._current_match_tag, lo, hi)
+        s, e = self._current_match_iters()
+        if s.compare(e) != 0:
+            buf.apply_tag(self._current_match_tag, s, e)
 
     def _select_match(self, match_start, match_end) -> None:
-        self._buffer.select_range(match_start, match_end)
+        """Mark *match* as the current one and give it the strong highlight."""
+        buf = self._buffer
+        buf.move_mark(self._match_start_mark, match_start)
+        buf.move_mark(self._match_end_mark, match_end)
+        buf.place_cursor(match_end)  # no selection — tags mark the matches
+        self._apply_current_highlight()
         self._view.scroll_to_iter(match_start, 0.2, False, 0.0, 0.5)
 
     def search_next(self) -> bool:
-        """Select the next match after the current selection/cursor."""
-        _lo, hi = self._selection_iters()
+        """Mark the next match after the current one."""
+        _lo, hi = self._current_match_iters()
         found, ms, me, _wrapped = self._search_context.forward(hi)
         if found:
             self._select_match(ms, me)
         return found
 
     def search_prev(self) -> bool:
-        """Select the previous match before the current selection/cursor."""
-        lo, _hi = self._selection_iters()
+        """Mark the previous match before the current one."""
+        lo, _hi = self._current_match_iters()
         found, ms, me, _wrapped = self._search_context.backward(lo)
         if found:
             self._select_match(ms, me)
@@ -274,9 +347,39 @@ class Editor(Gtk.ScrolledWindow):
         (``search-info-changed`` fires when it is ready).
         """
         total = self._search_context.get_occurrences_count()
-        lo, hi = self._selection_iters()
+        lo, hi = self._current_match_iters()
         pos = self._search_context.get_occurrence_position(lo, hi)
         return (max(pos, 0), total)
+
+    def set_search_options(self, case_sensitive: bool, whole_word: bool,
+                           regex: bool) -> None:
+        """Configure the in-editor search (case / whole-word / regex)."""
+        self._search_settings.set_case_sensitive(case_sensitive)
+        self._search_settings.set_at_word_boundaries(whole_word)
+        self._search_settings.set_regex_enabled(regex)
+
+    def replace_current(self, replacement: str) -> bool:
+        """Replace the current match, then advance to the next."""
+        start, end = self._current_match_iters()
+        if start.compare(end) == 0:
+            return self.search_next()  # no current match — go to one first
+        try:
+            replaced = self._search_context.replace(start, end, replacement, -1)
+        except GLib.Error:
+            return False
+        if replaced:
+            self.search_next()
+            self._refresh_match_highlights()
+        return replaced
+
+    def replace_all(self, replacement: str) -> int:
+        """Replace every match; returns the number replaced."""
+        try:
+            count = self._search_context.replace_all(replacement, -1)
+        except GLib.Error:
+            return 0
+        self._refresh_match_highlights()
+        return count
 
     def scroll_to_line(self, line: int, yalign: float = 0.5) -> None:
         """Scroll the view to *line* (0-based) and place the cursor there.

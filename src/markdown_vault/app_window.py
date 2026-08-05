@@ -180,8 +180,19 @@ class MainWindow(Adw.ApplicationWindow):
         self._find_bar.connect("search-changed", self._on_find_text_changed)
         self._find_bar.connect("search-next", lambda *_: self._on_find_nav(True))
         self._find_bar.connect("search-prev", lambda *_: self._on_find_nav(False))
+        self._find_bar.connect("options-changed", self._on_find_options_changed)
+        self._find_bar.connect("replace-one", lambda *_: self._on_find_replace(False))
+        self._find_bar.connect("replace-all", lambda *_: self._on_find_replace(True))
         self._find_bar.connect("closed", self._on_find_closed)
         centre.append(self._find_bar)
+
+        # Close the find bar / global search with Esc even when focus has left
+        # them (e.g. after clicking into the editor or a result).  Bubble phase
+        # so widgets that genuinely use Esc handle it first; only acts while a
+        # bar is open.
+        esc_ctrl = Gtk.EventControllerKey()
+        esc_ctrl.connect("key-pressed", self._on_window_esc)
+        self.add_controller(esc_ctrl)
 
         self._content_stack = Gtk.Stack()
         self._content_stack.set_transition_type(Gtk.StackTransitionType.CROSSFADE)
@@ -640,6 +651,10 @@ class MainWindow(Adw.ApplicationWindow):
 
         action = Gio.SimpleAction.new("find-in-view", None)
         action.connect("activate", lambda *_: self._find_in_view())
+        self.add_action(action)
+
+        action = Gio.SimpleAction.new("replace-in-view", None)
+        action.connect("activate", lambda *_: self._replace_in_view())
         self.add_action(action)
 
         action = Gio.SimpleAction.new("save", None)
@@ -1607,8 +1622,32 @@ class MainWindow(Adw.ApplicationWindow):
         if target is None:
             return
         self._set_find_target(target)
+        tab = self._tab_bar.get_current_tab()
+        is_editor = tab is not None and target is tab.editor
+        self._find_bar.set_editor_mode(is_editor)
+        self._find_bar.set_replace_visible(False)  # Ctrl+F = search only
+        if is_editor:
+            self._apply_find_options()
         self._dim_inactive_view(target)
         self._find_bar.open()
+
+    def _replace_in_view(self) -> None:
+        """Ctrl+R: find + replace when the editor is the active view.
+
+        Works in the editor — including the edit pane of a split — but is a
+        no-op when the preview is the active view (it is read-only)."""
+        tab = self._tab_bar.get_current_tab()
+        if tab is None:
+            return
+        target = self._active_find_target()
+        if target is not tab.editor:
+            return  # preview is the active view — replace doesn't apply
+        self._set_find_target(target)
+        self._find_bar.set_editor_mode(True)
+        self._apply_find_options()
+        self._dim_inactive_view(target)
+        self._find_bar.open()
+        self._find_bar.focus_replace()
 
     def _dim_inactive_view(self, target) -> None:
         """Fade the view that is NOT being searched so it reads as inactive."""
@@ -1659,6 +1698,41 @@ class MainWindow(Adw.ApplicationWindow):
         else:
             self._find_target.search_prev()
         self._update_find_count()
+
+    def _apply_find_options(self) -> None:
+        """Push the find bar's case/word/regex toggles onto the editor target."""
+        if self._find_target is not None and hasattr(self._find_target, "set_search_options"):
+            self._find_target.set_search_options(*self._find_bar.get_options())
+
+    def _on_find_options_changed(self, _bar) -> None:
+        if self._find_target is None:
+            return
+        self._apply_find_options()
+        # Re-run the query so the highlight and selection reflect the new mode.
+        self._find_target.search_set_text(self._find_bar.get_text())
+        self._update_find_count()
+
+    def _on_find_replace(self, all_matches: bool) -> None:
+        target = self._find_target
+        if target is None or not hasattr(target, "replace_current"):
+            return
+        replacement = self._find_bar.get_replace_text()
+        if all_matches:
+            target.replace_all(replacement)
+        else:
+            target.replace_current(replacement)
+        self._update_find_count()
+
+    def _on_window_esc(self, _ctrl, keyval, _keycode, _state) -> bool:
+        if keyval != Gdk.KEY_Escape:
+            return False
+        if self._find_bar.get_visible():
+            self._find_bar.close()
+            return True
+        if self._search_bar.get_visible():
+            self._on_search_close_requested(self._search_bar)
+            return True
+        return False
 
     def _on_find_closed(self, _bar) -> None:
         if self._find_target is not None:

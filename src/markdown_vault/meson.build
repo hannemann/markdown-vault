@@ -27,6 +27,7 @@ py_sources = files(
   'preferences.py',
   'preview.py',
   'search.py',
+  'search_backend.py',
   'search_logic.py',
   'session.py',
   'session_manager.py',

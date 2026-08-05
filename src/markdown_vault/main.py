@@ -77,6 +77,7 @@ class MarkdownVaultApp(Adw.Application):
         self.set_accels_for_action("win.toggle-sidebar", ["<Control>b"])
         self.set_accels_for_action("win.toggle-search", ["<Shift><Control>f"])
         self.set_accels_for_action("win.find-in-view", ["<Control>f"])
+        self.set_accels_for_action("win.replace-in-view", ["<Control>r"])
         self.set_accels_for_action("win.save", ["<Control>s"])
         self.set_accels_for_action("win.close-tab", ["<Control>w"])
         self.set_accels_for_action("win.new-file", ["<Control>n"])

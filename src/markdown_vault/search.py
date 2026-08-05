@@ -1,12 +1,18 @@
 """Markdown Vault — bottom-bar full-text search.
 
-Provides a toggleable search bar at the bottom of the window that
-searches across all configured vault directories.  Results are shown
-as clickable entries that open the matching file.
+A toggleable search bar at the bottom of the window that searches across all
+configured vault directories via :mod:`search_backend` (ripgrep with a Python
+fallback).
 
-Search runs in a background thread to keep the UI responsive on large
-vaults.  Results are delivered back to the main thread via
-``GLib.idle_add``.
+- Live search as you type (debounced); a superseded search is discarded, never
+  blocks the next one.
+- Matches are highlighted in the result preview.
+- Keyboard: ``Down`` from the entry moves into the results; ``Up``/``Down``
+  navigate, ``Enter`` opens, ``Esc`` closes.
+
+The disk scan runs in a background thread; results are delivered back to the
+main thread via ``GLib.idle_add`` and gated by a generation counter so only the
+newest search populates the list.
 """
 
 import logging
@@ -18,18 +24,20 @@ import gi
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 
-from gi.repository import Gtk, GObject, GLib
+from gi.repository import Gtk, GObject, GLib, Gdk
 
-from . import search_logic
+from . import search_backend
 
 logger = logging.getLogger(__name__)
 
 
 class SearchBar(Gtk.Box):
-    """Bottom search bar with a ``Gtk.SearchEntry`` and result list.
+    """Bottom search bar with a ``Gtk.SearchEntry`` and a result list.
 
     Signals:
-        file-selected(str): Emitted when a search result is clicked.
+        file-selected(str, int): Emitted with (path, line) when a result is
+            activated.
+        close-requested(): Emitted when the bar should close.
     """
 
     __gsignals__ = {
@@ -38,6 +46,7 @@ class SearchBar(Gtk.Box):
     }
 
     MAX_RESULTS = 50
+    _DEBOUNCE_MS = 150
 
     def __init__(self, get_vault_paths=None) -> None:
         super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=0)
@@ -45,8 +54,8 @@ class SearchBar(Gtk.Box):
         self.set_visible(False)
         self.set_vexpand(True)
 
-        self._search_thread: threading.Thread | None = None
-        self._pending_vault_paths: list[str] = []
+        self._generation = 0          # newest search id; older results discarded
+        self._debounce_id = None      # pending debounce timeout
 
         # --- Input row ---
         input_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
@@ -56,30 +65,53 @@ class SearchBar(Gtk.Box):
         input_box.set_margin_end(8)
 
         self._entry = Gtk.SearchEntry()
-        self._entry.set_hexpand(True)
-        self._entry.set_placeholder_text("Search across all vaults\u2026")
-        self._entry.connect("activate", self._on_search)
+        self._entry.set_hexpand(False)
+        self._entry.set_width_chars(40)
+        self._entry.set_max_width_chars(40)
+        self._entry.set_placeholder_text("Search across all vaults…")
+        self._entry.connect("search-changed", self._on_search_changed)
+        self._entry.connect("activate", self._on_entry_activate)
         self._entry.connect("stop-search", lambda _e: self.emit("close-requested"))
+        entry_keys = Gtk.EventControllerKey()
+        entry_keys.connect("key-pressed", self._on_entry_key)
+        self._entry.add_controller(entry_keys)
         input_box.append(self._entry)
 
-        search_btn = Gtk.Button(label="Search")
-        search_btn.connect("clicked", self._on_search)
-        input_box.append(search_btn)
+        # Query modifiers.
+        self._case_btn = self._make_toggle("Aa", "Case sensitive")
+        self._word_btn = self._make_toggle("W", "Whole word")
+        self._regex_btn = self._make_toggle(".*", "Regular expression")
+        for btn in (self._case_btn, self._word_btn, self._regex_btn):
+            btn.connect("toggled", lambda *_: self._run_search())
+            input_box.append(btn)
 
         self._spinner = Gtk.Spinner()
         self._spinner.set_visible(False)
         input_box.append(self._spinner)
 
-        self.append(input_box)
+        spacer = Gtk.Box(hexpand=True)  # push the close button to the right
+        input_box.append(spacer)
 
-        # --- Separator ---
-        sep = Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL)
-        self.append(sep)
+        close_btn = Gtk.Button(icon_name="window-close-symbolic")
+        close_btn.add_css_class("flat")
+        close_btn.set_tooltip_text("Close (Esc)")
+        close_btn.connect("clicked", lambda *_: self.emit("close-requested"))
+        input_box.append(close_btn)
+
+        self.append(input_box)
+        self.append(Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL))
 
         # --- Results ---
-        self._results_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+        self._results = Gtk.ListBox()
+        self._results.set_selection_mode(Gtk.SelectionMode.SINGLE)
+        self._results.add_css_class("search-results")
+        self._results.connect("row-activated", self._on_row_activated)
+        results_keys = Gtk.EventControllerKey()
+        results_keys.connect("key-pressed", self._on_results_key)
+        self._results.add_controller(results_keys)
+
         scrolled = Gtk.ScrolledWindow()
-        scrolled.set_child(self._results_box)
+        scrolled.set_child(self._results)
         scrolled.set_vexpand(True)
         self.append(scrolled)
 
@@ -92,91 +124,181 @@ class SearchBar(Gtk.Box):
         self.set_visible(True)
         self._entry.grab_focus()
 
+    @staticmethod
+    def _make_toggle(label: str, tooltip: str) -> Gtk.ToggleButton:
+        btn = Gtk.ToggleButton(label=label)
+        btn.set_tooltip_text(tooltip)
+        btn.add_css_class("flat")
+        return btn
+
+    def _current_options(self) -> search_backend.SearchOptions:
+        return search_backend.SearchOptions(
+            case_sensitive=self._case_btn.get_active(),
+            whole_word=self._word_btn.get_active(),
+            regex=self._regex_btn.get_active(),
+        )
+
     # ------------------------------------------------------------------
-    # Internal
+    # Search lifecycle
     # ------------------------------------------------------------------
 
-    def _on_search(self, _widget=None) -> None:
-        """Execute the search and populate the results list."""
-        self._clear_results()
+    def _on_search_changed(self, _entry) -> None:
+        """Debounce live search on every keystroke."""
+        if self._debounce_id is not None:
+            GLib.source_remove(self._debounce_id)
+        self._debounce_id = GLib.timeout_add(self._DEBOUNCE_MS, self._run_search)
+
+    def _run_search(self) -> bool:
+        self._debounce_id = None
         query = self._entry.get_text().strip()
-        if not query or not self._get_vault_paths:
-            return
+        self._clear_results()
+        vault_paths = self._get_vault_paths() if self._get_vault_paths else []
+        if not query or not vault_paths:
+            self._stop_spinner()
+            return False
 
-        # Wait for any in-flight search to finish (should be fast).
-        if self._search_thread and self._search_thread.is_alive():
-            return
-
-        vault_paths = self._get_vault_paths()
-        if not vault_paths:
-            return
-
+        self._generation += 1
+        generation = self._generation
         self._spinner.set_visible(True)
         self._spinner.start()
-
-        self._search_thread = threading.Thread(
-            target=self._search_worker,
-            args=(query, vault_paths),
+        threading.Thread(
+            target=self._worker,
+            args=(generation, query, list(vault_paths), self._current_options()),
             daemon=True,
-        )
-        self._search_thread.start()
+        ).start()
+        return False  # one-shot
 
-    def _search_worker(self, query: str, vault_paths: list[str]) -> None:
-        """Run the search in a background thread."""
-        results = search_logic.search_vaults(query, vault_paths, self.MAX_RESULTS)
-        GLib.idle_add(self._on_search_complete, results)
+    def _worker(self, generation, query, vault_paths, options) -> None:
+        matches = search_backend.search(query, vault_paths, self.MAX_RESULTS, options)
+        GLib.idle_add(self._on_complete, generation, matches)
 
-    def _on_search_complete(self, results: list) -> bool:
-        """Populate results on the main thread (called via idle_add)."""
-        self._spinner.stop()
-        self._spinner.set_visible(False)
-        if not results:
-            self._results_box.append(
-                self._empty_label("No results found")
-            )
+    def _on_complete(self, generation: int, matches: list) -> bool:
+        if generation != self._generation:
+            return False  # superseded by a newer search
+        self._stop_spinner()
+        self._clear_results()
+        if not matches:
+            self._results.append(self._message_row("No results found"))
             return False
-        for filepath, line_num, line_text in results[: self.MAX_RESULTS]:
-            row = self._build_result_row(filepath, line_num, line_text)
-            self._results_box.append(row)
-        return False  # remove idle handler
+        for match in matches:
+            self._results.append(self._build_result_row(match))
+        return False
 
-    def _build_result_row(
-        self, filepath: str, line_num: int, line_text: str
-    ) -> Gtk.Box:
-        """Create a clickable widget for a single search result."""
-        row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
-        row.add_css_class("search-result")
+    # ------------------------------------------------------------------
+    # Result rows
+    # ------------------------------------------------------------------
 
-        location = Gtk.Label(label=f"{Path(filepath).name}:{line_num}")
+    def _build_result_row(self, match: search_backend.Match) -> Gtk.ListBoxRow:
+        row = Gtk.ListBoxRow()
+        row._mv_match = match  # stash for activation
+        box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        box.add_css_class("search-result")
+
+        preview = Gtk.Label()
+        preview.set_xalign(0)
+        preview.set_ellipsize(3)  # PANGO_ELLIPSIZE_END
+        preview.set_hexpand(True)
+        preview.set_markup(_highlight_markup(match.text, match.spans))
+        box.append(preview)
+
+        location = Gtk.Label(label=f"{Path(match.path).name}:{match.line}")
         location.add_css_class("dim-label")
         location.add_css_class("mono")
-        location.set_xalign(0)
-        row.append(location)
+        location.set_xalign(1)
+        location.set_halign(Gtk.Align.END)
+        box.append(location)
 
-        preview = Gtk.Label(label=line_text.strip()[:120])
-        preview.set_xalign(0)
-        preview.set_ellipsize(3)
-        preview.set_hexpand(True)
-        row.append(preview)
+        row.set_child(box)
+        return row
 
-        gesture = Gtk.GestureClick()
-        gesture.connect(
-            "released",
-            lambda _g, _n, _x, _y, fp=filepath, ln=line_num: self.emit("file-selected", fp, ln),
-        )
-        row.add_controller(gesture)
+    def _message_row(self, text: str) -> Gtk.ListBoxRow:
+        row = Gtk.ListBoxRow()
+        row.set_activatable(False)
+        row.set_selectable(False)
+        label = Gtk.Label(label=text)
+        label.set_xalign(0)
+        label.set_margin_start(8)
+        label.set_margin_top(4)
+        label.set_margin_bottom(4)
+        label.add_css_class("dim-label")
+        row.set_child(label)
         return row
 
     def _clear_results(self) -> None:
-        """Remove all result widgets."""
-        for child in list(self._results_box):
-            self._results_box.remove(child)
+        child = self._results.get_first_child()
+        while child is not None:
+            nxt = child.get_next_sibling()
+            self._results.remove(child)
+            child = nxt
 
-    @staticmethod
-    def _empty_label(text: str) -> Gtk.Label:
-        lbl = Gtk.Label(label=text)
-        lbl.set_xalign(0)
-        lbl.set_margin_start(8)
-        lbl.set_margin_top(4)
-        lbl.add_css_class("dim-label")
-        return lbl
+    def _stop_spinner(self) -> None:
+        self._spinner.stop()
+        self._spinner.set_visible(False)
+
+    # ------------------------------------------------------------------
+    # Activation & keyboard navigation
+    # ------------------------------------------------------------------
+
+    def _on_row_activated(self, _list_box, row) -> None:
+        match = getattr(row, "_mv_match", None)
+        if match is not None:
+            self.emit("file-selected", match.path, match.line)
+
+    def _on_entry_activate(self, _entry) -> None:
+        """Enter in the entry opens the selected (or first) result."""
+        row = self._results.get_selected_row() or self._first_result_row()
+        if row is not None and getattr(row, "_mv_match", None) is not None:
+            self.emit("file-selected", row._mv_match.path, row._mv_match.line)
+
+    def _on_entry_key(self, _ctrl, keyval, _keycode, _state) -> bool:
+        """Down moves into the result list; Up stays put (never escape upward)."""
+        if keyval in (Gdk.KEY_Down, Gdk.KEY_KP_Down):
+            row = self._first_result_row()
+            if row is not None:
+                self._results.select_row(row)
+                row.grab_focus()
+                return True
+        if keyval in (Gdk.KEY_Up, Gdk.KEY_KP_Up):
+            return True  # keep focus in the search entry
+        return False
+
+    def _on_results_key(self, _ctrl, keyval, _keycode, _state) -> bool:
+        if keyval == Gdk.KEY_Escape:
+            self.emit("close-requested")
+            return True
+        if keyval in (Gdk.KEY_Up, Gdk.KEY_KP_Up):
+            # At the top row, go back to the entry instead of escaping the list.
+            if self._results.get_selected_row() is self._first_result_row():
+                self._entry.grab_focus()
+                return True
+        return False
+
+    def _first_result_row(self):
+        row = self._results.get_row_at_index(0)
+        if row is not None and getattr(row, "_mv_match", None) is None:
+            return None  # the "no results" message row
+        return row
+
+
+def _highlight_markup(text: str, spans: list, max_len: int = 240) -> str:
+    """Return Pango markup for *text* with *spans* bolded.
+
+    Leading whitespace is trimmed (spans shifted to match) so previews line up.
+    """
+    stripped = text.lstrip()
+    shift = len(text) - len(stripped)
+    text = stripped[:max_len]
+    shifted = [(max(0, s - shift), max(0, e - shift)) for s, e in spans]
+
+    out: list[str] = []
+    pos = 0
+    for s, e in sorted(shifted):
+        s = min(s, len(text))
+        e = min(e, len(text))
+        if s >= e or s < pos:
+            continue
+        out.append(GLib.markup_escape_text(text[pos:s]))
+        out.append("<b>" + GLib.markup_escape_text(text[s:e]) + "</b>")
+        pos = e
+    out.append(GLib.markup_escape_text(text[pos:]))
+    return "".join(out)
