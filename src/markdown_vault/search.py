@@ -48,9 +48,10 @@ class SearchBar(Gtk.Box):
     MAX_RESULTS = 50
     _DEBOUNCE_MS = 150
 
-    def __init__(self, get_vault_paths=None) -> None:
+    def __init__(self, get_vault_paths=None, get_active_vault=None) -> None:
         super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=0)
         self._get_vault_paths = get_vault_paths
+        self._get_active_vault = get_active_vault
         self.set_visible(False)
         self.set_vexpand(True)
 
@@ -69,6 +70,10 @@ class SearchBar(Gtk.Box):
         self._entry.set_width_chars(40)
         self._entry.set_max_width_chars(40)
         self._entry.set_placeholder_text("Search across all vaults…")
+        self._entry.set_tooltip_text(
+            "Terms are AND-combined.  \"quoted phrase\", -exclude, "
+            "tag:foo, path:sub, vault:name"
+        )
         self._entry.connect("search-changed", self._on_search_changed)
         self._entry.connect("activate", self._on_entry_activate)
         self._entry.connect("stop-search", lambda _e: self.emit("close-requested"))
@@ -85,12 +90,30 @@ class SearchBar(Gtk.Box):
             btn.connect("toggled", lambda *_: self._run_search())
             input_box.append(btn)
 
+        # Scope: all vaults (default) vs. the active vault only.
+        scope_sep = Gtk.Separator(orientation=Gtk.Orientation.VERTICAL)
+        scope_sep.set_margin_start(2)
+        scope_sep.set_margin_end(2)
+        input_box.append(scope_sep)
+
+        self._scope_btn = Gtk.ToggleButton(icon_name="folder-symbolic")
+        self._scope_btn.add_css_class("flat")
+        self._scope_btn.set_tooltip_text("Search the current vault only")
+        self._scope_btn.connect("toggled", self._on_scope_toggled)
+        input_box.append(self._scope_btn)
+
         self._spinner = Gtk.Spinner()
         self._spinner.set_visible(False)
         input_box.append(self._spinner)
 
-        spacer = Gtk.Box(hexpand=True)  # push the close button to the right
+        spacer = Gtk.Box(hexpand=True)  # push the trailing buttons to the right
         input_box.append(spacer)
+
+        help_btn = Gtk.MenuButton(icon_name="help-about-symbolic")
+        help_btn.add_css_class("flat")
+        help_btn.set_tooltip_text("Search syntax")
+        help_btn.set_popover(self._build_help_popover())
+        input_box.append(help_btn)
 
         close_btn = Gtk.Button(icon_name="window-close-symbolic")
         close_btn.add_css_class("flat")
@@ -125,6 +148,55 @@ class SearchBar(Gtk.Box):
         self._entry.grab_focus()
 
     @staticmethod
+    def _build_help_popover() -> Gtk.Popover:
+        """A small cheat-sheet explaining the query operators and filters."""
+        pop = Gtk.Popover()
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        for m in ("top", "bottom", "start", "end"):
+            getattr(box, f"set_margin_{m}")(12)
+
+        title = Gtk.Label()
+        title.set_markup("<b>Search syntax</b>")
+        title.set_xalign(0)
+        box.append(title)
+
+        grid = Gtk.Grid(column_spacing=14, row_spacing=4)
+        rows = [
+            ("foo bar", "All terms must match (AND)"),
+            ('"foo bar"', "Exact phrase"),
+            ("-foo", "Exclude term"),
+            ("tag:work", "Has frontmatter tag"),
+            ("path:sub", "Path contains text"),
+            ("vault:Notes", "Restrict to a vault"),
+        ]
+        for i, (code, desc) in enumerate(rows):
+            c = Gtk.Label(label=code)
+            c.add_css_class("mono")
+            c.set_xalign(0)
+            d = Gtk.Label(label=desc)
+            d.add_css_class("dim-label")
+            d.set_xalign(0)
+            grid.attach(c, 0, i, 1, 1)
+            grid.attach(d, 1, i, 1, 1)
+        box.append(grid)
+
+        box.append(Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL))
+        foot = Gtk.Label()
+        foot.set_xalign(0)
+        foot.set_wrap(True)
+        foot.set_max_width_chars(34)
+        foot.add_css_class("dim-label")
+        foot.set_markup(
+            "<tt>Aa</tt> case · <tt>W</tt> whole word · <tt>.*</tt> regex · "
+            "folder = current vault only.\n"
+            "In regex mode the query is one raw pattern (operators off)."
+        )
+        box.append(foot)
+
+        pop.set_child(box)
+        return pop
+
+    @staticmethod
     def _make_toggle(label: str, tooltip: str) -> Gtk.ToggleButton:
         btn = Gtk.ToggleButton(label=label)
         btn.set_tooltip_text(tooltip)
@@ -137,6 +209,22 @@ class SearchBar(Gtk.Box):
             whole_word=self._word_btn.get_active(),
             regex=self._regex_btn.get_active(),
         )
+
+    def _scope_vaults(self) -> list:
+        """The vault paths to search, honouring the scope toggle."""
+        all_vaults = list(self._get_vault_paths()) if self._get_vault_paths else []
+        if self._scope_btn.get_active() and self._get_active_vault:
+            active = self._get_active_vault()
+            if active:
+                return [active]
+        return all_vaults
+
+    def _on_scope_toggled(self, btn) -> None:
+        self._entry.set_placeholder_text(
+            "Search the current vault…" if btn.get_active()
+            else "Search across all vaults…"
+        )
+        self._run_search()
 
     # ------------------------------------------------------------------
     # Search lifecycle
@@ -152,7 +240,7 @@ class SearchBar(Gtk.Box):
         self._debounce_id = None
         query = self._entry.get_text().strip()
         self._clear_results()
-        vault_paths = self._get_vault_paths() if self._get_vault_paths else []
+        vault_paths = self._scope_vaults()
         if not query or not vault_paths:
             self._stop_spinner()
             return False

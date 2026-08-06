@@ -253,5 +253,135 @@ class TestHighlightMarkup(unittest.TestCase):
         self.assertEqual(self._mk("plain text", []), "plain text")
 
 
+class TestParseQuery(unittest.TestCase):
+    """Query decomposition into operators + filters (Phase 3)."""
+
+    def test_plain_terms_are_positives(self):
+        p = sb.parse_query("foo bar")
+        self.assertEqual(p.positives, ["foo", "bar"])
+        self.assertEqual(p.excludes, [])
+
+    def test_quoted_phrase_kept_whole(self):
+        p = sb.parse_query('"foo bar" baz')
+        self.assertEqual(p.positives, ["foo bar", "baz"])
+
+    def test_exclusion(self):
+        p = sb.parse_query("foo -bar")
+        self.assertEqual(p.positives, ["foo"])
+        self.assertEqual(p.excludes, ["bar"])
+
+    def test_quoted_exclusion(self):
+        p = sb.parse_query('-"no no"')
+        self.assertEqual(p.excludes, ["no no"])
+
+    def test_field_filters(self):
+        p = sb.parse_query('tag:work path:sub vault:Notes term')
+        self.assertEqual(p.tags, ["work"])
+        self.assertEqual(p.paths, ["sub"])
+        self.assertEqual(p.vaults, ["Notes"])
+        self.assertEqual(p.positives, ["term"])
+
+    def test_quoted_filter_value(self):
+        p = sb.parse_query('path:"my dir"')
+        self.assertEqual(p.paths, ["my dir"])
+
+    def test_unknown_key_is_plain_term(self):
+        # A colon that is not a known filter key stays part of the term.
+        p = sb.parse_query("http://example.com")
+        self.assertEqual(p.positives, ["http://example.com"])
+        self.assertEqual(p.paths, [])
+
+    def test_lone_dash_is_term(self):
+        self.assertEqual(sb.parse_query("-").positives, ["-"])
+
+    def test_has_operators(self):
+        self.assertFalse(sb._has_operators(sb.parse_query("single")))
+        self.assertFalse(sb._has_operators(sb.parse_query('"one phrase"')))
+        self.assertTrue(sb._has_operators(sb.parse_query("two terms")))
+        self.assertTrue(sb._has_operators(sb.parse_query("a -b")))
+        self.assertTrue(sb._has_operators(sb.parse_query("tag:x")))
+
+
+class TestSearchGroupedOperators(unittest.TestCase):
+    """Operators + filters end-to-end through search_grouped (Phase 3)."""
+
+    def setUp(self):
+        self._tmp = Path(tempfile.mkdtemp())
+
+    def tearDown(self):
+        shutil.rmtree(self._tmp, ignore_errors=True)
+
+    def _write(self, name, text):
+        p = self._tmp / name
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(text, encoding="utf-8")
+        return p
+
+    def _names(self, query, **kw):
+        return sorted(
+            Path(r.path).name
+            for r in sb.search_grouped(query, [str(self._tmp)], **kw)
+        )
+
+    def test_and_requires_all_terms_in_file(self):
+        self._write("both.md", "alpha here\nand beta there")
+        self._write("one.md", "alpha only")
+        self.assertEqual(self._names("alpha beta"), ["both.md"])
+
+    def test_and_term_may_come_from_filename(self):
+        self._write("alpha-notes.md", "beta in body")   # alpha via name, beta via body
+        self.assertEqual(self._names("alpha beta"), ["alpha-notes.md"])
+
+    def test_phrase_matches_literally(self):
+        self._write("hit.md", "the quick brown fox")
+        self._write("miss.md", "quick and brown but not adjacent")
+        self.assertEqual(self._names('"quick brown"'), ["hit.md"])
+
+    def test_exclusion_removes_file(self):
+        self._write("keep.md", "needle without the other")
+        self._write("drop.md", "needle with poison here")
+        self.assertEqual(self._names("needle -poison"), ["keep.md"])
+
+    def test_tag_filter(self):
+        self._write("a.md", "---\ntags: [work, urgent]\n---\nneedle")
+        self._write("b.md", "---\ntags: [home]\n---\nneedle")
+        self.assertEqual(self._names("needle tag:work"), ["a.md"])
+
+    def test_tag_filter_yaml_list_form(self):
+        self._write("a.md", "---\ntags:\n  - work\n  - urgent\n---\nneedle")
+        self.assertEqual(self._names("needle tag:urgent"), ["a.md"])
+
+    def test_path_filter(self):
+        self._write("sub/a.md", "needle")
+        self._write("other/b.md", "needle")
+        self.assertEqual(self._names("needle path:sub"), ["a.md"])
+
+    def test_regex_mode_ignores_operators(self):
+        # In regex mode a '-' is a literal pattern char, not an exclusion.
+        self._write("d.md", "a-b")
+        res = self._names("a-b", options=sb.SearchOptions(regex=True))
+        self.assertEqual(res, ["d.md"])
+
+    def test_filter_only_query_lists_files(self):
+        self._write("a.md", "---\ntags: [work]\n---\nbody")
+        self._write("b.md", "---\ntags: [home]\n---\nbody")
+        self.assertEqual(self._names("tag:work"), ["a.md"])
+
+
+class TestVaultFilter(unittest.TestCase):
+    def test_restricts_to_named_vault(self):
+        base = Path(tempfile.mkdtemp())
+        try:
+            (base / "Notes").mkdir()
+            (base / "Work").mkdir()
+            (base / "Notes" / "a.md").write_text("needle", encoding="utf-8")
+            (base / "Work" / "b.md").write_text("needle", encoding="utf-8")
+            vaults = [str(base / "Notes"), str(base / "Work")]
+            res = sb.search_grouped("needle vault:Notes", vaults)
+            self.assertEqual([Path(r.path).name for r in res], ["a.md"])
+        finally:
+            shutil.rmtree(base, ignore_errors=True)
+
+
 if __name__ == "__main__":
     unittest.main()

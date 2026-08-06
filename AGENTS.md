@@ -49,7 +49,7 @@ Markdown Vault — a GNOME desktop app for editing and previewing Markdown files
   - Metadaten (renders the current file's YAML frontmatter as key/value rows)
   - Git panel (status, diff, commit)
   - File details (word count, last modified)
-- **Bottom bar**: full-text search across all vaults (Ctrl+Shift+F expands to vault-wide search).
+- **Bottom bar** (Ctrl+Shift+F): live full-text search across vaults — `search.py` (UI) over `search_backend.py` (ripgrep engine with a Python fallback). Results are grouped per file and relevance-ranked (name/title > heading > body). Match modifiers `Aa` (case), `W` (whole word), `.*` (regex); non-regex queries also support operators/filters: multiple terms are AND-combined, `"phrase"` matches literally, `-term` excludes, and `tag:`/`path:`/`vault:` narrow the set. A scope toggle limits the search to the active vault; a `?` popover shows the syntax.
 - **In-view find** (Ctrl+F): a find bar (`find_bar.py`) that searches whichever view is focused — the editor (GtkSource search: highlight, next/prev, current/total counter) or the preview (WebKit find controller: total count). Enter / Shift+Enter step matches, Esc closes; the non-searched view is dimmed while open.
 
 ## Features
@@ -96,8 +96,9 @@ src/
     tabs.py                   — TabBar + Tab widgets
     sidebar.py                — right sidebar (outline, backlinks, metadata, git, details)
     find_bar.py               — in-view find bar (Ctrl+F), editor/preview search
-    search.py                 — bottom bar: full-text search across vaults
-    search_logic.py           — search worker (runs in daemon thread)
+    search.py                 — bottom bar UI: live results, modifiers, operators, scope toggle
+    search_backend.py         — search engine: ripgrep + Python fallback, ranking, query operators/filters
+    search_logic.py           — pure helpers: heading extraction, file details, legacy vault search
     git_integration.py        — git status, diff, commit
     tags.py                   — [[wikilink]] parsing, backlinks
     wikilink_autofix.py       — pre-save wikilink autofix + broken-link detection (pure logic + WikilinkResolver glue)

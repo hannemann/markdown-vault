@@ -194,6 +194,70 @@ _HEADING_CAP = 3
 _BODY_CAP = 5
 
 
+# ── Query operators & filters (Phase 3) ─────────────────────────────
+#
+# A non-regex query may combine several literal terms (AND), quoted phrases,
+# ``-exclusions`` and ``key:value`` filters (``tag:``/``path:``/``vault:``).
+# In regex mode the query is a single raw pattern and none of this applies.
+
+_FILTER_KEYS = ("tag", "path", "vault")
+# One token: an optional leading ``-``, an optional ``key:`` prefix, then either
+# a "quoted phrase" or a bare run of non-space chars.
+_TOKEN_RE = re.compile(r'-?(?:\w+:)?"[^"]*"|\S+')
+
+
+@dataclass
+class ParsedQuery:
+    """A query decomposed into literal operators and field filters."""
+
+    positives: list   # literal terms/phrases that must ALL appear (AND)
+    excludes: list    # terms that must NOT appear anywhere in the file
+    tags: list        # frontmatter tags that must all be present
+    paths: list       # path fragments the file path must contain (all)
+    vaults: list      # vault names to restrict the search to (any)
+
+
+def parse_query(query: str) -> ParsedQuery:
+    """Split *query* into positive terms, exclusions and ``key:`` filters."""
+    positives: list[str] = []
+    excludes: list[str] = []
+    tags: list[str] = []
+    paths: list[str] = []
+    vaults: list[str] = []
+    for raw in _TOKEN_RE.findall(query):
+        neg = len(raw) > 1 and raw.startswith("-")
+        tok = raw[1:] if neg else raw
+        key = None
+        m = re.match(r"(\w+):(.*)$", tok, re.DOTALL)
+        if m and m.group(1).lower() in _FILTER_KEYS:
+            key, tok = m.group(1).lower(), m.group(2)
+        val = _unquote(tok)
+        if not val:
+            continue
+        if key == "tag":
+            tags.append(val)
+        elif key == "path":
+            paths.append(val)
+        elif key == "vault":
+            vaults.append(val)
+        elif neg:
+            excludes.append(val)
+        else:
+            positives.append(val)
+    return ParsedQuery(positives, excludes, tags, paths, vaults)
+
+
+def _unquote(s: str) -> str:
+    if len(s) >= 2 and s[0] == '"' and s[-1] == '"':
+        return s[1:-1]
+    return s
+
+
+def _has_operators(p: ParsedQuery) -> bool:
+    """True unless the query is a single plain term/phrase (fast path)."""
+    return bool(p.excludes or p.tags or p.paths or p.vaults or len(p.positives) != 1)
+
+
 def search_grouped(
     query: str,
     vault_paths: list[str],
@@ -206,49 +270,200 @@ def search_grouped(
     Files are ranked by a weighted score (name/title > heading > body, with
     saturating counts), then by recency (mtime) and shorter path as tiebreaks.
     A file whose *name* matches is included even with no content match.
+
+    Non-regex queries support operators and filters (see :func:`parse_query`):
+    multiple terms are AND-combined, ``"quoted phrases"`` match literally,
+    ``-term`` excludes, and ``tag:``/``path:``/``vault:`` narrow the file set.
     """
     options = options or SearchOptions()
-    if not query:
+    if not query.strip():
         return []
     existing = [p for p in vault_paths if os.path.isdir(p)]
     if not existing:
         return []
 
-    line_matches = search(query, existing, max_results=2000, options=options)
+    # Regex mode: the query is one raw pattern; operators/filters don't apply.
+    if options.regex:
+        return _group_matches(
+            search(query, existing, 2000, options),
+            _filename_matches(query, existing, options),
+            query, options, max_files, max_lines,
+        )
 
+    parsed = parse_query(query)
+    scoped = _apply_vault_filter(existing, parsed.vaults)
+    if not scoped:
+        return []
+
+    # Fast path: a single plain term/phrase → one ripgrep pass.
+    if not _has_operators(parsed):
+        term = parsed.positives[0]
+        return _group_matches(
+            search(term, scoped, 2000, options),
+            _filename_matches(term, scoped, options),
+            term, options, max_files, max_lines,
+        )
+
+    return _search_operators(parsed, scoped, options, max_files, max_lines)
+
+
+def _apply_vault_filter(vault_paths: list[str], names: list[str]) -> list[str]:
+    """Restrict *vault_paths* to those whose basename contains any ``vault:`` name."""
+    if not names:
+        return vault_paths
+    wanted = [n.lower() for n in names]
+    return [
+        v for v in vault_paths
+        if any(w in os.path.basename(os.path.normpath(v)).lower() for w in wanted)
+    ]
+
+
+def _group_matches(line_matches, name_paths, query, options, max_files, max_lines):
+    """Group flat line matches (plus name-only hits) into ranked FileResults."""
     by_path: dict[str, list[Match]] = {}
     for m in line_matches:
         by_path.setdefault(m.path, []).append(m)
-
-    # Files that match by name only (no content hit) still belong in results.
-    for path in _filename_matches(query, existing, options):
+    for path in name_paths:
         by_path.setdefault(path, [])
 
-    results: list[FileResult] = []
-    for path, ms in by_path.items():
-        name_hit = _name_hit(os.path.basename(path), query, options)
-        heading_hits = sum(1 for m in ms if m.text.lstrip().startswith("#"))
-        title_hit = any(
-            m.text.lstrip().lower().startswith("title:") for m in ms
+    results = [
+        _build_file_result(
+            path, ms, _name_hit(os.path.basename(path), query, options), max_lines
         )
-        score = (
-            (_W_NAME if name_hit else 0.0)
-            + (_W_TITLE if title_hit else 0.0)
-            + _W_HEADING * min(heading_hits, _HEADING_CAP)
-            + _W_BODY * min(len(ms), _BODY_CAP)
-        )
-        try:
-            mtime = os.path.getmtime(path)
-        except OSError:
-            mtime = 0.0
-        results.append(FileResult(
-            path=path, score=score, matches=ms[:max_lines],
-            total_matches=len(ms), name_hit=name_hit, title_hit=title_hit,
-            heading_hits=heading_hits, mtime=mtime,
-        ))
+        for path, ms in by_path.items()
+    ]
+    return _rank(results, max_files)
 
+
+def _search_operators(parsed, vaults, options, max_files, max_lines):
+    """Pure-Python engine for AND / exclusion / tag queries (reads each file once)."""
+    pos = [_literal_pattern(t, options) for t in parsed.positives]
+    exc = [_literal_pattern(t, options) for t in parsed.excludes]
+    path_frags = [p.lower() for p in parsed.paths]
+
+    results: list[FileResult] = []
+    for vault in vaults:
+        for root, dirs, files in os.walk(vault):
+            dirs[:] = [d for d in dirs if not d.startswith(".")]
+            for fname in sorted(files):
+                if not fname.endswith(".md"):
+                    continue
+                fpath = os.path.join(root, fname)
+                if path_frags and not all(f in fpath.lower() for f in path_frags):
+                    continue
+                try:
+                    with open(fpath, "r", encoding="utf-8", errors="replace") as fh:
+                        text = fh.read()
+                except OSError:
+                    continue
+                if exc and any(p.search(text) for p in exc):
+                    continue
+                if parsed.tags and not _has_tags(text, parsed.tags):
+                    continue
+                fr = _operator_file_result(fpath, fname, text, pos, max_lines)
+                if fr is not None:
+                    results.append(fr)
+    return _rank(results, max_files)
+
+
+def _operator_file_result(fpath, fname, text, pos_patterns, max_lines):
+    """Build a FileResult for one file, enforcing AND across all positives.
+
+    A positive is satisfied if it appears in the content *or* the file name.
+    Returns ``None`` when not every positive is satisfied.
+    """
+    stem = fname[:-3] if fname.endswith(".md") else fname
+    name_present = {i for i, pat in enumerate(pos_patterns) if pat.search(stem)}
+
+    present: set[int] = set()
+    matches: list[Match] = []
+    for i, line in enumerate(text.splitlines(), 1):
+        spans: list[tuple[int, int]] = []
+        for idx, pat in enumerate(pos_patterns):
+            found = [
+                (m.start(), m.end()) for m in pat.finditer(line) if m.end() > m.start()
+            ]
+            if found:
+                present.add(idx)
+                spans.extend(found)
+        if spans:
+            spans.sort()
+            matches.append(Match(fpath, i, line, spans))
+
+    if pos_patterns and len(present | name_present) < len(pos_patterns):
+        return None
+    return _build_file_result(fpath, matches, bool(name_present), max_lines)
+
+
+def _build_file_result(path, ms, name_hit, max_lines) -> FileResult:
+    heading_hits = sum(1 for m in ms if m.text.lstrip().startswith("#"))
+    title_hit = any(m.text.lstrip().lower().startswith("title:") for m in ms)
+    score = (
+        (_W_NAME if name_hit else 0.0)
+        + (_W_TITLE if title_hit else 0.0)
+        + _W_HEADING * min(heading_hits, _HEADING_CAP)
+        + _W_BODY * min(len(ms), _BODY_CAP)
+    )
+    try:
+        mtime = os.path.getmtime(path)
+    except OSError:
+        mtime = 0.0
+    return FileResult(
+        path=path, score=score, matches=ms[:max_lines], total_matches=len(ms),
+        name_hit=name_hit, title_hit=title_hit, heading_hits=heading_hits, mtime=mtime,
+    )
+
+
+def _rank(results: list[FileResult], max_files: int) -> list[FileResult]:
     results.sort(key=lambda r: (-r.score, -r.mtime, len(r.path), r.path))
     return results[:max_files]
+
+
+def _literal_pattern(term: str, options: SearchOptions) -> "re.Pattern":
+    """Compile *term* as a literal (never regex), honouring case/word options."""
+    return _compile(term, SearchOptions(
+        case_sensitive=options.case_sensitive,
+        whole_word=options.whole_word,
+        regex=False,
+    ))
+
+
+def _has_tags(text: str, wanted: list[str]) -> bool:
+    have = {t.lower() for t in _frontmatter_tags(text)}
+    return bool(have) and all(w.lower() in have for w in wanted)
+
+
+def _frontmatter_tags(text: str) -> list[str]:
+    """Extract the ``tags`` field from a leading YAML frontmatter block."""
+    if not text.startswith("---"):
+        return []
+    end = text.find("\n---", 3)
+    if end == -1:
+        return []
+    front = text[3:end]
+    raw = None
+    try:
+        import yaml
+        data = yaml.safe_load(front)
+        if isinstance(data, dict):
+            raw = data.get("tags")
+    except Exception:
+        raw = None
+    if raw is None:
+        m = re.search(r"(?m)^tags:\s*(.+)$", front)
+        if not m:
+            return []
+        raw = m.group(1)
+    return _normalize_tags(raw)
+
+
+def _normalize_tags(raw) -> list[str]:
+    if isinstance(raw, (list, tuple)):
+        return [str(t).strip().lstrip("#") for t in raw if str(t).strip()]
+    if isinstance(raw, str):
+        parts = re.split(r"[,\s]+", raw.strip().strip("[]"))
+        return [p.strip().strip("\"'").lstrip("#") for p in parts if p.strip()]
+    return [str(raw).strip().lstrip("#")]
 
 
 def _name_hit(filename: str, query: str, options: SearchOptions) -> bool:

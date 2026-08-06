@@ -330,7 +330,10 @@ class MainWindow(Adw.ApplicationWindow):
         # icon rail gets pushed off the right edge of the window.
         self._sidebar_paned.set_shrink_end_child(False)
 
-        self._search_bar = SearchBar(get_vault_paths=self._vault_tree.get_vault_paths)
+        self._search_bar = SearchBar(
+            get_vault_paths=self._vault_tree.get_vault_paths,
+            get_active_vault=lambda: self._active_vault,
+        )
         self._search_bar.connect("file-selected", self._on_search_result_selected)
         self._search_bar.connect("close-requested", self._on_search_close_requested)
 
