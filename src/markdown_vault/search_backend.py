@@ -304,6 +304,11 @@ def search_grouped(
             term, options, max_files, max_lines,
         )
 
+    # Nothing to actually match on (e.g. a half-typed "tag:", an empty phrase,
+    # or excludes only) — don't list the whole vault.
+    if not (parsed.positives or parsed.tags or parsed.paths or parsed.vaults):
+        return []
+
     return _search_operators(parsed, scoped, options, max_files, max_lines)
 
 
@@ -349,8 +354,10 @@ def _search_operators(parsed, vaults, options, max_files, max_lines):
                 if not fname.endswith(".md"):
                     continue
                 fpath = os.path.join(root, fname)
-                if path_frags and not all(f in fpath.lower() for f in path_frags):
-                    continue
+                if path_frags:
+                    rel = os.path.relpath(fpath, vault).lower()
+                    if not all(f in rel for f in path_frags):
+                        continue
                 try:
                     with open(fpath, "r", encoding="utf-8", errors="replace") as fh:
                         text = fh.read()

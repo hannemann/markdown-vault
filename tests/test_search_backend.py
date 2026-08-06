@@ -356,6 +356,28 @@ class TestSearchGroupedOperators(unittest.TestCase):
         self._write("other/b.md", "needle")
         self.assertEqual(self._names("needle path:sub"), ["a.md"])
 
+    def test_path_filter_is_vault_relative(self):
+        # The vault's own directory name must not leak into path: matching.
+        vault = self._tmp / "notes-vault"
+        vault.mkdir()
+        (vault / "a.md").write_text("needle", encoding="utf-8")
+        sub = vault / "sub"
+        sub.mkdir()
+        (sub / "b.md").write_text("needle", encoding="utf-8")
+        # "notes" appears only in the vault root path, not in any relative path.
+        hit_root = sb.search_grouped("needle path:notes", [str(vault)])
+        self.assertEqual(hit_root, [])
+        hit_sub = sb.search_grouped("needle path:sub", [str(vault)])
+        self.assertEqual([Path(r.path).name for r in hit_sub], ["b.md"])
+
+    def test_empty_effective_queries_return_nothing(self):
+        # Half-typed filters / empty phrase / excludes-only must not list all files.
+        self._write("a.md", "needle")
+        self._write("b.md", "needle")
+        self.assertEqual(self._names("tag:"), [])
+        self.assertEqual(self._names('""'), [])
+        self.assertEqual(self._names("-needle"), [])
+
     def test_regex_mode_ignores_operators(self):
         # In regex mode a '-' is a literal pattern char, not an exclusion.
         self._write("d.md", "a-b")
