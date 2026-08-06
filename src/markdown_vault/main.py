@@ -76,6 +76,7 @@ class MarkdownVaultApp(Adw.Application):
         """Register global keyboard shortcuts."""
         self.set_accels_for_action("win.toggle-sidebar", ["<Control>b"])
         self.set_accels_for_action("win.toggle-search", ["<Shift><Control>f"])
+        self.set_accels_for_action("win.quick-open", ["<Control>space"])
         self.set_accels_for_action("win.find-in-view", ["<Control>f"])
         self.set_accels_for_action("win.replace-in-view", ["<Control>r"])
         self.set_accels_for_action("win.save", ["<Control>s"])
@@ -85,7 +86,7 @@ class MarkdownVaultApp(Adw.Application):
         self.set_accels_for_action("win.zoom-in", ["<Control>plus", "<Control>equal"])
         self.set_accels_for_action("win.zoom-out", ["<Control>minus"])
         self.set_accels_for_action("win.zoom-reset", ["<Control>0"])
-        self.set_accels_for_action("win.toggle-help", ["<Control>space"])
+        self.set_accels_for_action("win.toggle-help", ["F1"])
         self.set_accels_for_action("win.view-edit", ["<Control>1"])
         self.set_accels_for_action("win.view-split", ["<Control>2"])
         self.set_accels_for_action("win.view-render", ["<Control>3"])

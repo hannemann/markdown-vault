@@ -26,6 +26,8 @@ py_sources = files(
   'path_utils.py',
   'preferences.py',
   'preview.py',
+  'quick_open.py',
+  'quick_open_palette.py',
   'search.py',
   'search_backend.py',
   'search_logic.py',

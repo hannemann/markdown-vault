@@ -50,6 +50,7 @@ Markdown Vault — a GNOME desktop app for editing and previewing Markdown files
   - Git panel (status, diff, commit)
   - File details (word count, last modified)
 - **Bottom bar** (Ctrl+Shift+F): live full-text search across vaults — `search.py` (UI) over `search_backend.py` (ripgrep engine with a Python fallback). Results are grouped per file and relevance-ranked (name/title > heading > body). Match modifiers `Aa` (case), `W` (whole word), `.*` (regex); non-regex queries also support operators/filters: multiple terms are AND-combined, `"phrase"` matches literally, `-term` excludes, and `tag:`/`path:`/`vault:` narrow the set. A scope toggle limits the search to the active vault; a `?` popover shows the syntax.
+- **Quick Open** (Ctrl+Space): fuzzy file switcher — `quick_open_palette.py` (Adw.Dialog) over `quick_open.py`. An empty query lists recent files (MRU then mtime); typing fuzzy-matches note names with match highlighting. Built on a provider/engine design (`QuickOpenEngine` merges providers), so more result sources — e.g. a future semantic/vector provider — slot in via `_make_quick_open_engine` in `app_window` without touching the palette.
 - **In-view find** (Ctrl+F): a find bar (`find_bar.py`) that searches whichever view is focused — the editor (GtkSource search: highlight, next/prev, current/total counter) or the preview (WebKit find controller: total count). Enter / Shift+Enter step matches, Esc closes; the non-searched view is dimmed while open.
 
 ## Features
@@ -96,6 +97,8 @@ src/
     tabs.py                   — TabBar + Tab widgets
     sidebar.py                — right sidebar (outline, backlinks, metadata, git, details)
     find_bar.py               — in-view find bar (Ctrl+F), editor/preview search
+    quick_open.py             — quick-open engine: fuzzy matcher, providers, ranking
+    quick_open_palette.py     — Ctrl+Space palette (Adw.Dialog), provider-driven
     search.py                 — bottom bar UI: live results, modifiers, operators, scope toggle
     search_backend.py         — search engine: ripgrep + Python fallback, ranking, query operators/filters
     search_logic.py           — pure helpers: heading extraction, file details, legacy vault search
@@ -112,7 +115,7 @@ src/
     path_utils.py             — vault path resolution helpers
     validation.py             — input validation utilities
     latex_mathml.py           — LaTeX → MathML converter (no JS/CDN)
-    markdown_help.py          — keyboard shortcuts overlay
+    markdown_help.py          — Markdown syntax reference overlay (F1)
     meson.build               — Python package build rules (the manually-maintained py_sources list)
   css/
     style.css                 — WebView styling for rendered Markdown

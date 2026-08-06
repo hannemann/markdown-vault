@@ -33,6 +33,8 @@ from .preview import Preview
 from .tabs import TabBar
 from .sidebar import Sidebar
 from .search import SearchBar
+from . import quick_open
+from .quick_open_palette import QuickOpenPalette
 from .preferences import PreferencesDialog
 from .wikilink_autofix import WikilinkResolver, analyze_text, find_broken_ranges
 from .find_bar import FindBar
@@ -335,6 +337,9 @@ class MainWindow(Adw.ApplicationWindow):
             get_active_vault=lambda: self._active_vault,
         )
         self._search_bar.connect("file-selected", self._on_search_result_selected)
+
+        self._quick_open = QuickOpenPalette(make_engine=self._make_quick_open_engine)
+        self._quick_open.connect("file-selected", self._on_search_result_selected)
         self._search_bar.connect("close-requested", self._on_search_close_requested)
 
         self._search_paned = Gtk.Paned(orientation=Gtk.Orientation.VERTICAL)
@@ -650,6 +655,10 @@ class MainWindow(Adw.ApplicationWindow):
 
         action = Gio.SimpleAction.new("toggle-search", None)
         action.connect("activate", lambda *_: self._toggle_search())
+        self.add_action(action)
+
+        action = Gio.SimpleAction.new("quick-open", None)
+        action.connect("activate", lambda *_: self._quick_open.open(self))
         self.add_action(action)
 
         action = Gio.SimpleAction.new("find-in-view", None)
@@ -1184,6 +1193,16 @@ class MainWindow(Adw.ApplicationWindow):
         tab.editor.scroll_to_line(line, yalign=0.0)
         text = tab.editor.get_text()
         tab.preview.scroll_to_line(line, text)
+
+    def _make_quick_open_engine(self):
+        """Build a fresh quick-open engine over the current vaults.
+
+        Provider list lives here so future sources (e.g. a semantic / vector
+        provider) can be added without touching the palette widget.
+        """
+        candidates = quick_open.build_candidates(self._vault_tree.get_vault_paths())
+        providers = [quick_open.FilenameProvider(candidates, recent_paths=self.mru.tabs)]
+        return quick_open.QuickOpenEngine(providers)
 
     def _on_search_result_selected(self, _search_bar, file_path: str, line_num: int) -> None:
         vault = self._find_vault_for_file(file_path)

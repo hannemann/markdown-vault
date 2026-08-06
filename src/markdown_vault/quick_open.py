@@ -1,0 +1,191 @@
+"""Quick-open engine — fuzzy file switcher backend (Ctrl+Space).
+
+Pure logic, no GTK.  Designed around *providers* so more result sources can be
+added later (e.g. a semantic / vector provider) without touching the palette:
+
+    engine = QuickOpenEngine([FilenameProvider(candidates, recent), ...])
+    results = engine.search("eng handbook")
+
+Each provider returns scored :class:`QuickResult` objects for a query; the
+engine merges them per file (keeping the best score) and returns a ranked list.
+The current provider fuzzy-matches file names; a future ``SemanticProvider``
+would return the same shape from a vector search and slot straight in.
+"""
+
+import logging
+import os
+from dataclasses import dataclass, field
+
+logger = logging.getLogger(__name__)
+
+# Characters that start a new "word" — a match right after one scores higher.
+_WORD_SEPARATORS = frozenset(" -_/.")
+
+
+@dataclass
+class Candidate:
+    """One indexed note."""
+
+    path: str        # absolute file path
+    name: str        # display name (file stem, no .md)
+    folder: str      # containing directory (shown as subtitle)
+    mtime: float
+
+
+@dataclass
+class QuickResult:
+    """A ranked quick-open hit."""
+
+    path: str
+    name: str
+    folder: str
+    score: float
+    positions: list = field(default_factory=list)  # matched char indices in name
+    source: str = "name"                            # which provider produced it
+
+
+# Scoring weights.  A contiguous run and a big gap between matches are the two
+# dominant signals: a match right after the previous one scores well, while a
+# gap is penalised per skipped character, so a literal substring outranks a
+# wide-gap "acronym" match of the same letters.
+_BASE = 1.0
+_START_BONUS = 6.0     # match at a word start (position 0 or after a separator)
+_CAMEL_BONUS = 4.0     # match at a camelCase boundary
+_CONSEC_BONUS = 4.0    # match immediately following the previous match
+_GAP_PENALTY = 0.7     # per character skipped between two matches
+_LEADING_PENALTY = 0.2  # per character before the first match
+_LENGTH_TIEBREAK = 0.02  # slight preference for shorter names
+
+
+def fuzzy_match(query: str, text: str):
+    """Fuzzy-match *query* against *text* (case-insensitive subsequence).
+
+    Returns ``(score, positions)`` where *positions* are the indices in *text*
+    that matched, or ``None`` if *query* is not a subsequence of *text*.
+    Higher scores reward matches at word starts, camelCase boundaries and
+    contiguous runs; gaps between matches and a late first match are penalised.
+    """
+    if not query:
+        return (0.0, [])
+    q = query.lower()
+    t = text.lower()
+
+    positions: list[int] = []
+    score = 0.0
+    prev = -1  # index of the previous matched char (-1 = none yet)
+    start = 0
+    for qc in q:
+        idx = t.find(qc, start)
+        if idx == -1:
+            return None
+        bonus = _BASE
+        if idx == 0 or t[idx - 1] in _WORD_SEPARATORS:
+            bonus += _START_BONUS
+        elif text[idx].isupper() and text[idx - 1].islower():
+            bonus += _CAMEL_BONUS
+        if prev == -1:
+            score -= _LEADING_PENALTY * idx        # prefer an earlier first match
+        elif idx == prev + 1:
+            bonus += _CONSEC_BONUS                  # contiguous run
+        else:
+            score -= _GAP_PENALTY * (idx - prev - 1)  # penalise the gap
+        score += bonus
+        positions.append(idx)
+        prev = idx
+        start = idx + 1
+
+    score -= _LENGTH_TIEBREAK * len(text)
+    return (score, positions)
+
+
+def build_candidates(vault_paths) -> list[Candidate]:
+    """Walk *vault_paths* and index every ``.md`` file as a :class:`Candidate`."""
+    candidates: list[Candidate] = []
+    for vault in vault_paths:
+        if not os.path.isdir(vault):
+            continue
+        for root, dirs, files in os.walk(vault):
+            dirs[:] = [d for d in dirs if not d.startswith(".")]
+            for fname in files:
+                if not fname.endswith(".md"):
+                    continue
+                path = os.path.join(root, fname)
+                try:
+                    mtime = os.path.getmtime(path)
+                except OSError:
+                    mtime = 0.0
+                candidates.append(Candidate(
+                    path=path, name=fname[:-3], folder=root, mtime=mtime,
+                ))
+    return candidates
+
+
+class FilenameProvider:
+    """Provider that fuzzy-matches the query against file names.
+
+    With an empty query it lists *recent_paths* first (in the given order),
+    then the remaining notes by recency (mtime), so Ctrl+Space with no input is a
+    recent-files switcher.
+    """
+
+    source = "name"
+
+    def __init__(self, candidates, recent_paths=()):
+        self._candidates = list(candidates)
+        self._recent = list(recent_paths)
+
+    def search(self, query: str, limit: int = 30) -> list[QuickResult]:
+        if not query:
+            return self._recent_first(limit)
+
+        scored: list[QuickResult] = []
+        for c in self._candidates:
+            hit = fuzzy_match(query, c.name)
+            if hit is None:
+                continue
+            score, positions = hit
+            scored.append(QuickResult(
+                path=c.path, name=c.name, folder=c.folder,
+                score=score, positions=positions, source=self.source,
+            ))
+        scored.sort(key=lambda r: (-r.score, r.name.lower(), r.path))
+        return scored[:limit]
+
+    def _recent_first(self, limit: int) -> list[QuickResult]:
+        by_path = {c.path: c for c in self._candidates}
+        ordered: list[Candidate] = []
+        seen: set[str] = set()
+        for path in self._recent:
+            c = by_path.get(path)
+            if c is not None and path not in seen:
+                ordered.append(c)
+                seen.add(path)
+        rest = [c for c in self._candidates if c.path not in seen]
+        rest.sort(key=lambda c: -c.mtime)
+        ordered.extend(rest)
+
+        # Descending synthetic scores so ordering survives the engine merge.
+        n = len(ordered)
+        return [
+            QuickResult(path=c.path, name=c.name, folder=c.folder,
+                        score=float(n - i), source=self.source)
+            for i, c in enumerate(ordered[:limit])
+        ]
+
+
+class QuickOpenEngine:
+    """Merge several providers' results, keeping the best score per file."""
+
+    def __init__(self, providers):
+        self._providers = list(providers)
+
+    def search(self, query: str, limit: int = 30) -> list[QuickResult]:
+        best: dict[str, QuickResult] = {}
+        for provider in self._providers:
+            for r in provider.search(query, limit):
+                cur = best.get(r.path)
+                if cur is None or r.score > cur.score:
+                    best[r.path] = r
+        results = list(best.values())
+        results.sort(key=lambda r: (-r.score, r.name.lower(), r.path))
+        return results[:limit]

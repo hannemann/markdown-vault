@@ -85,6 +85,17 @@ headerbar button {
     font-weight: bold;
 }
 
+/* Quick-open palette (Ctrl+Space) */
+.quick-open-result {
+    padding: 5px 12px;
+    border-radius: 6px;
+    margin: 1px 6px;
+}
+
+.quick-open-result:hover {
+    background: alpha(@accent_bg_color, 0.12);
+}
+
 .mono {
     font-family: monospace;
 }

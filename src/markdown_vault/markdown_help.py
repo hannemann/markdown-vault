@@ -2,7 +2,7 @@
 
 A semi-transparent overlay showing a quick-reference for Markdown syntax,
 organised into categories and spread across multiple pages.  Toggled via
-``Ctrl+Space`` (``win.toggle-help``).
+``F1`` (``win.toggle-help``).
 """
 
 import gi
@@ -220,7 +220,7 @@ class MarkdownHelpOverlay(Gtk.Box):
     """Semi-transparent overlay that shows Markdown syntax help.
 
     The overlay is shown/hidden via ``toggle()`` and closed on Escape
-    or ``Ctrl+Space`` (re-toggle).
+    or ``F1`` (re-toggle).
     """
 
     def __init__(self) -> None:
