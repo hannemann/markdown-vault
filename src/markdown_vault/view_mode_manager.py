@@ -60,36 +60,36 @@ class ViewModeManager:
             self.refresh_preview()
 
     def _remember_split(self, tab) -> None:
-        """Store the current divider position on the tab (kept until it closes)."""
-        split = getattr(tab, "split", None)
-        if split is not None:
-            pos = split.get_position()
-            if pos > 0:
-                tab.split_position = pos
-
-    def _restore_split(self, tab) -> None:
-        """Restore the remembered divider position, or center on first use."""
+        """Store the divider position as a width fraction (kept until close)."""
         split = getattr(tab, "split", None)
         if split is None:
             return
-        pos = getattr(tab, "split_position", None)
-        if pos and pos > 0:
-            split.set_position(pos)
-        elif not self._apply_center(split):
+        width = split.get_width()
+        pos = split.get_position()
+        if width > 1 and 0 < pos < width:
+            tab.split_ratio = pos / width
+
+    def _restore_split(self, tab) -> None:
+        """Restore the remembered ratio, or center 50/50 on first use."""
+        split = getattr(tab, "split", None)
+        if split is None:
+            return
+        ratio = getattr(tab, "split_ratio", None)
+        if not self._set_split_position(split, ratio):
             # Not allocated yet (e.g. window not mapped) — try once more later.
-            GLib.idle_add(self._deferred_center, split)
+            GLib.idle_add(self._deferred_split, split, ratio)
 
     @staticmethod
-    def _apply_center(split) -> bool:
-        """Center the split if it is allocated; return True on success."""
+    def _set_split_position(split, ratio) -> bool:
+        """Position the divider by *ratio* (or center if None); True if applied."""
         width = split.get_width()
-        if width > 1:
-            split.set_position(width // 2)
-            return True
-        return False
+        if width <= 1:
+            return False
+        split.set_position(round(ratio * width) if ratio else width // 2)
+        return True
 
-    def _deferred_center(self, split) -> bool:
-        self._apply_center(split)
+    def _deferred_split(self, split, ratio) -> bool:
+        self._set_split_position(split, ratio)
         return False  # one-shot for idle_add
 
     def sync_view_toggle(self, mode: str) -> None:

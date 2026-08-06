@@ -22,6 +22,11 @@ from . import banners as banner_mod
 
 logger = logging.getLogger(__name__)
 
+# Minimum width for each pane of the editor|preview split, so the divider can
+# never collapse a pane to zero (and become un-grabbable) — e.g. when opening
+# the sidebar narrows the content area below the remembered split position.
+_MIN_PANE_WIDTH = 160
+
 
 class TabOrchestrator:
     """Orchestrates tab creation, switching and navigation.
@@ -168,6 +173,13 @@ class TabOrchestrator:
         split.set_end_child(preview)
         split.set_position(split_position)
         split.set_vexpand(True)
+        # Neither pane may shrink below a minimum, so the divider cannot
+        # collapse a pane to zero and get stuck at the edge; GtkPaned then
+        # re-clamps the position automatically when the content area resizes.
+        split.set_shrink_start_child(False)
+        split.set_shrink_end_child(False)
+        editor.set_size_request(_MIN_PANE_WIDTH, -1)
+        preview.set_size_request(_MIN_PANE_WIDTH, -1)
 
         # Warning banner (external changes)
         warning_revealer, warning_box = banner_mod.create_banner(

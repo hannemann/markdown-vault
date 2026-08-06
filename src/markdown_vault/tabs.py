@@ -54,9 +54,10 @@ class Tab:
         # The horizontal Gtk.Paned holding editor|preview (set by TabManager),
         # used to balance the split view.
         self.split = None
-        # Remembered split divider position for this tab, kept while the tab is
-        # open so it survives switching view modes; None until first centered.
-        self.split_position: int | None = None
+        # Remembered split divider position as a fraction (0..1) of the width,
+        # kept while the tab is open so it survives switching view modes and
+        # window resizes; None until the first (centered) activation.
+        self.split_ratio: float | None = None
         self.warning_banner = warning_banner
         self.error_banner = error_banner
         self.save_error: str | None = None

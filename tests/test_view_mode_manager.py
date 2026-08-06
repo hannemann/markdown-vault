@@ -20,7 +20,7 @@ class _MockTab:
         self.split = unittest.mock.MagicMock()
         self.split.get_width.return_value = 800
         self.split.get_position.return_value = 500
-        self.split_position = None
+        self.split_ratio = None
 
 
 class _MockTabBar:
@@ -111,20 +111,21 @@ class TestSplitCentering(unittest.TestCase):
         self._mgr.set_view_mode("edit")
         self.tab.split.set_position.assert_not_called()
 
-    def test_leaving_split_captures_position(self):
+    def test_leaving_split_captures_ratio(self):
         self.tab.view_mode = "split"
-        self.tab.split.get_position.return_value = 333
+        self.tab.split.get_position.return_value = 200  # of width 800
         self._mgr.set_view_mode("render")
-        self.assertEqual(self.tab.split_position, 333)
+        self.assertAlmostEqual(self.tab.split_ratio, 0.25)
 
-    def test_remembered_position_restored_over_centering(self):
-        # Leave split (captures the dragged position), then return to it.
+    def test_remembered_ratio_restored_at_new_width(self):
+        # Leave split at 25%, window later wider → restored proportionally.
         self.tab.view_mode = "split"
-        self.tab.split.get_position.return_value = 520
-        self._mgr.set_view_mode("edit")            # captures 520
-        self.assertEqual(self.tab.split_position, 520)
-        self._mgr.set_view_mode("split")           # restores 520, not 400
-        self.tab.split.set_position.assert_called_with(520)
+        self.tab.split.get_position.return_value = 200  # 25% of 800
+        self._mgr.set_view_mode("edit")                 # captures ratio 0.25
+        self.assertAlmostEqual(self.tab.split_ratio, 0.25)
+        self.tab.split.get_width.return_value = 1200     # window grew
+        self._mgr.set_view_mode("split")                 # restores 0.25 * 1200
+        self.tab.split.set_position.assert_called_with(300)
 
     def test_unallocated_paned_defers(self):
         self.tab.split.get_width.return_value = 0
