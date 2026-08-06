@@ -125,8 +125,10 @@ class MainWindow(Adw.ApplicationWindow):
 
         # Guard against re-entrant position clamping.
         self._paned_clamping: bool = False
-        # Zen mode: hide all chrome and restore the previous visibility on exit.
-        self._zen_active: bool = False
+        # Zen mode: hide chrome and restore the previous visibility on exit.
+        # Level "panels" hides the side/bottom panels; "total" also hides the
+        # header and tab bar. None means not in zen.
+        self._zen_level: str | None = None
         self._zen_saved: dict | None = None
         self._close_window_pending: bool = False
         self._switch_vault_pending: bool = False
@@ -587,6 +589,7 @@ class MainWindow(Adw.ApplicationWindow):
         action_section.append("New File", "win.new-file")
         action_section.append("Toggle Sidebar", "win.toggle-sidebar")
         action_section.append("Zen Mode", "win.toggle-zen")
+        action_section.append("Total Zen", "win.toggle-zen-total")
         menu.append_section(None, action_section)
 
         prefs_section = Gio.Menu()
@@ -676,7 +679,11 @@ class MainWindow(Adw.ApplicationWindow):
         self.add_action(action)
 
         action = Gio.SimpleAction.new("toggle-zen", None)
-        action.connect("activate", lambda *_: self._toggle_zen())
+        action.connect("activate", lambda *_: self._cycle_zen())
+        self.add_action(action)
+
+        action = Gio.SimpleAction.new("toggle-zen-total", None)
+        action.connect("activate", lambda *_: self._toggle_zen("total"))
         self.add_action(action)
 
         action = Gio.SimpleAction.new("toggle-search", None)
@@ -1620,32 +1627,69 @@ class MainWindow(Adw.ApplicationWindow):
     def _on_sidebar_toggled(self, btn: Gtk.ToggleButton) -> None:
         self._sidebar.set_visible(btn.get_active())
 
-    def _toggle_zen(self) -> None:
-        """Zen mode: hide all chrome (header, tabs, vault tree, sidebar) for a
-        distraction-free editor.  Toggling off restores the previous visibility.
+    # Elements zen can hide, and which ones each level hides.
+    _ZEN_ELEMENTS = ("header", "tab_bar", "tree", "sidebar", "search")
+    _ZEN_LEVELS = {
+        "panels": ("tree", "sidebar", "search"),
+        "total": ("header", "tab_bar", "tree", "sidebar", "search"),
+    }
+
+    def _zen_get(self, name: str) -> bool:
+        if name == "header":
+            return self._header.get_visible()
+        if name == "tab_bar":
+            return self._tab_bar.get_visible()
+        if name == "tree":
+            return self._vault_tree.get_visible()
+        if name == "sidebar":
+            return self._sidebar_toggle.get_active()
+        return self._search_toggle.get_active()  # "search"
+
+    def _zen_set(self, name: str, shown: bool) -> None:
+        if name == "header":
+            self._header.set_visible(shown)
+        elif name == "tab_bar":
+            self._tab_bar.set_visible(shown)
+        elif name == "tree":
+            self._vault_tree.set_visible(shown)
+        elif name == "sidebar":
+            self._sidebar_toggle.set_active(shown)  # drives the sidebar
+        else:  # "search"
+            self._search_toggle.set_active(shown)   # drives the search bar
+
+    def _set_zen_level(self, level) -> None:
+        """Enter or switch to *level* (or exit when ``None``).
+
+        The pre-zen visibility is captured on first entry and restored on exit;
+        switching between levels re-derives from that same saved baseline.
         """
-        if not self._zen_active:
-            self._zen_saved = {
-                "header": self._header.get_visible(),
-                "tab_bar": self._tab_bar.get_visible(),
-                "tree": self._vault_tree.get_visible(),
-                "sidebar": self._sidebar_toggle.get_active(),
-                "search": self._search_toggle.get_active(),
-            }
-            self._header.set_visible(False)
-            self._tab_bar.set_visible(False)
-            self._vault_tree.set_visible(False)
-            self._sidebar_toggle.set_active(False)  # drives the sidebar
-            self._search_toggle.set_active(False)   # drives the search bar
-            self._zen_active = True
-        else:
+        if level is None:
             saved = self._zen_saved or {}
-            self._header.set_visible(saved.get("header", True))
-            self._tab_bar.set_visible(saved.get("tab_bar", True))
-            self._vault_tree.set_visible(saved.get("tree", True))
-            self._sidebar_toggle.set_active(saved.get("sidebar", False))
-            self._search_toggle.set_active(saved.get("search", False))
-            self._zen_active = False
+            for name in self._ZEN_ELEMENTS:
+                self._zen_set(name, saved.get(name, True))
+            self._zen_level = None
+            self._zen_saved = None
+            return
+        if self._zen_level is None:
+            self._zen_saved = {n: self._zen_get(n) for n in self._ZEN_ELEMENTS}
+        self._apply_zen_level(level)
+        self._zen_level = level
+
+    def _apply_zen_level(self, level: str) -> None:
+        """Hide the level's elements; restore the rest to their saved state."""
+        hide = self._ZEN_LEVELS[level]
+        saved = self._zen_saved or {}
+        for name in self._ZEN_ELEMENTS:
+            self._zen_set(name, False if name in hide else saved.get(name, True))
+
+    def _cycle_zen(self) -> None:
+        """Ctrl+B cycles: normal → panels → total → normal."""
+        nxt = {None: "panels", "panels": "total", "total": None}
+        self._set_zen_level(nxt[self._zen_level])
+
+    def _toggle_zen(self, level: str) -> None:
+        """Toggle *level* directly (Ctrl+Shift+B for total); off restores."""
+        self._set_zen_level(None if self._zen_level == level else level)
 
     def _get_active_tab_info(self) -> tuple[str | None, str]:
         """Return ``(file_path, text)`` for the currently active tab."""
