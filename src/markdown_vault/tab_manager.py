@@ -205,6 +205,7 @@ class TabOrchestrator:
             warning_banner=warning_revealer, error_banner=error_revealer,
         )
         tab.view_mode = view_mode
+        tab.split = split
 
         # Mark unsaved tabs with italic styling.
         tab.editor.connect("modified-changed", self._on_editor_modified)

@@ -38,9 +38,15 @@ class ViewModeManager:
         tab = self._tab_bar.get_current_tab()
         if not tab:
             return
+        # Remember the divider position when leaving split, so a round-trip
+        # through another mode restores it instead of re-centering.
+        if tab.view_mode == "split" and mode != "split":
+            self._remember_split(tab)
         tab.view_mode = mode
         self.sync_view_toggle(mode)
         self.apply_view_mode()
+        if mode == "split":
+            self._restore_split(tab)
 
     def apply_view_mode(self) -> None:
         """Show/hide editor and preview based on the current tab's view mode."""
@@ -52,6 +58,39 @@ class ViewModeManager:
         tab.preview.set_visible(mode in ("render", "split"))
         if mode in ("render", "split"):
             self.refresh_preview()
+
+    def _remember_split(self, tab) -> None:
+        """Store the current divider position on the tab (kept until it closes)."""
+        split = getattr(tab, "split", None)
+        if split is not None:
+            pos = split.get_position()
+            if pos > 0:
+                tab.split_position = pos
+
+    def _restore_split(self, tab) -> None:
+        """Restore the remembered divider position, or center on first use."""
+        split = getattr(tab, "split", None)
+        if split is None:
+            return
+        pos = getattr(tab, "split_position", None)
+        if pos and pos > 0:
+            split.set_position(pos)
+        elif not self._apply_center(split):
+            # Not allocated yet (e.g. window not mapped) — try once more later.
+            GLib.idle_add(self._deferred_center, split)
+
+    @staticmethod
+    def _apply_center(split) -> bool:
+        """Center the split if it is allocated; return True on success."""
+        width = split.get_width()
+        if width > 1:
+            split.set_position(width // 2)
+            return True
+        return False
+
+    def _deferred_center(self, split) -> bool:
+        self._apply_center(split)
+        return False  # one-shot for idle_add
 
     def sync_view_toggle(self, mode: str) -> None:
         """Set the header toggle buttons to reflect mode without triggering."""

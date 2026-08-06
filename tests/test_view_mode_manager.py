@@ -17,6 +17,10 @@ class _MockTab:
         self.editor.get_text.return_value = "# Test"
         self.preview = unittest.mock.MagicMock()
         self.preview.get_visible.return_value = True
+        self.split = unittest.mock.MagicMock()
+        self.split.get_width.return_value = 800
+        self.split.get_position.return_value = 500
+        self.split_position = None
 
 
 class _MockTabBar:
@@ -85,6 +89,56 @@ class TestSetViewMode(unittest.TestCase):
             self._mgr.set_view_mode("invalid")
             mock_logger.warning.assert_called_once()
             self.assertNotEqual(self.tab.view_mode, "invalid")
+
+
+class TestSplitCentering(unittest.TestCase):
+    """Activating split view balances the editor|preview paned 50/50."""
+
+    def setUp(self):
+        self.tab = _MockTab()
+        self.tab_bar = _MockTabBar(current_tab=self.tab)
+        self.toggle_buttons = {m: unittest.mock.Mock() for m in ("edit", "split", "render")}
+        self._mgr = ViewModeManager(
+            self.tab_bar, self.toggle_buttons,
+            unittest.mock.Mock(), unittest.mock.Mock(),
+        )
+
+    def test_first_split_centers(self):
+        self._mgr.set_view_mode("split")
+        self.tab.split.set_position.assert_called_once_with(400)  # 800 // 2
+
+    def test_edit_does_not_center(self):
+        self._mgr.set_view_mode("edit")
+        self.tab.split.set_position.assert_not_called()
+
+    def test_leaving_split_captures_position(self):
+        self.tab.view_mode = "split"
+        self.tab.split.get_position.return_value = 333
+        self._mgr.set_view_mode("render")
+        self.assertEqual(self.tab.split_position, 333)
+
+    def test_remembered_position_restored_over_centering(self):
+        # Leave split (captures the dragged position), then return to it.
+        self.tab.view_mode = "split"
+        self.tab.split.get_position.return_value = 520
+        self._mgr.set_view_mode("edit")            # captures 520
+        self.assertEqual(self.tab.split_position, 520)
+        self._mgr.set_view_mode("split")           # restores 520, not 400
+        self.tab.split.set_position.assert_called_with(520)
+
+    def test_unallocated_paned_defers(self):
+        self.tab.split.get_width.return_value = 0
+        with unittest.mock.patch(
+            "markdown_vault.view_mode_manager.GLib.idle_add"
+        ) as mock_idle:
+            self._mgr.set_view_mode("split")
+            self.tab.split.set_position.assert_not_called()  # nothing yet
+            mock_idle.assert_called_once()  # retried later
+
+    def test_missing_split_is_noop(self):
+        self.tab.split = None
+        self._mgr.set_view_mode("split")  # must not raise
+        self.assertEqual(self.tab.view_mode, "split")
 
 
 class TestApplyViewMode(unittest.TestCase):
