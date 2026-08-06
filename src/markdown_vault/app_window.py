@@ -125,6 +125,9 @@ class MainWindow(Adw.ApplicationWindow):
 
         # Guard against re-entrant position clamping.
         self._paned_clamping: bool = False
+        # Zen mode: hide all chrome and restore the previous visibility on exit.
+        self._zen_active: bool = False
+        self._zen_saved: dict | None = None
         self._close_window_pending: bool = False
         self._switch_vault_pending: bool = False
 
@@ -147,7 +150,8 @@ class MainWindow(Adw.ApplicationWindow):
         root_overlay.add_overlay(self._help_overlay)
         self.set_content(root_overlay)
 
-        root_box.append(self._build_header())
+        self._header = self._build_header()
+        root_box.append(self._header)
 
         self._main_paned = Gtk.Paned(orientation=Gtk.Orientation.HORIZONTAL)
 
@@ -582,6 +586,7 @@ class MainWindow(Adw.ApplicationWindow):
         action_section.append("Add Vault", "win.add-vault")
         action_section.append("New File", "win.new-file")
         action_section.append("Toggle Sidebar", "win.toggle-sidebar")
+        action_section.append("Zen Mode", "win.toggle-zen")
         menu.append_section(None, action_section)
 
         prefs_section = Gio.Menu()
@@ -593,7 +598,7 @@ class MainWindow(Adw.ApplicationWindow):
 
         # Sidebar toggle button (left of hamburger).
         self._sidebar_toggle = Gtk.ToggleButton(icon_name="user-bookmarks-symbolic")
-        self._sidebar_toggle.set_tooltip_text("Toggle Sidebar (Ctrl+B)")
+        self._sidebar_toggle.set_tooltip_text("Toggle Sidebar")
         self._sidebar_toggle.connect("toggled", self._on_sidebar_toggled)
         header.pack_end(self._sidebar_toggle)
 
@@ -668,6 +673,10 @@ class MainWindow(Adw.ApplicationWindow):
 
         action = Gio.SimpleAction.new("toggle-sidebar", None)
         action.connect("activate", lambda *_: self._toggle_sidebar())
+        self.add_action(action)
+
+        action = Gio.SimpleAction.new("toggle-zen", None)
+        action.connect("activate", lambda *_: self._toggle_zen())
         self.add_action(action)
 
         action = Gio.SimpleAction.new("toggle-search", None)
@@ -1610,6 +1619,33 @@ class MainWindow(Adw.ApplicationWindow):
 
     def _on_sidebar_toggled(self, btn: Gtk.ToggleButton) -> None:
         self._sidebar.set_visible(btn.get_active())
+
+    def _toggle_zen(self) -> None:
+        """Zen mode: hide all chrome (header, tabs, vault tree, sidebar) for a
+        distraction-free editor.  Toggling off restores the previous visibility.
+        """
+        if not self._zen_active:
+            self._zen_saved = {
+                "header": self._header.get_visible(),
+                "tab_bar": self._tab_bar.get_visible(),
+                "tree": self._vault_tree.get_visible(),
+                "sidebar": self._sidebar_toggle.get_active(),
+                "search": self._search_toggle.get_active(),
+            }
+            self._header.set_visible(False)
+            self._tab_bar.set_visible(False)
+            self._vault_tree.set_visible(False)
+            self._sidebar_toggle.set_active(False)  # drives the sidebar
+            self._search_toggle.set_active(False)   # drives the search bar
+            self._zen_active = True
+        else:
+            saved = self._zen_saved or {}
+            self._header.set_visible(saved.get("header", True))
+            self._tab_bar.set_visible(saved.get("tab_bar", True))
+            self._vault_tree.set_visible(saved.get("tree", True))
+            self._sidebar_toggle.set_active(saved.get("sidebar", False))
+            self._search_toggle.set_active(saved.get("search", False))
+            self._zen_active = False
 
     def _get_active_tab_info(self) -> tuple[str | None, str]:
         """Return ``(file_path, text)`` for the currently active tab."""
