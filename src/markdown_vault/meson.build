@@ -23,6 +23,7 @@ py_sources = files(
   'markdown_help.py',
   'monitor_handler.py',
   'mru.py',
+  'paned_sizer.py',
   'path_utils.py',
   'preferences.py',
   'preview.py',

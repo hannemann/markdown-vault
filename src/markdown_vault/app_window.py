@@ -35,6 +35,7 @@ from .sidebar import Sidebar
 from .search import SearchBar
 from . import quick_open
 from .quick_open_palette import QuickOpenPalette
+from .paned_sizer import PanedSizer
 from .preferences import PreferencesDialog
 from .wikilink_autofix import WikilinkResolver, analyze_text, find_broken_ranges
 from .find_bar import FindBar
@@ -101,6 +102,12 @@ _ZOOM_STEP = 0.1
 # sustained burst of incremental edits cannot livelock the async build.
 _BACKLINK_REBUILD_COOLDOWN_MS = 500
 
+# Minimum widths for the three horizontal regions, so no side panel can push
+# the content out of view and the content itself can't vanish (see PanedSizer).
+_TREE_MIN_WIDTH = 280
+_SIDEBAR_MIN_WIDTH = 220
+_CONTENT_MIN_WIDTH = 320
+
 
 class MainWindow(Adw.ApplicationWindow):
     """Top-level application window."""
@@ -161,8 +168,11 @@ class MainWindow(Adw.ApplicationWindow):
         self._vault_tree.vault_monitor = self._vault_monitor
         self._file_ops = FileOps(skip_fn=self._vault_monitor.skip_next_event)
         self._main_paned.set_start_child(self._vault_tree)
-        self._main_paned.set_resize_start_child(False)
+        # The vault tree absorbs narrowing first (see PanedSizer); the content
+        # keeps its width until the tree can shrink no further.
+        self._main_paned.set_resize_start_child(True)
         self._main_paned.set_shrink_start_child(False)
+        self._vault_tree.set_size_request(_TREE_MIN_WIDTH, -1)
 
         centre = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
 
@@ -205,9 +215,11 @@ class MainWindow(Adw.ApplicationWindow):
         self._content_stack.add_named(self._welcome, "__welcome__")
         self._content_stack.set_visible_child_name("__welcome__")
         centre.append(self._content_stack)
+        centre.set_size_request(_CONTENT_MIN_WIDTH, -1)
 
         self._main_paned.set_end_child(centre)
-        self._main_paned.set_resize_end_child(True)
+        self._main_paned.set_resize_end_child(False)
+        self._main_paned.set_shrink_end_child(False)
 
         self._backlink_index = BacklinkIndex()
         self._file_index = FileIndex()
@@ -324,13 +336,15 @@ class MainWindow(Adw.ApplicationWindow):
         self._sidebar_paned = Gtk.Paned(orientation=Gtk.Orientation.HORIZONTAL)
         self._sidebar_paned.add_css_class("sidebar-divider")
         self._sidebar_paned.set_start_child(self._main_paned)
-        self._sidebar_paned.set_resize_start_child(True)
         self._sidebar_paned.set_shrink_start_child(False)
         self._sidebar_paned.set_end_child(self._sidebar)
-        self._sidebar_paned.set_resize_end_child(False)
-        # Don't let the sidebar shrink below its natural width, otherwise the
-        # icon rail gets pushed off the right edge of the window.
+        # The sidebar absorbs narrowing first (see PanedSizer); on widening the
+        # main area keeps the extra space. Don't let it shrink below its natural
+        # width, otherwise the icon rail gets pushed off the right edge.
+        self._sidebar_paned.set_resize_start_child(False)
+        self._sidebar_paned.set_resize_end_child(True)
         self._sidebar_paned.set_shrink_end_child(False)
+        self._sidebar.set_size_request(_SIDEBAR_MIN_WIDTH, -1)
 
         self._search_bar = SearchBar(
             get_vault_paths=self._vault_tree.get_vault_paths,
@@ -350,8 +364,11 @@ class MainWindow(Adw.ApplicationWindow):
         self._search_paned.set_resize_end_child(False)
         self._search_paned.set_shrink_end_child(True)
 
-        # Clamp positions so end children never go below 20px.
-        self._sidebar_paned.connect("notify::position", self._clamp_sidebar_position)
+        # Side panels shrink before the content and never balloon past the
+        # width the user dragged them to (e.g. after de-maximizing).
+        self._sidebar_sizer = PanedSizer(self._sidebar_paned, side="end")
+        self._tree_sizer = PanedSizer(self._main_paned, side="start")
+        # Clamp the search bar so it never goes below 20px.
         self._search_paned.connect("notify::position", self._clamp_search_position)
 
         self._search_paned.set_vexpand(True)
@@ -1773,19 +1790,6 @@ class MainWindow(Adw.ApplicationWindow):
     def _on_search_close_requested(self, _search_bar) -> None:
         self._search_bar.set_visible(False)
         self._search_toggle.set_active(False)
-
-    def _clamp_sidebar_position(self, paned: Gtk.Paned, _pspec) -> None:
-        if self._paned_clamping:
-            return
-        width = paned.get_allocated_width()
-        if width <= 0:
-            return
-        pos = paned.get_position()
-        max_pos = width - 20
-        if pos > max_pos:
-            self._paned_clamping = True
-            paned.set_position(max_pos)
-            self._paned_clamping = False
 
     def _clamp_search_position(self, paned: Gtk.Paned, _pspec) -> None:
         if self._paned_clamping:

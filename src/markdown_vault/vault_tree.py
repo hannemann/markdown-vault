@@ -348,6 +348,9 @@ class VaultTree(Gtk.Box):
             name = name[:-3]
         label = Gtk.Label(xalign=0, label=name)
         label.set_ellipsize(Pango.EllipsizeMode.END)
+        # Show the full name on hover, but only when it is actually truncated.
+        label.set_has_tooltip(True)
+        label.connect("query-tooltip", self._on_label_query_tooltip, name)
         label.set_hexpand(True)  # push a trailing kebab (future) to the right
         label.add_css_class("tree-label")
         label.add_css_class("tree-folder" if node.is_dir else "tree-file")
@@ -364,6 +367,14 @@ class VaultTree(Gtk.Box):
         self._apply_root_style(node, label)
         self._apply_open_style(node, expander)
         self._apply_drop_style(node, expander)
+
+    def _on_label_query_tooltip(self, label, _x, _y, _keyboard, tooltip, full_name) -> bool:
+        """Only show the name tooltip when the label is actually ellipsized."""
+        layout = label.get_layout()
+        if layout is not None and layout.is_ellipsized():
+            tooltip.set_text(full_name)
+            return True
+        return False
 
     def _on_row_expanded_changed(self, row, _pspec, arrow) -> None:
         arrow.set_from_icon_name(
