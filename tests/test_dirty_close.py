@@ -486,6 +486,7 @@ class TestOnCloseRequestDirtyCheck(unittest.TestCase):
 
             _on_close_request = aw.MainWindow._on_close_request
             _on_close_request_confirmed = aw.MainWindow._on_close_request_confirmed
+            _cleanup_all_previews = aw.MainWindow._cleanup_all_previews
             _save_dirty_tabs = aw.MainWindow._save_dirty_tabs
             _show_save_dialog = aw.MainWindow._show_save_dialog
             _on_save_dialog_response = aw.MainWindow._on_save_dialog_response
@@ -543,6 +544,7 @@ class TestOnCloseRequestDirtyCheck(unittest.TestCase):
     def test_close_request_confirmed_destroys_surface(self):
         """_on_close_request_confirmed cleans up and destroys the surface."""
         win = self._make_fake_window()
+        win._tab_bar.get_all_paths.return_value = []
         win._on_close_request_confirmed()
         win._vault_monitor.cleanup.assert_called_once()
         win._session_mgr.save_session.assert_called_once()

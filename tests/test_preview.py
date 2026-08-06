@@ -705,6 +705,32 @@ class TestPreviewCleanup(unittest.TestCase):
         preview.cleanup()
         self.assertIsNone(preview._web_view)
 
+    def test_cleanup_tears_down_web_process_gracefully(self):
+        """cleanup() stops loading, unregisters the handler and terminates the
+        web process, so it ends via the API instead of being killed."""
+        preview = Preview()
+        mock_wv = unittest.mock.MagicMock()
+        preview._web_view = mock_wv
+        with unittest.mock.patch.object(preview, "set_child") as mock_set_child:
+            preview.cleanup()
+        mock_wv.stop_loading.assert_called_once()
+        mock_wv.get_user_content_manager.return_value \
+            .unregister_script_message_handler.assert_called_once_with("checkboxHandler")
+        mock_set_child.assert_called_once_with(None)
+        mock_wv.terminate_web_process.assert_called_once()
+        self.assertIsNone(preview._web_view)
+
+    def test_cleanup_survives_teardown_errors(self):
+        """A failure in any teardown step must not prevent releasing the view."""
+        preview = Preview()
+        mock_wv = unittest.mock.MagicMock()
+        mock_wv.stop_loading.side_effect = RuntimeError("boom")
+        mock_wv.terminate_web_process.side_effect = RuntimeError("boom")
+        preview._web_view = mock_wv
+        with unittest.mock.patch.object(preview, "set_child"):
+            preview.cleanup()  # must not raise
+        self.assertIsNone(preview._web_view)
+
     def test_cleanup_without_web_view(self):
         preview = Preview()
         preview._web_view = None

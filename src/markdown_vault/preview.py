@@ -996,15 +996,37 @@ class Preview(Gtk.ScrolledWindow):
     def cleanup(self) -> None:
         """Detach and release the WebView to free WebKitGTK child processes.
 
-        Uses the container API (``set_child(None)``) instead of calling
-        ``unparent()`` directly on the WebView: calling ``unparent()`` on
-        the child leaves a stale child pointer in the ScrolledWindow's
-        internal Viewport, which triggers ``gtk_widget_unparent``
-        assertions when the Preview widget is later finalized.
+        Tears the WebView down gracefully so its web process ends via the API
+        rather than being killed when the window surface is destroyed — which
+        the OS otherwise reports as a WebKitGTK crash. Steps:
+
+        1. ``stop_loading()`` — cancel any in-flight load/JS.
+        2. unregister the ``checkboxHandler`` script-message handler.
+        3. detach via the container API (``set_child(None)``) — not
+           ``unparent()`` on the child, which leaves a stale child pointer in
+           the ScrolledWindow's internal Viewport and triggers
+           ``gtk_widget_unparent`` assertions on finalization.
+        4. ``terminate_web_process()`` — end the web process deterministically.
         """
-        if self._web_view:
-            self.set_child(None)
-            self._web_view = None
+        wv = self._web_view
+        if wv is None:
+            return
+        try:
+            wv.stop_loading()
+        except Exception:
+            logger.debug("stop_loading failed during cleanup", exc_info=True)
+        try:
+            wv.get_user_content_manager().unregister_script_message_handler(
+                "checkboxHandler"
+            )
+        except Exception:
+            logger.debug("unregister handler failed during cleanup", exc_info=True)
+        self.set_child(None)
+        try:
+            wv.terminate_web_process()
+        except Exception:
+            logger.debug("terminate_web_process failed during cleanup", exc_info=True)
+        self._web_view = None
 
     # ------------------------------------------------------------------
     # Debug

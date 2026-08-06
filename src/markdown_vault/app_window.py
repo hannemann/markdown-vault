@@ -1872,6 +1872,7 @@ class MainWindow(Adw.ApplicationWindow):
         if not dirty:
             self._vault_monitor.cleanup()
             self._session_mgr.save_session(self._active_vault, self._content_stack)
+            self._cleanup_all_previews()
             return False  # No unsaved changes → allow close.
 
         # Show the async dialog; hold the close until the user responds.
@@ -1884,7 +1885,23 @@ class MainWindow(Adw.ApplicationWindow):
         """Called after the user chose Discard or Save (no failures)."""
         self._vault_monitor.cleanup()
         self._session_mgr.save_session(self._active_vault, self._content_stack)
+        self._cleanup_all_previews()
         self.get_surface().destroy()
+
+    def _cleanup_all_previews(self) -> None:
+        """Gracefully tear down every tab's WebView before the window closes.
+
+        The per-tab close path already does this; the window-close path did
+        not, leaving live WebViews to be killed with the surface (reported by
+        the OS as a WebKitGTK crash).
+        """
+        for path in self._tab_bar.get_all_paths():
+            tab = self._tab_bar.get_tab(path)
+            if tab and tab.preview:
+                try:
+                    tab.preview.cleanup()
+                except Exception:
+                    logger.debug("preview cleanup failed for %s", path, exc_info=True)
 
     # ── Autosave ───────────────────────────────────────────────────
 
