@@ -78,6 +78,29 @@ class TestFilenameProvider(unittest.TestCase):
         prov = qo.FilenameProvider(self._cands([f"n{i}" for i in range(50)]))
         self.assertEqual(len(prov.search("n", limit=5)), 5)
 
+    def test_matches_alias(self):
+        c = qo.Candidate(path="/v/2026-adr-1.md", name="2026-adr-1", folder="/v",
+                         mtime=0.0, aliases=["Architecture Decision"], rel="2026-adr-1.md")
+        res = qo.FilenameProvider([c]).search("architecture")
+        self.assertEqual(len(res), 1)
+        self.assertEqual(res[0].matched_text, "Architecture Decision")
+
+    def test_name_match_has_no_matched_text(self):
+        c = qo.Candidate(path="/v/meeting.md", name="meeting", folder="/v",
+                         mtime=0.0, aliases=["MoM"], rel="meeting.md")
+        res = qo.FilenameProvider([c]).search("meet")
+        self.assertIsNone(res[0].matched_text)
+
+    def test_path_match_gated_on_slash(self):
+        c = qo.Candidate(path="/v/sub/note.md", name="note", folder="/v/sub",
+                         mtime=0.0, aliases=[], rel="sub/note.md")
+        # A plain fragment matching only the path (not the name) is ignored…
+        self.assertEqual(qo.FilenameProvider([c]).search("sub"), [])
+        # …but a query with a slash matches the relative path.
+        res = qo.FilenameProvider([c]).search("sub/note")
+        self.assertEqual(len(res), 1)
+        self.assertEqual(res[0].matched_text, "sub/note.md")
+
 
 class TestQuickOpenEngine(unittest.TestCase):
     def test_merges_and_dedupes_by_path(self):
@@ -113,6 +136,21 @@ class TestBuildCandidates(unittest.TestCase):
         (hidden / "gone.md").write_text("x", encoding="utf-8")
         cands = qo.build_candidates([str(self._tmp)])
         self.assertEqual([c.name for c in cands], ["note"])
+
+    def test_extracts_aliases_and_relpath(self):
+        (self._tmp / "sub").mkdir()
+        (self._tmp / "sub" / "n.md").write_text(
+            "---\naliases: [ADR, Foo Bar]\n---\nbody", encoding="utf-8")
+        c = qo.build_candidates([str(self._tmp)])[0]
+        self.assertEqual(c.aliases, ["ADR", "Foo Bar"])
+        self.assertEqual(c.rel, "sub/n.md")
+
+    def test_alias_singular_and_no_frontmatter(self):
+        (self._tmp / "a.md").write_text("---\nalias: Nick\n---\n", encoding="utf-8")
+        (self._tmp / "b.md").write_text("no frontmatter", encoding="utf-8")
+        by_name = {c.name: c for c in qo.build_candidates([str(self._tmp)])}
+        self.assertEqual(by_name["a"].aliases, ["Nick"])
+        self.assertEqual(by_name["b"].aliases, [])
 
 
 class _StubProvider:

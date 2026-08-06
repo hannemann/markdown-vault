@@ -111,13 +111,20 @@ class QuickOpenPalette(Adw.Dialog):
         text = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
         text.set_hexpand(True)
 
+        # When an alias (or path) matched, show it highlighted and keep the
+        # real file name in the subtitle so the target stays clear.
+        label_text = result.matched_text or result.name
+        subtitle = result.folder
+        if result.matched_text:
+            subtitle = f"{result.name}  ·  {result.folder}"
+
         name = Gtk.Label()
         name.set_xalign(0)
         name.set_ellipsize(3)  # PANGO_ELLIPSIZE_END
-        name.set_markup(_highlight_positions(result.name, result.positions))
+        name.set_markup(_highlight_positions(label_text, result.positions))
         text.append(name)
 
-        folder = Gtk.Label(label=result.folder)
+        folder = Gtk.Label(label=subtitle)
         folder.set_xalign(0)
         folder.add_css_class("dim-label")
         folder.add_css_class("mono")

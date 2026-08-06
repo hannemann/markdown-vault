@@ -8,12 +8,15 @@ added later (e.g. a semantic / vector provider) without touching the palette:
 
 Each provider returns scored :class:`QuickResult` objects for a query; the
 engine merges them per file (keeping the best score) and returns a ranked list.
-The current provider fuzzy-matches file names; a future ``SemanticProvider``
-would return the same shape from a vector search and slot straight in.
+The current provider fuzzy-matches file names, frontmatter aliases and — when
+the query contains a ``/`` — the vault-relative path; a future
+``SemanticProvider`` would return the same shape from a vector search and slot
+straight in.
 """
 
 import logging
 import os
+import re
 from dataclasses import dataclass, field
 
 logger = logging.getLogger(__name__)
@@ -30,6 +33,8 @@ class Candidate:
     name: str        # display name (file stem, no .md)
     folder: str      # containing directory (shown as subtitle)
     mtime: float
+    aliases: list = field(default_factory=list)  # frontmatter alias names
+    rel: str = ""                                 # path relative to its vault
 
 
 @dataclass
@@ -40,8 +45,9 @@ class QuickResult:
     name: str
     folder: str
     score: float
-    positions: list = field(default_factory=list)  # matched char indices in name
-    source: str = "name"                            # which provider produced it
+    positions: list = field(default_factory=list)  # matched char indices in matched text
+    matched_text: str | None = None  # the alias/path that matched, if not the name
+    source: str = "name"             # which provider produced it
 
 
 # Scoring weights.  A contiguous run and a big gap between matches are the two
@@ -98,8 +104,31 @@ def fuzzy_match(query: str, text: str):
     return (score, positions)
 
 
+def _best_match(query: str, candidate: "Candidate"):
+    """Best fuzzy match for *query* over a candidate's name, aliases and path.
+
+    Returns ``(score, positions, matched_text)`` or ``None``.  The name and
+    aliases are always tried; the relative path is only tried when the query
+    contains a ``/`` (so a plain query stays name/alias-only, not noisy).
+    """
+    best = None
+    for text in (candidate.name, *candidate.aliases):
+        hit = fuzzy_match(query, text)
+        if hit is not None and (best is None or hit[0] > best[0]):
+            best = (hit[0], hit[1], text)
+    if "/" in query and candidate.rel:
+        hit = fuzzy_match(query, candidate.rel)
+        if hit is not None and (best is None or hit[0] > best[0]):
+            best = (hit[0], hit[1], candidate.rel)
+    return best
+
+
 def build_candidates(vault_paths) -> list[Candidate]:
-    """Walk *vault_paths* and index every ``.md`` file as a :class:`Candidate`."""
+    """Walk *vault_paths* and index every ``.md`` file as a :class:`Candidate`.
+
+    Each file's frontmatter is read for ``aliases``/``alias`` so notes are also
+    findable under their alternative names.
+    """
     candidates: list[Candidate] = []
     for vault in vault_paths:
         if not os.path.isdir(vault):
@@ -116,8 +145,48 @@ def build_candidates(vault_paths) -> list[Candidate]:
                     mtime = 0.0
                 candidates.append(Candidate(
                     path=path, name=fname[:-3], folder=root, mtime=mtime,
+                    aliases=_read_aliases(path),
+                    rel=os.path.relpath(path, vault),
                 ))
     return candidates
+
+
+def _read_aliases(path: str) -> list[str]:
+    """Read ``aliases``/``alias`` from a note's leading YAML frontmatter."""
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace") as fh:
+            if fh.readline().strip() != "---":
+                return []
+            lines: list[str] = []
+            for line in fh:
+                if line.strip() == "---":
+                    break
+                lines.append(line)
+                if len(lines) > 200:  # runaway guard for a missing closing fence
+                    return []
+    except OSError:
+        return []
+
+    raw = None
+    try:
+        import yaml
+        data = yaml.safe_load("".join(lines))
+        if isinstance(data, dict):
+            raw = data.get("aliases", data.get("alias"))
+    except Exception:
+        raw = None
+    return _normalize_aliases(raw)
+
+
+def _normalize_aliases(raw) -> list[str]:
+    if raw is None:
+        return []
+    if isinstance(raw, (list, tuple)):
+        return [str(a).strip() for a in raw if str(a).strip()]
+    if isinstance(raw, str):
+        parts = re.split(r"[,\n]", raw.strip().strip("[]"))
+        return [p.strip().strip("\"'") for p in parts if p.strip()]
+    return [str(raw).strip()]
 
 
 class FilenameProvider:
@@ -140,13 +209,15 @@ class FilenameProvider:
 
         scored: list[QuickResult] = []
         for c in self._candidates:
-            hit = fuzzy_match(query, c.name)
-            if hit is None:
+            best = _best_match(query, c)
+            if best is None:
                 continue
-            score, positions = hit
+            score, positions, text = best
             scored.append(QuickResult(
                 path=c.path, name=c.name, folder=c.folder,
-                score=score, positions=positions, source=self.source,
+                score=score, positions=positions,
+                matched_text=None if text == c.name else text,
+                source=self.source,
             ))
         scored.sort(key=lambda r: (-r.score, r.name.lower(), r.path))
         return scored[:limit]
