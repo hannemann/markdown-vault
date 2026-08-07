@@ -146,7 +146,12 @@ def chunk_markdown(text: str, path: str = "") -> list[Chunk]:
                 acc_start = bstart
                 acc.append(btext)
     flush()
-    return [c for c in chunks if len(c.text.strip()) >= _MIN_CHUNK_CHARS]
+    # Drop chunks with no alphanumeric content — a lone horizontal rule (``---``,
+    # ``***``), a code-fence marker or similar carries no meaning but would still
+    # be embedded and surface as an irrelevant hit.
+    return [c for c in chunks
+            if len(c.text.strip()) >= _MIN_CHUNK_CHARS
+            and any(ch.isalnum() for ch in c.text)]
 
 
 # ── Embedders ───────────────────────────────────────────────────────

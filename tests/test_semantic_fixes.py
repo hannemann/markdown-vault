@@ -25,6 +25,20 @@ class TestStripOperators(unittest.TestCase):
         self.assertEqual(SearchBar._strip_operators('-a tag:b vault:c'), "")
 
 
+class TestHasOperators(unittest.TestCase):
+    """Structured queries must suppress the (operator-ignoring) semantic merge."""
+
+    def test_field_filter_and_exclusion_detected(self):
+        self.assertTrue(SearchBar._has_operators('tag:foo -bar "neptun"'))
+        self.assertTrue(SearchBar._has_operators("path:x/y planets"))
+        self.assertTrue(SearchBar._has_operators("planets -pluto"))
+
+    def test_plain_prose_and_quotes_are_not_operators(self):
+        self.assertFalse(SearchBar._has_operators("den planeten neptun"))
+        self.assertFalse(SearchBar._has_operators('"neptun"'))
+        self.assertFalse(SearchBar._has_operators("foo-bar"))  # hyphen mid-word
+
+
 class TestUnderVault(unittest.TestCase):
     """R22.7 — scope filter must be separator-aware, not a raw prefix."""
 

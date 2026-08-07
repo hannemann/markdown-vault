@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 # Bump to invalidate all caches when the chunking / embedding / cache format
 # changes.
-_INDEX_FORMAT_VERSION = "5"
+_INDEX_FORMAT_VERSION = "6"
 
 
 def _hash(text: str) -> str:
@@ -238,6 +238,15 @@ class SemanticIndexManager:
 
     # ── Query ──────────────────────────────────────────────────────
 
+    @staticmethod
+    def _snippet(chunk):
+        """First content-bearing line of the chunk + its 1-based line number, so
+        a chunk that opens with a rule/markup line doesn't display as ``---``."""
+        lines = chunk.text.split("\n")
+        offset = next(
+            (i for i, ln in enumerate(lines) if any(c.isalnum() for c in ln)), 0)
+        return lines[offset], chunk.line + offset
+
     def query_files(self, query: str, top_k: int = 20):
         """Return semantic FileResults (best chunk per file), marked semantic."""
         from .search_backend import FileResult, Match
@@ -247,14 +256,14 @@ class SemanticIndexManager:
             if chunk.path in seen:
                 continue
             seen.add(chunk.path)
-            snippet = chunk.text.split("\n", 1)[0]
+            snippet, line = self._snippet(chunk)
             try:
                 mtime = os.path.getmtime(chunk.path)
             except OSError:
                 mtime = 0.0
             results.append(FileResult(
                 path=chunk.path, score=score,
-                matches=[Match(chunk.path, chunk.line, snippet, [])],
+                matches=[Match(chunk.path, line, snippet, [])],
                 total_matches=1, name_hit=False, title_hit=False,
                 heading_hits=0, mtime=mtime, semantic=True,
             ))

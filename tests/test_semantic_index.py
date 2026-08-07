@@ -92,6 +92,13 @@ class TestSemanticIndexManager(unittest.TestCase):
         m.build()
         self.assertEqual(events, [True, False])  # one enter, one exit
 
+    def test_snippet_skips_leading_markup_lines(self):
+        from markdown_vault.semantic_search import Chunk
+        chunk = Chunk("/n.md", 47, "---\nreal content on line 48.")
+        snippet, line = SemanticIndexManager._snippet(chunk)
+        self.assertEqual(snippet, "real content on line 48.")
+        self.assertEqual(line, 48)  # line number advances past the rule
+
     def test_invalidate_cache_forces_reembed(self):
         e1 = _StubEmbedder()
         m = self._manager(e1)

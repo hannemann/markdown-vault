@@ -267,8 +267,15 @@ class SearchBar(Gtk.Box):
         results = self._merge_semantic(results, query, vault_paths, options)
         GLib.idle_add(self._on_complete, generation, results)
 
-    # Field filters and the exclusion operator from da29xx — noise to an embedder.
+    # Field filters (tag:/path:/vault:) and the exclusion operator (-term).
     _OPERATOR_TOKEN = re.compile(r'(?:^|\s)(?:-\S+|(?:tag|path|vault):\S+)')
+
+    @classmethod
+    def _has_operators(cls, query: str) -> bool:
+        """Whether the query uses a structured filter/exclusion.  Such a query is
+        precise on purpose, so fuzzy semantic hits (which ignore the operators)
+        must not dilute it.  Quoted phrases are not operators."""
+        return bool(cls._OPERATOR_TOKEN.search(query))
 
     @classmethod
     def _strip_operators(cls, query: str) -> str:
@@ -291,10 +298,13 @@ class SearchBar(Gtk.Box):
 
         Runs on the worker thread, so the (possibly slow) query embedding never
         blocks the UI.  Keyword matches keep priority; semantic finds surface
-        files the keyword search missed.
+        files the keyword search missed.  Semantic is skipped for regex mode and
+        for structured queries (filters/exclusions), which are precise on purpose.
         """
         if not self._semantic_query or options.regex:
             return keyword_results  # a raw regex pattern is meaningless to embed
+        if self._has_operators(query):
+            return keyword_results  # keep a filtered query filtered
         text = self._strip_operators(query)
         if not text:
             return keyword_results

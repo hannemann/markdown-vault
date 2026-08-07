@@ -64,6 +64,12 @@ class TestChunkMarkdown(unittest.TestCase):
     def test_empty_text(self):
         self.assertEqual(ss.chunk_markdown(""), [])
 
+    def test_markup_only_block_is_dropped(self):
+        # A lone horizontal rule carries no meaning and must not become a chunk.
+        text = "----------------------------------\n\nreal content here.\n"
+        chunks = ss.chunk_markdown(text, "/n.md")
+        self.assertEqual([c.text for c in chunks], ["real content here."])
+
 
 class TestOllamaPrefixes(unittest.TestCase):
     def test_nomic_gets_task_prefixes(self):
