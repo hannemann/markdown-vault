@@ -146,8 +146,13 @@ class SemanticIndexManager:
         self._enqueue(path, ("remove",))
 
     def rename_file(self, old_path: str, new_path: str) -> None:
+        # Two independent coalescible ops (R23.1): move the destination (which
+        # reuses the cached vectors while the source is still present) AND drop
+        # the source explicitly.  If a later save clobbers the move to
+        # ("update",), the separate remove still deletes the old path instead of
+        # leaving it in the index as a phantom hit.
         with self._pending_lock:
-            self._pending.pop(old_path, None)   # the source path is going away
+            self._pending[old_path] = ("remove",)
             self._pending[new_path] = ("move", old_path)
         self._ensure_worker()
         self._wake.set()
@@ -185,7 +190,7 @@ class SemanticIndexManager:
         self._busy_enter()
         try:
             changed = False
-            while True:
+            while not self._shutdown:  # a superseded/disabled manager bails out
                 with self._pending_lock:
                     if not self._pending:
                         break
@@ -195,7 +200,7 @@ class SemanticIndexManager:
                 except Exception:
                     logger.warning("semantic index: op %s on %s failed",
                                    op[0], os.path.basename(path), exc_info=True)
-            if changed:
+            if changed and not self._shutdown:
                 self._save_cache()     # one write per drain, not per file
         finally:
             self._busy_exit()

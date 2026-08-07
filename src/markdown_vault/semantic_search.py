@@ -21,7 +21,6 @@ used, so the feature stays free when disabled.
 
 import json
 import logging
-import os
 import urllib.request
 from dataclasses import dataclass
 
@@ -47,9 +46,12 @@ class Chunk:
 # embedding model's context window.
 _MIN_CHUNK_CHARS = 3
 _TINY_MERGE = 15          # blocks this short glue onto the current chunk
-# Kept well under the smallest supported context: the recommended ONNX model
-# (multilingual MiniLM) tokenises at ~128 and is capped at 512, and ~1000 chars
-# of prose is ~300-400 tokens — so a chunk's tail is never silently truncated.
+# Chunk size vs the recommended MiniLM model (trained at 128 tokens, hard-capped
+# at the XLM-R 512-position limit — the OnnxEmbedder max_length). Measured on a
+# real 1254-chunk index: median 61 tokens, ~20% over 128, ~4% over 512 (dense
+# non-prose such as emoji grids, whose tail is truncated at embed time). An A/B
+# of 1000 vs 450 chars gave identical retrieval on that corpus (targets are short
+# paragraphs the split never touches), so 1000 stays — fewer, cheaper chunks.
 _MAX_CHARS = 1000         # split blocks larger than this
 _OVERLAP_CHARS = 200      # overlap between split windows
 

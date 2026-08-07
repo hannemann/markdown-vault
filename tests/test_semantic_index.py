@@ -112,23 +112,28 @@ class TestSemanticIndexManager(unittest.TestCase):
         self._manager(e2).build()
         self.assertGreaterEqual(e2.calls, 1)
 
+    def _park_pending(self, m, mapping):
+        """Populate the pending map directly — bypasses _enqueue so no async
+        worker starts and _drain_pending can be driven deterministically."""
+        with m._pending_lock:
+            m._pending.update(mapping)
+
     def test_on_busy_brackets_incremental_ops(self):
         events = []
         m = SemanticIndexManager(
             _StubEmbedder(), lambda: [str(self._vault)], self._state,
             "ollama:test", min_score=0.3, on_busy=events.append)
         m.build()
-        m.shutdown()  # drive the drain manually, no async worker
         events.clear()
         (self._vault / "a.md").write_text("alpha beta gamma delta", encoding="utf-8")
-        m._enqueue(str(self._vault / "a.md"), ("update",))
+        self._park_pending(m, {str(self._vault / "a.md"): ("update",)})
         m._drain_pending()
         self.assertEqual(events, [True, False])  # one enter/exit around the drain
 
     def test_events_coalesce_per_path(self):
         m = self._manager(_StubEmbedder())
         m.build()
-        m.shutdown()
+        m.shutdown()  # park the worker; only inspect the coalesced map
         p = str(self._vault / "a.md")
         m._enqueue(p, ("update",))
         m._enqueue(p, ("update",))
@@ -138,9 +143,8 @@ class TestSemanticIndexManager(unittest.TestCase):
     def test_event_before_ready_is_not_dropped(self):
         # R22.6: an update that arrives during the build window must survive it.
         m = self._manager(_StubEmbedder())
-        m.shutdown()  # no async worker; drive manually
         p = str(self._vault / "a.md")
-        m._enqueue(p, ("update",))
+        self._park_pending(m, {p: ("update",)})
         m._drain_pending()  # not ready → no-op, event kept
         with m._pending_lock:
             self.assertIn(p, m._pending)
@@ -153,15 +157,55 @@ class TestSemanticIndexManager(unittest.TestCase):
         # R22.4: many file events → one cache write, not one per file.
         m = self._manager(_StubEmbedder())
         m.build()
-        m.shutdown()
         saves = []
         m._save_cache = lambda: saves.append(1)
         (self._vault / "c.md").write_text("gamma gamma", encoding="utf-8")
         (self._vault / "d.md").write_text("delta delta", encoding="utf-8")
-        m._enqueue(str(self._vault / "c.md"), ("update",))
-        m._enqueue(str(self._vault / "d.md"), ("update",))
+        self._park_pending(m, {str(self._vault / "c.md"): ("update",),
+                               str(self._vault / "d.md"): ("update",)})
         m._drain_pending()
         self.assertEqual(len(saves), 1)
+
+    def test_shutdown_aborts_drain_without_saving(self):
+        # R23.2: a superseded/disabled manager must not embed its queue or write.
+        m = self._manager(_StubEmbedder())
+        m.build()
+        saves = []
+        m._save_cache = lambda: saves.append(1)
+        (self._vault / "c.md").write_text("gamma gamma", encoding="utf-8")
+        self._park_pending(m, {str(self._vault / "c.md"): ("update",)})
+        m.shutdown()
+        m._drain_pending()
+        self.assertEqual(saves, [])                       # no write after shutdown
+        self.assertIn(str(self._vault / "c.md"), m._pending)  # left unprocessed
+
+    def test_rename_enqueues_remove_and_move(self):
+        # R23.1: a rename leaves BOTH a remove(old) and a move(new) pending.
+        m = self._manager(_StubEmbedder())
+        m.build()
+        m.shutdown()  # park the worker; only inspect the pending map
+        old = str(self._vault / "a.md")
+        new = str(self._vault / "b.md")
+        m.rename_file(old, new)
+        with m._pending_lock:
+            self.assertEqual(m._pending.get(old), ("remove",))
+            self.assertEqual(m._pending.get(new), ("move", old))
+
+    def test_update_after_rename_does_not_orphan(self):
+        # R23.1: a save of the renamed file clobbers the move to ("update",); the
+        # separate remove must still drop the old path (no phantom hit).
+        m = self._manager(_StubEmbedder())
+        m.build()
+        (self._vault / "renamed.md").write_text("alpha alpha topic", encoding="utf-8")
+        (self._vault / "a.md").unlink()
+        self._park_pending(m, {  # the coalesced result of rename + save of dest
+            str(self._vault / "a.md"): ("remove",),
+            str(self._vault / "renamed.md"): ("update",),
+        })
+        m._drain_pending()
+        names = {Path(f).name for f in m._files}
+        self.assertNotIn("a.md", names)      # old path gone, no orphan
+        self.assertIn("renamed.md", names)   # new path indexed
 
     def test_query_before_ready_is_empty(self):
         m = self._manager(_StubEmbedder())
