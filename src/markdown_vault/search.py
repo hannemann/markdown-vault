@@ -48,10 +48,12 @@ class SearchBar(Gtk.Box):
     MAX_RESULTS = 50
     _DEBOUNCE_MS = 150
 
-    def __init__(self, get_vault_paths=None, get_active_vault=None) -> None:
+    def __init__(self, get_vault_paths=None, get_active_vault=None,
+                 semantic_query=None) -> None:
         super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=0)
         self._get_vault_paths = get_vault_paths
         self._get_active_vault = get_active_vault
+        self._semantic_query = semantic_query  # callable(query) -> list[FileResult]
         self.set_visible(False)
         self.set_vexpand(True)
 
@@ -260,7 +262,30 @@ class SearchBar(Gtk.Box):
         results = search_backend.search_grouped(
             query, vault_paths, options, max_files=self.MAX_RESULTS,
         )
+        results = self._merge_semantic(results, query, vault_paths)
         GLib.idle_add(self._on_complete, generation, results)
+
+    def _merge_semantic(self, keyword_results, query, vault_paths):
+        """Append semantic-only hits (scoped to *vault_paths*) after keyword ones.
+
+        Runs on the worker thread, so the (possibly slow) query embedding never
+        blocks the UI.  Keyword matches keep priority; semantic finds surface
+        files the keyword search missed.
+        """
+        if not self._semantic_query:
+            return keyword_results
+        try:
+            semantic = self._semantic_query(query)
+        except Exception:
+            logger.debug("semantic query failed", exc_info=True)
+            return keyword_results
+        have = {r.path for r in keyword_results}
+        extra = [
+            r for r in semantic
+            if r.path not in have
+            and any(r.path.startswith(v) for v in vault_paths)
+        ]
+        return keyword_results + extra[:self.MAX_RESULTS]
 
     def _on_complete(self, generation: int, file_results: list) -> bool:
         if generation != self._generation:
@@ -288,6 +313,12 @@ class SearchBar(Gtk.Box):
         row._mv_open = (fr.path, open_line)
         box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         box.add_css_class("search-file-header")
+
+        if getattr(fr, "semantic", False):
+            marker = Gtk.Label(label="≈")
+            marker.add_css_class("dim-label")
+            marker.set_tooltip_text("Semantic match")
+            box.append(marker)
 
         name = Gtk.Label(label=Path(fr.path).name)
         name.add_css_class("search-file-name")

@@ -125,6 +125,8 @@ class MainWindow(Adw.ApplicationWindow):
 
         # Guard against re-entrant position clamping.
         self._paned_clamping: bool = False
+        # Semantic (vector) search index — created only when enabled.
+        self._semantic_index = None
         # Zen mode: hide chrome and restore the previous visibility on exit.
         # Level "panels" hides the side/bottom panels; "total" also hides the
         # header and tab bar. None means not in zen.
@@ -355,6 +357,9 @@ class MainWindow(Adw.ApplicationWindow):
         self._search_bar = SearchBar(
             get_vault_paths=self._vault_tree.get_vault_paths,
             get_active_vault=lambda: self._active_vault,
+            semantic_query=lambda q: (
+                self._semantic_index.query_files(q) if self._semantic_index else []
+            ),
         )
         self._search_bar.connect("file-selected", self._on_search_result_selected)
 
@@ -441,6 +446,7 @@ class MainWindow(Adw.ApplicationWindow):
         )
         self._autosave.start()
         self._setup_complete = True
+        self._start_semantic_search()
 
         # Responsive header: hide buttons when window is narrow.
         self.connect("notify::default-width", self._on_window_resize)
@@ -1226,6 +1232,33 @@ class MainWindow(Adw.ApplicationWindow):
         tab.editor.scroll_to_line(line, yalign=0.0)
         text = tab.editor.get_text()
         tab.preview.scroll_to_line(line, text)
+
+    def _start_semantic_search(self) -> None:
+        """Build the semantic index in the background when enabled (opt-in).
+
+        Kept fully lazy: nothing here imports numpy/fastembed or contacts Ollama
+        unless the feature is on.  A failure (e.g. Ollama unreachable) degrades
+        silently to keyword-only search.
+        """
+        if not self._settings.get("semantic_search_enabled"):
+            return
+        try:
+            from .semantic_search import OllamaEmbedder
+            from .semantic_index import SemanticIndexManager
+            model = self._settings.get("semantic_ollama_model", "nomic-embed-text")
+            url = self._settings.get("semantic_ollama_url", "http://localhost:11434")
+            embedder = OllamaEmbedder(model, url)
+            self._semantic_index = SemanticIndexManager(
+                embedder, self._vault_tree.get_vault_paths, config.STATE_DIR,
+                f"ollama:{model}",
+                min_score=float(self._settings.get("semantic_min_score", 0.35)),
+            )
+            self._semantic_index.start(
+                on_ready=lambda: logger.info("semantic index ready")
+            )
+            logger.info("semantic search: building index (model=%s)", model)
+        except Exception:
+            logger.warning("failed to start semantic search", exc_info=True)
 
     def _make_quick_open_engine(self):
         """Build a fresh quick-open engine over the current vaults.

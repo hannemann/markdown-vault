@@ -269,6 +269,51 @@ class PreferencesDialog(Adw.PreferencesDialog):
 
         self.add(web)
 
+        # ── Search page ────────────────────────────────────────────
+        search = Adw.PreferencesPage(title="Search", icon_name="edit-find-symbolic")
+        sem_group = Adw.PreferencesGroup(
+            title="Semantic search",
+            description=(
+                "Find notes by meaning via a local Ollama server. Off by "
+                "default; nothing is downloaded or contacted while disabled. "
+                "Run e.g. ‘ollama pull nomic-embed-text’ first. "
+                "Changes take effect after restart."
+            ),
+        )
+        search.add(sem_group)
+
+        self._sem_enabled_row = Adw.SwitchRow(title="Enable semantic search")
+        self._sem_enabled_row.set_active(
+            self._settings.get("semantic_search_enabled", False))
+        self._sem_enabled_row.connect(
+            "notify::active", self._on_toggle_setting, "semantic_search_enabled")
+        sem_group.add(self._sem_enabled_row)
+
+        self._sem_url_row = Adw.EntryRow(title="Ollama URL")
+        self._sem_url_row.set_text(
+            self._settings.get("semantic_ollama_url", "http://localhost:11434"))
+        self._sem_url_row.connect("changed", self._on_entry_setting, "semantic_ollama_url")
+        sem_group.add(self._sem_url_row)
+
+        self._sem_model_row = Adw.EntryRow(title="Embedding model")
+        self._sem_model_row.set_text(
+            self._settings.get("semantic_ollama_model", "nomic-embed-text"))
+        self._sem_model_row.connect("changed", self._on_entry_setting, "semantic_ollama_model")
+        sem_group.add(self._sem_model_row)
+
+        self._sem_score_row = Adw.SpinRow(
+            title="Minimum similarity",
+            subtitle="Higher = stricter (fewer, closer matches)",
+            adjustment=Gtk.Adjustment.new(
+                self._settings.get("semantic_min_score", 0.35), 0.0, 1.0, 0.05, 0.1, 0.0,
+            ),
+            digits=2,
+        )
+        self._sem_score_row.connect("notify::value", self._on_min_score_changed)
+        sem_group.add(self._sem_score_row)
+
+        self.add(search)
+
         # ── Keyboard page ──────────────────────────────────────────
         keyboard = Adw.PreferencesPage(title="Keyboard", icon_name="input-keyboard-symbolic")
 
@@ -377,6 +422,19 @@ class PreferencesDialog(Adw.PreferencesDialog):
         self.add(debug)
 
     # ── Handlers ────────────────────────────────────────────────────
+
+    def _on_toggle_setting(self, row, _pspec, key) -> None:
+        self._settings[key] = row.get_active()
+        self._persist()
+
+    def _on_entry_setting(self, row, key) -> None:
+        self._settings[key] = row.get_text().strip()
+        self._persist()
+
+    def _on_min_score_changed(self, _row, _pspec) -> None:
+        self._settings["semantic_min_score"] = round(
+            self._sem_score_row.get_adjustment().get_value(), 2)
+        self._persist()
 
     def _persist(self) -> None:
         try:
