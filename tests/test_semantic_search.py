@@ -126,6 +126,15 @@ class TestVectorIndex(unittest.TestCase):
     def test_empty_query_returns_nothing(self):
         self.assertEqual(self._index().query(""), [])
 
+    def test_embed_query_none_on_empty(self):
+        self.assertIsNone(self._index().embed_query(""))
+
+    def test_search_vector_uses_precomputed_query(self):
+        idx = self._index()
+        q = idx.embed_query("beta")
+        hits = idx.search_vector(q, top_k=3)
+        self.assertEqual(hits[0][0].path, "/b.md")
+
     def test_len_reflects_chunks(self):
         self.assertEqual(len(self._index()), 3)
 

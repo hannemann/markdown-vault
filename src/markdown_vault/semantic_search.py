@@ -313,12 +313,28 @@ class VectorIndex:
         norms = np.linalg.norm(vecs, axis=1, keepdims=True)
         self._vectors = vecs / np.clip(norms, 1e-9, None)
 
-    def query(self, text: str, top_k: int = 10) -> list[tuple[Chunk, float]]:
+    def embed_query(self, text: str):
+        """Embed + normalise a query string → a 1-D vector (or ``None``).
+
+        Split out from :meth:`query` so a caller can run the (possibly slow, e.g.
+        an Ollama HTTP roundtrip) embedding *without* holding a lock, then take
+        the lock only for the cheap matrix multiply in :meth:`search_vector`.
+        """
         import numpy as np
         if self._vectors is None or not text:
-            return []
+            return None
         q = np.asarray(self._embedder.embed([text], is_query=True)[0], dtype="float32")
-        q = q / max(float(np.linalg.norm(q)), 1e-9)
-        scores = self._vectors @ q
+        return q / max(float(np.linalg.norm(q)), 1e-9)
+
+    def search_vector(self, q, top_k: int = 10) -> list[tuple[Chunk, float]]:
+        """Top-K (chunk, score) for an already-embedded, normalised vector."""
+        import numpy as np
+        vecs, chunks = self._vectors, self._chunks  # snapshot the pair together
+        if vecs is None or q is None:
+            return []
+        scores = vecs @ q
         order = np.argsort(-scores)[:top_k]
-        return [(self._chunks[i], float(scores[i])) for i in order]
+        return [(chunks[i], float(scores[i])) for i in order]
+
+    def query(self, text: str, top_k: int = 10) -> list[tuple[Chunk, float]]:
+        return self.search_vector(self.embed_query(text), top_k)

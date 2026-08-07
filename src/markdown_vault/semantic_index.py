@@ -292,10 +292,18 @@ class SemanticIndexManager:
         return results
 
     def _top_hits(self, query, top_k):
+        if not query:
+            return []
+        # Embed OUTSIDE the lock — with Ollama this is an HTTP roundtrip, and
+        # holding the lock across it would block every incremental update and
+        # cache write.  The lock covers only the matrix multiply.
+        q = self._index.embed_query(query)
+        if q is None:
+            return []
         with self._lock:
-            if not self._ready or not query:
+            if not self._ready:
                 return []
-            hits = self._index.query(query, top_k=top_k * 3)
+            hits = self._index.search_vector(q, top_k=top_k * 3)
         return [(c, s) for c, s in hits if s >= self._min_score]
 
     # ── Cache & walk ───────────────────────────────────────────────
