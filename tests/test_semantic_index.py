@@ -88,6 +88,14 @@ class TestSemanticIndexManager(unittest.TestCase):
         m = self._manager(_StubEmbedder())
         self.assertEqual(m.query_files("alpha"), [])  # not built yet
 
+    def test_query_open_returns_quickresults(self):
+        m = self._manager(_StubEmbedder())
+        m.build()
+        res = m.query_open("beta", top_k=5)
+        self.assertTrue(res)
+        self.assertEqual(Path(res[0].path).name, "b.md")
+        self.assertEqual(res[0].source, "semantic")
+
     def test_min_score_filters(self):
         m = self._manager(_StubEmbedder())
         m.build()

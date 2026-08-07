@@ -363,7 +363,12 @@ class MainWindow(Adw.ApplicationWindow):
         )
         self._search_bar.connect("file-selected", self._on_search_result_selected)
 
-        self._quick_open = QuickOpenPalette(make_engine=self._make_quick_open_engine)
+        self._quick_open = QuickOpenPalette(
+            make_engine=self._make_quick_open_engine,
+            semantic_query=lambda q: (
+                self._semantic_index.query_open(q) if self._semantic_index else []
+            ),
+        )
         self._quick_open.connect("file-selected", self._on_search_result_selected)
         self._search_bar.connect("close-requested", self._on_search_close_requested)
 

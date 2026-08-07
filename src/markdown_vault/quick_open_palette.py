@@ -6,6 +6,7 @@ a fresh engine on open, renders results and handles keyboard navigation.
 """
 
 import logging
+import threading
 from pathlib import Path
 
 import gi
@@ -30,11 +31,15 @@ class QuickOpenPalette(Adw.Dialog):
     }
 
     MAX_RESULTS = 40
+    _SEMANTIC_MIN_CHARS = 2
 
-    def __init__(self, make_engine) -> None:
+    def __init__(self, make_engine, semantic_query=None) -> None:
         super().__init__()
         self._make_engine = make_engine
+        self._semantic_query = semantic_query  # callable(query) -> list, off-thread
         self._engine = None
+        self._sem_generation = 0        # invalidates in-flight semantic queries
+        self._shown_paths: set[str] = set()
         self.set_title("Quick Open")
         self.set_content_width(640)
         self.set_content_height(480)
@@ -86,17 +91,56 @@ class QuickOpenPalette(Adw.Dialog):
     def _refresh(self) -> None:
         query = self._entry.get_text().strip()
         self._clear()
+        self._sem_generation += 1  # discard any in-flight semantic query
         if self._engine is None:
             return
         results = self._engine.search(query, limit=self.MAX_RESULTS)
-        if not results:
+        self._shown_paths = {r.path for r in results}
+        if results:
+            for r in results:
+                self._results.append(self._build_row(r))
+            first = self._results.get_row_at_index(0)
+            if first is not None:
+                self._results.select_row(first)
+        else:
             self._results.append(self._message_row("No files"))
+        self._request_semantic(query)
+
+    def _request_semantic(self, query: str) -> None:
+        """Fetch semantic matches off the main thread (the embed may be slow)."""
+        if not self._semantic_query or len(query) < self._SEMANTIC_MIN_CHARS:
             return
-        for r in results:
-            self._results.append(self._build_row(r))
+        generation = self._sem_generation
+
+        def worker():
+            try:
+                results = self._semantic_query(query)
+            except Exception:
+                logger.debug("semantic quick-open query failed", exc_info=True)
+                results = []
+            GLib.idle_add(self._append_semantic, generation, results)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _append_semantic(self, generation: int, results) -> bool:
+        """Append semantic-only hits once they arrive (if still current)."""
+        if generation != self._sem_generation:
+            return False  # superseded by newer input
+        fresh = [r for r in results if r.path not in self._shown_paths]
+        if not fresh:
+            return False
+        # Drop the "No files" placeholder if that's all there is.
         first = self._results.get_row_at_index(0)
-        if first is not None:
-            self._results.select_row(first)
+        if first is not None and getattr(first, "_mv_open", None) is None:
+            self._results.remove(first)
+        for r in fresh:
+            self._shown_paths.add(r.path)
+            self._results.append(self._build_row(r))
+        if self._results.get_selected_row() is None:
+            row = self._first_row()
+            if row is not None:
+                self._results.select_row(row)
+        return False
 
     # ------------------------------------------------------------------
     # Rows
@@ -107,6 +151,12 @@ class QuickOpenPalette(Adw.Dialog):
         row._mv_open = (result.path, 1)
         box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         box.add_css_class("quick-open-result")
+
+        if getattr(result, "source", "") == "semantic":
+            marker = Gtk.Label(label="≈")
+            marker.add_css_class("dim-label")
+            marker.set_tooltip_text("Semantic match")
+            box.append(marker)
 
         text = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
         text.set_hexpand(True)

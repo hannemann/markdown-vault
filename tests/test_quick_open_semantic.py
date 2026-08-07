@@ -1,0 +1,64 @@
+"""Tests for async semantic append in the quick-open palette."""
+
+import unittest
+
+import gi
+
+gi.require_version("Gtk", "4.0")
+gi.require_version("Adw", "1")
+from gi.repository import Adw
+
+Adw.init()
+
+from markdown_vault.quick_open_palette import QuickOpenPalette
+from markdown_vault.quick_open import QuickResult
+
+
+def _sem(path):
+    return QuickResult(path=path, name="note", folder="/v", score=0.5, source="semantic")
+
+
+class TestSemanticAppend(unittest.TestCase):
+    def _palette(self):
+        return QuickOpenPalette(make_engine=lambda: None, semantic_query=lambda q: [])
+
+    def _row_count(self, p):
+        n = 0
+        child = p._results.get_first_child()
+        while child is not None:
+            n += 1
+            child = child.get_next_sibling()
+        return n
+
+    def test_appends_fresh_semantic_rows(self):
+        p = self._palette()
+        p._sem_generation = 5
+        p._shown_paths = set()
+        p._append_semantic(5, [_sem("/v/note.md")])
+        self.assertEqual(self._row_count(p), 1)
+        self.assertIn("/v/note.md", p._shown_paths)
+
+    def test_stale_generation_is_ignored(self):
+        p = self._palette()
+        p._sem_generation = 5
+        p._shown_paths = set()
+        p._append_semantic(4, [_sem("/v/note.md")])  # older generation
+        self.assertEqual(self._row_count(p), 0)
+
+    def test_already_shown_not_duplicated(self):
+        p = self._palette()
+        p._sem_generation = 5
+        p._shown_paths = {"/v/note.md"}  # already a fuzzy hit
+        p._append_semantic(5, [_sem("/v/note.md")])
+        self.assertEqual(self._row_count(p), 0)
+
+    def test_request_semantic_skips_short_queries(self):
+        calls = []
+        p = QuickOpenPalette(make_engine=lambda: None,
+                             semantic_query=lambda q: calls.append(q) or [])
+        p._request_semantic("a")  # below _SEMANTIC_MIN_CHARS
+        self.assertEqual(calls, [])
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -140,6 +140,34 @@ class SemanticIndexManager:
                 break
         return results
 
+    def query_open(self, query: str, top_k: int = 20):
+        """Return semantic hits as quick-open results (best chunk per file).
+
+        Meant to be called off the main thread — it embeds the query — so the
+        quick-open palette stays responsive.
+        """
+        from .quick_open import QuickResult
+        with self._lock:
+            if not self._ready or not query:
+                return []
+            hits = self._index.query(query, top_k=top_k * 3)
+        results = []
+        seen: set[str] = set()
+        for chunk, score in hits:
+            if score < self._min_score or chunk.path in seen:
+                continue
+            seen.add(chunk.path)
+            name = os.path.basename(chunk.path)
+            if name.endswith(".md"):
+                name = name[:-3]
+            results.append(QuickResult(
+                path=chunk.path, name=name, folder=os.path.dirname(chunk.path),
+                score=score, source="semantic",
+            ))
+            if len(results) >= top_k:
+                break
+        return results
+
     # ── Cache & walk ───────────────────────────────────────────────
 
     def _walk_files(self):
