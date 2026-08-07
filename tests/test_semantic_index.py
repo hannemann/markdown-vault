@@ -270,16 +270,44 @@ class TestSemanticIndexManager(unittest.TestCase):
         self.assertNotIn("a.md", names)
 
     def test_backend_error_aborts_without_per_chunk_retry(self):
-        # R25.1: a hung backend must not be retried once per chunk. Two batches
-        # of chunks, the first raises OSError → abort after that one call.
+        # R25.1/R26.1: a hung backend aborts the embed via BackendUnavailable —
+        # no per-chunk retry, and the caller decides what (not) to persist.
         from markdown_vault.semantic_search import Chunk
+        from markdown_vault.semantic_index import BackendUnavailable
         e = _HungEmbedder()
         m = self._manager(e)
         chunks = [Chunk("/a.md", i, f"text number {i}") for i in range(40)]
-        kept, arr = m._embed_all(chunks)
-        self.assertEqual(kept, [])       # nothing embedded
+        with self.assertRaises(BackendUnavailable):
+            m._embed_all(chunks)
         self.assertEqual(e.calls, 1)     # aborted after the first batch, no retries
-        self.assertEqual(arr.shape, (0, 0))
+
+    def test_failed_build_is_not_cached_as_success(self):
+        # R26.1: a build against a down backend must not persist an empty cache,
+        # so the next start (backend up) actually re-embeds.
+        m1 = self._manager(_HungEmbedder())
+        m1.build()
+        self.assertFalse(m1._json_path.exists())  # nothing persisted
+        self.assertEqual(m1._files, {})
+        m2 = self._manager(_StubEmbedder())       # fresh manager, same state dir
+        m2.build()
+        self.assertGreater(sum(len(f["chunks"]) for f in m2._files.values()), 0)
+        self.assertTrue(m2.query_files("alpha"))
+
+    def test_drain_defers_and_keeps_entry_on_backend_down(self):
+        # R26.1 incremental: a save while the backend is down must not empty the
+        # existing entry; the event is re-queued instead.
+        m = self._manager(_StubEmbedder())
+        m.build()
+        p = str(self._vault / "a.md")
+        old_hash = m._files[p]["hash"]
+        self.assertTrue(m._files[p]["chunks"])
+        m._embedder = _HungEmbedder()             # backend goes down
+        (self._vault / "a.md").write_text("changed alpha alpha", encoding="utf-8")
+        self._park_pending(m, {p: ("update",)})
+        m._drain_pending()
+        self.assertIn(p, m._pending)              # re-queued, not lost
+        self.assertTrue(m._files[p]["chunks"])    # old entry not emptied
+        self.assertEqual(m._files[p]["hash"], old_hash)  # untouched
 
     def test_failed_chunk_is_skipped_not_fatal(self):
         # A chunk whose embed 500s must be skipped; the build still completes.

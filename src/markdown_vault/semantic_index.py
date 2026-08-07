@@ -32,6 +32,15 @@ def _hash(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8", "replace")).hexdigest()
 
 
+class BackendUnavailable(Exception):
+    """The embedding backend could not be reached (network error / timeout).
+
+    Distinct from a data error (a bad chunk) so a build or reindex that fails
+    because the server is down is *not* recorded as a successful empty result —
+    which would cache the failure and leave the index empty forever (R26.1).
+    """
+
+
 class SemanticIndexManager:
     """Owns the vault's semantic index: background build, per-file cache, and
     incremental updates."""
@@ -108,6 +117,7 @@ class SemanticIndexManager:
         files = self._walk_files()
         new_files: dict[str, dict] = {}
         changed = 0
+        aborted = False
         for path in files:
             try:
                 text = Path(path).read_text(encoding="utf-8", errors="replace")
@@ -118,13 +128,24 @@ class SemanticIndexManager:
             if entry is not None and entry["hash"] == h:
                 new_files[path] = entry
                 continue
-            kept, vecs = self._embed_all(chunk_markdown(text, path))
+            try:
+                kept, vecs = self._embed_all(chunk_markdown(text, path))
+            except BackendUnavailable:
+                aborted = True         # stop; no point taking a timeout per file
+                break
             new_files[path] = {"hash": h, "chunks": kept, "vecs": vecs}
             changed += 1
         with self._lock:
-            self._files = new_files
+            self._files = new_files    # keep what we embedded / loaded, in memory
             self._rebuild_index_locked()
             self._ready = True
+        if aborted:
+            # Do NOT persist: writing these files with their current hash would
+            # cache the failure as success and skip them on every restart (R26.1).
+            # Leaving the on-disk cache untouched means the next start retries.
+            logger.warning("semantic index: backend unavailable during build; "
+                           "cache left untouched, will retry on next start")
+            return
         self._save_cache()
         self._wake.set()  # drain any events queued during the build (R22.6)
         logger.info("semantic index: %d files (%d re-embedded)",
@@ -197,6 +218,16 @@ class SemanticIndexManager:
                     path, op = self._pending.popitem()
                 try:
                     changed = self._apply_op(path, op) or changed
+                except BackendUnavailable:
+                    # Backend down: re-queue the path (the previous entry is left
+                    # untouched, never emptied) and stop draining.  No _wake, so
+                    # we don't tight-loop into the timeout; the next real event
+                    # (or a restart) retries it (R26.1).
+                    with self._pending_lock:
+                        self._pending.setdefault(path, op)
+                    logger.warning("semantic index: backend unavailable, "
+                                   "deferring incremental updates")
+                    break
                 except Exception:
                     logger.warning("semantic index: op %s on %s failed",
                                    op[0], os.path.basename(path), exc_info=True)
@@ -275,14 +306,12 @@ class SemanticIndexManager:
                 embs = self._embedder.embed([c.text for c in group], is_query=False)
                 kept.extend(group)
                 vecs.extend(embs)
-            except OSError:
+            except OSError as exc:
                 # Backend unreachable/hung (URLError/TimeoutError/HTTPError all
                 # subclass OSError): retrying per chunk would hit the same wall 32
-                # more times, so bail with what we have — the caller tolerates a
-                # partial/empty result (R25.1).
-                logger.warning("semantic index: embedding backend unavailable, "
-                               "aborting", exc_info=True)
-                break
+                # more times (R25.1).  Signal the caller distinctly so it does NOT
+                # record this file as a successful empty result (R26.1).
+                raise BackendUnavailable(str(exc)) from exc
             except Exception:
                 # A data problem (one bad/oversized chunk): retry per chunk so a
                 # single failure can't waste the whole batch.
