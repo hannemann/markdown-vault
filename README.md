@@ -95,6 +95,39 @@ sudo pacman -S \
   gobject-introspection
 ```
 
+### Semantic search (optional)
+
+Semantic (vector) search is **opt-in** (Preferences → Search) and off by
+default — the base app needs none of the packages below. It needs **numpy** for
+the vector math, plus **one** embedding backend:
+
+**Local ONNX backend (recommended)** — in-process, no server, nothing leaves
+your machine, fast per query. Needs `onnxruntime` and the HuggingFace
+`tokenizers`, plus a downloaded sentence-transformer ONNX model and its
+`tokenizer.json`. No pip on the host.
+
+- **openSUSE Tumbleweed:** `sudo zypper install python313-numpy python313-onnxruntime python313-tokenizers`
+- **Fedora:** `python3-numpy` (onnxruntime/tokenizers from your repos if
+  packaged; otherwise use the Ollama backend or the Flatpak, which bundles them)
+- **Ubuntu / Debian:** `python3-numpy` (onnxruntime/tokenizers likewise)
+- **Arch Linux:** `python-numpy python-onnxruntime` (`tokenizers` via AUR)
+
+The model + tokenizer are a one-time **file download** (not a package), placed
+in the app data dir and selected in Preferences — e.g. a multilingual MiniLM
+ONNX export (`model.onnx` + `tokenizer.json`, ~90 MB). Exact paths are shown in
+Preferences → Search once the ONNX backend is enabled.
+
+**Ollama backend (alternative)** — external server, no Python packages beyond
+`numpy`. Best if you already run Ollama (e.g. with a GPU). Run an Ollama server
+and pull an embedding model:
+
+```sh
+ollama pull nomic-embed-text
+```
+
+Point the app at it in Preferences → Search (URL + model). Fully local when the
+server runs on `localhost`; a remote server means embeddings are sent there.
+
 ### Ubuntu 24.04: AppArmor profile
 
 Ubuntu 24.04 restricts unprivileged user namespaces

@@ -26,6 +26,20 @@ modules:
       - type: file
         path: pygments-2.20.0-py3-none-any.whl
         sha256: 81a9e26dd42fd28a23a2d169d86d7ac03b46e2f8b59ed4698fb4785f946d0176
+      # ── Optional: semantic (vector) search ───────────────────────────
+      # Off by default; the base app needs none of this. To ship it, bundle the
+      # extra wheels here and add them to the pip3 command above:
+      #   - numpy                        (all backends: vector math)
+      #   - onnxruntime, tokenizers      (local ONNX backend only)
+      # Generate the "type: file" entries (wheel + sha256) with, e.g.:
+      #   flatpak-pip-generator numpy onnxruntime tokenizers
+      # The embedding MODEL (model.onnx + tokenizer.json) is NOT bundled — it is
+      # downloaded once at runtime into the app data dir. The Ollama backend
+      # needs only numpy here (no onnxruntime/tokenizers).
+      #
+      # NOTE (pre-existing): `markdown` (base, dependency of pymdown-extensions)
+      # is not bundled here because of --no-deps — worth verifying the preview
+      # still renders in the Flatpak sandbox.
 
   - name: markdown-vault
     buildsystem: meson
