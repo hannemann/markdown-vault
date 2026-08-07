@@ -32,6 +32,7 @@ py_sources = files(
   'search.py',
   'search_backend.py',
   'search_logic.py',
+  'semantic_search.py',
   'session.py',
   'session_manager.py',
   'sidebar.py',

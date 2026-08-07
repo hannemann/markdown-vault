@@ -1,0 +1,107 @@
+"""Tests for markdown_vault.semantic_search (Phase 5 core, backend-agnostic)."""
+
+import unittest
+
+from markdown_vault import semantic_search as ss
+
+
+class _StubEmbedder:
+    """Deterministic bag-of-marker-words embedder (no model needed).
+
+    Each of a few marker words maps to one dimension, so a chunk's vector
+    reflects which markers it contains — enough to test ranking.
+    """
+
+    _VOCAB = {"alpha": 0, "beta": 1, "gamma": 2, "delta": 3}
+
+    def embed(self, texts, is_query=False):
+        vecs = []
+        for t in texts:
+            v = [0.0, 0.0, 0.0, 0.0]
+            for w in t.lower().split():
+                if w in self._VOCAB:
+                    v[self._VOCAB[w]] += 1.0
+            vecs.append(v)
+        return vecs
+
+
+class TestChunkMarkdown(unittest.TestCase):
+    def test_tracks_1based_start_lines(self):
+        text = "# Title\n\nfirst para\nstill first\n\nsecond para\n"
+        chunks = ss.chunk_markdown(text, "/n.md")
+        self.assertEqual([(c.line, c.text.split("\n")[0]) for c in chunks],
+                         [(1, "# Title"), (3, "first para"), (6, "second para")])
+
+    def test_skips_frontmatter(self):
+        text = "---\ntitle: x\ntags: [a]\n---\n\nbody line\n"
+        chunks = ss.chunk_markdown(text, "/n.md")
+        self.assertEqual(len(chunks), 1)
+        self.assertEqual(chunks[0].text, "body line")
+        self.assertEqual(chunks[0].line, 6)
+
+    def test_drops_tiny_blocks(self):
+        text = "ok this is fine\n\n-\n\nanother real block\n"
+        texts = [c.text for c in ss.chunk_markdown(text)]
+        self.assertEqual(texts, ["ok this is fine", "another real block"])
+
+    def test_empty_text(self):
+        self.assertEqual(ss.chunk_markdown(""), [])
+
+
+class TestVectorIndex(unittest.TestCase):
+    def _index(self):
+        idx = ss.VectorIndex(_StubEmbedder())
+        idx.build([
+            ss.Chunk("/a.md", 1, "alpha alpha topic"),
+            ss.Chunk("/b.md", 1, "beta subject"),
+            ss.Chunk("/c.md", 1, "gamma delta notes"),
+        ])
+        return idx
+
+    def test_query_ranks_closest_first(self):
+        idx = self._index()
+        top = idx.query("beta", top_k=3)
+        self.assertEqual(top[0][0].path, "/b.md")
+        self.assertGreater(top[0][1], top[1][1])  # strictly best
+
+    def test_empty_index_returns_nothing(self):
+        idx = ss.VectorIndex(_StubEmbedder())
+        idx.build([])
+        self.assertEqual(idx.query("alpha"), [])
+        self.assertEqual(len(idx), 0)
+
+    def test_empty_query_returns_nothing(self):
+        self.assertEqual(self._index().query(""), [])
+
+    def test_len_reflects_chunks(self):
+        self.assertEqual(len(self._index()), 3)
+
+
+class TestSemanticProvider(unittest.TestCase):
+    def _provider(self, min_score=0.3):
+        idx = ss.VectorIndex(_StubEmbedder())
+        idx.build([
+            ss.Chunk("/vault/alpha-note.md", 1, "alpha alpha"),
+            ss.Chunk("/vault/alpha-note.md", 5, "alpha again"),  # same file
+            ss.Chunk("/vault/beta-note.md", 1, "beta"),
+        ])
+        return ss.SemanticProvider(idx, min_score=min_score)
+
+    def test_returns_quickresults_deduped_by_file(self):
+        res = self._provider().search("alpha", limit=10)
+        paths = [r.path for r in res]
+        self.assertEqual(paths.count("/vault/alpha-note.md"), 1)  # deduped
+        self.assertEqual(res[0].path, "/vault/alpha-note.md")
+        self.assertEqual(res[0].name, "alpha-note")  # .md stripped
+        self.assertEqual(res[0].source, "semantic")
+
+    def test_min_score_filters_unrelated(self):
+        # "gamma" has cosine 0 with every alpha/beta chunk → filtered out.
+        self.assertEqual(self._provider(min_score=0.3).search("gamma"), [])
+
+    def test_empty_query(self):
+        self.assertEqual(self._provider().search(""), [])
+
+
+if __name__ == "__main__":
+    unittest.main()
