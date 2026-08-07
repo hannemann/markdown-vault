@@ -118,10 +118,50 @@ class TestSemanticIndexManager(unittest.TestCase):
             _StubEmbedder(), lambda: [str(self._vault)], self._state,
             "ollama:test", min_score=0.3, on_busy=events.append)
         m.build()
+        m.shutdown()  # drive the drain manually, no async worker
         events.clear()
         (self._vault / "a.md").write_text("alpha beta gamma delta", encoding="utf-8")
-        m._reindex_file(str(self._vault / "a.md"))  # worker body, run inline
-        self.assertEqual(events, [True, False])  # no spurious mid-flicker
+        m._enqueue(str(self._vault / "a.md"), ("update",))
+        m._drain_pending()
+        self.assertEqual(events, [True, False])  # one enter/exit around the drain
+
+    def test_events_coalesce_per_path(self):
+        m = self._manager(_StubEmbedder())
+        m.build()
+        m.shutdown()
+        p = str(self._vault / "a.md")
+        m._enqueue(p, ("update",))
+        m._enqueue(p, ("update",))
+        with m._pending_lock:
+            self.assertEqual(len(m._pending), 1)  # only the latest op survives
+
+    def test_event_before_ready_is_not_dropped(self):
+        # R22.6: an update that arrives during the build window must survive it.
+        m = self._manager(_StubEmbedder())
+        m.shutdown()  # no async worker; drive manually
+        p = str(self._vault / "a.md")
+        m._enqueue(p, ("update",))
+        m._drain_pending()  # not ready → no-op, event kept
+        with m._pending_lock:
+            self.assertIn(p, m._pending)
+        m.build()           # now ready
+        m._drain_pending()  # drains the queued event
+        with m._pending_lock:
+            self.assertEqual(m._pending, {})
+
+    def test_drain_saves_once_for_a_batch(self):
+        # R22.4: many file events → one cache write, not one per file.
+        m = self._manager(_StubEmbedder())
+        m.build()
+        m.shutdown()
+        saves = []
+        m._save_cache = lambda: saves.append(1)
+        (self._vault / "c.md").write_text("gamma gamma", encoding="utf-8")
+        (self._vault / "d.md").write_text("delta delta", encoding="utf-8")
+        m._enqueue(str(self._vault / "c.md"), ("update",))
+        m._enqueue(str(self._vault / "d.md"), ("update",))
+        m._drain_pending()
+        self.assertEqual(len(saves), 1)
 
     def test_query_before_ready_is_empty(self):
         m = self._manager(_StubEmbedder())

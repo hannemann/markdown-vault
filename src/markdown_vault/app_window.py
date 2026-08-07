@@ -1304,6 +1304,8 @@ class MainWindow(Adw.ApplicationWindow):
                 )
                 if force:
                     manager.invalidate_cache()
+                if self._semantic_index is not None:
+                    self._semantic_index.shutdown()  # stop the superseded worker
                 self._semantic_index = manager
                 manager.build()
                 logger.info("semantic index ready")
@@ -2212,7 +2214,8 @@ class MainWindow(Adw.ApplicationWindow):
         if new_semantic != old_semantic:
             if new_semantic:
                 self._start_semantic_search()
-            else:
+            elif self._semantic_index is not None:
+                self._semantic_index.shutdown()
                 self._semantic_index = None
         self._apply_keybindings()
         self._tab_bar.set_tab_min_width(self._settings.get("tab_min_width", 100))

@@ -56,6 +56,14 @@ class SemanticIndexManager:
         self._files: dict[str, dict] = {}
         self._json_path = self._state_dir / "semantic-index.json"
         self._npy_path = self._state_dir / "semantic-index.npy"
+        # Incremental-update queue: one worker drains a coalesced (path -> op)
+        # map instead of a thread + full cache rewrite per file event.
+        self._pending: dict[str, tuple] = {}
+        self._pending_lock = threading.Lock()
+        self._wake = threading.Event()
+        self._worker = None
+        self._worker_lock = threading.Lock()
+        self._shutdown = False
 
     # ── Lifecycle ──────────────────────────────────────────────────
 
@@ -118,82 +126,135 @@ class SemanticIndexManager:
             self._rebuild_index_locked()
             self._ready = True
         self._save_cache()
+        self._wake.set()  # drain any events queued during the build (R22.6)
         logger.info("semantic index: %d files (%d re-embedded)",
                     len(new_files), changed)
 
-    # ── Incremental updates (call from file-event / save hooks) ────
+    # ── Incremental updates (single worker, coalesced, batched save) ──
+    #
+    # File events enqueue one coalesced op per path; a single worker applies
+    # them serially and saves the cache ONCE per drain — instead of a thread
+    # plus a full cache rewrite per event, which turned a git checkout of 300
+    # files into a 300-thread storm (R22.4).  Events that arrive during the
+    # initial build stay queued and drain when it finishes (R22.6).
 
     def update_file(self, path: str) -> None:
         if path.endswith(".md"):
-            threading.Thread(target=self._reindex_file, args=(path,),
-                             daemon=True).start()
+            self._enqueue(path, ("update",))
 
     def remove_file(self, path: str) -> None:
-        threading.Thread(target=self._drop_file, args=(path,), daemon=True).start()
+        self._enqueue(path, ("remove",))
 
     def rename_file(self, old_path: str, new_path: str) -> None:
-        threading.Thread(target=self._move_file, args=(old_path, new_path),
-                         daemon=True).start()
+        with self._pending_lock:
+            self._pending.pop(old_path, None)   # the source path is going away
+            self._pending[new_path] = ("move", old_path)
+        self._ensure_worker()
+        self._wake.set()
 
-    def _reindex_file(self, path: str) -> None:
+    def _enqueue(self, path: str, op: tuple) -> None:
+        with self._pending_lock:
+            self._pending[path] = op            # coalesce: latest op per path wins
+        self._ensure_worker()
+        self._wake.set()
+
+    def _ensure_worker(self) -> None:
+        with self._worker_lock:
+            if self._worker is None and not self._shutdown:
+                self._worker = threading.Thread(
+                    target=self._worker_loop, daemon=True)
+                self._worker.start()
+
+    def shutdown(self) -> None:
+        """Stop the worker — call when the manager is replaced or disabled."""
+        self._shutdown = True
+        self._wake.set()
+
+    def _worker_loop(self) -> None:
+        while not self._shutdown:
+            self._wake.wait()
+            if self._shutdown:
+                return
+            self._wake.clear()
+            if self.is_ready():        # keep events queued until the build lands
+                self._drain_pending()
+
+    def _drain_pending(self) -> None:
+        if not self.is_ready():
+            return                     # don't pop before the build has landed
         self._busy_enter()
         try:
-            if not self.is_ready():
-                return
-            try:
-                text = Path(path).read_text(encoding="utf-8", errors="replace")
-            except OSError:
-                self._drop_file(path)
-                return
-            h = _hash(text)
-            with self._lock:
-                cur = self._files.get(path)
-            if cur is not None and cur["hash"] == h:
-                return  # unchanged
-            kept, vecs = self._embed_all(chunk_markdown(text, path))
-            with self._lock:
-                self._files[path] = {"hash": h, "chunks": kept, "vecs": vecs}
+            changed = False
+            while True:
+                with self._pending_lock:
+                    if not self._pending:
+                        break
+                    path, op = self._pending.popitem()
+                try:
+                    changed = self._apply_op(path, op) or changed
+                except Exception:
+                    logger.warning("semantic index: op %s on %s failed",
+                                   op[0], os.path.basename(path), exc_info=True)
+            if changed:
+                self._save_cache()     # one write per drain, not per file
+        finally:
+            self._busy_exit()
+
+    def _apply_op(self, path: str, op: tuple) -> bool:
+        kind = op[0]
+        if kind == "update":
+            return self._reindex_file(path)
+        if kind == "remove":
+            return self._drop_file(path)
+        if kind == "move":
+            return self._move_file(op[1], path)
+        return False
+
+    # Core ops mutate the in-memory index (thread-safe via self._lock) and
+    # return whether anything changed; the drain loop owns saving + busy.
+
+    def _reindex_file(self, path: str) -> bool:
+        if not self.is_ready():
+            return False
+        try:
+            text = Path(path).read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            return self._drop_file(path)
+        h = _hash(text)
+        with self._lock:
+            cur = self._files.get(path)
+        if cur is not None and cur["hash"] == h:
+            return False  # unchanged
+        kept, vecs = self._embed_all(chunk_markdown(text, path))
+        with self._lock:
+            self._files[path] = {"hash": h, "chunks": kept, "vecs": vecs}
+            self._rebuild_index_locked()
+        logger.info("semantic index: reindexed %s (%d chunks)",
+                    os.path.basename(path), len(kept))
+        return True
+
+    def _drop_file(self, path: str) -> bool:
+        with self._lock:
+            if path not in self._files:
+                return False
+            del self._files[path]
+            self._rebuild_index_locked()
+        logger.info("semantic index: dropped %s", os.path.basename(path))
+        return True
+
+    def _move_file(self, old_path: str, new_path: str) -> bool:
+        with self._lock:
+            entry = self._files.pop(old_path, None)
+            if entry is not None:
+                for chunk in entry["chunks"]:
+                    chunk.path = new_path
+                self._files[new_path] = entry
                 self._rebuild_index_locked()
-            self._save_cache()
-            logger.info("semantic index: reindexed %s (%d chunks)",
-                        os.path.basename(path), len(kept))
-        finally:
-            self._busy_exit()
-
-    def _drop_file(self, path: str) -> None:
-        self._busy_enter()
-        try:
-            with self._lock:
-                if path not in self._files:
-                    return
-                del self._files[path]
-                self._rebuild_index_locked()
-            self._save_cache()
-            logger.info("semantic index: dropped %s", os.path.basename(path))
-        finally:
-            self._busy_exit()
-
-    def _move_file(self, old_path: str, new_path: str) -> None:
-        self._busy_enter()
-        try:
-            with self._lock:
-                entry = self._files.pop(old_path, None)
-                if entry is None:
-                    found = False
-                else:
-                    for chunk in entry["chunks"]:
-                        chunk.path = new_path
-                    self._files[new_path] = entry
-                    self._rebuild_index_locked()
-                    found = True
-            if not found:
-                self._reindex_file(new_path)  # wasn't indexed → embed fresh
-                return
-            self._save_cache()
-            logger.info("semantic index: renamed %s -> %s",
-                        os.path.basename(old_path), os.path.basename(new_path))
-        finally:
-            self._busy_exit()
+        if entry is None:
+            return self._reindex_file(new_path)  # wasn't indexed → embed fresh
+        logger.info("semantic index: renamed %s -> %s",
+                    os.path.basename(old_path), os.path.basename(new_path))
+        return True
 
     # ── Embedding & index assembly ─────────────────────────────────
 
