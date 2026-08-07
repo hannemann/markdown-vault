@@ -296,6 +296,12 @@ _WEBKIT_ENV_KEYS = {
 }
 
 
+# Last settings dict logged by load_settings(), so we dump the full dict only
+# when it changes — startup calls load_settings() ~7 times and logging the whole
+# config each time is pure noise.
+_last_logged_settings = None
+
+
 def load_settings() -> dict:
     """Load app settings from vaults.yaml, with safe defaults."""
     try:
@@ -309,8 +315,11 @@ def load_settings() -> dict:
         return dict(_DEFAULT_SETTINGS)
     settings = dict(_DEFAULT_SETTINGS)
     settings.update(data.get("settings") or {})
-    logger.debug("Loaded settings: %s", {k: v for k, v in settings.items()
-                                          if k != "loglevel"})
+    global _last_logged_settings
+    loggable = {k: v for k, v in settings.items() if k != "loglevel"}
+    if loggable != _last_logged_settings:
+        logger.debug("Loaded settings: %s", loggable)
+        _last_logged_settings = loggable
     return settings
 
 
