@@ -2199,11 +2199,21 @@ class MainWindow(Adw.ApplicationWindow):
         # settings-changed fires on EVERY preference row change; only reload
         # previews when the remote-image CSP actually changed (R21.8).
         old_remote_images = self._settings.get("preview_allow_remote_images", False)
+        old_semantic = self._settings.get("semantic_search_enabled", False)
         self._settings = config.load_settings()
         remote_images_changed = (
             self._settings.get("preview_allow_remote_images", False)
             != old_remote_images
         )
+        # Toggling semantic search takes effect live: dropping the manager stops
+        # new ≈ results and reindexing (in-flight daemon threads just finish);
+        # turning it back on rebuilds the index.
+        new_semantic = self._settings.get("semantic_search_enabled", False)
+        if new_semantic != old_semantic:
+            if new_semantic:
+                self._start_semantic_search()
+            else:
+                self._semantic_index = None
         self._apply_keybindings()
         self._tab_bar.set_tab_min_width(self._settings.get("tab_min_width", 100))
         # Apply to all open editors.

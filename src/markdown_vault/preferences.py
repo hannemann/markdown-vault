@@ -99,6 +99,10 @@ class PreferencesDialog(Adw.PreferencesDialog):
         self._settings = config.load_settings()
         self._glib_loglevel_callback = glib_loglevel_callback
         self._on_reindex = on_reindex
+        # Debounced disk writes for text entries (R22.11): typing a URL by hand
+        # must not rewrite vaults.yaml on every keystroke.
+        self._persist_id = None
+        self.connect("closed", self._flush_persist)
 
         # ── General page ────────────────────────────────────────────
         general = Adw.PreferencesPage(title="General", icon_name="preferences-other-symbolic")
@@ -601,7 +605,7 @@ class PreferencesDialog(Adw.PreferencesDialog):
 
     def _on_entry_setting(self, row, key) -> None:
         self._settings[key] = row.get_text().strip()
-        self._persist()
+        self._persist_debounced()
 
     def _on_sem_backend_changed(self, row, _pspec) -> None:
         self._settings["semantic_backend"] = self._sem_backends[row.get_selected()]
@@ -667,7 +671,7 @@ class PreferencesDialog(Adw.PreferencesDialog):
 
     def _on_onnx_path_changed(self, row, key) -> None:
         self._settings[key] = row.get_text().strip()
-        self._persist()
+        self._persist_debounced()
         self._refresh_onnx_status()  # download target + presence follow the path
 
     def _refresh_onnx_status(self) -> None:
@@ -830,6 +834,27 @@ class PreferencesDialog(Adw.PreferencesDialog):
         self._settings["semantic_min_score"] = round(
             self._sem_score_row.get_adjustment().get_value(), 2)
         self._persist()
+
+    _PERSIST_DEBOUNCE_MS = 600
+
+    def _persist_debounced(self) -> None:
+        """Coalesce rapid text edits into one disk write."""
+        if self._persist_id is not None:
+            GLib.source_remove(self._persist_id)
+        self._persist_id = GLib.timeout_add(
+            self._PERSIST_DEBOUNCE_MS, self._persist_now)
+
+    def _persist_now(self) -> bool:
+        self._persist_id = None
+        self._persist()
+        return False
+
+    def _flush_persist(self, *_args) -> None:
+        """Write any pending debounced change immediately (on dialog close)."""
+        if self._persist_id is not None:
+            GLib.source_remove(self._persist_id)
+            self._persist_id = None
+            self._persist()
 
     def _persist(self) -> None:
         try:
