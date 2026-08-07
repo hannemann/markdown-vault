@@ -21,8 +21,8 @@ from .semantic_search import Chunk, VectorIndex, chunk_markdown
 
 logger = logging.getLogger(__name__)
 
-# Bump to invalidate all caches when the chunking / index format changes.
-_INDEX_FORMAT_VERSION = "2"
+# Bump to invalidate all caches when the chunking / embedding format changes.
+_INDEX_FORMAT_VERSION = "3"
 
 
 class SemanticIndexManager:

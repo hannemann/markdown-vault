@@ -142,6 +142,16 @@ class OllamaEmbedder:
         self.url = url.rstrip("/")
         self.timeout = timeout
         self.batch = batch
+        # nomic-embed-text is trained with task-instruction prefixes; using them
+        # noticeably improves retrieval.  Other models don't use these, so only
+        # apply for nomic.
+        self._nomic = "nomic" in model.lower()
+
+    def _prep(self, texts, is_query: bool):
+        if not self._nomic:
+            return list(texts)
+        tag = "search_query: " if is_query else "search_document: "
+        return [tag + t for t in texts]
 
     def available(self) -> bool:
         """Whether the server responds (used before enabling the feature)."""
@@ -152,7 +162,7 @@ class OllamaEmbedder:
             return False
 
     def embed(self, texts, is_query: bool = False) -> list[list[float]]:
-        texts = list(texts)
+        texts = self._prep(texts, is_query)
         if not texts:
             return []
         try:

@@ -62,6 +62,18 @@ class TestChunkMarkdown(unittest.TestCase):
         self.assertEqual(ss.chunk_markdown(""), [])
 
 
+class TestOllamaPrefixes(unittest.TestCase):
+    def test_nomic_gets_task_prefixes(self):
+        e = ss.OllamaEmbedder("nomic-embed-text")
+        self.assertEqual(e._prep(["hi"], is_query=False), ["search_document: hi"])
+        self.assertEqual(e._prep(["hi"], is_query=True), ["search_query: hi"])
+
+    def test_non_nomic_gets_no_prefix(self):
+        e = ss.OllamaEmbedder("mxbai-embed-large")
+        self.assertEqual(e._prep(["hi"], is_query=True), ["hi"])
+        self.assertEqual(e._prep(["hi"], is_query=False), ["hi"])
+
+
 class TestVectorIndex(unittest.TestCase):
     def _index(self):
         idx = ss.VectorIndex(_StubEmbedder())
