@@ -46,7 +46,8 @@ class SemanticIndexManager:
     incremental updates."""
 
     def __init__(self, embedder, get_vault_paths, state_dir, signature_tag,
-                 min_score: float = 0.35, on_busy=None) -> None:
+                 min_score: float = 0.35, on_busy=None, on_status=None,
+                 on_progress=None) -> None:
         self._embedder = embedder
         self._get_vault_paths = get_vault_paths
         self._state_dir = Path(state_dir)
@@ -61,6 +62,11 @@ class SemanticIndexManager:
         self._on_busy = on_busy
         self._busy = 0
         self._busy_lock = threading.Lock()
+        # Backend availability signalling: on_status(available: bool) fires only
+        # on a change, so the UI can surface "search backend unreachable" (R26.1).
+        self._on_status = on_status
+        self._backend_ok = True
+        self._on_progress = on_progress  # on_progress(done, total) during a build
         # path -> {"hash": str, "chunks": list[Chunk], "vecs": np.ndarray}
         self._files: dict[str, dict] = {}
         self._json_path = self._state_dir / "semantic-index.json"
@@ -104,6 +110,24 @@ class SemanticIndexManager:
             except Exception:
                 logger.debug("on_busy(False) callback failed", exc_info=True)
 
+    def _report_progress(self, done: int, total: int) -> None:
+        if self._on_progress is None:
+            return
+        try:
+            self._on_progress(done, total)
+        except Exception:
+            logger.debug("on_progress callback failed", exc_info=True)
+
+    def _report_status(self, available: bool) -> None:
+        """Fire on_status only when backend availability actually changes."""
+        if self._on_status is None or available == self._backend_ok:
+            return
+        self._backend_ok = available
+        try:
+            self._on_status(available)
+        except Exception:
+            logger.debug("on_status callback failed", exc_info=True)
+
     def build(self) -> None:
         """Load the per-file cache and re-embed only files that changed."""
         self._busy_enter()
@@ -116,8 +140,9 @@ class SemanticIndexManager:
         cached = self._load_cache()
         files = self._walk_files()
         new_files: dict[str, dict] = {}
-        changed = 0
-        aborted = False
+        # First pass: keep unchanged files from the cache, collect the rest so we
+        # know the total up front and can report determinate progress.
+        to_embed: list[tuple[str, str, str]] = []
         for path in files:
             try:
                 text = Path(path).read_text(encoding="utf-8", errors="replace")
@@ -127,7 +152,13 @@ class SemanticIndexManager:
             entry = cached.get(path)
             if entry is not None and entry["hash"] == h:
                 new_files[path] = entry
-                continue
+            else:
+                to_embed.append((path, text, h))
+        # Second pass: embed the changed files, reporting progress.
+        total = len(to_embed)
+        changed = 0
+        aborted = False
+        for path, text, h in to_embed:
             try:
                 kept, vecs = self._embed_all(chunk_markdown(text, path))
             except BackendUnavailable:
@@ -135,6 +166,7 @@ class SemanticIndexManager:
                 break
             new_files[path] = {"hash": h, "chunks": kept, "vecs": vecs}
             changed += 1
+            self._report_progress(changed, total)
         with self._lock:
             self._files = new_files    # keep what we embedded / loaded, in memory
             self._rebuild_index_locked()
@@ -145,9 +177,11 @@ class SemanticIndexManager:
             # Leaving the on-disk cache untouched means the next start retries.
             logger.warning("semantic index: backend unavailable during build; "
                            "cache left untouched, will retry on next start")
+            self._report_status(False)
             return
         self._save_cache()
         self._wake.set()  # drain any events queued during the build (R22.6)
+        self._report_status(True)
         logger.info("semantic index: %d files (%d re-embedded)",
                     len(new_files), changed)
 
@@ -211,6 +245,7 @@ class SemanticIndexManager:
         self._busy_enter()
         try:
             changed = False
+            deferred = False
             while not self._shutdown:  # a superseded/disabled manager bails out
                 with self._pending_lock:
                     if not self._pending:
@@ -227,12 +262,15 @@ class SemanticIndexManager:
                         self._pending.setdefault(path, op)
                     logger.warning("semantic index: backend unavailable, "
                                    "deferring incremental updates")
+                    deferred = True
                     break
                 except Exception:
                     logger.warning("semantic index: op %s on %s failed",
                                    op[0], os.path.basename(path), exc_info=True)
             if changed and not self._shutdown:
                 self._save_cache()     # one write per drain, not per file
+            if not self._shutdown:
+                self._report_status(not deferred)
         finally:
             self._busy_exit()
 

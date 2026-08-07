@@ -44,6 +44,7 @@ def _make_window(sidebar_open=True, search_open=False):
     w._header = _FakeWidget(True)
     w._tab_bar = _FakeWidget(True)
     w._vault_tree = _FakeWidget(True)
+    w._status_bar = _FakeWidget(True)
     w._sidebar_toggle = _FakeToggle(sidebar_open)
     w._search_toggle = _FakeToggle(search_open)
     return w
@@ -56,6 +57,7 @@ def _state(w):
         "tree": w._vault_tree.get_visible(),
         "sidebar": w._sidebar_toggle.get_active(),
         "search": w._search_toggle.get_active(),
+        "statusbar": w._status_bar.get_visible(),
     }
 
 

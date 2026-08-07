@@ -37,6 +37,7 @@ py_sources = files(
   'session.py',
   'session_manager.py',
   'sidebar.py',
+  'status_bar.py',
   'tab_manager.py',
   'tabs.py',
   'tags.py',

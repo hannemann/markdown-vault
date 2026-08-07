@@ -36,6 +36,7 @@ from .search import SearchBar
 from . import quick_open
 from .quick_open_palette import QuickOpenPalette
 from .paned_sizer import PanedSizer
+from .status_bar import StatusBar
 from .preferences import PreferencesDialog
 from .wikilink_autofix import WikilinkResolver, analyze_text, find_broken_ranges
 from .find_bar import FindBar
@@ -130,6 +131,10 @@ class MainWindow(Adw.ApplicationWindow):
         # Serialise index (re)builds so a Rebuild never races the startup build
         # and two managers can't write the same cache files concurrently.
         self._semantic_build_lock = threading.Lock()
+        # Bottom status-line state (backend reachable / busy / build progress).
+        self._sem_available = True
+        self._sem_busy = False
+        self._sem_progress = None
         # Zen mode: hide chrome and restore the previous visibility on exit.
         # Level "panels" hides the side/bottom panels; "total" also hides the
         # header and tab bar. None means not in zen.
@@ -151,8 +156,13 @@ class MainWindow(Adw.ApplicationWindow):
 
         root_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
 
+        # Toast overlay wraps the whole window so transient messages can be shown
+        # later (longer notifications than the status line carries).
+        self._toast_overlay = Adw.ToastOverlay()
+        self._toast_overlay.set_child(root_box)
+
         root_overlay = Gtk.Overlay()
-        root_overlay.set_child(root_box)
+        root_overlay.set_child(self._toast_overlay)
         self._help_overlay = MarkdownHelpOverlay()
         root_overlay.add_overlay(self._help_overlay)
         self.set_content(root_overlay)
@@ -401,6 +411,10 @@ class MainWindow(Adw.ApplicationWindow):
         self._search_paned.set_vexpand(True)
         root_box.append(self._search_paned)
 
+        # App-global status line (semantic index build/updates + backend errors).
+        self._status_bar = StatusBar()
+        root_box.append(self._status_bar)
+
         # Global shortcut controller for dynamic tab switching shortcuts.
         self._tab_shortcut_ctrl = Gtk.ShortcutController.new()
         self._tab_shortcut_ctrl.set_scope(Gtk.ShortcutScope.GLOBAL)
@@ -594,20 +608,6 @@ class MainWindow(Adw.ApplicationWindow):
             self._view_toggle_buttons[mode] = btn
             view_box.append(btn)
         header.set_title_widget(view_box)
-
-        # Background-indexing indicator (semantic search): a spinner + label,
-        # hidden until the index is (re)building — shown for any backend.
-        self._index_spinner = Gtk.Spinner()
-        index_label = Gtk.Label(label="Indexing…")
-        index_label.add_css_class("dim-label")
-        self._index_status = Gtk.Box(
-            orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-        self._index_status.append(self._index_spinner)
-        self._index_status.append(index_label)
-        self._index_status.set_visible(False)
-        self._index_status.set_tooltip_text(
-            "Semantic index is updating in the background")
-        header.pack_start(self._index_status)
 
         # Hamburger menu (rightmost).
         menu_btn = Gtk.MenuButton()
@@ -1292,6 +1292,10 @@ class MainWindow(Adw.ApplicationWindow):
     def _setup_semantic_index(self, force: bool = False) -> None:
         # The lock serialises builds: a Rebuild waits for the startup build to
         # finish rather than running a second manager against the same cache.
+        # Optimistically clear a previous "backend unavailable" state — this
+        # (re)build will push it back if it fails (a new manager starts fresh, so
+        # it can't re-signal a recovery on its own).
+        GLib.idle_add(self._set_semantic_available, True)
         with self._semantic_build_lock:
             try:
                 from .semantic_index import SemanticIndexManager
@@ -1301,6 +1305,8 @@ class MainWindow(Adw.ApplicationWindow):
                     tag,
                     min_score=float(self._settings.get("semantic_min_score", 0.35)),
                     on_busy=self._on_index_busy,
+                    on_status=self._on_semantic_status,
+                    on_progress=self._on_semantic_progress,
                 )
                 if force:
                     manager.invalidate_cache()
@@ -1312,16 +1318,53 @@ class MainWindow(Adw.ApplicationWindow):
             except Exception:
                 logger.warning("failed to start semantic search", exc_info=True)
 
+    # ── Semantic index status (bottom status line) ─────────────────
+    #
+    # Three signals from the manager (all fire on worker threads → idle_add):
+    # on_busy (indeterminate work), on_progress (determinate build) and
+    # on_status (backend reachable or not).  _update_status_bar renders whichever
+    # state has priority: error > progress > busy > idle.
+
     def _on_index_busy(self, active: bool) -> None:
-        """Manager callback (fires on a worker thread) → bounce to the UI."""
-        GLib.idle_add(self._set_index_busy, active)
+        GLib.idle_add(self._set_index_busy, bool(active))
 
     def _set_index_busy(self, active: bool) -> bool:
-        self._index_status.set_visible(bool(active))
-        if active:
-            self._index_spinner.start()
+        self._sem_busy = active
+        if not active:
+            self._sem_progress = None  # a finished/aborted build clears progress
+        self._update_status_bar()
+        return False
+
+    def _on_semantic_progress(self, done: int, total: int) -> None:
+        GLib.idle_add(self._set_semantic_progress, done, total)
+
+    def _set_semantic_progress(self, done: int, total: int) -> bool:
+        self._sem_progress = (done, total) if total and done < total else None
+        self._update_status_bar()
+        return False
+
+    def _on_semantic_status(self, available: bool) -> None:
+        GLib.idle_add(self._set_semantic_available, bool(available))
+
+    def _set_semantic_available(self, available: bool) -> bool:
+        self._sem_available = available
+        self._update_status_bar()
+        return False
+
+    def _update_status_bar(self) -> bool:
+        if not getattr(self, "_sem_available", True):
+            self._status_bar.show_error(
+                "Semantic search: embedding backend unavailable",
+                actions=[("Rebuild", self.rebuild_semantic_index),
+                         ("Settings", self._open_preferences)])
+        elif getattr(self, "_sem_progress", None):
+            done, total = self._sem_progress
+            self._status_bar.show_progress(
+                done / total, f"Indexing… {done}/{total}")
+        elif getattr(self, "_sem_busy", False):
+            self._status_bar.show_busy("Updating semantic index…")
         else:
-            self._index_spinner.stop()
+            self._status_bar.clear()
         return False
 
     def _build_semantic_embedder(self):
@@ -1777,10 +1820,10 @@ class MainWindow(Adw.ApplicationWindow):
         self._sidebar.set_visible(btn.get_active())
 
     # Elements zen can hide, and which ones each level hides.
-    _ZEN_ELEMENTS = ("header", "tab_bar", "tree", "sidebar", "search")
+    _ZEN_ELEMENTS = ("header", "tab_bar", "tree", "sidebar", "search", "statusbar")
     _ZEN_LEVELS = {
-        "panels": ("tree", "sidebar", "search"),
-        "total": ("header", "tab_bar", "tree", "sidebar", "search"),
+        "panels": ("tree", "sidebar", "search", "statusbar"),
+        "total": ("header", "tab_bar", "tree", "sidebar", "search", "statusbar"),
     }
 
     def _zen_get(self, name: str) -> bool:
@@ -1792,6 +1835,8 @@ class MainWindow(Adw.ApplicationWindow):
             return self._vault_tree.get_visible()
         if name == "sidebar":
             return self._sidebar_toggle.get_active()
+        if name == "statusbar":
+            return self._status_bar.get_visible()
         return self._search_toggle.get_active()  # "search"
 
     def _zen_set(self, name: str, shown: bool) -> None:
@@ -1803,6 +1848,8 @@ class MainWindow(Adw.ApplicationWindow):
             self._vault_tree.set_visible(shown)
         elif name == "sidebar":
             self._sidebar_toggle.set_active(shown)  # drives the sidebar
+        elif name == "statusbar":
+            self._status_bar.set_visible(shown)
         else:  # "search"
             self._search_toggle.set_active(shown)   # drives the search bar
 

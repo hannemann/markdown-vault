@@ -281,6 +281,23 @@ class TestSemanticIndexManager(unittest.TestCase):
             m._embed_all(chunks)
         self.assertEqual(e.calls, 1)     # aborted after the first batch, no retries
 
+    def test_on_progress_reports_during_build(self):
+        events = []
+        m = SemanticIndexManager(
+            _StubEmbedder(), lambda: [str(self._vault)], self._state,
+            "ollama:test", min_score=0.3,
+            on_progress=lambda d, t: events.append((d, t)))
+        m.build()  # setUp writes a.md + b.md → both embedded
+        self.assertEqual(events, [(1, 2), (2, 2)])
+
+    def test_on_status_reports_backend_down(self):
+        events = []
+        m = SemanticIndexManager(
+            _HungEmbedder(), lambda: [str(self._vault)], self._state,
+            "ollama:test", min_score=0.3, on_status=events.append)
+        m.build()
+        self.assertEqual(events, [False])   # fired once, on the transition
+
     def test_failed_build_is_not_cached_as_success(self):
         # R26.1: a build against a down backend must not persist an empty cache,
         # so the next start (backend up) actually re-embeds.
