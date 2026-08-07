@@ -322,8 +322,10 @@ class TestSaveDirtyTabsFailure(unittest.TestCase):
                 self._vault_monitor = unittest.mock.Mock()
                 self._close_window_pending = False
                 self._switch_vault_pending = False
+                self._semantic_index = None
 
             _save_dirty_tabs = aw.MainWindow._save_dirty_tabs
+            _semantic_update = aw.MainWindow._semantic_update
             _on_save_dialog_response = aw.MainWindow._on_save_dialog_response
             _show_save_dialog = aw.MainWindow._show_save_dialog
             _do_close_paths = unittest.mock.Mock()

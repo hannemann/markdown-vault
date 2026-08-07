@@ -273,6 +273,14 @@ class MainWindow(Adw.ApplicationWindow):
             "external-content-changed",
             lambda _vp, fp: self._content_change_handler.handle_external_change(fp),
         )
+        # Keep the semantic index in sync with external file changes.
+        self._vault_monitor.connect(
+            "external-file-created", lambda _vp, fp: self._semantic_update(fp))
+        self._vault_monitor.connect(
+            "external-file-deleted", lambda _vp, fp: self._semantic_remove(fp))
+        self._vault_monitor.connect("external-file-moved", self._on_semantic_moved)
+        self._vault_monitor.connect(
+            "external-content-changed", lambda _vp, fp: self._semantic_update(fp))
 
         # View mode manager.
         self._view_mode_manager = ViewModeManager(
@@ -1191,6 +1199,7 @@ class MainWindow(Adw.ApplicationWindow):
                 self._vault_monitor.skip_next_event(tab.editor.file_path)
                 if tab.editor.save():
                     self._clear_external_conflict(tab)
+                    self._semantic_update(tab.editor.file_path)
                 else:
                     failed.append(path)
         return failed
@@ -1264,6 +1273,24 @@ class MainWindow(Adw.ApplicationWindow):
             logger.info("semantic search: building index (model=%s)", model)
         except Exception:
             logger.warning("failed to start semantic search", exc_info=True)
+
+    def _semantic_update(self, path) -> None:
+        if self._semantic_index and path and path.endswith(".md"):
+            self._semantic_index.update_file(path)
+
+    def _semantic_remove(self, path) -> None:
+        if self._semantic_index and path:
+            self._semantic_index.remove_file(path)
+
+    def _semantic_rename(self, old_path, new_path) -> None:
+        if self._semantic_index and old_path and new_path:
+            self._semantic_index.rename_file(old_path, new_path)
+
+    def _on_semantic_moved(self, _vault_path, new_path, old_path=None) -> None:
+        if old_path:
+            self._semantic_rename(old_path, new_path)
+        else:
+            self._semantic_update(new_path)  # moved in from outside
 
     def _make_quick_open_engine(self):
         """Build a fresh quick-open engine over the current vaults.
@@ -1421,6 +1448,7 @@ class MainWindow(Adw.ApplicationWindow):
         for old_child, new_child in pairs:
             self._backlink_index.rename_file(old_child, new_child)
             self._file_index.rename_file(old_child, new_child)
+            self._semantic_rename(old_child, new_child)
         for old_child, new_child in pairs:
             self._backlink_index.rename_wikilinks(old_child, new_child)
         self._dump_debug(["file_index", "backlink_index", "vault_tree", "tabs"])
@@ -1939,6 +1967,7 @@ class MainWindow(Adw.ApplicationWindow):
             self._tab_bar.clear_tab_error(tab.file_path)
             self._tab_bar.hide_error_banner(tab.file_path)
             self._clear_external_conflict(tab)
+            self._semantic_update(tab.editor.file_path)
             if broken:
                 dialogs.show_broken_wikilinks(self, [b.display for b in broken])
         else:
@@ -2044,7 +2073,10 @@ class MainWindow(Adw.ApplicationWindow):
     def _autosave_save_tab(self, tab) -> bool:
         """Save a single tab and notify the vault monitor. Returns True on success."""
         self._vault_monitor.skip_next_event(tab.editor.file_path)
-        return tab.editor.save()
+        ok = tab.editor.save()
+        if ok:
+            self._semantic_update(tab.editor.file_path)
+        return ok
 
     def _autosave_on_failed(self, file_path: str, msg: str) -> None:
         """Handle autosave failure — show error banner and dialog."""

@@ -101,6 +101,40 @@ class TestSemanticIndexManager(unittest.TestCase):
         m.build()
         self.assertEqual(m.query_files("gamma"), [])  # unrelated to alpha/beta
 
+    def test_reindex_adds_new_file(self):
+        m = self._manager(_StubEmbedder())
+        m.build()
+        (self._vault / "c.md").write_text("gamma gamma topic", encoding="utf-8")
+        m._reindex_file(str(self._vault / "c.md"))
+        names = {Path(r.path).name for r in m.query_open("gamma", top_k=10)}
+        self.assertIn("c.md", names)
+
+    def test_reindex_updates_changed_file(self):
+        m = self._manager(_StubEmbedder())
+        m.build()
+        (self._vault / "a.md").write_text("beta beta beta", encoding="utf-8")
+        m._reindex_file(str(self._vault / "a.md"))
+        names = {Path(r.path).name for r in m.query_open("beta", top_k=10)}
+        self.assertIn("a.md", names)
+
+    def test_drop_removes_file(self):
+        m = self._manager(_StubEmbedder())
+        m.build()
+        m._drop_file(str(self._vault / "a.md"))
+        names = {Path(r.path).name for r in m.query_open("alpha", top_k=10)}
+        self.assertNotIn("a.md", names)
+
+    def test_move_repaths_without_reembedding(self):
+        e = _StubEmbedder()
+        m = self._manager(e)
+        m.build()
+        calls = e.calls
+        m._move_file(str(self._vault / "a.md"), str(self._vault / "renamed.md"))
+        self.assertEqual(e.calls, calls)  # rename must not re-embed
+        names = {Path(r.path).name for r in m.query_open("alpha", top_k=10)}
+        self.assertIn("renamed.md", names)
+        self.assertNotIn("a.md", names)
+
     def test_failed_chunk_is_skipped_not_fatal(self):
         # A chunk whose embed 500s must be skipped; the build still completes.
         (self._vault / "bad.md").write_text("beta trigger boom", encoding="utf-8")

@@ -1,13 +1,15 @@
 """Background semantic index over the vault (Phase 5, opt-in).
 
-Builds a :class:`~markdown_vault.semantic_search.VectorIndex` over all vault
-``.md`` files in a background thread — the embedding backend (Ollama) may be
-slow, so it must never block the UI — and caches the result to the state dir
-keyed by a content+model signature, so an unchanged vault loads instantly on
-the next run instead of re-embedding.
+Builds and maintains a :class:`~markdown_vault.semantic_search.VectorIndex` over
+all vault ``.md`` files.  Storage is **per file** (hash + chunks + vectors) so:
 
-Queries run on the caller's thread (the global-search worker thread), embedding
-just the one query string.
+* the initial build in a background thread only re-embeds files whose content
+  changed since the cached run (Ollama may be slow), and
+* individual files can be re-embedded / dropped incrementally when they change,
+  are created, deleted or renamed — no full rebuild.
+
+Queries run on the caller's thread (the search worker), embedding just the one
+query string.
 """
 
 import hashlib
@@ -21,12 +23,18 @@ from .semantic_search import Chunk, VectorIndex, chunk_markdown
 
 logger = logging.getLogger(__name__)
 
-# Bump to invalidate all caches when the chunking / embedding format changes.
-_INDEX_FORMAT_VERSION = "3"
+# Bump to invalidate all caches when the chunking / embedding / cache format
+# changes.
+_INDEX_FORMAT_VERSION = "4"
+
+
+def _hash(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8", "replace")).hexdigest()
 
 
 class SemanticIndexManager:
-    """Owns the vault's semantic index: background build, cache, and query."""
+    """Owns the vault's semantic index: background build, per-file cache, and
+    incremental updates."""
 
     def __init__(self, embedder, get_vault_paths, state_dir, signature_tag,
                  min_score: float = 0.35) -> None:
@@ -38,13 +46,14 @@ class SemanticIndexManager:
         self._index = VectorIndex(embedder)
         self._lock = threading.Lock()
         self._ready = False
+        # path -> {"hash": str, "chunks": list[Chunk], "vecs": np.ndarray}
+        self._files: dict[str, dict] = {}
         self._json_path = self._state_dir / "semantic-index.json"
         self._npy_path = self._state_dir / "semantic-index.npy"
 
     # ── Lifecycle ──────────────────────────────────────────────────
 
     def start(self, on_ready=None) -> None:
-        """Build the index in a daemon thread; call *on_ready* when done."""
         threading.Thread(target=self._run, args=(on_ready,), daemon=True).start()
 
     def _run(self, on_ready) -> None:
@@ -60,32 +69,99 @@ class SemanticIndexManager:
             return self._ready
 
     def build(self) -> None:
-        """Load the cached index if the vault is unchanged, else (re)embed it."""
+        """Load the per-file cache and re-embed only files that changed."""
+        cached = self._load_cache()
         files = self._walk_files()
-        sig = self._signature(files)
-        loaded = self._load_cache(sig)
-        if loaded is not None:
-            chunks, vecs = loaded
-            logger.info("semantic index: loaded %d chunks from cache", len(chunks))
-        else:
-            chunks = []
-            for path in files:
-                try:
-                    text = Path(path).read_text(encoding="utf-8", errors="replace")
-                except OSError:
-                    continue
-                chunks.extend(chunk_markdown(text, path))
-            chunks, vecs = self._embed_all(chunks)
-            self._save_cache(sig, chunks, vecs)
-            logger.info("semantic index: embedded %d chunks", len(chunks))
+        new_files: dict[str, dict] = {}
+        changed = 0
+        for path in files:
+            try:
+                text = Path(path).read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                continue
+            h = _hash(text)
+            entry = cached.get(path)
+            if entry is not None and entry["hash"] == h:
+                new_files[path] = entry
+                continue
+            kept, vecs = self._embed_all(chunk_markdown(text, path))
+            new_files[path] = {"hash": h, "chunks": kept, "vecs": vecs}
+            changed += 1
         with self._lock:
-            self._index.set_precomputed(chunks, vecs if len(chunks) else None)
+            self._files = new_files
+            self._rebuild_index_locked()
             self._ready = True
+        self._save_cache()
+        logger.info("semantic index: %d files (%d re-embedded)",
+                    len(new_files), changed)
+
+    # ── Incremental updates (call from file-event / save hooks) ────
+
+    def update_file(self, path: str) -> None:
+        if path.endswith(".md"):
+            threading.Thread(target=self._reindex_file, args=(path,),
+                             daemon=True).start()
+
+    def remove_file(self, path: str) -> None:
+        threading.Thread(target=self._drop_file, args=(path,), daemon=True).start()
+
+    def rename_file(self, old_path: str, new_path: str) -> None:
+        threading.Thread(target=self._move_file, args=(old_path, new_path),
+                         daemon=True).start()
+
+    def _reindex_file(self, path: str) -> None:
+        if not self.is_ready():
+            return
+        try:
+            text = Path(path).read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            self._drop_file(path)
+            return
+        h = _hash(text)
+        with self._lock:
+            cur = self._files.get(path)
+        if cur is not None and cur["hash"] == h:
+            return  # unchanged
+        kept, vecs = self._embed_all(chunk_markdown(text, path))
+        with self._lock:
+            self._files[path] = {"hash": h, "chunks": kept, "vecs": vecs}
+            self._rebuild_index_locked()
+        self._save_cache()
+        logger.info("semantic index: reindexed %s (%d chunks)",
+                    os.path.basename(path), len(kept))
+
+    def _drop_file(self, path: str) -> None:
+        with self._lock:
+            if path not in self._files:
+                return
+            del self._files[path]
+            self._rebuild_index_locked()
+        self._save_cache()
+        logger.info("semantic index: dropped %s", os.path.basename(path))
+
+    def _move_file(self, old_path: str, new_path: str) -> None:
+        with self._lock:
+            entry = self._files.pop(old_path, None)
+            if entry is None:
+                found = False
+            else:
+                for chunk in entry["chunks"]:
+                    chunk.path = new_path
+                self._files[new_path] = entry
+                self._rebuild_index_locked()
+                found = True
+        if not found:
+            self._reindex_file(new_path)  # wasn't indexed → embed fresh
+            return
+        self._save_cache()
+        logger.info("semantic index: renamed %s -> %s",
+                    os.path.basename(old_path), os.path.basename(new_path))
+
+    # ── Embedding & index assembly ─────────────────────────────────
 
     def _embed_all(self, chunks, batch: int = 32):
         """Embed chunk texts in batches; skip any that persistently fail so a
-        single bad/oversized chunk or a transient error can't waste the whole
-        build.  Returns the kept chunks and their L2-normalised vectors."""
+        single bad/oversized chunk or a transient error can't waste the build."""
         import numpy as np
         kept: list = []
         vecs: list = []
@@ -110,19 +186,27 @@ class SemanticIndexManager:
         arr /= np.clip(np.linalg.norm(arr, axis=1, keepdims=True), 1e-9, None)
         return kept, arr
 
+    def _rebuild_index_locked(self):
+        """Re-stack all files' chunks/vectors into the index (holds the lock)."""
+        import numpy as np
+        all_chunks: list = []
+        mats: list = []
+        for entry in self._files.values():
+            if entry["chunks"] is not None and len(entry["chunks"]):
+                all_chunks.extend(entry["chunks"])
+                mats.append(entry["vecs"])
+        matrix = np.vstack(mats) if mats else None
+        self._index.set_precomputed(all_chunks, matrix)
+
     # ── Query ──────────────────────────────────────────────────────
 
     def query_files(self, query: str, top_k: int = 20):
         """Return semantic FileResults (best chunk per file), marked semantic."""
         from .search_backend import FileResult, Match
-        with self._lock:
-            if not self._ready or not query:
-                return []
-            hits = self._index.query(query, top_k=top_k * 3)
         results = []
         seen: set[str] = set()
-        for chunk, score in hits:
-            if score < self._min_score or chunk.path in seen:
+        for chunk, score in self._top_hits(query, top_k):
+            if chunk.path in seen:
                 continue
             seen.add(chunk.path)
             snippet = chunk.text.split("\n", 1)[0]
@@ -141,20 +225,12 @@ class SemanticIndexManager:
         return results
 
     def query_open(self, query: str, top_k: int = 20):
-        """Return semantic hits as quick-open results (best chunk per file).
-
-        Meant to be called off the main thread — it embeds the query — so the
-        quick-open palette stays responsive.
-        """
+        """Return semantic hits as quick-open results (best chunk per file)."""
         from .quick_open import QuickResult
-        with self._lock:
-            if not self._ready or not query:
-                return []
-            hits = self._index.query(query, top_k=top_k * 3)
         results = []
         seen: set[str] = set()
-        for chunk, score in hits:
-            if score < self._min_score or chunk.path in seen:
+        for chunk, score in self._top_hits(query, top_k):
+            if chunk.path in seen:
                 continue
             seen.add(chunk.path)
             name = os.path.basename(chunk.path)
@@ -167,6 +243,13 @@ class SemanticIndexManager:
             if len(results) >= top_k:
                 break
         return results
+
+    def _top_hits(self, query, top_k):
+        with self._lock:
+            if not self._ready or not query:
+                return []
+            hits = self._index.query(query, top_k=top_k * 3)
+        return [(c, s) for c, s in hits if s >= self._min_score]
 
     # ── Cache & walk ───────────────────────────────────────────────
 
@@ -181,41 +264,49 @@ class SemanticIndexManager:
         files.sort()
         return files
 
-    def _signature(self, files) -> str:
-        h = hashlib.sha256()
-        h.update(_INDEX_FORMAT_VERSION.encode())
-        h.update(self._signature_tag.encode())
-        for path in files:
-            try:
-                h.update(path.encode())
-                h.update(str(os.path.getmtime(path)).encode())
-            except OSError:
-                pass
-        return h.hexdigest()
-
-    def _load_cache(self, sig):
+    def _load_cache(self) -> dict:
         import numpy as np
         try:
             meta = json.loads(self._json_path.read_text())
-            if meta.get("signature") != sig:
-                return None
+            if (meta.get("version") != _INDEX_FORMAT_VERSION
+                    or meta.get("sig") != self._signature_tag):
+                return {}
             vecs = np.load(self._npy_path)
-            chunks = [Chunk(c["path"], c["line"], c["text"]) for c in meta["chunks"]]
-            if len(chunks) != len(vecs):
-                return None
-            return chunks, vecs
+            files: dict[str, dict] = {}
+            off = 0
+            for path, fm in meta["files"].items():
+                chunks = [Chunk(path, c["line"], c["text"]) for c in fm["chunks"]]
+                n = len(chunks)
+                files[path] = {"hash": fm["hash"], "chunks": chunks,
+                               "vecs": vecs[off:off + n]}
+                off += n
+            if off != len(vecs):
+                return {}
+            return files
         except Exception:
-            return None
+            return {}
 
-    def _save_cache(self, sig, chunks, vecs) -> None:
+    def _save_cache(self) -> None:
         import numpy as np
+        with self._lock:
+            meta_files = {}
+            mats = []
+            for path, entry in self._files.items():
+                meta_files[path] = {
+                    "hash": entry["hash"],
+                    "chunks": [{"line": c.line, "text": c.text}
+                               for c in entry["chunks"]],
+                }
+                if len(entry["chunks"]):
+                    mats.append(entry["vecs"])
+            matrix = np.vstack(mats) if mats else np.zeros((0, 0), dtype="float32")
         try:
             self._state_dir.mkdir(parents=True, exist_ok=True)
-            np.save(self._npy_path, vecs)
+            np.save(self._npy_path, matrix)
             self._json_path.write_text(json.dumps({
-                "signature": sig,
-                "chunks": [{"path": c.path, "line": c.line, "text": c.text}
-                           for c in chunks],
+                "version": _INDEX_FORMAT_VERSION,
+                "sig": self._signature_tag,
+                "files": meta_files,
             }))
         except Exception:
             logger.warning("failed to save semantic index cache", exc_info=True)

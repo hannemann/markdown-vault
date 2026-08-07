@@ -54,10 +54,12 @@ class TestSaveDialogResponse(unittest.TestCase):
                 self._vault_monitor = unittest.mock.Mock()
                 self._vault_monitor.skip_next_event = unittest.mock.Mock()
                 self._close_window_pending = False
+                self._semantic_index = None
 
             # Kopiere die Methoden vom echten Window
             _on_save_dialog_response = aw.MainWindow._on_save_dialog_response
             _save_dirty_tabs = aw.MainWindow._save_dirty_tabs
+            _semantic_update = aw.MainWindow._semantic_update
             _do_close_paths = aw.MainWindow._do_close_paths
             _apply_wikilink_autofix = unittest.mock.Mock(return_value=[])
             _clear_external_conflict = unittest.mock.Mock()
