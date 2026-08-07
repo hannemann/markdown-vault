@@ -75,21 +75,40 @@ class SemanticIndexManager:
                 except OSError:
                     continue
                 chunks.extend(chunk_markdown(text, path))
-            vecs = self._embed_chunks(chunks)
+            chunks, vecs = self._embed_all(chunks)
             self._save_cache(sig, chunks, vecs)
             logger.info("semantic index: embedded %d chunks", len(chunks))
         with self._lock:
             self._index.set_precomputed(chunks, vecs if len(chunks) else None)
             self._ready = True
 
-    def _embed_chunks(self, chunks):
+    def _embed_all(self, chunks, batch: int = 32):
+        """Embed chunk texts in batches; skip any that persistently fail so a
+        single bad/oversized chunk or a transient error can't waste the whole
+        build.  Returns the kept chunks and their L2-normalised vectors."""
         import numpy as np
-        if not chunks:
-            return np.zeros((0, 0), dtype="float32")
-        raw = self._embedder.embed([c.text for c in chunks], is_query=False)
-        vecs = np.asarray(raw, dtype="float32")
-        vecs /= np.clip(np.linalg.norm(vecs, axis=1, keepdims=True), 1e-9, None)
-        return vecs
+        kept: list = []
+        vecs: list = []
+        for i in range(0, len(chunks), batch):
+            group = chunks[i:i + batch]
+            try:
+                embs = self._embedder.embed([c.text for c in group], is_query=False)
+                kept.extend(group)
+                vecs.extend(embs)
+            except Exception:
+                logger.debug("batch embed failed; retrying per chunk", exc_info=True)
+                for c in group:
+                    try:
+                        vecs.append(self._embedder.embed([c.text], is_query=False)[0])
+                        kept.append(c)
+                    except Exception:
+                        logger.warning("semantic index: skipping chunk %s:%d "
+                                       "(embed failed)", c.path, c.line)
+        if not vecs:
+            return kept, np.zeros((0, 0), dtype="float32")
+        arr = np.asarray(vecs, dtype="float32")
+        arr /= np.clip(np.linalg.norm(arr, axis=1, keepdims=True), 1e-9, None)
+        return kept, arr
 
     # ── Query ──────────────────────────────────────────────────────
 

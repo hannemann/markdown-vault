@@ -31,6 +31,19 @@ class _PoisonEmbedder:
         raise AssertionError("embed() must not be called on a cache hit")
 
 
+class _FlakyEmbedder(_StubEmbedder):
+    """Raises (like a 500) for any text containing *bad*, else embeds normally."""
+
+    def __init__(self, bad):
+        super().__init__()
+        self._bad = bad
+
+    def embed(self, texts, is_query=False):
+        if any(self._bad in t for t in texts):
+            raise RuntimeError("simulated 500")
+        return super().embed(texts, is_query)
+
+
 class TestSemanticIndexManager(unittest.TestCase):
     def setUp(self):
         self._vault = Path(tempfile.mkdtemp())
@@ -79,6 +92,16 @@ class TestSemanticIndexManager(unittest.TestCase):
         m = self._manager(_StubEmbedder())
         m.build()
         self.assertEqual(m.query_files("gamma"), [])  # unrelated to alpha/beta
+
+    def test_failed_chunk_is_skipped_not_fatal(self):
+        # A chunk whose embed 500s must be skipped; the build still completes.
+        (self._vault / "bad.md").write_text("beta trigger boom", encoding="utf-8")
+        m = self._manager(_FlakyEmbedder(bad="trigger"))
+        m.build()
+        self.assertTrue(m.is_ready())
+        paths = {Path(r.path).name for r in m.query_files("alpha", top_k=10)}
+        self.assertIn("a.md", paths)       # good chunk indexed
+        self.assertNotIn("bad.md", paths)  # failing chunk skipped
 
 
 if __name__ == "__main__":
