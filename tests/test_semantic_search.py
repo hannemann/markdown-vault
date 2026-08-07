@@ -26,14 +26,27 @@ class _StubEmbedder:
 
 
 class TestChunkMarkdown(unittest.TestCase):
-    def test_merges_small_blocks_and_headings(self):
-        # A short note's blocks merge into one context-rich chunk at line 1.
-        text = "# Title\n\nfirst para\nstill first\n\nsecond para\n"
+    def test_paragraphs_are_separate_chunks(self):
+        # Distinct paragraphs stay separate so a topic sentence isn't diluted.
+        text = "# Title\n\nfirst paragraph here.\n\nsecond paragraph here.\n"
+        chunks = ss.chunk_markdown(text, "/n.md")
+        self.assertEqual(len(chunks), 2)
+        self.assertEqual(chunks[0].text, "# Title\nfirst paragraph here.")  # heading + body
+        self.assertEqual(chunks[1].text, "second paragraph here.")
+
+    def test_heading_couples_with_its_body(self):
+        text = "## Section\n\nthe body text goes here.\n"
         chunks = ss.chunk_markdown(text, "/n.md")
         self.assertEqual(len(chunks), 1)
-        self.assertEqual(chunks[0].line, 1)
-        self.assertIn("Title", chunks[0].text)
-        self.assertIn("second para", chunks[0].text)
+        self.assertEqual(chunks[0].text, "## Section\nthe body text goes here.")
+
+    def test_topic_sentence_isolated_from_stray_markup(self):
+        # Mirrors the csp-test case: heading + code/link noise, then a topic
+        # sentence — the sentence must be its own clean chunk.
+        text = "# H\n\n```\n\n[[x]]\n\nIch weiß was über den Planeten Neptun.\n"
+        chunks = ss.chunk_markdown(text, "/n.md")
+        texts = [c.text for c in chunks]
+        self.assertIn("Ich weiß was über den Planeten Neptun.", texts)
 
     def test_skips_frontmatter(self):
         text = "---\ntitle: x\ntags: [a]\n---\n\nbody line here\n"
@@ -41,16 +54,6 @@ class TestChunkMarkdown(unittest.TestCase):
         self.assertEqual(len(chunks), 1)
         self.assertEqual(chunks[0].text, "body line here")
         self.assertEqual(chunks[0].line, 6)
-
-    def test_heading_breaks_after_a_real_section(self):
-        # A section over the min-flush size, then a new heading → two chunks.
-        big = "## A\n" + ("filler filler filler " * 20)  # > 250 chars
-        text = big + "\n\n## B\n\nbody of section b\n"
-        chunks = ss.chunk_markdown(text, "/n.md")
-        self.assertEqual(len(chunks), 2)
-        self.assertTrue(chunks[0].text.startswith("## A"))
-        self.assertTrue(chunks[1].text.startswith("## B"))
-        self.assertEqual(chunks[0].line, 1)
 
     def test_splits_oversized_block(self):
         text = "word " * 600  # ~3000 chars, single block, no headings

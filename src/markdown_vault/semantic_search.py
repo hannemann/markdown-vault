@@ -36,13 +36,14 @@ class Chunk:
     text: str
 
 
-# Chunking is tuned for retrieval quality: small blocks (bare headings, short
-# paragraphs) are merged up to a target size so each chunk carries context, and
-# oversized blocks are split into overlapping windows so nothing exceeds the
+# Chunking is paragraph-level for retrieval precision: each paragraph is its own
+# chunk (so a topic sentence isn't diluted by unrelated neighbours), a heading is
+# coupled to its following paragraph for context, and tiny fragments (stray
+# markup, code fences) are glued to their neighbour rather than embedded alone.
+# Oversized blocks are split into overlapping windows so nothing exceeds the
 # embedding model's context window.
 _MIN_CHUNK_CHARS = 3
-_TARGET_CHARS = 600       # accumulate small blocks up to this
-_MIN_FLUSH_CHARS = 250    # only break before a heading once this much is buffered
+_TINY_MERGE = 15          # blocks this short glue onto the current chunk
 _MAX_CHARS = 2000         # split blocks larger than this
 _OVERLAP_CHARS = 200      # overlap between split windows
 
@@ -95,29 +96,48 @@ def chunk_markdown(text: str, path: str = "") -> list[Chunk]:
     chunks: list[Chunk] = []
     acc: list[str] = []
     acc_start = 0
-    acc_len = 0
+    pending_heading = False  # acc holds only heading(s), still awaiting a body
 
     def flush():
-        nonlocal acc, acc_len
+        nonlocal acc
         if acc:
             chunks.append(Chunk(path, acc_start, "\n".join(acc)))
         acc = []
-        acc_len = 0
 
     for bstart, btext in _blank_line_blocks(lines, start):
-        if btext.lstrip().startswith("#") and acc_len >= _MIN_FLUSH_CHARS:
-            flush()
         if len(btext) > _MAX_CHARS:
             flush()
+            pending_heading = False
             for wstart, wtext in _split_oversized(bstart, btext):
                 chunks.append(Chunk(path, wstart, wtext))
             continue
+
+        is_heading = btext.lstrip().startswith("#")
+        tiny = len(btext.strip()) < _TINY_MERGE
+
         if not acc:
             acc_start = bstart
-        acc.append(btext)
-        acc_len += len(btext) + 1
-        if acc_len >= _TARGET_CHARS:
-            flush()
+            acc.append(btext)
+            pending_heading = is_heading
+        elif tiny:
+            acc.append(btext)          # stray markup glues onto the current chunk
+            pending_heading = False
+        elif is_heading:
+            if pending_heading:
+                acc.append(btext)      # consecutive headings stay together
+            else:
+                flush()
+                acc_start = bstart
+                acc.append(btext)
+                pending_heading = True
+        else:  # a substantial paragraph
+            if pending_heading:
+                acc.append(btext)      # give the heading its body
+                pending_heading = False
+            else:
+                flush()                # keep paragraphs as separate chunks
+                acc_start = bstart
+                acc.append(btext)
     flush()
     return [c for c in chunks if len(c.text.strip()) >= _MIN_CHUNK_CHARS]
 

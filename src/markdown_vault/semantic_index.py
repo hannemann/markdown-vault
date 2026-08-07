@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 # Bump to invalidate all caches when the chunking / embedding / cache format
 # changes.
-_INDEX_FORMAT_VERSION = "4"
+_INDEX_FORMAT_VERSION = "5"
 
 
 def _hash(text: str) -> str:
