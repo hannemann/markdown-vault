@@ -273,6 +273,11 @@ _DEFAULT_SETTINGS = {
     "wikilink_warn_on_save": False,
     "wikilink_mark_broken": False,
     "preview_allow_remote_images": False,
+    # Semantic (vector) search — opt-in, Ollama backend.
+    "semantic_search_enabled": False,
+    "semantic_ollama_url": "http://localhost:11434",
+    "semantic_ollama_model": "nomic-embed-text",
+    "semantic_min_score": 0.35,
 }
 
 # Setting key → environment variable consumed by WebKitGTK at startup.

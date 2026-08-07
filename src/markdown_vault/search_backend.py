@@ -51,6 +51,7 @@ class FileResult:
     title_hit: bool              # the query matches the frontmatter title
     heading_hits: int            # number of matching heading lines
     mtime: float
+    semantic: bool = False       # a semantic (vector) hit, not a keyword match
 
 
 def search(

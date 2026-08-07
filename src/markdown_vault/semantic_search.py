@@ -138,6 +138,14 @@ class VectorIndex:
     def __len__(self) -> int:
         return len(self._chunks)
 
+    def set_precomputed(self, chunks, vectors) -> None:
+        """Install already-embedded, L2-normalised *vectors* for *chunks*.
+
+        Used by the index manager, which handles embedding + caching itself.
+        """
+        self._chunks = list(chunks)
+        self._vectors = vectors if self._chunks else None
+
     def build(self, chunks) -> None:
         import numpy as np
         self._chunks = list(chunks)
