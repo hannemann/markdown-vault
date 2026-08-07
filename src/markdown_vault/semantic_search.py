@@ -9,8 +9,10 @@ Pure logic, no GTK:
   tokenizer — distro packages / Flatpak wheels, no pip on the host).
 * :class:`VectorIndex` — holds normalised chunk vectors and answers cosine
   top-K queries with numpy.
-* :class:`SemanticProvider` — adapts the index to the quick-open engine's
-  provider interface so semantic hits can be merged with name matches.
+
+The index manager (:mod:`markdown_vault.semantic_index`) owns embedding,
+caching and threading, and exposes the query methods the search bar and
+quick-open consume.
 
 Nothing here imports onnxruntime/tokenizers, contacts Ollama or imports
 ``numpy`` at module load — those happen only when a backend / index is actually
@@ -45,7 +47,10 @@ class Chunk:
 # embedding model's context window.
 _MIN_CHUNK_CHARS = 3
 _TINY_MERGE = 15          # blocks this short glue onto the current chunk
-_MAX_CHARS = 2000         # split blocks larger than this
+# Kept well under the smallest supported context: the recommended ONNX model
+# (multilingual MiniLM) tokenises at ~128 and is capped at 512, and ~1000 chars
+# of prose is ~300-400 tokens — so a chunk's tail is never silently truncated.
+_MAX_CHARS = 1000         # split blocks larger than this
 _OVERLAP_CHARS = 200      # overlap between split windows
 
 
@@ -82,9 +87,10 @@ def _split_oversized(start_line: int, text: str):
 def chunk_markdown(text: str, path: str = "") -> list[Chunk]:
     """Split *text* into retrieval-sized chunks with 1-based line tracking.
 
-    Frontmatter is skipped.  Blank-line blocks are merged up to ~600 chars (a
-    heading starts a fresh chunk once a real section has accumulated, so headings
-    group with their body); blocks over ~2000 chars are split with overlap.
+    Frontmatter is skipped.  Chunking is paragraph-level: each blank-line block
+    is its own chunk, a heading couples to the block that follows it, and tiny
+    fragments glue onto their neighbour; blocks over ``_MAX_CHARS`` are split
+    into overlapping windows.
     """
     lines = text.splitlines()
     start = 0
@@ -174,14 +180,6 @@ class OllamaEmbedder:
         tag = "search_query: " if is_query else "search_document: "
         return [tag + t for t in texts]
 
-    def available(self) -> bool:
-        """Whether the server responds (used before enabling the feature)."""
-        try:
-            urllib.request.urlopen(self.url + "/api/tags", timeout=3)
-            return True
-        except Exception:
-            return False
-
     def embed(self, texts, is_query: bool = False) -> list[list[float]]:
         texts = self._prep(texts, is_query)
         if not texts:
@@ -236,7 +234,7 @@ class OnnxEmbedder:
     """
 
     def __init__(self, model_path: str, tokenizer_path: str,
-                 max_length: int = 256) -> None:
+                 max_length: int = 512) -> None:
         import onnxruntime as ort
         from tokenizers import Tokenizer
         self._session = ort.InferenceSession(
@@ -319,41 +317,3 @@ class VectorIndex:
         scores = self._vectors @ q
         order = np.argsort(-scores)[:top_k]
         return [(self._chunks[i], float(scores[i])) for i in order]
-
-
-# ── Quick-open provider ─────────────────────────────────────────────
-
-class SemanticProvider:
-    """Adapt a :class:`VectorIndex` to the quick-open engine's provider API.
-
-    Returns the best-scoring chunk per file as a quick-open result.  Cosine
-    scores are on a 0..1 scale; merging with the fuzzy name provider needs
-    score normalisation at the engine level (a later wiring step).
-    """
-
-    source = "semantic"
-
-    def __init__(self, index: VectorIndex, min_score: float = 0.3) -> None:
-        self._index = index
-        self._min_score = min_score
-
-    def search(self, query: str, limit: int = 30):
-        if not query or len(self._index) == 0:
-            return []
-        from .quick_open import QuickResult
-        results = []
-        seen: set[str] = set()
-        for chunk, score in self._index.query(query, top_k=limit * 3):
-            if score < self._min_score or chunk.path in seen:
-                continue
-            seen.add(chunk.path)
-            name = os.path.basename(chunk.path)
-            if name.endswith(".md"):
-                name = name[:-3]
-            results.append(QuickResult(
-                path=chunk.path, name=name, folder=os.path.dirname(chunk.path),
-                score=score, source=self.source,
-            ))
-            if len(results) >= limit:
-                break
-        return results

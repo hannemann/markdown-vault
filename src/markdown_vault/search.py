@@ -16,6 +16,8 @@ newest search populates the list.
 """
 
 import logging
+import os
+import re
 import threading
 from pathlib import Path
 
@@ -262,30 +264,49 @@ class SearchBar(Gtk.Box):
         results = search_backend.search_grouped(
             query, vault_paths, options, max_files=self.MAX_RESULTS,
         )
-        results = self._merge_semantic(results, query, vault_paths)
+        results = self._merge_semantic(results, query, vault_paths, options)
         GLib.idle_add(self._on_complete, generation, results)
 
-    def _merge_semantic(self, keyword_results, query, vault_paths):
+    # Field filters and the exclusion operator from da29xx — noise to an embedder.
+    _OPERATOR_TOKEN = re.compile(r'(?:^|\s)(?:-\S+|(?:tag|path|vault):\S+)')
+
+    @classmethod
+    def _strip_operators(cls, query: str) -> str:
+        """Drop operator/filter tokens and quotes so only prose reaches the
+        embedder (embedding ``-foo tag:bar "baz"`` produces noise)."""
+        text = cls._OPERATOR_TOKEN.sub(" ", query).replace('"', " ")
+        return " ".join(text.split())
+
+    @staticmethod
+    def _under_vault(path: str, vault_paths) -> bool:
+        """True if *path* is inside one of *vault_paths* — separator-aware, so
+        ``~/notes`` does not admit hits under a sibling ``~/notes-archive``."""
+        return any(
+            path == v or path.startswith(v.rstrip(os.sep) + os.sep)
+            for v in vault_paths
+        )
+
+    def _merge_semantic(self, keyword_results, query, vault_paths, options):
         """Append semantic-only hits (scoped to *vault_paths*) after keyword ones.
 
         Runs on the worker thread, so the (possibly slow) query embedding never
         blocks the UI.  Keyword matches keep priority; semantic finds surface
         files the keyword search missed.
         """
-        if not self._semantic_query:
+        if not self._semantic_query or options.regex:
+            return keyword_results  # a raw regex pattern is meaningless to embed
+        text = self._strip_operators(query)
+        if not text:
             return keyword_results
         try:
-            semantic = self._semantic_query(query)
+            semantic = self._semantic_query(text)
         except Exception:
             logger.debug("semantic query failed", exc_info=True)
             return keyword_results
         have = {r.path for r in keyword_results}
-        extra = [
-            r for r in semantic
-            if r.path not in have
-            and any(r.path.startswith(v) for v in vault_paths)
-        ]
-        return keyword_results + extra[:self.MAX_RESULTS]
+        extra = [r for r in semantic
+                 if r.path not in have and self._under_vault(r.path, vault_paths)]
+        return (keyword_results + extra)[:self.MAX_RESULTS]
 
     def _on_complete(self, generation: int, file_results: list) -> bool:
         if generation != self._generation:

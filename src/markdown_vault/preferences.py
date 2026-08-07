@@ -78,6 +78,11 @@ class PreferencesDialog(Adw.PreferencesDialog):
         "settings-changed": (GObject.SignalFlags.RUN_LAST, None, ()),
     }
 
+    # Semantic-search backends and their single source of truth for the default,
+    # so the picker, sensitivity and config never drift (R22.10).
+    _SEM_BACKENDS = ("onnx", "ollama")
+    _SEM_BACKEND_DEFAULT = "onnx"
+
     def __init__(self, *, glib_loglevel_callback=None, on_reindex=None) -> None:
         """Initialize preferences dialog.
 
@@ -297,14 +302,13 @@ class PreferencesDialog(Adw.PreferencesDialog):
             "notify::active", self._on_toggle_setting, "semantic_search_enabled")
         sem_group.add(self._sem_enabled_row)
 
-        self._sem_backends = ["onnx", "ollama"]
+        self._sem_backends = list(self._SEM_BACKENDS)
         self._sem_backend_row = Adw.ComboRow(
             title="Backend",
             subtitle="Local runs in-process (recommended); Ollama needs a server",
             model=Gtk.StringList.new(["Local (ONNX) — recommended", "Ollama (server)"]),
         )
-        self._sem_backend_row.set_selected(self._sem_backends.index(
-            self._settings.get("semantic_backend", "onnx")))
+        self._sem_backend_row.set_selected(self._sem_backend_index())
         self._sem_backend_row.connect("notify::selected", self._on_sem_backend_changed)
         sem_group.add(self._sem_backend_row)
 
@@ -584,9 +588,17 @@ class PreferencesDialog(Adw.PreferencesDialog):
         self._persist()
         self._update_sem_backend_sensitivity()
 
+    def _sem_backend_index(self) -> int:
+        """Selected-row index for the persisted backend, tolerant of an unknown
+        value (hand-edited YAML, a future backend) so __init__ never raises and
+        the whole dialog fails to open."""
+        backend = self._settings.get("semantic_backend", self._SEM_BACKEND_DEFAULT)
+        return self._sem_backends.index(backend) if backend in self._sem_backends else 0
+
     def _update_sem_backend_sensitivity(self) -> None:
         """Grey out the rows the selected backend does not use."""
-        onnx = self._settings.get("semantic_backend", "ollama") == "onnx"
+        onnx = self._settings.get(
+            "semantic_backend", self._SEM_BACKEND_DEFAULT) == "onnx"
         for w in self._sem_onnx_widgets:
             w.set_sensitive(onnx)
         for w in self._sem_ollama_widgets:
@@ -717,19 +729,21 @@ class PreferencesDialog(Adw.PreferencesDialog):
     # ── ONNX model / tokenizer download ────────────────────────────
 
     def _on_download_onnx(self, button, which) -> None:
+        model_p, tok_p = self._onnx_paths()
         if which == "model":
             url = self._sem_model_url_row.get_text().strip()
-            filename, bar = "model.onnx", self._sem_model_progress
+            filename, bar, target = "model.onnx", self._sem_model_progress, model_p
         else:
             url = self._sem_tok_url_row.get_text().strip()
-            filename, bar = "tokenizer.json", self._sem_tok_progress
+            filename, bar, target = "tokenizer.json", self._sem_tok_progress, tok_p
         if not url:
             return
         button.set_sensitive(False)
         bar.set_visible(True)
         bar.set_fraction(0.0)
         bar.set_text("Starting…")
-        target = config.STATE_DIR / "onnx" / filename
+        # Download to the path the backend actually loads (_onnx_paths), not a
+        # fixed dir — otherwise a custom configured path never sees the file.
         threading.Thread(
             target=self._download_worker,
             args=(button, url, target, filename, bar), daemon=True).start()
@@ -741,7 +755,7 @@ class PreferencesDialog(Adw.PreferencesDialog):
             req = urllib.request.Request(
                 url, headers={"User-Agent": "markdown-vault"})
             tmp = target.with_name(target.name + ".part")
-            with urllib.request.urlopen(req) as resp:
+            with urllib.request.urlopen(req, timeout=30) as resp:
                 total = int(resp.headers.get("Content-Length") or 0)
                 done = last = 0
                 with open(tmp, "wb") as fh:

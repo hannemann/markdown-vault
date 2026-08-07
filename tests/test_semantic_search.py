@@ -124,31 +124,5 @@ class TestVectorIndex(unittest.TestCase):
         self.assertEqual(len(self._index()), 3)
 
 
-class TestSemanticProvider(unittest.TestCase):
-    def _provider(self, min_score=0.3):
-        idx = ss.VectorIndex(_StubEmbedder())
-        idx.build([
-            ss.Chunk("/vault/alpha-note.md", 1, "alpha alpha"),
-            ss.Chunk("/vault/alpha-note.md", 5, "alpha again"),  # same file
-            ss.Chunk("/vault/beta-note.md", 1, "beta"),
-        ])
-        return ss.SemanticProvider(idx, min_score=min_score)
-
-    def test_returns_quickresults_deduped_by_file(self):
-        res = self._provider().search("alpha", limit=10)
-        paths = [r.path for r in res]
-        self.assertEqual(paths.count("/vault/alpha-note.md"), 1)  # deduped
-        self.assertEqual(res[0].path, "/vault/alpha-note.md")
-        self.assertEqual(res[0].name, "alpha-note")  # .md stripped
-        self.assertEqual(res[0].source, "semantic")
-
-    def test_min_score_filters_unrelated(self):
-        # "gamma" has cosine 0 with every alpha/beta chunk → filtered out.
-        self.assertEqual(self._provider(min_score=0.3).search("gamma"), [])
-
-    def test_empty_query(self):
-        self.assertEqual(self._provider().search(""), [])
-
-
 if __name__ == "__main__":
     unittest.main()

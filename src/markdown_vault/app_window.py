@@ -127,6 +127,9 @@ class MainWindow(Adw.ApplicationWindow):
         self._paned_clamping: bool = False
         # Semantic (vector) search index — created only when enabled.
         self._semantic_index = None
+        # Serialise index (re)builds so a Rebuild never races the startup build
+        # and two managers can't write the same cache files concurrently.
+        self._semantic_build_lock = threading.Lock()
         # Zen mode: hide chrome and restore the previous visibility on exit.
         # Level "panels" hides the side/bottom panels; "total" also hides the
         # header and tab bar. None means not in zen.
@@ -1287,21 +1290,25 @@ class MainWindow(Adw.ApplicationWindow):
             target=self._setup_semantic_index, args=(True,), daemon=True).start()
 
     def _setup_semantic_index(self, force: bool = False) -> None:
-        try:
-            from .semantic_index import SemanticIndexManager
-            embedder, tag = self._build_semantic_embedder()
-            manager = SemanticIndexManager(
-                embedder, self._vault_tree.get_vault_paths, config.STATE_DIR, tag,
-                min_score=float(self._settings.get("semantic_min_score", 0.35)),
-                on_busy=self._on_index_busy,
-            )
-            if force:
-                manager.invalidate_cache()
-            self._semantic_index = manager
-            manager.build()
-            logger.info("semantic index ready")
-        except Exception:
-            logger.warning("failed to start semantic search", exc_info=True)
+        # The lock serialises builds: a Rebuild waits for the startup build to
+        # finish rather than running a second manager against the same cache.
+        with self._semantic_build_lock:
+            try:
+                from .semantic_index import SemanticIndexManager
+                embedder, tag = self._build_semantic_embedder()
+                manager = SemanticIndexManager(
+                    embedder, self._vault_tree.get_vault_paths, config.STATE_DIR,
+                    tag,
+                    min_score=float(self._settings.get("semantic_min_score", 0.35)),
+                    on_busy=self._on_index_busy,
+                )
+                if force:
+                    manager.invalidate_cache()
+                self._semantic_index = manager
+                manager.build()
+                logger.info("semantic index ready")
+            except Exception:
+                logger.warning("failed to start semantic search", exc_info=True)
 
     def _on_index_busy(self, active: bool) -> None:
         """Manager callback (fires on a worker thread) → bounce to the UI."""
@@ -1327,12 +1334,26 @@ class MainWindow(Adw.ApplicationWindow):
             tokenizer = (self._settings.get("semantic_onnx_tokenizer")
                          or str(default_dir / "tokenizer.json"))
             logger.info("semantic search: onnx backend (model=%s)", model)
-            return OnnxEmbedder(model, tokenizer), f"onnx:{model}"
+            return OnnxEmbedder(model, tokenizer), self._onnx_sig(model, tokenizer)
         from .semantic_search import OllamaEmbedder
         model = self._settings.get("semantic_ollama_model", "nomic-embed-text")
         url = self._settings.get("semantic_ollama_url", "http://localhost:11434")
         logger.info("semantic search: ollama backend (model=%s)", model)
         return OllamaEmbedder(model, url), f"ollama:{model}"
+
+    @staticmethod
+    def _onnx_sig(model: str, tokenizer: str) -> str:
+        """Cache signature for the ONNX backend that folds in each file's size +
+        mtime, so swapping the model/tokenizer file (even at the same path)
+        invalidates the cache instead of reusing vectors from another model."""
+        parts = []
+        for p in (model, tokenizer):
+            try:
+                st = os.stat(p)
+                parts.append(f"{p}:{st.st_size}:{int(st.st_mtime)}")
+            except OSError:
+                parts.append(f"{p}:missing")
+        return "onnx:" + "|".join(parts)
 
     def _semantic_update(self, path) -> None:
         if self._semantic_index and path and path.endswith(".md"):

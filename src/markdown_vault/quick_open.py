@@ -9,9 +9,9 @@ added later (e.g. a semantic / vector provider) without touching the palette:
 Each provider returns scored :class:`QuickResult` objects for a query; the
 engine merges them per file (keeping the best score) and returns a ranked list.
 The current provider fuzzy-matches file names, frontmatter aliases and — when
-the query contains a ``/`` — the vault-relative path; a future
-``SemanticProvider`` would return the same shape from a vector search and slot
-straight in.
+the query contains a ``/`` — the vault-relative path.  Semantic hits are merged
+in separately by the palette via ``SemanticIndexManager.query_open`` rather than
+through a provider.
 """
 
 import logging

@@ -59,17 +59,6 @@ class SemanticIndexManager:
 
     # ── Lifecycle ──────────────────────────────────────────────────
 
-    def start(self, on_ready=None) -> None:
-        threading.Thread(target=self._run, args=(on_ready,), daemon=True).start()
-
-    def _run(self, on_ready) -> None:
-        try:
-            self.build()
-        except Exception:
-            logger.warning("semantic index build failed", exc_info=True)
-        if on_ready:
-            on_ready()
-
     def is_ready(self) -> bool:
         with self._lock:
             return self._ready
@@ -362,11 +351,18 @@ class SemanticIndexManager:
             matrix = np.vstack(mats) if mats else np.zeros((0, 0), dtype="float32")
         try:
             self._state_dir.mkdir(parents=True, exist_ok=True)
-            np.save(self._npy_path, matrix)
-            self._json_path.write_text(json.dumps({
+            # Atomic write (tmp + os.replace) so a concurrent reader/writer never
+            # sees a half-written .npy or a .json/.npy pair that disagree.  The
+            # npy tmp name ends in .npy so np.save doesn't append its own suffix.
+            npy_tmp = self._npy_path.with_name(self._npy_path.stem + ".tmp.npy")
+            json_tmp = self._json_path.with_name(self._json_path.stem + ".tmp.json")
+            np.save(npy_tmp, matrix)
+            json_tmp.write_text(json.dumps({
                 "version": _INDEX_FORMAT_VERSION,
                 "sig": self._signature_tag,
                 "files": meta_files,
             }))
+            os.replace(npy_tmp, self._npy_path)
+            os.replace(json_tmp, self._json_path)
         except Exception:
             logger.warning("failed to save semantic index cache", exc_info=True)
