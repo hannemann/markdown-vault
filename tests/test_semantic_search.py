@@ -77,6 +77,24 @@ class TestOllamaPrefixes(unittest.TestCase):
         self.assertEqual(e._prep(["hi"], is_query=False), ["hi"])
 
 
+class TestOnnxMeanPool(unittest.TestCase):
+    def test_masked_mean_ignores_padding(self):
+        import numpy as np
+        # 1 sentence, 3 tokens, hidden=2; last token is padding (mask 0).
+        emb = np.array([[[1.0, 1.0], [3.0, 3.0], [99.0, 99.0]]], dtype="float32")
+        mask = np.array([[1, 1, 0]], dtype="int64")
+        pooled = ss.OnnxEmbedder._mean_pool(emb, mask)
+        # mean of the two real tokens (1 and 3) = 2, padding ignored.
+        self.assertEqual(pooled.tolist(), [[2.0, 2.0]])
+
+    def test_all_padding_does_not_divide_by_zero(self):
+        import numpy as np
+        emb = np.zeros((1, 2, 2), dtype="float32")
+        mask = np.zeros((1, 2), dtype="int64")
+        pooled = ss.OnnxEmbedder._mean_pool(emb, mask)
+        self.assertEqual(pooled.tolist(), [[0.0, 0.0]])
+
+
 class TestVectorIndex(unittest.TestCase):
     def _index(self):
         idx = ss.VectorIndex(_StubEmbedder())

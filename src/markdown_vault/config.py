@@ -275,8 +275,17 @@ _DEFAULT_SETTINGS = {
     "preview_allow_remote_images": False,
     # Semantic (vector) search — opt-in, Ollama backend.
     "semantic_search_enabled": False,
+    "semantic_backend": "onnx",  # "onnx" (local, recommended) or "ollama" (server)
     "semantic_ollama_url": "http://localhost:11434",
     "semantic_ollama_model": "nomic-embed-text",
+    "semantic_onnx_model": "",       # path to model.onnx (empty → data dir default)
+    "semantic_onnx_tokenizer": "",   # path to tokenizer.json (empty → default)
+    "semantic_onnx_model_url":
+        "https://huggingface.co/Xenova/paraphrase-multilingual-MiniLM-L12-v2/"
+        "resolve/main/onnx/model.onnx",
+    "semantic_onnx_tokenizer_url":
+        "https://huggingface.co/Xenova/paraphrase-multilingual-MiniLM-L12-v2/"
+        "resolve/main/tokenizer.json",
     "semantic_min_score": 0.35,
 }
 

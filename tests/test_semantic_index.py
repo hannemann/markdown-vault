@@ -84,6 +84,38 @@ class TestSemanticIndexManager(unittest.TestCase):
         self._manager(e2, tag="ollama:other-model").build()
         self.assertGreaterEqual(e2.calls, 1)  # re-embedded
 
+    def test_on_busy_brackets_build(self):
+        events = []
+        m = SemanticIndexManager(
+            _StubEmbedder(), lambda: [str(self._vault)], self._state,
+            "ollama:test", min_score=0.3, on_busy=events.append)
+        m.build()
+        self.assertEqual(events, [True, False])  # one enter, one exit
+
+    def test_invalidate_cache_forces_reembed(self):
+        e1 = _StubEmbedder()
+        m = self._manager(e1)
+        m.build()
+        self.assertTrue(m._json_path.exists())
+        m.invalidate_cache()
+        self.assertFalse(m._json_path.exists())
+        self.assertFalse(m._npy_path.exists())
+        # Same signature tag, but the cache is gone → must re-embed, not reuse.
+        e2 = _StubEmbedder()
+        self._manager(e2).build()
+        self.assertGreaterEqual(e2.calls, 1)
+
+    def test_on_busy_brackets_incremental_ops(self):
+        events = []
+        m = SemanticIndexManager(
+            _StubEmbedder(), lambda: [str(self._vault)], self._state,
+            "ollama:test", min_score=0.3, on_busy=events.append)
+        m.build()
+        events.clear()
+        (self._vault / "a.md").write_text("alpha beta gamma delta", encoding="utf-8")
+        m._reindex_file(str(self._vault / "a.md"))  # worker body, run inline
+        self.assertEqual(events, [True, False])  # no spurious mid-flicker
+
     def test_query_before_ready_is_empty(self):
         m = self._manager(_StubEmbedder())
         self.assertEqual(m.query_files("alpha"), [])  # not built yet

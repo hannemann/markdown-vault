@@ -592,6 +592,20 @@ class MainWindow(Adw.ApplicationWindow):
             view_box.append(btn)
         header.set_title_widget(view_box)
 
+        # Background-indexing indicator (semantic search): a spinner + label,
+        # hidden until the index is (re)building — shown for any backend.
+        self._index_spinner = Gtk.Spinner()
+        index_label = Gtk.Label(label="Indexing…")
+        index_label.add_css_class("dim-label")
+        self._index_status = Gtk.Box(
+            orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        self._index_status.append(self._index_spinner)
+        self._index_status.append(index_label)
+        self._index_status.set_visible(False)
+        self._index_status.set_tooltip_text(
+            "Semantic index is updating in the background")
+        header.pack_start(self._index_status)
+
         # Hamburger menu (rightmost).
         menu_btn = Gtk.MenuButton()
         menu_btn.set_icon_name("open-menu-symbolic")
@@ -1250,29 +1264,75 @@ class MainWindow(Adw.ApplicationWindow):
     def _start_semantic_search(self) -> None:
         """Build the semantic index in the background when enabled (opt-in).
 
-        Kept fully lazy: nothing here imports numpy/fastembed or contacts Ollama
-        unless the feature is on.  A failure (e.g. Ollama unreachable) degrades
-        silently to keyword-only search.
+        Kept fully lazy: nothing here imports numpy/onnxruntime or contacts
+        Ollama unless the feature is on.  Embedder construction (an ONNX model
+        load can take a moment) and the build both run off the main thread; a
+        failure (Ollama unreachable, model missing) degrades silently to
+        keyword-only search.
         """
         if not self._settings.get("semantic_search_enabled"):
             return
+        threading.Thread(target=self._setup_semantic_index, daemon=True).start()
+
+    def rebuild_semantic_index(self) -> None:
+        """Discard the cache and re-embed everything against the *currently
+        selected* backend, live (no restart).  Wired to the Preferences button;
+        also picks up a backend switch made in the same dialog session."""
+        # Re-read settings so a just-changed backend / model / paths take hold.
+        self._settings = config.load_settings()
+        if not self._settings.get("semantic_search_enabled"):
+            logger.info("rebuild requested but semantic search is disabled")
+            return
+        threading.Thread(
+            target=self._setup_semantic_index, args=(True,), daemon=True).start()
+
+    def _setup_semantic_index(self, force: bool = False) -> None:
         try:
-            from .semantic_search import OllamaEmbedder
             from .semantic_index import SemanticIndexManager
-            model = self._settings.get("semantic_ollama_model", "nomic-embed-text")
-            url = self._settings.get("semantic_ollama_url", "http://localhost:11434")
-            embedder = OllamaEmbedder(model, url)
-            self._semantic_index = SemanticIndexManager(
-                embedder, self._vault_tree.get_vault_paths, config.STATE_DIR,
-                f"ollama:{model}",
+            embedder, tag = self._build_semantic_embedder()
+            manager = SemanticIndexManager(
+                embedder, self._vault_tree.get_vault_paths, config.STATE_DIR, tag,
                 min_score=float(self._settings.get("semantic_min_score", 0.35)),
+                on_busy=self._on_index_busy,
             )
-            self._semantic_index.start(
-                on_ready=lambda: logger.info("semantic index ready")
-            )
-            logger.info("semantic search: building index (model=%s)", model)
+            if force:
+                manager.invalidate_cache()
+            self._semantic_index = manager
+            manager.build()
+            logger.info("semantic index ready")
         except Exception:
             logger.warning("failed to start semantic search", exc_info=True)
+
+    def _on_index_busy(self, active: bool) -> None:
+        """Manager callback (fires on a worker thread) → bounce to the UI."""
+        GLib.idle_add(self._set_index_busy, active)
+
+    def _set_index_busy(self, active: bool) -> bool:
+        self._index_status.set_visible(bool(active))
+        if active:
+            self._index_spinner.start()
+        else:
+            self._index_spinner.stop()
+        return False
+
+    def _build_semantic_embedder(self):
+        """Construct the embedder for the configured backend; returns
+        ``(embedder, signature_tag)``."""
+        backend = self._settings.get("semantic_backend", "onnx")
+        if backend == "onnx":
+            from .semantic_search import OnnxEmbedder
+            default_dir = config.STATE_DIR / "onnx"
+            model = (self._settings.get("semantic_onnx_model")
+                     or str(default_dir / "model.onnx"))
+            tokenizer = (self._settings.get("semantic_onnx_tokenizer")
+                         or str(default_dir / "tokenizer.json"))
+            logger.info("semantic search: onnx backend (model=%s)", model)
+            return OnnxEmbedder(model, tokenizer), f"onnx:{model}"
+        from .semantic_search import OllamaEmbedder
+        model = self._settings.get("semantic_ollama_model", "nomic-embed-text")
+        url = self._settings.get("semantic_ollama_url", "http://localhost:11434")
+        logger.info("semantic search: ollama backend (model=%s)", model)
+        return OllamaEmbedder(model, url), f"ollama:{model}"
 
     def _semantic_update(self, path) -> None:
         if self._semantic_index and path and path.endswith(".md"):
@@ -2109,6 +2169,7 @@ class MainWindow(Adw.ApplicationWindow):
             return
         dlg = PreferencesDialog(
             glib_loglevel_callback=logging_setup.update_glib_loglevel,
+            on_reindex=self.rebuild_semantic_index,
         )
         dlg.connect("settings-changed", self._on_preferences_changed)
         dlg.present(self)

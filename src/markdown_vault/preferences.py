@@ -6,6 +6,7 @@ Changes are applied immediately and persisted to ``vaults.yaml``.
 """
 
 import logging
+import threading
 
 import gi
 
@@ -15,7 +16,7 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 gi.require_version("Gdk", "4.0")
 
-from gi.repository import Gtk, Adw, GObject, Gdk
+from gi.repository import Gtk, Adw, GObject, Gdk, GLib
 
 from . import config
 from . import dialogs
@@ -77,17 +78,22 @@ class PreferencesDialog(Adw.PreferencesDialog):
         "settings-changed": (GObject.SignalFlags.RUN_LAST, None, ()),
     }
 
-    def __init__(self, *, glib_loglevel_callback=None) -> None:
+    def __init__(self, *, glib_loglevel_callback=None, on_reindex=None) -> None:
         """Initialize preferences dialog.
 
         *glib_loglevel_callback* is an optional callable that is invoked
         when the GLib log level changes (allows live reconfiguration
         without restart).
+
+        *on_reindex* is an optional callable that discards the semantic-search
+        cache and rebuilds the index against the currently selected backend,
+        live.  When ``None`` the rebuild button is disabled.
         """
         super().__init__(title="Preferences")
 
         self._settings = config.load_settings()
         self._glib_loglevel_callback = glib_loglevel_callback
+        self._on_reindex = on_reindex
 
         # ── General page ────────────────────────────────────────────
         general = Adw.PreferencesPage(title="General", icon_name="preferences-other-symbolic")
@@ -274,9 +280,11 @@ class PreferencesDialog(Adw.PreferencesDialog):
         sem_group = Adw.PreferencesGroup(
             title="Semantic search",
             description=(
-                "Find notes by meaning via a local Ollama server. Off by "
-                "default; nothing is downloaded or contacted while disabled. "
-                "Run e.g. ‘ollama pull nomic-embed-text’ first. "
+                "Find notes by meaning. Off by default; nothing is downloaded "
+                "or contacted while disabled. Recommended: Local (ONNX) — runs "
+                "in-process, no server, nothing leaves your machine, fast per "
+                "query; download the model + tokenizer below. Ollama is an "
+                "alternative if you already run a server (e.g. with a GPU). "
                 "Changes take effect after restart."
             ),
         )
@@ -288,6 +296,107 @@ class PreferencesDialog(Adw.PreferencesDialog):
         self._sem_enabled_row.connect(
             "notify::active", self._on_toggle_setting, "semantic_search_enabled")
         sem_group.add(self._sem_enabled_row)
+
+        self._sem_backends = ["onnx", "ollama"]
+        self._sem_backend_row = Adw.ComboRow(
+            title="Backend",
+            subtitle="Local runs in-process (recommended); Ollama needs a server",
+            model=Gtk.StringList.new(["Local (ONNX) — recommended", "Ollama (server)"]),
+        )
+        self._sem_backend_row.set_selected(self._sem_backends.index(
+            self._settings.get("semantic_backend", "onnx")))
+        self._sem_backend_row.connect("notify::selected", self._on_sem_backend_changed)
+        sem_group.add(self._sem_backend_row)
+
+        # ONNX model + tokenizer: paste a URL and download into the app data
+        # dir with a live progress bar.  The download runs in a background
+        # thread; the backend picks the files up from the data dir on restart.
+        self._sem_model_url_row = Adw.EntryRow(title="ONNX model URL (model.onnx)")
+        self._sem_model_url_row.set_text(
+            self._settings.get("semantic_onnx_model_url", ""))
+        self._sem_model_url_row.connect(
+            "changed", self._on_entry_setting, "semantic_onnx_model_url")
+        model_btn = Gtk.Button(
+            icon_name="folder-download-symbolic", valign=Gtk.Align.CENTER)
+        model_btn.add_css_class("flat")
+        model_btn.set_tooltip_text("Download model.onnx")
+        model_btn.connect("clicked", self._on_download_onnx, "model")
+        self._sem_model_url_row.add_suffix(model_btn)
+        self._sem_model_dl_btn = model_btn
+        sem_group.add(self._sem_model_url_row)
+
+        self._sem_model_progress = Gtk.ProgressBar(
+            show_text=True, visible=False,
+            margin_start=12, margin_end=12, margin_bottom=6)
+        sem_group.add(self._sem_model_progress)
+
+        self._sem_tok_url_row = Adw.EntryRow(title="Tokenizer URL (tokenizer.json)")
+        self._sem_tok_url_row.set_text(
+            self._settings.get("semantic_onnx_tokenizer_url", ""))
+        self._sem_tok_url_row.connect(
+            "changed", self._on_entry_setting, "semantic_onnx_tokenizer_url")
+        tok_btn = Gtk.Button(
+            icon_name="folder-download-symbolic", valign=Gtk.Align.CENTER)
+        tok_btn.add_css_class("flat")
+        tok_btn.set_tooltip_text("Download tokenizer.json")
+        tok_btn.connect("clicked", self._on_download_onnx, "tokenizer")
+        self._sem_tok_url_row.add_suffix(tok_btn)
+        self._sem_tok_dl_btn = tok_btn
+        sem_group.add(self._sem_tok_url_row)
+
+        self._sem_tok_progress = Gtk.ProgressBar(
+            show_text=True, visible=False,
+            margin_start=12, margin_end=12, margin_bottom=6)
+        sem_group.add(self._sem_tok_progress)
+
+        # Presence indicator for the ONNX files + a real load/embed self-test.
+        self._sem_onnx_status_row = Adw.ActionRow(title="Model files")
+        self._sem_onnx_status_icon = Gtk.Image()
+        self._sem_onnx_status_row.add_prefix(self._sem_onnx_status_icon)
+        self._sem_onnx_test_btn = Gtk.Button(label="Test", valign=Gtk.Align.CENTER)
+        self._sem_onnx_test_btn.connect("clicked", self._on_test_onnx)
+        self._sem_onnx_status_row.add_suffix(self._sem_onnx_test_btn)
+        self._sem_onnx_status_row.set_activatable_widget(self._sem_onnx_test_btn)
+        sem_group.add(self._sem_onnx_status_row)
+
+        # Detected onnxruntime version + recommendation (probed off-thread so
+        # importing the heavy library never blocks opening Preferences).
+        self._sem_onnx_runtime_row = Adw.ActionRow(
+            title="ONNX runtime", subtitle="Checking…")
+        sem_group.add(self._sem_onnx_runtime_row)
+
+        # Collapsible guidance for choosing a model yourself.
+        self._sem_onnx_help_row = Adw.ExpanderRow(
+            title="How to pick your own ONNX model",
+            subtitle="What to search for and which files you need",
+        )
+        help_label = Gtk.Label(
+            label=(
+                "Semantic search needs a sentence-embedding model exported to "
+                "ONNX. Find one on Hugging Face and paste each file's URL above "
+                "(use the file's “Copy download link”, i.e. the "
+                ".../resolve/main/... address).\n\n"
+                "What to look for:\n"
+                "•  A feature-extraction / sentence-similarity model in ONNX "
+                "format — e.g. the Xenova/ or sentence-transformers/ orgs. "
+                "Xenova repos ship ready ONNX exports in an onnx/ folder.\n"
+                "•  Two files: model.onnx (or model_quantized.onnx — smaller and "
+                "faster, slightly lower quality) and tokenizer.json.\n"
+                "•  Multilingual if your notes aren't English-only (e.g. "
+                "paraphrase-multilingual-MiniLM-L12-v2); English-only models are "
+                "smaller and faster.\n"
+                "•  It must output token embeddings (the app mean-pools them). "
+                "Classification or reranker models won't work.\n\n"
+                "Good search terms: “sentence-transformers onnx”, “Xenova "
+                "MiniLM”, “feature-extraction onnx”. Both BERT- and XLM-R-style "
+                "models work — the app auto-detects the inputs a model needs."
+            ),
+            wrap=True, xalign=0.0,
+            margin_top=6, margin_bottom=12, margin_start=12, margin_end=12,
+        )
+        help_label.add_css_class("dim-label")
+        self._sem_onnx_help_row.add_row(help_label)
+        sem_group.add(self._sem_onnx_help_row)
 
         self._sem_url_row = Adw.EntryRow(title="Ollama URL")
         self._sem_url_row.set_text(
@@ -301,6 +410,15 @@ class PreferencesDialog(Adw.PreferencesDialog):
         self._sem_model_row.connect("changed", self._on_entry_setting, "semantic_ollama_model")
         sem_group.add(self._sem_model_row)
 
+        self._sem_ollama_test_row = Adw.ActionRow(
+            title="Test connection",
+            subtitle="Embed a probe with the current URL + model")
+        self._sem_ollama_test_btn = Gtk.Button(label="Test", valign=Gtk.Align.CENTER)
+        self._sem_ollama_test_btn.connect("clicked", self._on_test_ollama)
+        self._sem_ollama_test_row.add_suffix(self._sem_ollama_test_btn)
+        self._sem_ollama_test_row.set_activatable_widget(self._sem_ollama_test_btn)
+        sem_group.add(self._sem_ollama_test_row)
+
         self._sem_score_row = Adw.SpinRow(
             title="Minimum similarity",
             subtitle="Higher = stricter (fewer, closer matches)",
@@ -311,6 +429,36 @@ class PreferencesDialog(Adw.PreferencesDialog):
         )
         self._sem_score_row.connect("notify::value", self._on_min_score_changed)
         sem_group.add(self._sem_score_row)
+
+        # Rebuild: discard the cache and re-embed everything against the
+        # currently selected backend, live — the way to apply a backend switch
+        # (or a freshly downloaded model) without restarting.
+        self._sem_rebuild_row = Adw.ActionRow(
+            title="Rebuild index now",
+            subtitle="Clear the cache and re-embed all notes with the selected backend",
+        )
+        self._sem_rebuild_btn = Gtk.Button(
+            label="Rebuild", valign=Gtk.Align.CENTER)
+        self._sem_rebuild_btn.add_css_class("destructive-action")
+        self._sem_rebuild_btn.set_sensitive(self._on_reindex is not None)
+        self._sem_rebuild_btn.connect("clicked", self._on_rebuild_index)
+        self._sem_rebuild_row.add_suffix(self._sem_rebuild_btn)
+        self._sem_rebuild_row.set_activatable_widget(self._sem_rebuild_btn)
+        sem_group.add(self._sem_rebuild_row)
+
+        # Grey out the rows that the selected backend does not use.
+        self._sem_onnx_widgets = [
+            self._sem_model_url_row, self._sem_model_progress,
+            self._sem_tok_url_row, self._sem_tok_progress,
+            self._sem_onnx_status_row, self._sem_onnx_runtime_row,
+            self._sem_onnx_help_row,
+        ]
+        self._sem_ollama_widgets = [
+            self._sem_url_row, self._sem_model_row, self._sem_ollama_test_row,
+        ]
+        self._update_sem_backend_sensitivity()
+        self._refresh_onnx_status()
+        threading.Thread(target=self._probe_onnx_runtime, daemon=True).start()
 
         self.add(search)
 
@@ -430,6 +578,214 @@ class PreferencesDialog(Adw.PreferencesDialog):
     def _on_entry_setting(self, row, key) -> None:
         self._settings[key] = row.get_text().strip()
         self._persist()
+
+    def _on_sem_backend_changed(self, row, _pspec) -> None:
+        self._settings["semantic_backend"] = self._sem_backends[row.get_selected()]
+        self._persist()
+        self._update_sem_backend_sensitivity()
+
+    def _update_sem_backend_sensitivity(self) -> None:
+        """Grey out the rows the selected backend does not use."""
+        onnx = self._settings.get("semantic_backend", "ollama") == "onnx"
+        for w in self._sem_onnx_widgets:
+            w.set_sensitive(onnx)
+        for w in self._sem_ollama_widgets:
+            w.set_sensitive(not onnx)
+
+    def _on_rebuild_index(self, _button) -> None:
+        if self._on_reindex is None:
+            return
+        if not self._settings.get("semantic_search_enabled"):
+            msg = "Enable semantic search first"
+        else:
+            self._on_reindex()
+            msg = "Rebuilding semantic index in the background…"
+        try:
+            self.add_toast(Adw.Toast.new(msg))
+        except Exception:
+            logger.info("%s", msg)
+
+    # ── ONNX runtime probe ────────────────────────────────────────
+
+    # Sentence-transformer exports (opset ~14) load on any recent onnxruntime.
+    _ONNX_RUNTIME_RECOMMENDED = "1.16"
+
+    def _probe_onnx_runtime(self) -> None:
+        try:
+            import onnxruntime
+            ver = onnxruntime.__version__
+            line = (f"onnxruntime {ver} detected — recommended "
+                    f"≥ {self._ONNX_RUNTIME_RECOMMENDED} for current models")
+        except Exception:
+            line = ("onnxruntime not found — install it (openSUSE: "
+                    "python313-onnxruntime) or use the Flatpak build")
+        GLib.idle_add(self._sem_onnx_runtime_row.set_subtitle, line)
+
+    # ── Backend connection / model self-tests ─────────────────────
+
+    def _onnx_paths(self):
+        """Resolve the ONNX model + tokenizer paths the backend would use."""
+        default = config.STATE_DIR / "onnx"
+        model = (self._settings.get("semantic_onnx_model")
+                 or str(default / "model.onnx"))
+        tok = (self._settings.get("semantic_onnx_tokenizer")
+               or str(default / "tokenizer.json"))
+        from pathlib import Path
+        return Path(model), Path(tok)
+
+    def _refresh_onnx_status(self) -> None:
+        """Update the model-files indicator (present / missing + sizes)."""
+        model_p, tok_p = self._onnx_paths()
+
+        def describe(p):
+            if p.exists():
+                return True, f"{p.name} ({p.stat().st_size / 1024 / 1024:.0f} MB)"
+            return False, f"{p.name} missing"
+
+        m_ok, m_txt = describe(model_p)
+        t_ok, t_txt = describe(tok_p)
+        both = m_ok and t_ok
+        self._sem_onnx_status_row.set_subtitle(f"{m_txt}  ·  {t_txt}")
+        # object-select-symbolic (checkmark) is reliably present; emblem-ok is not.
+        self._sem_onnx_status_icon.set_from_icon_name(
+            "object-select-symbolic" if both else "dialog-warning-symbolic")
+        self._sem_onnx_status_icon.remove_css_class("success")
+        self._sem_onnx_status_icon.remove_css_class("warning")
+        self._sem_onnx_status_icon.add_css_class("success" if both else "warning")
+        self._sem_onnx_test_btn.set_sensitive(both)
+
+    def _on_test_ollama(self, button) -> None:
+        url = self._sem_url_row.get_text().strip()
+        model = self._sem_model_row.get_text().strip()
+        button.set_sensitive(False)
+        self._sem_ollama_test_row.set_subtitle("Testing…")
+        threading.Thread(
+            target=self._test_ollama_worker, args=(button, url, model),
+            daemon=True).start()
+
+    def _test_ollama_worker(self, button, url, model) -> None:
+        try:
+            from .semantic_search import OllamaEmbedder
+            vec = OllamaEmbedder(model, url).embed(["connection test"], is_query=True)
+            dim = len(vec[0]) if vec else 0
+            ok, msg = True, f"Connected — {model} OK (dim {dim})"
+        except Exception as exc:
+            ok, msg = False, f"Failed: {exc}"
+            logger.info("Ollama test failed: %s", exc)
+        GLib.idle_add(self._test_done, button, self._sem_ollama_test_row, ok, msg)
+
+    def _on_test_onnx(self, button) -> None:
+        model_p, tok_p = self._onnx_paths()
+        button.set_sensitive(False)
+        self._sem_onnx_status_row.set_subtitle("Loading model + embedding a probe…")
+        threading.Thread(
+            target=self._test_onnx_worker,
+            args=(button, str(model_p), str(tok_p)), daemon=True).start()
+
+    def _test_onnx_worker(self, button, model_path, tok_path) -> None:
+        try:
+            from .semantic_search import OnnxEmbedder
+            vec = OnnxEmbedder(model_path, tok_path).embed(["probe"])
+            dim = len(vec[0]) if vec else 0
+            ok, msg = True, f"Model loads and embeds OK (dim {dim})"
+        except Exception as exc:
+            ok, msg = False, f"Failed: {exc}"
+            logger.info("ONNX test failed: %s", exc)
+        GLib.idle_add(self._test_onnx_done, button, ok, msg)
+
+    def _test_onnx_done(self, button, ok, msg) -> bool:
+        button.set_sensitive(True)
+        try:
+            self.add_toast(Adw.Toast.new(msg))
+        except Exception:
+            logger.info("%s", msg)
+        # Restore the presence line (the test message was transient).
+        self._refresh_onnx_status()
+        if not ok:  # keep the failure visible in the subtitle too
+            self._sem_onnx_status_row.set_subtitle(msg)
+        return False
+
+    def _test_done(self, button, row, ok, msg) -> bool:
+        button.set_sensitive(True)
+        row.set_subtitle(msg)
+        try:
+            self.add_toast(Adw.Toast.new(msg))
+        except Exception:
+            logger.info("%s", msg)
+        return False
+
+    # ── ONNX model / tokenizer download ────────────────────────────
+
+    def _on_download_onnx(self, button, which) -> None:
+        if which == "model":
+            url = self._sem_model_url_row.get_text().strip()
+            filename, bar = "model.onnx", self._sem_model_progress
+        else:
+            url = self._sem_tok_url_row.get_text().strip()
+            filename, bar = "tokenizer.json", self._sem_tok_progress
+        if not url:
+            return
+        button.set_sensitive(False)
+        bar.set_visible(True)
+        bar.set_fraction(0.0)
+        bar.set_text("Starting…")
+        target = config.STATE_DIR / "onnx" / filename
+        threading.Thread(
+            target=self._download_worker,
+            args=(button, url, target, filename, bar), daemon=True).start()
+
+    def _download_worker(self, button, url, target, filename, bar) -> None:
+        import urllib.request
+        try:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            req = urllib.request.Request(
+                url, headers={"User-Agent": "markdown-vault"})
+            tmp = target.with_name(target.name + ".part")
+            with urllib.request.urlopen(req) as resp:
+                total = int(resp.headers.get("Content-Length") or 0)
+                done = last = 0
+                with open(tmp, "wb") as fh:
+                    while True:
+                        buf = resp.read(65536)
+                        if not buf:
+                            break
+                        fh.write(buf)
+                        done += len(buf)
+                        if done - last >= 1024 * 1024:  # throttle to ~1 MB
+                            last = done
+                            GLib.idle_add(self._download_progress, bar, done, total)
+            tmp.replace(target)
+            mb = target.stat().st_size / 1024 / 1024
+            GLib.idle_add(
+                self._download_done, button, bar, True,
+                f"Downloaded {filename} ({mb:.0f} MB) — restart to use")
+        except Exception as exc:  # network/IO/permission — report, don't crash
+            logger.warning("ONNX download failed: %s", exc)
+            GLib.idle_add(
+                self._download_done, button, bar, False, f"Failed: {exc}")
+
+    def _download_progress(self, bar, done, total) -> bool:
+        mb = done / 1024 / 1024
+        if total > 0:
+            frac = done / total
+            bar.set_fraction(min(frac, 1.0))
+            bar.set_text(f"{mb:.0f} / {total / 1024 / 1024:.0f} MB ({frac * 100:.0f}%)")
+        else:  # server sent no Content-Length → indeterminate
+            bar.pulse()
+            bar.set_text(f"{mb:.0f} MB")
+        return False
+
+    def _download_done(self, button, bar, ok, msg) -> bool:
+        button.set_sensitive(True)
+        if ok:
+            bar.set_fraction(1.0)
+        bar.set_text(msg)
+        try:
+            self.add_toast(Adw.Toast.new(msg))
+        except Exception:
+            logger.info("%s", msg)
+        self._refresh_onnx_status()  # a fetched file flips the indicator
+        return False
 
     def _on_min_score_changed(self, _row, _pspec) -> None:
         self._settings["semantic_min_score"] = round(

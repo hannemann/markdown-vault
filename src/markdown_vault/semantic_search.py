@@ -4,16 +4,17 @@ Pure logic, no GTK:
 
 * :func:`chunk_markdown` — split a note into blocks with 1-based line tracking.
 * An *embedder* turns texts into vectors.  Two backends are provided:
-  :class:`OllamaEmbedder` (stdlib HTTP, no extra dependency, no download) and
-  :class:`FastembedEmbedder` (local ONNX via the optional ``fastembed`` package).
+  :class:`OllamaEmbedder` (stdlib HTTP to an Ollama server) and
+  :class:`OnnxEmbedder` (local, in-process via onnxruntime + a HuggingFace
+  tokenizer — distro packages / Flatpak wheels, no pip on the host).
 * :class:`VectorIndex` — holds normalised chunk vectors and answers cosine
   top-K queries with numpy.
 * :class:`SemanticProvider` — adapts the index to the quick-open engine's
   provider interface so semantic hits can be merged with name matches.
 
-Nothing here imports ``fastembed``, contacts Ollama or imports ``numpy`` at
-module load — those happen only when a backend / index is actually used, so the
-feature stays free when disabled.
+Nothing here imports onnxruntime/tokenizers, contacts Ollama or imports
+``numpy`` at module load — those happen only when a backend / index is actually
+used, so the feature stays free when disabled.
 """
 
 import json
@@ -222,20 +223,59 @@ class OllamaEmbedder:
         return out
 
 
-class FastembedEmbedder:
-    """Embed locally with the optional ``fastembed`` package (ONNX, no torch)."""
+class OnnxEmbedder:
+    """Embed locally, in-process, with onnxruntime + a HuggingFace tokenizer.
 
-    def __init__(self, model_name: str) -> None:
-        from fastembed import TextEmbedding  # optional dependency, lazy
-        self._model = TextEmbedding(model_name=model_name)
-        self._is_e5 = "e5" in model_name.lower()
+    No pip on the host: needs the distro packages ``onnxruntime``,
+    ``tokenizers`` and ``numpy`` (or, in a Flatpak, the bundled wheels).  Point
+    it at a downloaded sentence-transformer ONNX model and its ``tokenizer.json``
+    — the same code path works for local dev and Flatpak.
+
+    Mean-pools the token embeddings with the attention mask (the standard
+    sentence-transformers pooling); the index normalises the result.
+    """
+
+    def __init__(self, model_path: str, tokenizer_path: str,
+                 max_length: int = 256) -> None:
+        import onnxruntime as ort
+        from tokenizers import Tokenizer
+        self._session = ort.InferenceSession(
+            model_path, providers=["CPUExecutionProvider"])
+        self._tokenizer = Tokenizer.from_file(tokenizer_path)
+        self._tokenizer.enable_truncation(max_length=max_length)
+        self._input_names = {i.name for i in self._session.get_inputs()}
 
     def embed(self, texts, is_query: bool = False) -> list[list[float]]:
+        import numpy as np
         texts = list(texts)
-        if self._is_e5:  # e5 models need query:/passage: prefixes
-            prefix = "query: " if is_query else "passage: "
-            texts = [prefix + t for t in texts]
-        return [[float(x) for x in v] for v in self._model.embed(texts)]
+        if not texts:
+            return []
+        encs = self._tokenizer.encode_batch(texts)
+        maxlen = max((len(e.ids) for e in encs), default=1)
+        n = len(encs)
+        input_ids = np.zeros((n, maxlen), dtype=np.int64)
+        attention_mask = np.zeros((n, maxlen), dtype=np.int64)
+        type_ids = np.zeros((n, maxlen), dtype=np.int64)
+        for i, e in enumerate(encs):
+            k = len(e.ids)
+            input_ids[i, :k] = e.ids
+            attention_mask[i, :k] = e.attention_mask
+            type_ids[i, :k] = e.type_ids
+        feed = {"input_ids": input_ids, "attention_mask": attention_mask,
+                "token_type_ids": type_ids}
+        feed = {k: v for k, v in feed.items() if k in self._input_names}
+        outputs = self._session.run(None, feed)
+        return self._mean_pool(outputs[0], attention_mask).tolist()
+
+    @staticmethod
+    def _mean_pool(token_embeddings, attention_mask):
+        """Attention-masked mean over the token dimension → (n, hidden)."""
+        import numpy as np
+        emb = np.asarray(token_embeddings, dtype="float32")     # (n, seq, hidden)
+        mask = np.asarray(attention_mask, dtype="float32")[:, :, None]
+        summed = (emb * mask).sum(axis=1)
+        counts = np.clip(mask.sum(axis=1), 1e-9, None)
+        return summed / counts
 
 
 # ── Vector index ────────────────────────────────────────────────────

@@ -37,7 +37,7 @@ class SemanticIndexManager:
     incremental updates."""
 
     def __init__(self, embedder, get_vault_paths, state_dir, signature_tag,
-                 min_score: float = 0.35) -> None:
+                 min_score: float = 0.35, on_busy=None) -> None:
         self._embedder = embedder
         self._get_vault_paths = get_vault_paths
         self._state_dir = Path(state_dir)
@@ -46,6 +46,12 @@ class SemanticIndexManager:
         self._index = VectorIndex(embedder)
         self._lock = threading.Lock()
         self._ready = False
+        # Busy signalling: on_busy(True/False) fires on the 0↔1 transition of a
+        # refcount over all background work (build + incremental ops), so the UI
+        # can show a single "indexing" indicator regardless of backend.
+        self._on_busy = on_busy
+        self._busy = 0
+        self._busy_lock = threading.Lock()
         # path -> {"hash": str, "chunks": list[Chunk], "vecs": np.ndarray}
         self._files: dict[str, dict] = {}
         self._json_path = self._state_dir / "semantic-index.json"
@@ -68,8 +74,39 @@ class SemanticIndexManager:
         with self._lock:
             return self._ready
 
+    def _busy_enter(self) -> None:
+        if self._on_busy is None:
+            return
+        with self._busy_lock:
+            self._busy += 1
+            first = self._busy == 1
+        if first:
+            try:
+                self._on_busy(True)
+            except Exception:
+                logger.debug("on_busy(True) callback failed", exc_info=True)
+
+    def _busy_exit(self) -> None:
+        if self._on_busy is None:
+            return
+        with self._busy_lock:
+            self._busy -= 1
+            last = self._busy == 0
+        if last:
+            try:
+                self._on_busy(False)
+            except Exception:
+                logger.debug("on_busy(False) callback failed", exc_info=True)
+
     def build(self) -> None:
         """Load the per-file cache and re-embed only files that changed."""
+        self._busy_enter()
+        try:
+            self._build()
+        finally:
+            self._busy_exit()
+
+    def _build(self) -> None:
         cached = self._load_cache()
         files = self._walk_files()
         new_files: dict[str, dict] = {}
@@ -110,52 +147,64 @@ class SemanticIndexManager:
                          daemon=True).start()
 
     def _reindex_file(self, path: str) -> None:
-        if not self.is_ready():
-            return
+        self._busy_enter()
         try:
-            text = Path(path).read_text(encoding="utf-8", errors="replace")
-        except OSError:
-            self._drop_file(path)
-            return
-        h = _hash(text)
-        with self._lock:
-            cur = self._files.get(path)
-        if cur is not None and cur["hash"] == h:
-            return  # unchanged
-        kept, vecs = self._embed_all(chunk_markdown(text, path))
-        with self._lock:
-            self._files[path] = {"hash": h, "chunks": kept, "vecs": vecs}
-            self._rebuild_index_locked()
-        self._save_cache()
-        logger.info("semantic index: reindexed %s (%d chunks)",
-                    os.path.basename(path), len(kept))
+            if not self.is_ready():
+                return
+            try:
+                text = Path(path).read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                self._drop_file(path)
+                return
+            h = _hash(text)
+            with self._lock:
+                cur = self._files.get(path)
+            if cur is not None and cur["hash"] == h:
+                return  # unchanged
+            kept, vecs = self._embed_all(chunk_markdown(text, path))
+            with self._lock:
+                self._files[path] = {"hash": h, "chunks": kept, "vecs": vecs}
+                self._rebuild_index_locked()
+            self._save_cache()
+            logger.info("semantic index: reindexed %s (%d chunks)",
+                        os.path.basename(path), len(kept))
+        finally:
+            self._busy_exit()
 
     def _drop_file(self, path: str) -> None:
-        with self._lock:
-            if path not in self._files:
-                return
-            del self._files[path]
-            self._rebuild_index_locked()
-        self._save_cache()
-        logger.info("semantic index: dropped %s", os.path.basename(path))
+        self._busy_enter()
+        try:
+            with self._lock:
+                if path not in self._files:
+                    return
+                del self._files[path]
+                self._rebuild_index_locked()
+            self._save_cache()
+            logger.info("semantic index: dropped %s", os.path.basename(path))
+        finally:
+            self._busy_exit()
 
     def _move_file(self, old_path: str, new_path: str) -> None:
-        with self._lock:
-            entry = self._files.pop(old_path, None)
-            if entry is None:
-                found = False
-            else:
-                for chunk in entry["chunks"]:
-                    chunk.path = new_path
-                self._files[new_path] = entry
-                self._rebuild_index_locked()
-                found = True
-        if not found:
-            self._reindex_file(new_path)  # wasn't indexed → embed fresh
-            return
-        self._save_cache()
-        logger.info("semantic index: renamed %s -> %s",
-                    os.path.basename(old_path), os.path.basename(new_path))
+        self._busy_enter()
+        try:
+            with self._lock:
+                entry = self._files.pop(old_path, None)
+                if entry is None:
+                    found = False
+                else:
+                    for chunk in entry["chunks"]:
+                        chunk.path = new_path
+                    self._files[new_path] = entry
+                    self._rebuild_index_locked()
+                    found = True
+            if not found:
+                self._reindex_file(new_path)  # wasn't indexed → embed fresh
+                return
+            self._save_cache()
+            logger.info("semantic index: renamed %s -> %s",
+                        os.path.basename(old_path), os.path.basename(new_path))
+        finally:
+            self._busy_exit()
 
     # ── Embedding & index assembly ─────────────────────────────────
 
@@ -252,6 +301,17 @@ class SemanticIndexManager:
         return [(c, s) for c, s in hits if s >= self._min_score]
 
     # ── Cache & walk ───────────────────────────────────────────────
+
+    def invalidate_cache(self) -> None:
+        """Delete the on-disk cache so the next ``build()`` re-embeds every
+        file from scratch (used by the manual 'rebuild index' action)."""
+        for p in (self._json_path, self._npy_path):
+            try:
+                p.unlink()
+            except FileNotFoundError:
+                pass
+            except OSError:
+                logger.warning("could not remove cache file %s", p, exc_info=True)
 
     def _walk_files(self):
         files = []
