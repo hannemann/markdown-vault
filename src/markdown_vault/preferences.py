@@ -353,6 +353,25 @@ class PreferencesDialog(Adw.PreferencesDialog):
             margin_start=12, margin_end=12, margin_bottom=6)
         sem_group.add(self._sem_tok_progress)
 
+        # Optional custom file locations (blank = the app data dir default).
+        # Downloads land here and the backend loads from here, so changing a
+        # path refreshes the presence indicator below.
+        self._sem_onnx_model_path_row = Adw.EntryRow(
+            title="Model path (optional, blank = default)")
+        self._sem_onnx_model_path_row.set_text(
+            self._settings.get("semantic_onnx_model", ""))
+        self._sem_onnx_model_path_row.connect(
+            "changed", self._on_onnx_path_changed, "semantic_onnx_model")
+        sem_group.add(self._sem_onnx_model_path_row)
+
+        self._sem_onnx_tok_path_row = Adw.EntryRow(
+            title="Tokenizer path (optional, blank = default)")
+        self._sem_onnx_tok_path_row.set_text(
+            self._settings.get("semantic_onnx_tokenizer", ""))
+        self._sem_onnx_tok_path_row.connect(
+            "changed", self._on_onnx_path_changed, "semantic_onnx_tokenizer")
+        sem_group.add(self._sem_onnx_tok_path_row)
+
         # Presence indicator for the ONNX files + a real load/embed self-test.
         self._sem_onnx_status_row = Adw.ActionRow(title="Model files")
         self._sem_onnx_status_icon = Gtk.Image()
@@ -454,6 +473,7 @@ class PreferencesDialog(Adw.PreferencesDialog):
         self._sem_onnx_widgets = [
             self._sem_model_url_row, self._sem_model_progress,
             self._sem_tok_url_row, self._sem_tok_progress,
+            self._sem_onnx_model_path_row, self._sem_onnx_tok_path_row,
             self._sem_onnx_status_row, self._sem_onnx_runtime_row,
             self._sem_onnx_help_row,
         ]
@@ -644,6 +664,11 @@ class PreferencesDialog(Adw.PreferencesDialog):
                or str(default / "tokenizer.json"))
         from pathlib import Path
         return Path(model), Path(tok)
+
+    def _on_onnx_path_changed(self, row, key) -> None:
+        self._settings[key] = row.get_text().strip()
+        self._persist()
+        self._refresh_onnx_status()  # download target + presence follow the path
 
     def _refresh_onnx_status(self) -> None:
         """Update the model-files indicator (present / missing + sizes)."""
