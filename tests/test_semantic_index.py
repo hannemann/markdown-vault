@@ -44,6 +44,17 @@ class _FlakyEmbedder(_StubEmbedder):
         return super().embed(texts, is_query)
 
 
+class _HungEmbedder:
+    """Every call raises OSError, like a server that never answers."""
+
+    def __init__(self):
+        self.calls = 0
+
+    def embed(self, texts, is_query=False):
+        self.calls += 1
+        raise TimeoutError("hung")
+
+
 class TestSemanticIndexManager(unittest.TestCase):
     def setUp(self):
         self._vault = Path(tempfile.mkdtemp())
@@ -257,6 +268,18 @@ class TestSemanticIndexManager(unittest.TestCase):
         names = {Path(r.path).name for r in m.query_open("alpha", top_k=10)}
         self.assertIn("renamed.md", names)
         self.assertNotIn("a.md", names)
+
+    def test_backend_error_aborts_without_per_chunk_retry(self):
+        # R25.1: a hung backend must not be retried once per chunk. Two batches
+        # of chunks, the first raises OSError → abort after that one call.
+        from markdown_vault.semantic_search import Chunk
+        e = _HungEmbedder()
+        m = self._manager(e)
+        chunks = [Chunk("/a.md", i, f"text number {i}") for i in range(40)]
+        kept, arr = m._embed_all(chunks)
+        self.assertEqual(kept, [])       # nothing embedded
+        self.assertEqual(e.calls, 1)     # aborted after the first batch, no retries
+        self.assertEqual(arr.shape, (0, 0))
 
     def test_failed_chunk_is_skipped_not_fatal(self):
         # A chunk whose embed 500s must be skipped; the build still completes.

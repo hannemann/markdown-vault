@@ -275,7 +275,17 @@ class SemanticIndexManager:
                 embs = self._embedder.embed([c.text for c in group], is_query=False)
                 kept.extend(group)
                 vecs.extend(embs)
+            except OSError:
+                # Backend unreachable/hung (URLError/TimeoutError/HTTPError all
+                # subclass OSError): retrying per chunk would hit the same wall 32
+                # more times, so bail with what we have — the caller tolerates a
+                # partial/empty result (R25.1).
+                logger.warning("semantic index: embedding backend unavailable, "
+                               "aborting", exc_info=True)
+                break
             except Exception:
+                # A data problem (one bad/oversized chunk): retry per chunk so a
+                # single failure can't waste the whole batch.
                 logger.debug("batch embed failed; retrying per chunk", exc_info=True)
                 for c in group:
                     try:
