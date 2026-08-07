@@ -21,6 +21,7 @@ used, so the feature stays free when disabled.
 
 import json
 import logging
+import urllib.error
 import urllib.request
 from dataclasses import dataclass
 
@@ -193,9 +194,15 @@ class OllamaEmbedder:
             return []
         try:
             return self._embed_batch(texts)
-        except Exception:
-            logger.debug("ollama /api/embed unavailable; falling back to "
-                         "/api/embeddings", exc_info=True)
+        except urllib.error.HTTPError as exc:
+            # Only fall back for a genuine "endpoint not there" (old Ollama, where
+            # /api/embed 404s instantly).  A timeout or connection error must
+            # propagate to _embed_all's skip-and-continue instead of triggering a
+            # second, far slower per-prompt pass against the same hung server (R24.1).
+            if exc.code not in (404, 405):
+                raise
+            logger.debug("ollama /api/embed missing (HTTP %s); falling back to "
+                         "/api/embeddings", exc.code)
             return self._embed_singular(texts)
 
     def _post(self, endpoint: str, payload: dict):

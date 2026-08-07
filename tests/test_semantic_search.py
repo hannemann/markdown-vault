@@ -1,6 +1,7 @@
 """Tests for markdown_vault.semantic_search (Phase 5 core, backend-agnostic)."""
 
 import unittest
+import urllib.error
 
 from markdown_vault import semantic_search as ss
 
@@ -81,6 +82,44 @@ class TestOllamaPrefixes(unittest.TestCase):
         e = ss.OllamaEmbedder("mxbai-embed-large")
         self.assertEqual(e._prep(["hi"], is_query=True), ["hi"])
         self.assertEqual(e._prep(["hi"], is_query=False), ["hi"])
+
+
+class TestOllamaEndpointFallback(unittest.TestCase):
+    """R24.1: fall back to the legacy endpoint only for a missing endpoint —
+    a timeout or connection error must propagate, not trigger a per-prompt pass."""
+
+    def _embedder(self):
+        return ss.OllamaEmbedder("test-model", "http://localhost:11434")
+
+    @staticmethod
+    def _raise(exc):
+        def _boom(_texts):
+            raise exc
+        return _boom
+
+    def test_falls_back_on_404(self):
+        e = self._embedder()
+        e._embed_batch = self._raise(
+            urllib.error.HTTPError("u", 404, "not found", {}, None))
+        called = []
+        e._embed_singular = lambda texts: called.append(texts) or [[1.0]]
+        self.assertEqual(e.embed(["hi"]), [[1.0]])
+        self.assertTrue(called)
+
+    def test_timeout_propagates_without_fallback(self):
+        e = self._embedder()
+        e._embed_batch = self._raise(TimeoutError("hung"))
+        e._embed_singular = lambda texts: [[9.0]]  # must NOT run
+        with self.assertRaises(TimeoutError):
+            e.embed(["hi"])
+
+    def test_non_404_http_error_propagates(self):
+        e = self._embedder()
+        e._embed_batch = self._raise(
+            urllib.error.HTTPError("u", 500, "server error", {}, None))
+        e._embed_singular = lambda texts: [[9.0]]  # must NOT run
+        with self.assertRaises(urllib.error.HTTPError):
+            e.embed(["hi"])
 
 
 class TestOnnxMeanPool(unittest.TestCase):
