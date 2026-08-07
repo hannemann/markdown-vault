@@ -26,23 +26,37 @@ class _StubEmbedder:
 
 
 class TestChunkMarkdown(unittest.TestCase):
-    def test_tracks_1based_start_lines(self):
+    def test_merges_small_blocks_and_headings(self):
+        # A short note's blocks merge into one context-rich chunk at line 1.
         text = "# Title\n\nfirst para\nstill first\n\nsecond para\n"
         chunks = ss.chunk_markdown(text, "/n.md")
-        self.assertEqual([(c.line, c.text.split("\n")[0]) for c in chunks],
-                         [(1, "# Title"), (3, "first para"), (6, "second para")])
+        self.assertEqual(len(chunks), 1)
+        self.assertEqual(chunks[0].line, 1)
+        self.assertIn("Title", chunks[0].text)
+        self.assertIn("second para", chunks[0].text)
 
     def test_skips_frontmatter(self):
-        text = "---\ntitle: x\ntags: [a]\n---\n\nbody line\n"
+        text = "---\ntitle: x\ntags: [a]\n---\n\nbody line here\n"
         chunks = ss.chunk_markdown(text, "/n.md")
         self.assertEqual(len(chunks), 1)
-        self.assertEqual(chunks[0].text, "body line")
+        self.assertEqual(chunks[0].text, "body line here")
         self.assertEqual(chunks[0].line, 6)
 
-    def test_drops_tiny_blocks(self):
-        text = "ok this is fine\n\n-\n\nanother real block\n"
-        texts = [c.text for c in ss.chunk_markdown(text)]
-        self.assertEqual(texts, ["ok this is fine", "another real block"])
+    def test_heading_breaks_after_a_real_section(self):
+        # A section over the min-flush size, then a new heading → two chunks.
+        big = "## A\n" + ("filler filler filler " * 20)  # > 250 chars
+        text = big + "\n\n## B\n\nbody of section b\n"
+        chunks = ss.chunk_markdown(text, "/n.md")
+        self.assertEqual(len(chunks), 2)
+        self.assertTrue(chunks[0].text.startswith("## A"))
+        self.assertTrue(chunks[1].text.startswith("## B"))
+        self.assertEqual(chunks[0].line, 1)
+
+    def test_splits_oversized_block(self):
+        text = "word " * 600  # ~3000 chars, single block, no headings
+        chunks = ss.chunk_markdown(text, "/n.md")
+        self.assertGreaterEqual(len(chunks), 2)
+        self.assertTrue(all(len(c.text) <= ss._MAX_CHARS for c in chunks))
 
     def test_empty_text(self):
         self.assertEqual(ss.chunk_markdown(""), [])

@@ -36,12 +36,53 @@ class Chunk:
     text: str
 
 
+# Chunking is tuned for retrieval quality: small blocks (bare headings, short
+# paragraphs) are merged up to a target size so each chunk carries context, and
+# oversized blocks are split into overlapping windows so nothing exceeds the
+# embedding model's context window.
 _MIN_CHUNK_CHARS = 3
+_TARGET_CHARS = 600       # accumulate small blocks up to this
+_MIN_FLUSH_CHARS = 250    # only break before a heading once this much is buffered
+_MAX_CHARS = 2000         # split blocks larger than this
+_OVERLAP_CHARS = 200      # overlap between split windows
+
+
+def _blank_line_blocks(lines, start):
+    """Yield (1-based start line, text) for each blank-line-separated block."""
+    cur: list[str] = []
+    cur_start = start
+    for i in range(start, len(lines)):
+        if lines[i].strip() == "":
+            if cur:
+                yield cur_start + 1, "\n".join(cur)
+                cur = []
+        else:
+            if not cur:
+                cur_start = i
+            cur.append(lines[i])
+    if cur:
+        yield cur_start + 1, "\n".join(cur)
+
+
+def _split_oversized(start_line: int, text: str):
+    """Split a long block into overlapping windows, tracking each start line."""
+    step = max(1, _MAX_CHARS - _OVERLAP_CHARS)
+    i = 0
+    n = len(text)
+    while i < n:
+        piece = text[i:i + _MAX_CHARS]
+        yield start_line + text[:i].count("\n"), piece
+        if i + _MAX_CHARS >= n:
+            break
+        i += step
 
 
 def chunk_markdown(text: str, path: str = "") -> list[Chunk]:
-    """Split *text* into blank-line-separated blocks, tracking the 1-based start
-    line and skipping a leading YAML frontmatter block.  Tiny blocks are dropped.
+    """Split *text* into retrieval-sized chunks with 1-based line tracking.
+
+    Frontmatter is skipped.  Blank-line blocks are merged up to ~600 chars (a
+    heading starts a fresh chunk once a real section has accumulated, so headings
+    group with their body); blocks over ~2000 chars are split with overlap.
     """
     lines = text.splitlines()
     start = 0
@@ -50,20 +91,34 @@ def chunk_markdown(text: str, path: str = "") -> list[Chunk]:
             if lines[i].strip() == "---":
                 start = i + 1
                 break
+
     chunks: list[Chunk] = []
-    cur: list[str] = []
-    cur_start = 0
-    for i in range(start, len(lines)):
-        if lines[i].strip() == "":
-            if cur:
-                chunks.append(Chunk(path, cur_start + 1, "\n".join(cur)))
-                cur = []
-        else:
-            if not cur:
-                cur_start = i
-            cur.append(lines[i])
-    if cur:
-        chunks.append(Chunk(path, cur_start + 1, "\n".join(cur)))
+    acc: list[str] = []
+    acc_start = 0
+    acc_len = 0
+
+    def flush():
+        nonlocal acc, acc_len
+        if acc:
+            chunks.append(Chunk(path, acc_start, "\n".join(acc)))
+        acc = []
+        acc_len = 0
+
+    for bstart, btext in _blank_line_blocks(lines, start):
+        if btext.lstrip().startswith("#") and acc_len >= _MIN_FLUSH_CHARS:
+            flush()
+        if len(btext) > _MAX_CHARS:
+            flush()
+            for wstart, wtext in _split_oversized(bstart, btext):
+                chunks.append(Chunk(path, wstart, wtext))
+            continue
+        if not acc:
+            acc_start = bstart
+        acc.append(btext)
+        acc_len += len(btext) + 1
+        if acc_len >= _TARGET_CHARS:
+            flush()
+    flush()
     return [c for c in chunks if len(c.text.strip()) >= _MIN_CHUNK_CHARS]
 
 
@@ -82,10 +137,11 @@ class OllamaEmbedder:
     """
 
     def __init__(self, model: str, url: str = "http://localhost:11434",
-                 timeout: float = 30.0) -> None:
+                 timeout: float = 60.0, batch: int = 32) -> None:
         self.model = model
         self.url = url.rstrip("/")
         self.timeout = timeout
+        self.batch = batch
 
     def available(self) -> bool:
         """Whether the server responds (used before enabling the feature)."""
@@ -96,15 +152,42 @@ class OllamaEmbedder:
             return False
 
     def embed(self, texts, is_query: bool = False) -> list[list[float]]:
+        texts = list(texts)
+        if not texts:
+            return []
+        try:
+            return self._embed_batch(texts)
+        except Exception:
+            logger.debug("ollama /api/embed unavailable; falling back to "
+                         "/api/embeddings", exc_info=True)
+            return self._embed_singular(texts)
+
+    def _post(self, endpoint: str, payload: dict):
+        body = json.dumps(payload).encode()
+        req = urllib.request.Request(
+            self.url + endpoint, data=body,
+            headers={"Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+            return json.loads(resp.read())
+
+    def _embed_batch(self, texts) -> list[list[float]]:
+        """Modern batch endpoint: several inputs per request (fewer round-trips)."""
+        out: list[list[float]] = []
+        for i in range(0, len(texts), self.batch):
+            group = texts[i:i + self.batch]
+            data = self._post("/api/embed", {"model": self.model, "input": group})
+            embs = data["embeddings"]
+            if len(embs) != len(group):
+                raise ValueError("ollama /api/embed returned wrong count")
+            out.extend([float(x) for x in e] for e in embs)
+        return out
+
+    def _embed_singular(self, texts) -> list[list[float]]:
+        """Legacy endpoint: one prompt per request (older Ollama)."""
         out: list[list[float]] = []
         for text in texts:
-            body = json.dumps({"model": self.model, "prompt": text}).encode()
-            req = urllib.request.Request(
-                self.url + "/api/embeddings", data=body,
-                headers={"Content-Type": "application/json"},
-            )
-            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
-                data = json.loads(resp.read())
+            data = self._post("/api/embeddings", {"model": self.model, "prompt": text})
             out.append([float(x) for x in data["embedding"]])
         return out
 

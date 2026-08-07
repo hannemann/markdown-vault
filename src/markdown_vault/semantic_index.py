@@ -21,6 +21,9 @@ from .semantic_search import Chunk, VectorIndex, chunk_markdown
 
 logger = logging.getLogger(__name__)
 
+# Bump to invalidate all caches when the chunking / index format changes.
+_INDEX_FORMAT_VERSION = "2"
+
 
 class SemanticIndexManager:
     """Owns the vault's semantic index: background build, cache, and query."""
@@ -133,6 +136,7 @@ class SemanticIndexManager:
 
     def _signature(self, files) -> str:
         h = hashlib.sha256()
+        h.update(_INDEX_FORMAT_VERSION.encode())
         h.update(self._signature_tag.encode())
         for path in files:
             try:
