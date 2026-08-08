@@ -169,10 +169,12 @@ function step(){
   links.forEach(e=>{const a=byId[e.source],b=byId[e.target];
     let dx=b.x-a.x,dy=b.y-a.y,d=Math.sqrt(dx*dx+dy*dy)||0.01,f=(d-L)*0.02;
     dx/=d;dy/=d; a.vx+=dx*f;a.vy+=dy*f; b.vx-=dx*f;b.vy-=dy*f;});
-  // Centering scales with N so the settled extent stays bounded: fixed
-  // constants let equilibrium grow without limit (R31.1). Unchanged for small
-  // graphs (N<=120, e.g. the sidebar's local graph).
-  const G=0.006*Math.max(1,nodes.length/120);
+  // Centering scales with sqrt(N) so the settled extent stays bounded without
+  // compressing into a hairball: it still curbs runaway equilibrium (R31.1),
+  // but lets the extent grow gently with N so node density stays roughly
+  // constant (the fit then zooms out instead). Unchanged for small graphs
+  // (N<=120, e.g. the sidebar's local graph).
+  const G=0.006*Math.max(1,Math.sqrt(nodes.length/120));
   nodes.forEach(n=>{
     if(n.id===centerId){n.x=cx;n.y=cy;n.vx=0;n.vy=0;return;}
     n.vx+=(cx-n.x)*G; n.vy+=(cy-n.y)*G;
