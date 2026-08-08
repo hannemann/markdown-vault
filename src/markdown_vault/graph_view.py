@@ -60,7 +60,7 @@ const gEdges=document.getElementById("edges"), gNodes=document.getElementById("n
 const legend=document.getElementById("legend"), empty=document.getElementById("empty");
 let W=innerWidth,H=innerHeight,cx=W/2,cy=H/2;
 let nodes=[],links=[],byId={},centerId=null,adj={};
-let tx=0,ty=0,scale=1,alpha=0,raf=0;
+let tx=0,ty=0,scale=1,alpha=0,raf=0,fitPending=false,zraf=0;
 let tagFilter=[],searchQ="",hoverId=null;
 
 function radius(n){return 5+Math.min(9,Math.sqrt(n.degree||0)*2)+(n.center?3:0);}
@@ -87,7 +87,11 @@ function setGraph(payload){
   links.forEach(e=>{adj[e.source].add(e.target);adj[e.target].add(e.source);});
   buildLegend(nodes);
   empty.style.display=(nodes.length<=1&&links.length===0)?"flex":"none";
-  render(); alpha=1; kick();
+  render();
+  // Start small & centered, then zoom *in* to the framing once the layout
+  // settles (fitPending, consumed in kick()) — a reveal rather than a snap-out.
+  setView(frameOf(nodes,0.45));
+  alpha=1; fitPending=true; kick();
 }
 
 function buildLegend(ns){
@@ -156,23 +160,30 @@ function step(){
       for(let c=0;c<cell.length;c++){const j=cell[c]; if(j<=i)continue;  // each pair once
         const b=nodes[j];let dx=a.x-b.x,dy=a.y-b.y,d2=dx*dx+dy*dy;
         if(d2>C2)continue; if(d2<0.01)d2=0.01;
-        let f=K/d2, d=Math.sqrt(d2); dx/=d;dy/=d;
+        // Cap the force: coincident nodes would otherwise get K/0.01=6e5 and be
+        // flung off-screen for a frame, blowing up the bounding box (and fit).
+        let f=K/d2; if(f>100)f=100; let d=Math.sqrt(d2); dx/=d;dy/=d;
         a.vx+=dx*f;a.vy+=dy*f;b.vx-=dx*f;b.vy-=dy*f;}
     }
   }
   links.forEach(e=>{const a=byId[e.source],b=byId[e.target];
     let dx=b.x-a.x,dy=b.y-a.y,d=Math.sqrt(dx*dx+dy*dy)||0.01,f=(d-L)*0.02;
     dx/=d;dy/=d; a.vx+=dx*f;a.vy+=dy*f; b.vx-=dx*f;b.vy-=dy*f;});
+  // Centering scales with N so the settled extent stays bounded: fixed
+  // constants let equilibrium grow without limit (R31.1). Unchanged for small
+  // graphs (N<=120, e.g. the sidebar's local graph).
+  const G=0.006*Math.max(1,nodes.length/120);
   nodes.forEach(n=>{
     if(n.id===centerId){n.x=cx;n.y=cy;n.vx=0;n.vy=0;return;}
-    n.vx+=(cx-n.x)*0.006; n.vy+=(cy-n.y)*0.006;   // gentle centering
+    n.vx+=(cx-n.x)*G; n.vy+=(cy-n.y)*G;
     if(n.fixed)return;
     n.vx*=0.85; n.vy*=0.85; n.x+=n.vx*alpha; n.y+=n.vy*alpha;
   });
   alpha*=0.98;
 }
 function kick(){ if(raf)return; const loop=()=>{ step(); positions();
-  if(alpha>0.02){raf=requestAnimationFrame(loop);} else {raf=0;} }; raf=requestAnimationFrame(loop);}
+  if(alpha>0.02){raf=requestAnimationFrame(loop);}
+  else {raf=0; if(fitPending){fitPending=false; zoomTo(nodes);}} }; raf=requestAnimationFrame(loop);}
 
 // newTab flag is prefixed ("1\t" / "0\t") so the host can route it.
 function post(id,newTab){ if(window.webkit&&webkit.messageHandlers&&webkit.messageHandlers.graph)
@@ -181,7 +192,7 @@ function makeDraggable(g,n){
   // Detect click vs. drag here: pointer capture (needed for dragging) swallows
   // the synthetic click event, so a no-move pointerup IS the click.
   let down=false,moved=false,sx=0,sy=0,btn=0;
-  g.addEventListener("pointerdown",ev=>{down=true;moved=false;btn=ev.button;
+  g.addEventListener("pointerdown",ev=>{down=true;moved=false;btn=ev.button;zStop();
     if(ev.button===1)ev.preventDefault();  // no middle-click autoscroll
     sx=ev.clientX;sy=ev.clientY;n.fixed=true;
     try{g.setPointerCapture(ev.pointerId);}catch(e){} ev.stopPropagation();});
@@ -196,11 +207,11 @@ function makeDraggable(g,n){
 // pan + zoom on the background
 let pan=false,px=0,py=0;
 svg.addEventListener("pointerdown",ev=>{pan=true;px=ev.clientX;py=ev.clientY;
-  svg.classList.add("grabbing");});
+  zStop();svg.classList.add("grabbing");});
 svg.addEventListener("pointermove",ev=>{if(!pan)return;
   tx+=ev.clientX-px;ty+=ev.clientY-py;px=ev.clientX;py=ev.clientY;positions();});
 window.addEventListener("pointerup",()=>{pan=false;svg.classList.remove("grabbing");});
-svg.addEventListener("wheel",ev=>{ev.preventDefault();
+svg.addEventListener("wheel",ev=>{ev.preventDefault();zStop();
   const f=ev.deltaY<0?1.1:0.9,mx=ev.clientX,my=ev.clientY;
   tx=mx-(mx-tx)*f;ty=my-(my-ty)*f;scale*=f;positions();},{passive:false});
 addEventListener("resize",()=>{W=innerWidth;H=innerHeight;cx=W/2;cy=H/2;
@@ -225,18 +236,36 @@ function applyFilters(){
     l.classList.toggle("faded", both&&(faded(byId[e.source])||faded(byId[e.target])));});
   empty.style.display=(shown.size===0)?"flex":"none";
 }
-function zoomTo(list){
-  if(!list.length)return;
+function zStop(){ if(zraf){cancelAnimationFrame(zraf);zraf=0;} }  // cancel on user interaction
+function animateTo(s,x,y){
+  zStop();
+  const s0=scale,x0=tx,y0=ty, ds=s-s0,dx=x-x0,dy=y-y0, dur=380;
+  if(Math.abs(ds)<1e-4&&Math.abs(dx)<0.5&&Math.abs(dy)<0.5){scale=s;tx=x;ty=y;positions();return;}
+  let start=null;
+  const ease=t=>t<0.5?2*t*t:1-Math.pow(-2*t+2,2)/2;  // ease-in-out
+  const loop=now=>{ if(start===null)start=now; const k=Math.min(1,(now-start)/dur),e=ease(k);
+    scale=s0+ds*e; tx=x0+dx*e; ty=y0+dy*e; positions();
+    zraf = k<1 ? requestAnimationFrame(loop) : 0; };
+  zraf=requestAnimationFrame(loop);
+}
+function frameOf(list,factor){  // [scale,tx,ty] to frame `list` at factor×fit, or null
+  if(!list.length)return null;
   let a=1e9,b=1e9,c=-1e9,d=-1e9;
   list.forEach(n=>{a=Math.min(a,n.x);b=Math.min(b,n.y);c=Math.max(c,n.x);d=Math.max(d,n.y);});
+  if(!(isFinite(a)&&isFinite(b)&&isFinite(c)&&isFinite(d)))return null;  // never blank the view
   const pad=60,bw=(c-a)+pad*2,bh=(d-b)+pad*2;
-  scale=Math.min(2.5,Math.max(0.2,Math.min(W/bw,H/bh)));
-  tx=W/2-((a+c)/2)*scale; ty=H/2-((b+d)/2)*scale; positions();
+  // Floor low enough to frame a wide layout whole; bounded centering keeps the
+  // usual fit well above it, so 0.05 is a safety net, not the common case.
+  const s=Math.min(2.5,Math.max(0.05,Math.min(W/bw,H/bh)))*(factor||1);
+  return [s, W/2-((a+c)/2)*s, H/2-((b+d)/2)*s];
 }
+function setView(v){ if(v){zStop();scale=v[0];tx=v[1];ty=v[2];positions();} }  // instant
+function zoomTo(list){ const v=frameOf(list,1); if(v)animateTo(v[0],v[1],v[2]); }
+function fit(){zoomTo(nodes);}
 function setTagFilter(tags){tagFilter=tags||[];applyFilters();}
 function search(q){searchQ=(q||"").toLowerCase();applyFilters();
   if(searchQ){const hits=nodes.filter(n=>passTag(n)&&matchSearch(n));zoomTo(hits);}}
-window.setGraph=setGraph; window.setTagFilter=setTagFilter; window.search=search;
+window.setGraph=setGraph; window.setTagFilter=setTagFilter; window.search=search; window.fit=fit;
 </script></body></html>
 """
 
@@ -285,6 +314,10 @@ class GraphView(Gtk.Box):
     def set_tag_filter(self, tags) -> None:
         """Show only nodes carrying one of *tags* (empty list = show all)."""
         self._eval("window.setTagFilter(%s);" % json.dumps(list(tags or [])))
+
+    def fit(self) -> None:
+        """Zoom/pan so the whole graph fits the viewport."""
+        self._eval("window.fit();")
 
     def _push(self, payload: dict) -> None:
         self._eval("window.setGraph(%s);" % json.dumps(payload))
