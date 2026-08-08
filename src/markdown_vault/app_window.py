@@ -1787,12 +1787,14 @@ class MainWindow(Adw.ApplicationWindow):
         """Follow a link by retargeting the current tab to *file_path* — no new
         tab (the in-place reader).
 
-        Falls back to opening/activating a tab when in-place isn't safe: no
-        current tab, the current tab has unsaved edits (never lose them), or the
-        target is already open in another tab (just switch to it).
+        In-place is the reading flow, so it only applies in ``render`` (pure
+        preview) mode.  Otherwise — and whenever in-place isn't safe: no current
+        tab, the current tab has unsaved edits (never lose them), or the target
+        is already open in another tab — it opens/activates a tab instead.
         """
         tab = self._tab_bar.get_current_tab()
         if (tab is None or tab.editor.is_modified
+                or getattr(tab, "view_mode", "edit") != "render"
                 or file_path in self._tab_bar.get_all_paths()):
             self._open_file(file_path, _from_nav=_from_nav)
             return
