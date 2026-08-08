@@ -6,6 +6,7 @@ py_sources = files(
   'backlink_index.py',
   'banners.py',
   'graph.py',
+  'graph_explorer.py',
   'graph_view.py',
   'config.py',
   'content_changes.py',

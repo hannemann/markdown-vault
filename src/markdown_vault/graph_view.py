@@ -61,10 +61,12 @@ const legend=document.getElementById("legend"), empty=document.getElementById("e
 let W=innerWidth,H=innerHeight,cx=W/2,cy=H/2;
 let nodes=[],links=[],byId={},centerId=null,adj={};
 let tx=0,ty=0,scale=1,alpha=0,raf=0;
+let tagFilter=[],searchQ="";
 
 function radius(n){return 5+Math.min(9,Math.sqrt(n.degree||0)*2)+(n.center?3:0);}
 
 function setGraph(payload){
+  tagFilter=[]; searchQ="";
   const prev={}; nodes.forEach(n=>prev[n.id]=n);
   const arr=payload.nodes||[];
   nodes=arr.map((n,i)=>{
@@ -187,7 +189,35 @@ svg.addEventListener("wheel",ev=>{ev.preventDefault();
   tx=mx-(mx-tx)*f;ty=my-(my-ty)*f;scale*=f;positions();},{passive:false});
 addEventListener("resize",()=>{W=innerWidth;H=innerHeight;cx=W/2;cy=H/2;
   alpha=Math.max(alpha,0.3);kick();});
-window.setGraph=setGraph;
+// Tag filter = hard hide (show only nodes carrying a selected tag; empty = all).
+// Search = soft dim of non-matching nodes + zoom-to-fit the matches.
+function passTag(n){return tagFilter.length===0||(n.tags||[]).some(t=>tagFilter.indexOf(t)>=0);}
+function matchSearch(n){return !searchQ||label(n).toLowerCase().indexOf(searchQ)>=0
+  ||(n.id||"").toLowerCase().indexOf(searchQ)>=0;}
+function applyFilters(){
+  const shown=new Set();
+  nodes.forEach(n=>{const el=elNodes[n.id];if(!el)return;
+    const vis=passTag(n); el.g.style.display=vis?"":"none";
+    el.g.classList.toggle("faded", vis&&searchQ&&!matchSearch(n));
+    if(vis)shown.add(n.id);});
+  elEdges.forEach(({l,e})=>{const both=shown.has(e.source)&&shown.has(e.target);
+    l.style.display=both?"":"none";
+    l.classList.toggle("faded", both&&searchQ&&
+      !(matchSearch(byId[e.source])&&matchSearch(byId[e.target])));});
+  empty.style.display=(shown.size===0)?"flex":"none";
+}
+function zoomTo(list){
+  if(!list.length)return;
+  let a=1e9,b=1e9,c=-1e9,d=-1e9;
+  list.forEach(n=>{a=Math.min(a,n.x);b=Math.min(b,n.y);c=Math.max(c,n.x);d=Math.max(d,n.y);});
+  const pad=60,bw=(c-a)+pad*2,bh=(d-b)+pad*2;
+  scale=Math.min(2.5,Math.max(0.2,Math.min(W/bw,H/bh)));
+  tx=W/2-((a+c)/2)*scale; ty=H/2-((b+d)/2)*scale; positions();
+}
+function setTagFilter(tags){tagFilter=tags||[];applyFilters();}
+function search(q){searchQ=(q||"").toLowerCase();applyFilters();
+  if(searchQ){const hits=nodes.filter(n=>passTag(n)&&matchSearch(n));zoomTo(hits);}}
+window.setGraph=setGraph; window.setTagFilter=setTagFilter; window.search=search;
 </script></body></html>
 """
 
@@ -227,9 +257,20 @@ class GraphView(Gtk.Box):
         if self._ready:
             self._push(payload)
 
+    def search(self, query: str) -> None:
+        """Highlight nodes matching *query* and zoom to fit them."""
+        self._eval("window.search(%s);" % json.dumps(query or ""))
+
+    def set_tag_filter(self, tags) -> None:
+        """Show only nodes carrying one of *tags* (empty list = show all)."""
+        self._eval("window.setTagFilter(%s);" % json.dumps(list(tags or [])))
+
     def _push(self, payload: dict) -> None:
-        js = "window.setGraph(%s);" % json.dumps(payload)
-        self._web.evaluate_javascript(js, -1, None, None, None, None, None)
+        self._eval("window.setGraph(%s);" % json.dumps(payload))
+
+    def _eval(self, js: str) -> None:
+        if self._ready:
+            self._web.evaluate_javascript(js, -1, None, None, None, None, None)
 
     def _on_load_changed(self, _web, event) -> None:
         if event == WebKit.LoadEvent.FINISHED:
