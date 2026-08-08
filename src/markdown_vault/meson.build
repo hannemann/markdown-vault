@@ -5,6 +5,7 @@ py_sources = files(
   'autosave.py',
   'backlink_index.py',
   'banners.py',
+  'graph.py',
   'config.py',
   'content_changes.py',
   'dialogs.py',
