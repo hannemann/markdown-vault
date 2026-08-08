@@ -1,5 +1,6 @@
 launcher_conf = configuration_data()
 launcher_conf.set('python', py.full_path())
+launcher_conf.set('venvpython', venvpython)
 launcher_conf.set('pythondir', pythondir)
 
 configure_file(

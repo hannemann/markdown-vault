@@ -21,7 +21,10 @@ A GNOME desktop application for editing and previewing Markdown files organized 
 
 ## Installation
 
-Runtime dependencies for running the application.
+System dependencies for running the application (the GObject/GTK stack). The
+app's pure-Python packages (Markdown, PyYAML, pymdown-extensions, Pygments) are
+**not** listed here — `make install` installs them from `requirements.txt` into a
+private venv (see [Install and run](#install-and-run)).
 
 ### openSUSE Tumbleweed
 
@@ -34,11 +37,7 @@ sudo zypper install \
   typelib-1_0-Adw-1 \
   typelib-1_0-GtkSource-5 \
   typelib-1_0-WebKit-6_0 \
-  typelib-1_0-Pango-1_0 \
-  python313-PyYAML \
-  python313-Markdown \
-  python313-pymdown-extensions \
-  python313-Pygments
+  typelib-1_0-Pango-1_0
 ```
 
 The `python313-*` names track the current default Python on Tumbleweed; adjust
@@ -55,11 +54,7 @@ sudo dnf install \
   libadwaita-1 \
   gtksourceview5 \
   webkit2gtk6.0 \
-  gobject-introspection \
-  python3-markdown \
-  python3-pyyaml \
-  python3-pymdown-extensions \
-  python3-pygments
+  gobject-introspection
 ```
 
 ### Ubuntu / Debian
@@ -72,10 +67,7 @@ sudo apt install \
   gir1.2-adw-1 \
   gir1.2-webkit-6.0 \
   gir1.2-gtksource-5 \
-  python3-markdown \
-  python3-yaml \
-  python3-pymdownx \
-  python3-pygments
+  python3-venv
 ```
 
 ### Arch Linux
@@ -88,10 +80,6 @@ sudo pacman -S \
   libadwaita \
   webkitgtk-6.0 \
   gtksourceview5 \
-  python-markdown \
-  python-yaml \
-  python-pymdown-extensions \
-  python-pygments \
   gobject-introspection
 ```
 
@@ -102,15 +90,19 @@ default — the base app needs none of the packages below. It needs **numpy** fo
 the vector math, plus **one** embedding backend:
 
 **Local ONNX backend (recommended)** — in-process, no server, nothing leaves
-your machine, fast per query. Needs `onnxruntime` and the HuggingFace
-`tokenizers`, plus a downloaded sentence-transformer ONNX model and its
-`tokenizer.json`. No pip on the host.
+your machine, fast per query. Needs `numpy`, `onnxruntime` and the HuggingFace
+`tokenizers` (installed into the venv by `make install-ai`), plus a downloaded
+sentence-transformer ONNX model and its `tokenizer.json`.
 
-- **openSUSE Tumbleweed:** `sudo zypper install python313-numpy python313-onnxruntime python313-tokenizers`
-- **Fedora:** `python3-numpy` (onnxruntime/tokenizers from your repos if
-  packaged; otherwise use the Ollama backend or the Flatpak, which bundles them)
-- **Ubuntu / Debian:** `python3-numpy` (onnxruntime/tokenizers likewise)
-- **Arch Linux:** `python-numpy python-onnxruntime` (`tokenizers` via AUR)
+Install the optional dependencies into the app's venv:
+
+```sh
+make install-ai   # base install + numpy, onnxruntime, tokenizers (requirements-ai.txt)
+```
+
+These are prebuilt PyPI wheels on the common platforms (Linux x86_64 / aarch64,
+glibc). On musl/Alpine, 32-bit or exotic architectures a wheel may be missing —
+use the Ollama backend below instead.
 
 The model + tokenizer are a one-time **file download** (not a package), placed
 in the app data dir and selected in Preferences — e.g. a multilingual MiniLM
@@ -155,13 +147,16 @@ the path in the profile to `/usr/bin/markdown-vault`.
 Install the app and its launcher into your user prefix with Meson, then run it:
 
 ```sh
-make install     # builds and installs to ~/.local (or: meson setup builddir && meson install -C builddir)
+make install     # builds, creates the venv, and installs to ~/.local
 markdown-vault   # launcher installed to ~/.local/bin (make run does the same)
 ```
 
-The launcher pins an interpreter that provides PyGObject. A `python3` earlier in
-`PATH` (Homebrew, pyenv, a virtualenv) usually does not — the generated launcher
-handles this for you.
+`make install` also creates a private venv at `~/.local/share/markdown-vault/venv`
+(with `--system-site-packages`, so the system PyGObject/GTK stay visible) and
+installs the Python packages from `requirements.txt` into it; the generated
+launcher runs the app through that venv interpreter. The first install needs
+network access to fetch the packages from PyPI. (Bare `meson install` skips the
+venv step — use `make install`.)
 
 > Running straight from the source tree (`PYTHONPATH=src python3 -m markdown_vault.main`)
 > is **not supported** for normal use: it loads no CSS, because the stylesheets

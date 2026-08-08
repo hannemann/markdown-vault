@@ -1,0 +1,8 @@
+# Base Python dependencies, installed into the app's venv by `make install`.
+# Pure-Python packages resolved from PyPI (pinned for reproducibility). The GTK
+# stack (PyGObject / GTK4 / libadwaita / WebKitGTK / GtkSourceView) stays a
+# system dependency and is reached via the venv's --system-site-packages.
+Markdown==3.10.2
+PyYAML==6.0.3
+pymdown-extensions==11.0.1
+Pygments==2.20.0

@@ -1,5 +1,5 @@
 SHELL := /bin/bash
-.PHONY: download-wheels build-flatpak bundle install-flatpak run-flatpak test-flatpak clean clean-build clean-cache build install uninstall clean-local run test
+.PHONY: download-wheels build-flatpak bundle install-flatpak run-flatpak test-flatpak clean clean-build clean-cache build venv venv-ai install install-ai uninstall clean-local run test
 
 WHEEL_DIR := src/share/markdown-vault
 FLATPAK_MANIFEST := $(WHEEL_DIR)/de.hannemann.markdown-vault.yml
@@ -11,6 +11,9 @@ APP_ID := de.hannemann.markdown-vault
 PYTHONPATH_DIR := src
 # A python3 earlier in PATH (e.g. Homebrew) usually lacks PyGObject.
 PYTHON := $(shell python3 -c 'import gi' 2>/dev/null && echo python3 || echo /usr/bin/python3)
+VENV := $(HOME)/.local/share/markdown-vault/venv
+REQUIREMENTS := requirements.txt
+REQUIREMENTS_AI := requirements-ai.txt
 
 download-wheels:
 	@echo "=> Downloading Python wheels from PyPI..."
@@ -51,13 +54,28 @@ build:
 	@echo "=> Building with Meson..."
 	meson setup --prefix=$$HOME/.local builddir && meson compile -C builddir
 
-install: build
+venv:
+	@echo "=> Ensuring venv with Python dependencies ($(REQUIREMENTS))..."
+	@test -d $(VENV) || $(PYTHON) -m venv --system-site-packages $(VENV)
+	@$(VENV)/bin/pip install --upgrade --disable-pip-version-check -r $(REQUIREMENTS)
+
+venv-ai: venv
+	@echo "=> Adding optional AI dependencies ($(REQUIREMENTS_AI)) to the venv..."
+	@$(VENV)/bin/pip install --upgrade --disable-pip-version-check -r $(REQUIREMENTS_AI)
+
+install: build venv
 	@echo "=> Installing locally..."
+	meson install -C builddir
+
+install-ai: build venv-ai
+	@echo "=> Installing locally (with optional AI dependencies)..."
 	meson install -C builddir
 
 uninstall:
 	@echo "=> Uninstalling locally..."
 	ninja -C builddir uninstall
+	@echo "=> Removing venv..."
+	@rm -rf $(VENV)
 	@echo "=> Cleaning __pycache__ directories..."
 	MESON_INSTALL_PREFIX=$$HOME/.local $(PYTHON) build-aux/meson/post_uninstall.py
 
@@ -81,7 +99,8 @@ import pymdownx; print('pymdownx: OK')"
 
 test:
 	@echo "=> Running tests..."
-	PYTHONPATH=$(PYTHONPATH_DIR) $(PYTHON) -m unittest discover -s tests -v
+	@PY=$$([ -x "$(VENV)/bin/python" ] && echo "$(VENV)/bin/python" || echo "$(PYTHON)"); \
+	PYTHONPATH=$(PYTHONPATH_DIR) "$$PY" -m unittest discover -s tests -v
 
 clean-build:
 	@echo "=> Removing build directory..."

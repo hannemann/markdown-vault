@@ -1,0 +1,8 @@
+# Optional AI dependencies (semantic search), installed into the venv by
+# `make install-ai`. Heavy, compiled wheels — kept opt-in so the base install
+# stays light and can't break on platforms without prebuilt wheels.
+# (llama-cpp-python for local answer generation will be added here once the
+# LLM feature lands; it needs the CPU wheel index, see docs.)
+numpy==2.4.6
+onnxruntime==1.27.0
+tokenizers==0.23.1

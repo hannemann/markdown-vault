@@ -23,6 +23,10 @@ endif
 # site-packages, which may live outside the install prefix.
 pkgdatadir = get_option('prefix') / get_option('datadir') / 'markdown-vault'
 pythondir = pkgdatadir / 'python'
+# The launcher runs the app through this venv interpreter (created by
+# `make install`), so pip-resolved dependencies are on its path. The venv is
+# built with --system-site-packages, so system PyGObject/GTK stay visible.
+venvpython = pkgdatadir / 'venv' / 'bin' / 'python3'
 
 subdir('src/bin')
 subdir('src/markdown_vault')
