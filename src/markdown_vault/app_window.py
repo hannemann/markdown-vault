@@ -244,8 +244,12 @@ class MainWindow(Adw.ApplicationWindow):
 
         self._backlink_index = BacklinkIndex()
         # Cached full wikilink graph (rebuilt when the backlink index mutates).
+        # Structure only (no file reads) — the sidebar's hot path. The explorer
+        # keeps a separate, tagged cache since only its chips need frontmatter.
         self._graph_full = None
         self._graph_seq = -1
+        self._graph_tagged = None
+        self._graph_tagged_seq = -1
         self._graph_explorer = None  # lazy GraphExplorer for the Graph view mode
         self._file_index = FileIndex()
         # R16.2: monotonic generation for the async backlink build — a worker
@@ -1292,32 +1296,25 @@ class MainWindow(Adw.ApplicationWindow):
         colors = graph.vault_palette(self._vault_tree.get_vault_paths())
         return graph.to_payload(local, colors, center=center)
 
-    def _build_full_graph(self):
+    def _build_full_graph(self, *, include_tags: bool = False):
         """Assemble the whole wikilink graph: files (walked, incl. subdirs) as
-        nodes, resolved backlink keys as edges."""
+        nodes, resolved backlink keys as edges.
+
+        Node/edge *structure* needs no file contents — only the walk.  Tags come
+        from each file's frontmatter and are used solely by the explorer's tag
+        chips, so *include_tags* is off on the sidebar's hot path (which reruns
+        after every save) to avoid opening every file in the vault (R29.1).
+        """
         from . import graph
-        from .search_backend import frontmatter_tags
         bi = self._backlink_index
         file_vaults = {}
-        file_tags = {}
         for vault in self._vault_tree.get_vault_paths():
             for root, dirs, names in os.walk(vault):
                 dirs[:] = [d for d in dirs if not d.startswith(".")]
                 for name in names:
-                    if not name.endswith(".md"):
-                        continue
-                    path = os.path.join(root, name)
-                    file_vaults[path] = vault
-                    try:
-                        # Frontmatter is at the very top; a bounded head read
-                        # keeps tag extraction cheap over the whole vault.
-                        with open(path, "r", encoding="utf-8", errors="replace") as fh:
-                            head = fh.read(4096)
-                        tags = frontmatter_tags(head)
-                        if tags:
-                            file_tags[path] = tags
-                    except OSError:
-                        pass
+                    if name.endswith(".md"):
+                        file_vaults[os.path.join(root, name)] = vault
+        file_tags = self._read_frontmatter_tags(file_vaults) if include_tags else {}
         key_to_file = {}
         for f in file_vaults:
             key = bi.canonical_key(f)
@@ -1325,6 +1322,24 @@ class MainWindow(Adw.ApplicationWindow):
                 key_to_file[key] = f
         edges = graph.edges_from_backlinks(bi.outgoing_targets(), key_to_file)
         return graph.build_graph(file_vaults, edges, file_tags)
+
+    @staticmethod
+    def _read_frontmatter_tags(file_vaults) -> dict:
+        """Extract frontmatter tags for each file (bounded head read)."""
+        from .search_backend import frontmatter_tags
+        file_tags = {}
+        for path in file_vaults:
+            try:
+                # Frontmatter is at the very top; a bounded head read keeps
+                # tag extraction cheap over the whole vault.
+                with open(path, "r", encoding="utf-8", errors="replace") as fh:
+                    head = fh.read(4096)
+                tags = frontmatter_tags(head)
+                if tags:
+                    file_tags[path] = tags
+            except OSError:
+                pass
+        return file_tags
 
     def _on_sidebar_file_requested(self, _sidebar, file_path: str) -> None:
         vault = self._find_vault_for_file(file_path)
@@ -1907,13 +1922,18 @@ class MainWindow(Adw.ApplicationWindow):
             self._content_stack.set_visible_child_name("__welcome__")
 
     def _graph_explorer_payload(self, scope: str):
-        """Full (or current-vault) graph as a render payload for the explorer."""
+        """Full (or current-vault) graph as a render payload for the explorer.
+
+        Uses a tagged build (frontmatter tags → chips), cached separately from
+        the sidebar's tag-less structure graph so the explorer's file reads only
+        happen when it is actually open.
+        """
         from . import graph
         seq = self._backlink_index.mutation_seq
-        if self._graph_full is None or seq != self._graph_seq:
-            self._graph_full = self._build_full_graph()
-            self._graph_seq = seq
-        full = self._graph_full
+        if self._graph_tagged is None or seq != self._graph_tagged_seq:
+            self._graph_tagged = self._build_full_graph(include_tags=True)
+            self._graph_tagged_seq = seq
+        full = self._graph_tagged
         if scope == "current" and self._active_vault:
             keep = {n.id for n in full.nodes if n.vault == self._active_vault}
             full = graph.Graph(

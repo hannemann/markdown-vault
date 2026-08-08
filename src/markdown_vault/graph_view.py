@@ -135,11 +135,25 @@ function positions(){
 function highlight(id){hoverId=id;applyFilters();}  // hover is one input to fade
 
 function step(){
-  const K=6000, L=70;
-  for(let i=0;i<nodes.length;i++)for(let j=i+1;j<nodes.length;j++){
-    const a=nodes[i],b=nodes[j];let dx=a.x-b.x,dy=a.y-b.y,d2=dx*dx+dy*dy||0.01;
-    let f=K/d2, d=Math.sqrt(d2); dx/=d;dy/=d;
-    a.vx+=dx*f;a.vy+=dy*f;b.vx-=dx*f;b.vy-=dy*f;
+  const K=6000, L=70, C=340, C2=C*C, INV=1/C;
+  // Repulsion is O(N^2) naively. Bucket nodes into a uniform grid of cell size
+  // C and only compute repulsion within the 3x3 cell neighbourhood — forces
+  // past C are negligible (K/C^2 is <2% of a link's pull). Near O(N) for spread
+  // layouts, so the explorer's "All vaults" scope stays responsive on big vaults.
+  const grid=new Map();
+  for(let i=0;i<nodes.length;i++){const n=nodes[i];
+    const key=Math.floor(n.x*INV)+","+Math.floor(n.y*INV);
+    let cell=grid.get(key); if(!cell){cell=[];grid.set(key,cell);} cell.push(i);}
+  for(let i=0;i<nodes.length;i++){const a=nodes[i];
+    const gx=Math.floor(a.x*INV),gy=Math.floor(a.y*INV);
+    for(let ox=-1;ox<=1;ox++)for(let oy=-1;oy<=1;oy++){
+      const cell=grid.get((gx+ox)+","+(gy+oy)); if(!cell)continue;
+      for(let c=0;c<cell.length;c++){const j=cell[c]; if(j<=i)continue;  // each pair once
+        const b=nodes[j];let dx=a.x-b.x,dy=a.y-b.y,d2=dx*dx+dy*dy;
+        if(d2>C2)continue; if(d2<0.01)d2=0.01;
+        let f=K/d2, d=Math.sqrt(d2); dx/=d;dy/=d;
+        a.vx+=dx*f;a.vy+=dy*f;b.vx-=dx*f;b.vy-=dy*f;}
+    }
   }
   links.forEach(e=>{const a=byId[e.source],b=byId[e.target];
     let dx=b.x-a.x,dy=b.y-a.y,d=Math.sqrt(dx*dx+dy*dy)||0.01,f=(d-L)*0.02;
