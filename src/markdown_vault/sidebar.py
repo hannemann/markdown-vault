@@ -22,7 +22,7 @@ import gi
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 
-from gi.repository import Gtk, GLib, GObject
+from gi.repository import Gtk, GLib, GObject, Gdk
 
 from . import git_integration, tags
 from .backlink_index import BacklinkIndex
@@ -82,6 +82,8 @@ class Sidebar(Gtk.Box):
 
     __gsignals__ = {
         "file-open-requested": (GObject.SignalFlags.RUN_LAST, None, (str,)),
+        # Middle-click / Ctrl+click on a backlink or graph node → new tab.
+        "file-open-new-tab": (GObject.SignalFlags.RUN_LAST, None, (str,)),
         "outline-clicked": (GObject.SignalFlags.RUN_LAST, None, (int,)),
     }
 
@@ -246,6 +248,9 @@ class Sidebar(Gtk.Box):
             self._graph_view.connect(
                 "node-activated",
                 lambda _v, path: self.emit("file-open-requested", path))
+            self._graph_view.connect(
+                "node-activated-new-tab",
+                lambda _v, path: self.emit("file-open-new-tab", path))
             self._graph_panel.append(self._graph_view)
         self._graph_view.set_graph(self._get_graph_payload(self._current_file))
 
@@ -362,7 +367,26 @@ class Sidebar(Gtk.Box):
                     "clicked",
                     lambda _b, p=str(bl): self.emit("file-open-requested", p),
                 )
+                # Middle-click → open in a new tab (browser-style).
+                mid = Gtk.GestureClick(button=2)
+                mid.connect(
+                    "released",
+                    lambda _g, _n, _x, _y, p=str(bl): self.emit("file-open-new-tab", p),
+                )
+                btn.add_controller(mid)
+                # Ctrl+left-click → new tab too: a CAPTURE-phase gesture sees the
+                # press before the button and claims it so "clicked" (in-place)
+                # doesn't also fire.
+                ctrl = Gtk.GestureClick(button=1)
+                ctrl.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
+                ctrl.connect("pressed", self._on_backlink_ctrl_pressed, str(bl))
+                btn.add_controller(ctrl)
                 box.append(btn)
+
+    def _on_backlink_ctrl_pressed(self, gesture, _n, _x, _y, path: str) -> None:
+        if gesture.get_current_event_state() & Gdk.ModifierType.CONTROL_MASK:
+            gesture.set_state(Gtk.EventSequenceState.CLAIMED)  # suppress in-place
+            self.emit("file-open-new-tab", path)
 
     # ------------------------------------------------------------------
     # Git

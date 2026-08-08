@@ -104,6 +104,10 @@ class TabOrchestrator:
         """Forward preview ``link-clicked`` signal to MainWindow callback."""
         self._cb_call("on_preview_link_clicked", _widget, file_path)
 
+    def _on_preview_link_new_tab(self, _widget, file_path: str) -> None:
+        """Forward preview ``link-clicked-new-tab`` to MainWindow callback."""
+        self._cb_call("on_preview_link_new_tab", _widget, file_path)
+
     def _on_preview_link_not_found(self, _widget, path_str: str) -> None:
         """Forward preview ``link-not-found`` signal to MainWindow callback."""
         self._cb_call("on_preview_link_not_found", _widget, path_str)
@@ -159,6 +163,7 @@ class TabOrchestrator:
         )
         preview = Preview()
         preview.connect("link-clicked", self._on_preview_link_clicked)
+        preview.connect("link-clicked-new-tab", self._on_preview_link_new_tab)
         preview.connect("link-not-found", self._on_preview_link_not_found)
         preview.connect("checkbox-toggled", self._on_preview_checkbox_toggled)
 

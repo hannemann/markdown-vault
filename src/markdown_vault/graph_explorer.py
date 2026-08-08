@@ -55,8 +55,12 @@ class GraphExplorer(Gtk.Box):
 
         self._graph = GraphView()
         self._graph.set_vexpand(True)
+        # The overlay launcher always opens in a tab, so a middle-click node is
+        # routed the same as a plain click.
         self._graph.connect(
             "node-activated", lambda _v, path: self.emit("node-activated", path))
+        self._graph.connect(
+            "node-activated-new-tab", lambda _v, path: self.emit("node-activated", path))
         self.append(self._graph)
 
     def scope(self) -> str:

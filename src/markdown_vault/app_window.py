@@ -260,6 +260,7 @@ class MainWindow(Adw.ApplicationWindow):
             get_graph_payload=self._graph_payload,
         )
         self._sidebar.connect("file-open-requested", self._on_sidebar_file_requested)
+        self._sidebar.connect("file-open-new-tab", self._on_sidebar_file_new_tab)
         self._sidebar.connect("outline-clicked", self._on_outline_clicked)
 
         # Event dispatcher for decoupled sidebar refresh.
@@ -325,6 +326,7 @@ class MainWindow(Adw.ApplicationWindow):
             vault_tree=self._vault_tree,
             callbacks={
                 "on_preview_link_clicked": self._on_preview_link_clicked,
+                "on_preview_link_new_tab": self._on_preview_link_new_tab,
                 "on_preview_link_not_found": self._on_preview_link_not_found,
                 "on_preview_checkbox_toggled": self._on_preview_checkbox_toggled,
                 "on_editor_text_changed": self._on_editor_text_changed,
@@ -1331,6 +1333,14 @@ class MainWindow(Adw.ApplicationWindow):
         else:
             self._navigate_in_place(file_path)  # backlink/graph → same tab
 
+    def _on_sidebar_file_new_tab(self, _sidebar, file_path: str) -> None:
+        """Middle-click on a backlink / graph node → open it in a new tab."""
+        vault = self._find_vault_for_file(file_path)
+        if vault and vault != self._active_vault:
+            self._switch_vault(vault, open_file_path=file_path)
+        else:
+            self._open_file(file_path)  # explicit new tab
+
     def _on_outline_clicked(self, _sidebar, line: int) -> None:
         tab = self._tab_bar.get_current_tab()
         if not tab:
@@ -1538,6 +1548,14 @@ class MainWindow(Adw.ApplicationWindow):
             self._switch_vault(vault, open_file_path=file_path)
         else:
             self._navigate_in_place(file_path)  # follow the link in the same tab
+
+    def _on_preview_link_new_tab(self, _preview, file_path: str) -> None:
+        """Middle-click / Ctrl+click on a link → open it in a new tab."""
+        vault = self._find_vault_for_file(file_path)
+        if vault and vault != self._active_vault:
+            self._switch_vault(vault, open_file_path=file_path)
+        else:
+            self._open_file(file_path)  # explicit new tab
 
     # Matches a Markdown checkbox on a list line (group 4 = state: space or x/X).
     _CHECKBOX_RE = re.compile(r'^(>\s*)*(\s*)([-*+]|\d+\.)\s+\[([ xX])\]')

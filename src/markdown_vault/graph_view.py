@@ -155,13 +155,15 @@ function step(){
 function kick(){ if(raf)return; const loop=()=>{ step(); positions();
   if(alpha>0.02){raf=requestAnimationFrame(loop);} else {raf=0;} }; raf=requestAnimationFrame(loop);}
 
-function post(id){ if(window.webkit&&webkit.messageHandlers&&webkit.messageHandlers.graph)
-  webkit.messageHandlers.graph.postMessage(id); }
+// newTab flag is prefixed ("1\t" / "0\t") so the host can route it.
+function post(id,newTab){ if(window.webkit&&webkit.messageHandlers&&webkit.messageHandlers.graph)
+  webkit.messageHandlers.graph.postMessage((newTab?"1":"0")+"\t"+id); }
 function makeDraggable(g,n){
   // Detect click vs. drag here: pointer capture (needed for dragging) swallows
   // the synthetic click event, so a no-move pointerup IS the click.
-  let down=false,moved=false,sx=0,sy=0;
-  g.addEventListener("pointerdown",ev=>{down=true;moved=false;
+  let down=false,moved=false,sx=0,sy=0,btn=0;
+  g.addEventListener("pointerdown",ev=>{down=true;moved=false;btn=ev.button;
+    if(ev.button===1)ev.preventDefault();  // no middle-click autoscroll
     sx=ev.clientX;sy=ev.clientY;n.fixed=true;
     try{g.setPointerCapture(ev.pointerId);}catch(e){} ev.stopPropagation();});
   g.addEventListener("pointermove",ev=>{if(!down)return;
@@ -169,7 +171,8 @@ function makeDraggable(g,n){
     n.x+=ev.movementX/scale;n.y+=ev.movementY/scale;positions();});
   g.addEventListener("pointerup",ev=>{if(!down)return;down=false;n.fixed=false;
     try{g.releasePointerCapture(ev.pointerId);}catch(e){}
-    if(moved){alpha=Math.max(alpha,0.4);kick();} else {post(n.id);}});
+    if(moved){alpha=Math.max(alpha,0.4);kick();}
+    else {post(n.id, btn===1 || ev.ctrlKey);}});  // middle / Ctrl → new tab
 }
 // pan + zoom on the background
 let pan=false,px=0,py=0;
@@ -221,8 +224,10 @@ window.setGraph=setGraph; window.setTagFilter=setTagFilter; window.search=search
 
 class GraphView(Gtk.Box):
     __gsignals__ = {
-        # node-activated(file_path): the user clicked a node.
+        # node-activated(file_path): a plain click on a node.
         "node-activated": (GObject.SignalFlags.RUN_LAST, None, (str,)),
+        # node-activated-new-tab(file_path): middle-click / Ctrl+click on a node.
+        "node-activated-new-tab": (GObject.SignalFlags.RUN_LAST, None, (str,)),
     }
 
     def __init__(self) -> None:
@@ -277,11 +282,17 @@ class GraphView(Gtk.Box):
 
     def _on_message(self, _ucm, js_value) -> None:
         try:
-            path = js_value.to_string()
+            raw = js_value.to_string()
         except Exception:
             return
+        if not raw:
+            return
+        flag, sep, path = raw.partition("\t")
+        if not sep:            # no flag prefix → treat the whole value as a path
+            flag, path = "0", flag
         if path:
-            self.emit("node-activated", path)
+            self.emit("node-activated-new-tab" if flag == "1" else "node-activated",
+                      path)
 
     def teardown(self) -> None:
         """Release the WebView (frees the WebKit web process)."""

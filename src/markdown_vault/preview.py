@@ -498,6 +498,8 @@ class Preview(Gtk.ScrolledWindow):
 
     __gsignals__ = {
         "link-clicked": (GObject.SignalFlags.RUN_LAST, None, (str,)),
+        # Middle-click / Ctrl+click on a wikilink → open in a NEW tab.
+        "link-clicked-new-tab": (GObject.SignalFlags.RUN_LAST, None, (str,)),
         "link-not-found": (GObject.SignalFlags.RUN_LAST, None, (str,)),
         "checkbox-toggled": (GObject.SignalFlags.RUN_LAST, None, (int, bool)),
         # Emitted when the in-preview search match count becomes available.
@@ -640,6 +642,9 @@ class Preview(Gtk.ScrolledWindow):
     # Navigation
     # ------------------------------------------------------------------
 
+    def _emit_link(self, resolved: str, new_tab: bool) -> None:
+        self.emit("link-clicked-new-tab" if new_tab else "link-clicked", resolved)
+
     def _on_decide_policy(self, _web_view, decision, decision_type):
         """Intercept link clicks and resolve wikilinks to .md files.
 
@@ -651,6 +656,9 @@ class Preview(Gtk.ScrolledWindow):
         nav_action = decision.get_navigation_action()
         request = nav_action.get_request()
         uri = request.get_uri()
+        # Browser-style "open in new tab": middle mouse button or Ctrl+click.
+        new_tab = (nav_action.get_mouse_button() == 2
+                   or bool(nav_action.get_modifiers() & Gdk.ModifierType.CONTROL_MASK))
 
         if not uri:
             logger.debug("No URI in navigation request")
@@ -670,7 +678,7 @@ class Preview(Gtk.ScrolledWindow):
             if resolved:
                 logger.debug("Wikilink resolved to: %s", resolved)
                 decision.ignore()
-                self.emit("link-clicked", resolved)
+                self._emit_link(resolved, new_tab)
                 return True
             logger.warning("Wikilink NOT resolved: %r", uri)
             decision.ignore()
