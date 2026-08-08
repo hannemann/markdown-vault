@@ -315,6 +315,18 @@ class BacklinkIndex:
     # Query
     # ------------------------------------------------------------------
 
+    def canonical_key(self, file_path: str | Path) -> str | None:
+        """Public: the canonical ``vault:`` key a file is targeted by (or None).
+
+        The same key `_source_to_targets` stores, so it inverts a target key back
+        to a file for graph building."""
+        return self._file_key(str(file_path))
+
+    def outgoing_targets(self) -> dict[str, set[str]]:
+        """Public snapshot of ``{source_path: {canonical_target_key, …}}`` for
+        building the knowledge graph (copied, safe to iterate)."""
+        return {src: set(keys) for src, keys in self._source_to_targets.items()}
+
     def find_backlinks(self, target_file: str | Path) -> list[str]:
         """Return sorted list of source paths that link to *target_file*.
 

@@ -63,6 +63,24 @@ def build_graph(file_vaults: dict, edges) -> Graph:
     return Graph(list(nodes.values()), kept)
 
 
+def edges_from_backlinks(source_to_targets: dict, key_to_file: dict):
+    """Resolve the backlink index's canonical target keys to file→file edges.
+
+    *source_to_targets*: ``{source_path: set(canonical_target_key)}`` — exactly
+    ``BacklinkIndex.outgoing_targets()``.
+    *key_to_file*: ``{canonical_target_key: file_path}`` — built from
+    ``BacklinkIndex.canonical_key(f)`` over the known files.
+
+    Yields ``(source_path, target_path)`` for every target that resolves to a
+    known file; broken links (a key with no file) are skipped.
+    """
+    for source, keys in source_to_targets.items():
+        for key in keys:
+            target = key_to_file.get(key)
+            if target is not None:
+                yield (source, target)
+
+
 def local_graph(graph: Graph, center: str, depth: int = 1) -> Graph:
     """Subgraph of *center* plus everything within *depth* hops (undirected).
 

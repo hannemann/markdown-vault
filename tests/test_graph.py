@@ -67,6 +67,24 @@ class TestLocalGraph(unittest.TestCase):
         self.assertEqual(sub.edges, [])
 
 
+class TestEdgesFromBacklinks(unittest.TestCase):
+    def test_resolves_keys_to_files_and_skips_broken(self):
+        source_to_targets = {
+            "/v/a.md": {"V:b", "V:missing"},  # V:missing has no file → skipped
+            "/v/b.md": {"V:a"},
+        }
+        key_to_file = {"V:a": "/v/a.md", "V:b": "/v/b.md"}
+        edges = sorted(g.edges_from_backlinks(source_to_targets, key_to_file))
+        self.assertEqual(edges, [("/v/a.md", "/v/b.md"), ("/v/b.md", "/v/a.md")])
+
+    def test_feeds_build_graph(self):
+        fv = {"/v/a.md": "/v", "/v/b.md": "/v"}
+        edges = g.edges_from_backlinks({"/v/a.md": {"V:b"}}, {"V:b": "/v/b.md"})
+        gr = g.build_graph(fv, edges)
+        self.assertEqual(len(gr.edges), 1)
+        self.assertEqual({n.id: n.degree for n in gr.nodes}["/v/b.md"], 1)
+
+
 class TestPaletteAndPayload(unittest.TestCase):
     def test_color_is_stable_per_vault_regardless_of_order(self):
         # Same vault path → same colour, independent of order/other vaults.

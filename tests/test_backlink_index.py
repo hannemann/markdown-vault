@@ -523,5 +523,40 @@ class TestRemoveVault(unittest.TestCase):
         self.assertNotEqual(idx.mutation_seq, seq)
 
 
+class TestGraphAdapter(unittest.TestCase):
+    """The graph edge adapter over the real BacklinkIndex (canonical keys)."""
+
+    def setUp(self):
+        self._tmp = tempfile.mkdtemp()
+        self._vault = Path(self._tmp) / "vault"
+        self._vault.mkdir()
+        _cfg._vaults_cache = [{"name": "vault", "path": str(self._vault)}]
+
+    def tearDown(self):
+        _cfg._vaults_cache = None
+        shutil.rmtree(self._tmp, ignore_errors=True)
+
+    def test_canonical_key_round_trips_to_file_edges(self):
+        from markdown_vault import graph
+        page = self._vault / "Page.md"
+        page.write_text("# Page\n")
+        note = self._vault / "Note.md"
+        note.write_text("See [[Page]].\n")
+        idx = BacklinkIndex()
+        idx.build([{"name": "vault", "path": str(self._vault)}])
+
+        files = [str(page), str(note)]
+        key_to_file = {idx.canonical_key(f): f
+                       for f in files if idx.canonical_key(f)}
+        edges = sorted(
+            graph.edges_from_backlinks(idx.outgoing_targets(), key_to_file))
+        self.assertEqual(edges, [(str(note), str(page))])
+
+        gr = graph.build_graph({f: str(self._vault) for f in files}, edges)
+        by_id = {n.id: n for n in gr.nodes}
+        self.assertEqual(by_id[str(page)].degree, 1)   # Page is linked once
+        self.assertEqual(by_id[str(note)].degree, 1)
+
+
 if __name__ == "__main__":
     unittest.main()
