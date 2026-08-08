@@ -2,6 +2,7 @@ SHELL := /bin/bash
 .PHONY: download-wheels build-flatpak bundle install-flatpak run-flatpak test-flatpak clean clean-build clean-cache build venv venv-ai install install-ai uninstall clean-local run test
 
 WHEEL_DIR := src/share/markdown-vault
+WHEELS_DIR := $(WHEEL_DIR)/wheels
 FLATPAK_MANIFEST := $(WHEEL_DIR)/de.hannemann.markdown-vault.yml
 BUILD_DIR := build-dir
 CACHE_DIR := .flatpak-builder
@@ -16,14 +17,16 @@ REQUIREMENTS := requirements.txt
 REQUIREMENTS_AI := requirements-ai.txt
 
 download-wheels:
-	@echo "=> Downloading Python wheels from PyPI..."
-	@mkdir -p $(WHEEL_DIR)
-	pip3 download --no-deps --only-binary=:all: \
-		--python-version 3.13 --platform manylinux2014_x86_64 \
-		--dest $(WHEEL_DIR) \
-		pyyaml==6.0.3 pymdown-extensions==11.0.1 Pygments==2.20.0
-	@echo "=> Wheels downloaded:"
-	@ls -lh $(WHEEL_DIR)/*.whl
+	@echo "=> Downloading Python wheels (base + AI) for the Flatpak runtime (py3.13)..."
+	@rm -rf $(WHEELS_DIR)
+	@mkdir -p $(WHEELS_DIR)
+	pip3 download --dest $(WHEELS_DIR) \
+		--only-binary=:all: --python-version 3.13 \
+		--platform manylinux2014_x86_64 \
+		--platform manylinux_2_17_x86_64 \
+		--platform manylinux_2_28_x86_64 \
+		-r requirements.txt -r requirements-ai.txt
+	@echo "=> $$(ls -1 $(WHEELS_DIR)/*.whl | wc -l) wheels in $(WHEELS_DIR)"
 
 build-flatpak: download-wheels
 	@echo "=> Cleaning previous build..."

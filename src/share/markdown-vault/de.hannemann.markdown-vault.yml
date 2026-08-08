@@ -6,6 +6,7 @@ command: markdown-vault
 
 finish-args:
   - --share=ipc
+  - --share=network
   - --socket=fallback-x11
   - --socket=wayland
   - --filesystem=home
@@ -14,32 +15,21 @@ finish-args:
 modules:
   - name: python3-dependencies
     buildsystem: simple
+    # Install the app's Python dependencies from vendored wheels, offline. The
+    # wheels (base requirements.txt + optional AI requirements-ai.txt, resolved
+    # for the runtime's Python) are fetched by `make download-wheels` into
+    # src/share/markdown-vault/wheels/ (gitignored). requirements(-ai).txt is the
+    # single source of truth shared with the venv-based source install.
     build-commands:
-      - pip3 install --verbose --exists-action=i --no-index --no-build-isolation --prefix=${FLATPAK_DEST} --ignore-installed --no-deps /run/build/python3-dependencies/pyyaml-6.0.3-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl /run/build/python3-dependencies/pymdown_extensions-11.0.1-py3-none-any.whl /run/build/python3-dependencies/pygments-2.20.0-py3-none-any.whl
+      - pip3 install --verbose --exists-action=i --no-index --find-links="wheels" --no-build-isolation --ignore-installed --prefix=${FLATPAK_DEST} -r requirements.txt -r requirements-ai.txt
     sources:
+      - type: dir
+        path: wheels
+        dest: wheels
       - type: file
-        path: pyyaml-6.0.3-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl
-        sha256: 0f29edc409a6392443abf94b9cf89ce99889a1dd5376d94316ae5145dfedd5d6
+        path: ../../../requirements.txt
       - type: file
-        path: pymdown_extensions-11.0.1-py3-none-any.whl
-        sha256: db3943a62bab7e03af1364f0c4083e64b91fb097675a4b6cceccfbe9a77e5eb2
-      - type: file
-        path: pygments-2.20.0-py3-none-any.whl
-        sha256: 81a9e26dd42fd28a23a2d169d86d7ac03b46e2f8b59ed4698fb4785f946d0176
-      # ── Optional: semantic (vector) search ───────────────────────────
-      # Off by default; the base app needs none of this. To ship it, bundle the
-      # extra wheels here and add them to the pip3 command above:
-      #   - numpy                        (all backends: vector math)
-      #   - onnxruntime, tokenizers      (local ONNX backend only)
-      # Generate the "type: file" entries (wheel + sha256) with, e.g.:
-      #   flatpak-pip-generator numpy onnxruntime tokenizers
-      # The embedding MODEL (model.onnx + tokenizer.json) is NOT bundled — it is
-      # downloaded once at runtime into the app data dir. The Ollama backend
-      # needs only numpy here (no onnxruntime/tokenizers).
-      #
-      # NOTE (pre-existing): `markdown` (base, dependency of pymdown-extensions)
-      # is not bundled here because of --no-deps — worth verifying the preview
-      # still renders in the Flatpak sandbox.
+        path: ../../../requirements-ai.txt
 
   - name: markdown-vault
     buildsystem: meson
