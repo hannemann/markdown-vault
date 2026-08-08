@@ -69,11 +69,16 @@ function setGraph(payload){
   tagFilter=[]; searchQ=""; hoverId=null;
   const prev={}; nodes.forEach(n=>prev[n.id]=n);
   const arr=payload.nodes||[];
+  // Scale the seed circle with sqrt(N) so it spans many grid cells (cell=340):
+  // a fixed radius bunches every node into one cell, and the first frames of a
+  // big graph run full O(N^2) before repulsion scatters them (R30.1). This also
+  // gives a calmer opening — nodes no longer start on top of each other.
+  const seedR=80*Math.sqrt(Math.max(1,arr.length));
   nodes=arr.map((n,i)=>{
     const p=prev[n.id]||{}, a=2*Math.PI*i/Math.max(1,arr.length);
     return Object.assign({},n,{
-      x:p.x!==undefined?p.x:cx+Math.cos(a)*80,
-      y:p.y!==undefined?p.y:cy+Math.sin(a)*80, vx:0,vy:0});
+      x:p.x!==undefined?p.x:cx+Math.cos(a)*seedR,
+      y:p.y!==undefined?p.y:cy+Math.sin(a)*seedR, vx:0,vy:0});
   });
   byId={}; nodes.forEach(n=>byId[n.id]=n);
   centerId=null; nodes.forEach(n=>{if(n.center)centerId=n.id;});
