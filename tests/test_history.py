@@ -327,5 +327,35 @@ class TestFindVaultForDir(unittest.TestCase):
             _cfg._vaults_cache = None
 
 
+class TestNavHistoryState(unittest.TestCase):
+    """to_state / load_state for session persistence."""
+
+    def test_round_trip(self):
+        h = NavHistory()
+        for p in ("/v/a.md", "/v/b.md", "/v/c.md"):
+            h.push(p)
+        state = h.to_state()
+        self.assertEqual(state, {"history": ["/v/a.md", "/v/b.md", "/v/c.md"],
+                                 "pos": 2})
+        h2 = NavHistory()
+        h2.load_state(state, exists=lambda p: True)
+        self.assertEqual(h2.history, ["/v/a.md", "/v/b.md", "/v/c.md"])
+        self.assertEqual(h2.pos, 2)
+
+    def test_load_prunes_missing_and_keeps_position(self):
+        # b.md is gone; pos was at c (index 2) → should land on c (now index 1).
+        state = {"history": ["/v/a.md", "/v/b.md", "/v/c.md"], "pos": 2}
+        h = NavHistory()
+        h.load_state(state, exists=lambda p: p != "/v/b.md")
+        self.assertEqual(h.history, ["/v/a.md", "/v/c.md"])
+        self.assertEqual(h.current, "/v/c.md")
+
+    def test_load_all_missing_is_empty(self):
+        h = NavHistory()
+        h.load_state({"history": ["/x.md"], "pos": 0}, exists=lambda p: False)
+        self.assertEqual(h.history, [])
+        self.assertEqual(h.pos, -1)
+
+
 if __name__ == "__main__":
     unittest.main()

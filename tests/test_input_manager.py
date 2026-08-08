@@ -163,13 +163,15 @@ class TestUpdateNavButtons(unittest.TestCase):
             settings=self.settings,
         )
 
-    def test_buttons_set_sensitive(self):
-        """update_nav_buttons sets button sensitivity correctly."""
+    def test_buttons_dim_instead_of_disable(self):
+        """update_nav_buttons dims (opacity) rather than disabling, so a click is
+        always consumed and never falls through to the header's maximize area."""
         self.nav_history.can_go_back.return_value = True
         self.nav_history.can_go_forward.return_value = False
         self._mgr.update_nav_buttons()
-        self.back_btn.set_sensitive.assert_called_once_with(True)
-        self.forward_btn.set_sensitive.assert_called_once_with(False)
+        self.back_btn.set_opacity.assert_called_once_with(1.0)
+        self.forward_btn.set_opacity.assert_called_once_with(0.35)
+        self.back_btn.set_sensitive.assert_not_called()
 
 
 class TestApplyKeybindings(unittest.TestCase):

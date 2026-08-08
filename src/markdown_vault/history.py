@@ -133,6 +133,29 @@ class NavHistory:
         self._history = []
         self._pos = -1
 
+    def to_state(self) -> dict:
+        """Serialise for session persistence."""
+        return {"history": list(self._history), "pos": self._pos}
+
+    def load_state(self, state: dict, exists=None) -> None:
+        """Restore from :meth:`to_state`, dropping entries whose file no longer
+        exists and keeping the position pointing at the same surviving entry.
+
+        *exists* is injectable for tests; defaults to real filesystem checks.
+        """
+        exists = exists or (lambda p: Path(p).exists())
+        raw = [p for p in (state.get("history") or []) if isinstance(p, str)]
+        pos = state.get("pos", len(raw) - 1)
+        kept: list[str] = []
+        removed_before = 0
+        for i, p in enumerate(raw):
+            if exists(p):
+                kept.append(p)
+            elif i <= pos:
+                removed_before += 1
+        self._history = kept
+        self._pos = max(0, min(len(kept) - 1, pos - removed_before)) if kept else -1
+
     def can_go_back(self) -> bool:
         """Whether there are valid previous entries."""
         return self._pos > 0

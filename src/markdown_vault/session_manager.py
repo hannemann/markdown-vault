@@ -95,6 +95,7 @@ class SessionManager:
             search_paned_position=ws["search_paned_position"],
             sidebar_paned_position=ws["sidebar_paned_position"],
             main_paned_position=ws["main_paned_position"],
+            nav_history=ws.get("nav_history"),
         )
 
     def save_vault_session(self, active_vault, content_stack) -> None:

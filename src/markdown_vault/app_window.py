@@ -342,7 +342,7 @@ class MainWindow(Adw.ApplicationWindow):
         # Input manager (shortcuts + navigation).
         self._input_manager = InputManager(
             application=self,
-            on_nav_file_opened=self._open_file,
+            on_nav_file_opened=self._open_from_history,
             nav_history=self._nav_history,
             back_btn=self._back_btn,
             forward_btn=self._forward_btn,
@@ -467,6 +467,13 @@ class MainWindow(Adw.ApplicationWindow):
                 mru_push_fn=self.mru.push,
             )
 
+        # Restore the persisted global navigation history (drops missing files),
+        # overriding whatever the tab restore pushed.
+        saved_history = _ses.get("nav_history")
+        if saved_history:
+            self._nav_history.load_state(saved_history)
+        self._update_nav_buttons()
+
         # Defer expansion so the tree view is fully mapped first.
         expanded = _ses.get("expanded_vaults", [])
         if expanded:
@@ -580,15 +587,18 @@ class MainWindow(Adw.ApplicationWindow):
         header.pack_start(self._save_btn)
 
         # Navigation history buttons.
+        # Kept always sensitive (dimmed when there's nowhere to go) so a click is
+        # consumed here and never falls through to the header's double-click-to-
+        # maximize area.
         self._back_btn = Gtk.Button(icon_name="go-previous-symbolic")
         self._back_btn.set_tooltip_text("Back (Alt+Left)")
-        self._back_btn.set_sensitive(False)
+        self._back_btn.set_opacity(0.35)
         self._back_btn.connect("clicked", lambda *_: self._nav_back())
         header.pack_start(self._back_btn)
 
         self._forward_btn = Gtk.Button(icon_name="go-next-symbolic")
         self._forward_btn.set_tooltip_text("Forward (Alt+Right)")
-        self._forward_btn.set_sensitive(False)
+        self._forward_btn.set_opacity(0.35)
         self._forward_btn.connect("clicked", lambda *_: self._nav_forward())
         header.pack_start(self._forward_btn)
 
@@ -665,10 +675,10 @@ class MainWindow(Adw.ApplicationWindow):
         # Medium (<750): + save, hide nav
         # Wide (>=750): all visible
         narrow = w < 550
-        medium = w < 750
         self._save_btn.set_visible(not narrow)
-        self._back_btn.set_visible(not medium)
-        self._forward_btn.set_visible(not medium)
+        # Back/forward stay visible at every width — navigation history is a
+        # primary feature now, and the old <750px hide relied on a fragile
+        # notify::default-width trigger that never re-fired on real resizes.
 
     # ── Debug dump ─────────────────────────────────────────────────
 
@@ -996,7 +1006,8 @@ class MainWindow(Adw.ApplicationWindow):
         self._switch_vault_pending = False
         logger.info("switch-vault: phase 2 — switching to %s (open_file=%s)", new_vault, open_file_path)
         self.mru.clear()
-        self._nav_history.clear()
+        # History is global now — a vault switch is just another navigation step,
+        # so it is NOT cleared (cross-vault back/forward stays intact).
         self._update_nav_buttons()
         # Switch.
         self._active_vault = new_vault
@@ -1745,6 +1756,15 @@ class MainWindow(Adw.ApplicationWindow):
         :class:`InputManager`."""
         self._input_manager.push_history(file_path)
 
+    def _open_from_history(self, file_path: str, *, _from_nav: bool = False) -> None:
+        """Open a history entry, switching vault first if it lives elsewhere
+        (the global history spans vaults now)."""
+        vault = self._find_vault_for_file(file_path)
+        if vault and vault != self._active_vault:
+            self._switch_vault(vault, open_file_path=file_path)
+        else:
+            self._open_file(file_path, _from_nav=_from_nav)
+
     def _nav_back(self) -> None:
         """Navigate back — delegates to :class:`InputManager`."""
         self._input_manager.nav_back()
@@ -2255,6 +2275,7 @@ class MainWindow(Adw.ApplicationWindow):
             "search_paned_position": self._search_paned.get_position(),
             "sidebar_paned_position": self._sidebar_paned.get_position(),
             "main_paned_position": self._main_paned.get_position(),
+            "nav_history": self._nav_history.to_state(),
         }
 
     def _on_close_request(self, *_args) -> bool:

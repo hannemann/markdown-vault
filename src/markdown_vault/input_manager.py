@@ -137,9 +137,17 @@ class InputManager:
         self._update_nav_buttons()
 
     def _update_nav_buttons(self) -> None:
-        """Enable/disable navigation buttons based on history state."""
-        self._back_btn.set_sensitive(self._nav_history.can_go_back())
-        self._forward_btn.set_sensitive(self._nav_history.can_go_forward())
+        """Reflect history state on the nav buttons.
+
+        The buttons stay *sensitive* even when there is nowhere to go, so a
+        (fast, repeated) click is always consumed by the button — an insensitive
+        button lets the click fall through to the header's title area, where a
+        double-click toggle-maximizes the window.  "Nothing to navigate" is shown
+        by dimming instead; the click then simply no-ops.
+        """
+        self._back_btn.set_opacity(1.0 if self._nav_history.can_go_back() else 0.35)
+        self._forward_btn.set_opacity(
+            1.0 if self._nav_history.can_go_forward() else 0.35)
 
     def update_nav_buttons(self) -> None:
         """Public API: enable/disable navigation buttons based on history state."""

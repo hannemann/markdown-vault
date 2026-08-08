@@ -32,6 +32,7 @@ def save_session(
     search_paned_position: int = 0,
     sidebar_paned_position: int = 0,
     main_paned_position: int = 0,
+    nav_history: dict | None = None,
 ) -> None:
     """Write the current session state to disk.
 
@@ -55,6 +56,7 @@ def save_session(
         "search_paned_position": search_paned_position,
         "sidebar_paned_position": sidebar_paned_position,
         "main_paned_position": main_paned_position,
+        "nav_history": nav_history or {"history": [], "pos": -1},
     }
     try:
         SESSION_FILE.write_text(json.dumps(data, indent=2), encoding="utf-8")
@@ -77,6 +79,7 @@ def load_session() -> dict:
     data.setdefault("active_vault", None)
     data.setdefault("expanded_vaults", [])
     data.setdefault("vault_sessions", {})
+    data.setdefault("nav_history", {"history": [], "pos": -1})
     data.setdefault("search_visible", False)
     data.setdefault("search_paned_position", 0)
     data.setdefault("sidebar_paned_position", 0)
