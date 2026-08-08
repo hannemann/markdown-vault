@@ -1329,7 +1329,7 @@ class MainWindow(Adw.ApplicationWindow):
         if vault and vault != self._active_vault:
             self._switch_vault(vault, open_file_path=file_path)
         else:
-            self._open_file(file_path)
+            self._navigate_in_place(file_path)  # backlink/graph → same tab
 
     def _on_outline_clicked(self, _sidebar, line: int) -> None:
         tab = self._tab_bar.get_current_tab()
@@ -1537,7 +1537,7 @@ class MainWindow(Adw.ApplicationWindow):
         if vault and vault != self._active_vault:
             self._switch_vault(vault, open_file_path=file_path)
         else:
-            self._open_file(file_path)
+            self._navigate_in_place(file_path)  # follow the link in the same tab
 
     # Matches a Markdown checkbox on a list line (group 4 = state: space or x/X).
     _CHECKBOX_RE = re.compile(r'^(>\s*)*(\s*)([-*+]|\d+\.)\s+\[([ xX])\]')
@@ -1763,7 +1763,38 @@ class MainWindow(Adw.ApplicationWindow):
         if vault and vault != self._active_vault:
             self._switch_vault(vault, open_file_path=file_path)
         else:
+            self._navigate_in_place(file_path, _from_nav=_from_nav)
+
+    def _navigate_in_place(self, file_path: str, *, _from_nav: bool = False) -> None:
+        """Follow a link by retargeting the current tab to *file_path* — no new
+        tab (the in-place reader).
+
+        Falls back to opening/activating a tab when in-place isn't safe: no
+        current tab, the current tab has unsaved edits (never lose them), or the
+        target is already open in another tab (just switch to it).
+        """
+        tab = self._tab_bar.get_current_tab()
+        if (tab is None or tab.editor.is_modified
+                or file_path in self._tab_bar.get_all_paths()):
             self._open_file(file_path, _from_nav=_from_nav)
+            return
+        old = tab.file_path
+        # Re-key the tab first (tab bar + content-stack page + label) so the
+        # editor's modified signal finds it under the new path, then load the
+        # target's content into the same editor/preview widgets.
+        self._tab_bar.update_path(old, file_path)
+        tab.editor.open_file(file_path)
+        # on_tab_changed does the content-stack switch, view mode, preview,
+        # sidebar and MRU — and the history push, which we suppress on back/
+        # forward (the position is already correct there).
+        prev = self._nav_history.suppress
+        self._nav_history.suppress = prev or _from_nav
+        try:
+            self._on_tab_changed(self._tab_bar, file_path)
+        finally:
+            self._nav_history.suppress = prev
+        if _from_nav:
+            self._update_nav_buttons()
 
     def _nav_back(self) -> None:
         """Navigate back — delegates to :class:`InputManager`."""
