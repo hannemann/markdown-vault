@@ -18,6 +18,9 @@ class NavHistory:
     adjust the position correctly.
     """
 
+    # Cap the (global, persistent) history so it can't grow without bound.
+    MAX_HISTORY = 500
+
     def __init__(self) -> None:
         self._history: list[str] = []
         self._pos: int = -1
@@ -63,6 +66,14 @@ class NavHistory:
         self._history = self._history[: self._pos + 1]
         self._history.append(file_path)
         self._pos = len(self._history) - 1
+        self._enforce_cap()
+
+    def _enforce_cap(self) -> None:
+        """Drop oldest entries beyond MAX_HISTORY, keeping *pos* on its entry."""
+        overflow = len(self._history) - self.MAX_HISTORY
+        if overflow > 0:
+            self._history = self._history[overflow:]
+            self._pos = max(-1, self._pos - overflow)
 
     def back(self) -> str | None:
         """Navigate to the previous entry, skipping missing files.
@@ -155,6 +166,7 @@ class NavHistory:
                 removed_before += 1
         self._history = kept
         self._pos = max(0, min(len(kept) - 1, pos - removed_before)) if kept else -1
+        self._enforce_cap()  # bound an old, pre-cap persisted history too
 
     def can_go_back(self) -> bool:
         """Whether there are valid previous entries."""

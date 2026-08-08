@@ -356,6 +356,22 @@ class TestNavHistoryState(unittest.TestCase):
         self.assertEqual(h.history, [])
         self.assertEqual(h.pos, -1)
 
+    def test_push_caps_to_max_keeping_position(self):
+        h = NavHistory()
+        h.MAX_HISTORY = 3
+        for i in range(5):
+            h.push(f"/p{i}.md")
+        self.assertEqual(h.history, ["/p2.md", "/p3.md", "/p4.md"])
+        self.assertEqual(h.current, "/p4.md")
+
+    def test_load_caps_to_max(self):
+        h = NavHistory()
+        h.MAX_HISTORY = 2
+        h.load_state({"history": ["/a.md", "/b.md", "/c.md"], "pos": 2},
+                     exists=lambda p: True)
+        self.assertEqual(h.history, ["/b.md", "/c.md"])
+        self.assertEqual(h.current, "/c.md")
+
 
 if __name__ == "__main__":
     unittest.main()
