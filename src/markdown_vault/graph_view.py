@@ -215,7 +215,7 @@ svg.addEventListener("wheel",ev=>{ev.preventDefault();zStop();
   const f=ev.deltaY<0?1.1:0.9,mx=ev.clientX,my=ev.clientY;
   tx=mx-(mx-tx)*f;ty=my-(my-ty)*f;scale*=f;positions();},{passive:false});
 addEventListener("resize",()=>{W=innerWidth;H=innerHeight;cx=W/2;cy=H/2;
-  alpha=Math.max(alpha,0.3);kick();});
+  alpha=Math.max(alpha,0.3);fitPending=true;kick();});  // reframe after the relayout
 // Tag filter = hard hide (show only nodes carrying a selected tag; empty = all).
 // Search = soft dim of non-matching nodes + zoom-to-fit the matches.
 function passTag(n){return tagFilter.length===0||(n.tags||[]).some(t=>tagFilter.indexOf(t)>=0);}
