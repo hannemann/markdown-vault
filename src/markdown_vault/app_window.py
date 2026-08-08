@@ -243,6 +243,9 @@ class MainWindow(Adw.ApplicationWindow):
         self._main_paned.set_shrink_end_child(False)
 
         self._backlink_index = BacklinkIndex()
+        # Cached full wikilink graph (rebuilt when the backlink index mutates).
+        self._graph_full = None
+        self._graph_seq = -1
         self._file_index = FileIndex()
         # R16.2: monotonic generation for the async backlink build — a worker
         # result from a superseded schedule is discarded on apply.
@@ -253,6 +256,7 @@ class MainWindow(Adw.ApplicationWindow):
         self._sidebar = Sidebar(
             backlink_index=self._backlink_index,
             get_active_tab_info=self._get_active_tab_info,
+            get_graph_payload=self._graph_payload,
         )
         self._sidebar.connect("file-open-requested", self._on_sidebar_file_requested)
         self._sidebar.connect("outline-clicked", self._on_outline_clicked)
@@ -1249,6 +1253,42 @@ class MainWindow(Adw.ApplicationWindow):
             if on_confirm:
                 on_confirm()
 
+    # ── Knowledge graph (sidebar panel) ────────────────────────────
+
+    def _graph_payload(self, center):
+        """Local graph around *center* (the current file) as a render payload."""
+        from . import graph
+        seq = self._backlink_index.mutation_seq
+        if self._graph_full is None or seq != self._graph_seq:
+            self._graph_full = self._build_full_graph()
+            self._graph_seq = seq
+        if center:
+            local = graph.local_graph(self._graph_full, center, depth=1)
+        else:
+            local = graph.Graph([], [])
+        colors = graph.vault_palette(self._vault_tree.get_vault_paths())
+        return graph.to_payload(local, colors, center=center)
+
+    def _build_full_graph(self):
+        """Assemble the whole wikilink graph: files (walked, incl. subdirs) as
+        nodes, resolved backlink keys as edges."""
+        from . import graph
+        bi = self._backlink_index
+        file_vaults = {}
+        for vault in self._vault_tree.get_vault_paths():
+            for root, dirs, names in os.walk(vault):
+                dirs[:] = [d for d in dirs if not d.startswith(".")]
+                for name in names:
+                    if name.endswith(".md"):
+                        file_vaults[os.path.join(root, name)] = vault
+        key_to_file = {}
+        for f in file_vaults:
+            key = bi.canonical_key(f)
+            if key:
+                key_to_file[key] = f
+        edges = graph.edges_from_backlinks(bi.outgoing_targets(), key_to_file)
+        return graph.build_graph(file_vaults, edges)
+
     def _on_sidebar_file_requested(self, _sidebar, file_path: str) -> None:
         vault = self._find_vault_for_file(file_path)
         if vault and vault != self._active_vault:
@@ -2194,6 +2234,10 @@ class MainWindow(Adw.ApplicationWindow):
                     tab.preview.cleanup()
                 except Exception:
                     logger.debug("preview cleanup failed for %s", path, exc_info=True)
+        try:
+            self._sidebar.teardown()  # also tear down the graph WebView
+        except Exception:
+            logger.debug("sidebar teardown failed", exc_info=True)
 
     # ── Autosave ───────────────────────────────────────────────────
 

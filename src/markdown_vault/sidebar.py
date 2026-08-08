@@ -40,6 +40,7 @@ _FRONTMATTER_RE = re.compile(r"^---[ \t]*\n(.*?)\n---[ \t]*(?:\n|$)", re.DOTALL)
 _SIDEBAR_SECTIONS = [
     ("outline", "view-list-symbolic", "Outline"),
     ("backlinks", "insert-link-symbolic", "Backlinks"),
+    ("graph", "network-wired-symbolic", "Graph"),
     ("metadata", "document-properties-symbolic", "Metadaten"),
     ("git", "media-flash-symbolic", "Git"),
     ("details", "dialog-information-symbolic", "Details"),
@@ -88,6 +89,7 @@ class Sidebar(Gtk.Box):
         self,
         backlink_index: BacklinkIndex | None = None,
         get_active_tab_info=None,
+        get_graph_payload=None,
     ) -> None:
         super().__init__(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
         self.set_size_request(280, -1)
@@ -99,6 +101,11 @@ class Sidebar(Gtk.Box):
         self._backlink_index = backlink_index or BacklinkIndex()
         self._git_generation: int = 0
         self._get_active_tab_info = get_active_tab_info
+        # Graph panel: a callback returns the local-graph payload for a file; the
+        # GraphView (a WebKit WebView) is created lazily on first use so the web
+        # process only spawns if the user actually opens the Graph tab.
+        self._get_graph_payload = get_graph_payload
+        self._graph_view = None
 
         # --- Sub-view stack ---
         self._stack = Gtk.Stack()
@@ -111,6 +118,11 @@ class Sidebar(Gtk.Box):
 
         self._backlinks_list = self._make_scrollable_list()
         self._stack.add_titled(self._backlinks_list["parent"], "backlinks", "Backlinks")
+
+        # Graph panel — an empty host; the GraphView fills it on first switch.
+        self._graph_panel = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        self._graph_panel.set_vexpand(True)
+        self._stack.add_titled(self._graph_panel, "graph", "Graph")
 
         self._metadata_list = self._make_scrollable_list()
         self._stack.add_titled(self._metadata_list["parent"], "metadata", "Metadaten")
@@ -174,6 +186,8 @@ class Sidebar(Gtk.Box):
         self._refresh_metadata(text)
         if self.get_visible() and self._stack.get_visible_child_name() == "git":
             self._refresh_git(file_path)
+        if self.get_visible() and self._stack.get_visible_child_name() == "graph":
+            self._refresh_graph()  # re-centre on the new current file
         self._refresh_details(file_path, text)
 
     def update_text_only(self, file_path: str | None, text: str = "") -> None:
@@ -211,9 +225,34 @@ class Sidebar(Gtk.Box):
                 return
 
     def _on_stack_page_changed(self, _stack, _pspec) -> None:
-        """Refresh git when the user switches to the Git tab."""
-        if self._stack.get_visible_child_name() == "git" and self._current_file:
+        """Lazily refresh the git / graph panels when switched to."""
+        name = self._stack.get_visible_child_name()
+        if name == "git" and self._current_file:
             self._refresh_git(self._current_file)
+        elif name == "graph":
+            self._refresh_graph()
+
+    # ------------------------------------------------------------------
+    # Graph
+    # ------------------------------------------------------------------
+
+    def _refresh_graph(self) -> None:
+        """(Re)centre the graph on the current file — lazily creating the view."""
+        if self._get_graph_payload is None:
+            return
+        if self._graph_view is None:
+            from .graph_view import GraphView
+            self._graph_view = GraphView()
+            self._graph_view.connect(
+                "node-activated",
+                lambda _v, path: self.emit("file-open-requested", path))
+            self._graph_panel.append(self._graph_view)
+        self._graph_view.set_graph(self._get_graph_payload(self._current_file))
+
+    def teardown(self) -> None:
+        """Release the graph WebView (clean WebKit shutdown)."""
+        if self._graph_view is not None:
+            self._graph_view.teardown()
 
     # ------------------------------------------------------------------
     # Outline

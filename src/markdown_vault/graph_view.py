@@ -118,9 +118,6 @@ function render(){
     elNodes[n.id]={g,c,tx};
     c.addEventListener("pointerenter",()=>highlight(n.id));
     c.addEventListener("pointerleave",()=>highlight(null));
-    c.addEventListener("click",ev=>{ev.stopPropagation();
-      if(window.webkit&&webkit.messageHandlers&&webkit.messageHandlers.graph)
-        webkit.messageHandlers.graph.postMessage(n.id);});
     makeDraggable(g,n);
   });
   positions();
@@ -162,14 +159,21 @@ function step(){
 function kick(){ if(raf)return; const loop=()=>{ step(); positions();
   if(alpha>0.02){raf=requestAnimationFrame(loop);} else {raf=0;} }; raf=requestAnimationFrame(loop);}
 
+function post(id){ if(window.webkit&&webkit.messageHandlers&&webkit.messageHandlers.graph)
+  webkit.messageHandlers.graph.postMessage(id); }
 function makeDraggable(g,n){
-  let drag=false;
-  g.addEventListener("pointerdown",ev=>{drag=true;n.fixed=true;
-    g.setPointerCapture(ev.pointerId);ev.stopPropagation();});
-  g.addEventListener("pointermove",ev=>{if(!drag)return;
+  // Detect click vs. drag here: pointer capture (needed for dragging) swallows
+  // the synthetic click event, so a no-move pointerup IS the click.
+  let down=false,moved=false,sx=0,sy=0;
+  g.addEventListener("pointerdown",ev=>{down=true;moved=false;
+    sx=ev.clientX;sy=ev.clientY;n.fixed=true;
+    try{g.setPointerCapture(ev.pointerId);}catch(e){} ev.stopPropagation();});
+  g.addEventListener("pointermove",ev=>{if(!down)return;
+    if(Math.abs(ev.clientX-sx)+Math.abs(ev.clientY-sy)>3)moved=true;
     n.x+=ev.movementX/scale;n.y+=ev.movementY/scale;positions();});
-  g.addEventListener("pointerup",ev=>{drag=false;n.fixed=false;
-    alpha=Math.max(alpha,0.4);kick();});
+  g.addEventListener("pointerup",ev=>{if(!down)return;down=false;n.fixed=false;
+    try{g.releasePointerCapture(ev.pointerId);}catch(e){}
+    if(moved){alpha=Math.max(alpha,0.4);kick();} else {post(n.id);}});
 }
 // pan + zoom on the background
 let pan=false,px=0,py=0;
