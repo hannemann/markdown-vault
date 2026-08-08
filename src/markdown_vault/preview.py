@@ -777,7 +777,7 @@ class Preview(Gtk.ScrolledWindow):
         if resolved:
             logger.debug("Wikilink resolved to: %s", resolved)
             decision.ignore()
-            self.emit("link-clicked", resolved)
+            self._emit_link(resolved, new_tab)  # honour middle/Ctrl like the vault: branch
             return True
 
         # Only show error dialog if this looks like a wikilink click

@@ -93,7 +93,12 @@ class ViewModeManager:
         return False  # one-shot for idle_add
 
     def sync_view_toggle(self, mode: str) -> None:
-        """Set the header toggle buttons to reflect mode without triggering."""
+        """Activate the header toggle button for *mode*.
+
+        ``set_active(True)`` does emit ``toggled`` when the state changes — and
+        that emission is load-bearing: ``_exit_graph_mode`` relies on it to
+        restore the content stack.  (No-op when the button is already active.)
+        """
         btn = self._view_toggle_buttons.get(mode)
         if btn:
             btn.set_active(True)

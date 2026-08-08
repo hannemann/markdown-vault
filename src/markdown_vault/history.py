@@ -157,6 +157,8 @@ class NavHistory:
         exists = exists or (lambda p: Path(p).exists())
         raw = [p for p in (state.get("history") or []) if isinstance(p, str)]
         pos = state.get("pos", len(raw) - 1)
+        if not isinstance(pos, int):  # a persisted null/garbage must not crash restore
+            pos = len(raw) - 1
         kept: list[str] = []
         removed_before = 0
         for i, p in enumerate(raw):
@@ -169,9 +171,16 @@ class NavHistory:
         self._enforce_cap()  # bound an old, pre-cap persisted history too
 
     def can_go_back(self) -> bool:
-        """Whether there are valid previous entries."""
-        return self._pos > 0
+        """Whether a previous entry with an existing file is reachable.
+
+        Mirrors :meth:`back`, which skips entries whose file is gone — so the
+        nav button's dimming reflects what the button will actually do.
+        """
+        return any(Path(self._history[i]).exists()
+                   for i in range(self._pos - 1, -1, -1))
 
     def can_go_forward(self) -> bool:
-        """Whether there are valid next entries."""
-        return self._pos < len(self._history) - 1
+        """Whether a next entry with an existing file is reachable (see
+        :meth:`can_go_back`)."""
+        return any(Path(self._history[i]).exists()
+                   for i in range(self._pos + 1, len(self._history)))

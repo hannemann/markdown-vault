@@ -177,6 +177,23 @@ class TestNavHistory(unittest.TestCase):
         h.back()
         self.assertTrue(h.can_go_forward())
 
+    def test_can_go_back_false_when_only_missing_behind(self):
+        """R29.4: can_go_back mirrors back(), which skips missing files — so it
+        must be False when every earlier entry's file is gone."""
+        h = NavHistory()
+        h.push("/nonexistent/gone.md")
+        h.push(self._path(0))
+        # History: [gone, a], pos=1. back() would skip gone and find nothing.
+        self.assertFalse(h.can_go_back())
+        self.assertIsNone(h.back())
+
+    def test_can_go_forward_false_when_only_missing_ahead(self):
+        h = NavHistory()
+        h.push(self._path(0))
+        h.push("/nonexistent/gone.md")
+        h.back()  # to a (pos=0); only the missing entry lies ahead
+        self.assertFalse(h.can_go_forward())
+
     # ── remove_path ─────────────────────────────────────────────────
 
     def test_remove_file(self):
@@ -355,6 +372,14 @@ class TestNavHistoryState(unittest.TestCase):
         h.load_state({"history": ["/x.md"], "pos": 0}, exists=lambda p: False)
         self.assertEqual(h.history, [])
         self.assertEqual(h.pos, -1)
+
+    def test_load_non_int_pos_does_not_crash(self):
+        """A persisted null/garbage pos must fall back, not blow up restore."""
+        h = NavHistory()
+        h.load_state({"history": ["/a.md", "/b.md"], "pos": None},
+                     exists=lambda p: True)
+        self.assertEqual(h.history, ["/a.md", "/b.md"])
+        self.assertEqual(h.pos, 1)  # fell back to last entry
 
     def test_push_caps_to_max_keeping_position(self):
         h = NavHistory()

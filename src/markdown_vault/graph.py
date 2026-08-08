@@ -120,7 +120,9 @@ def color_for_vault(vault: str) -> str:
     vaults exist.  The hue spreads over the wheel (distinct vaults → distinct
     colours); saturation/lightness are fixed for a consistent, vivid look.
     """
-    digest = int(hashlib.md5(vault.encode("utf-8")).hexdigest(), 16)
+    # Not security-sensitive — just a stable hue seed; usedforsecurity=False keeps
+    # it working on FIPS-enabled systems where plain md5() raises.
+    digest = int(hashlib.md5(vault.encode("utf-8"), usedforsecurity=False).hexdigest(), 16)
     hue = (digest % 360) / 360.0
     # Vary lightness/saturation from other hash bits too, so two vaults that
     # happen to land on nearby hues still separate by brightness/vividness.

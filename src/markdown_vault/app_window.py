@@ -1030,6 +1030,12 @@ class MainWindow(Adw.ApplicationWindow):
         Closes all open tabs, restores target vault state, and opens the
         requested file. Deferred to next idle iteration to avoid GTK
         widget lifecycle conflicts.
+
+        Note: this restore does not thread ``_from_nav`` through, so the
+        session-restore opens and the ``open_file_path`` open below all push
+        history. That stays correct only because ``NavHistory.push`` dedupes
+        against the current position — a re-open of the same entry is a no-op.
+        Keep that dedupe if you touch it; the cross-vault history relies on it.
         """
         logger.info("switch-vault: phase 3 — closing tabs and restoring %s", new_vault)
         self._do_close_paths(self._tab_bar.get_all_paths())

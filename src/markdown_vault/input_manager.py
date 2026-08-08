@@ -150,5 +150,5 @@ class InputManager:
             1.0 if self._nav_history.can_go_forward() else 0.35)
 
     def update_nav_buttons(self) -> None:
-        """Public API: enable/disable navigation buttons based on history state."""
+        """Public API: dim/undim the navigation buttons based on history state."""
         self._update_nav_buttons()
