@@ -140,9 +140,12 @@ class SemanticIndexManager:
         cached = self._load_cache()
         files = self._walk_files()
         new_files: dict[str, dict] = {}
-        # First pass: keep unchanged files from the cache, collect the rest so we
-        # know the total up front and can report determinate progress.
-        to_embed: list[tuple[str, str, str]] = []
+        # First pass: keep unchanged files from the cache, collect the paths of
+        # the rest so we know the total up front (for determinate progress).  We
+        # store only paths, not text — re-reading in the second pass avoids
+        # buffering every changed file's content (the whole vault on a cold
+        # cache); the file was just read, so it's in the page cache (R27.2).
+        to_embed: list[str] = []
         for path in files:
             try:
                 text = Path(path).read_text(encoding="utf-8", errors="replace")
@@ -153,18 +156,22 @@ class SemanticIndexManager:
             if entry is not None and entry["hash"] == h:
                 new_files[path] = entry
             else:
-                to_embed.append((path, text, h))
+                to_embed.append(path)
         # Second pass: embed the changed files, reporting progress.
         total = len(to_embed)
         changed = 0
         aborted = False
-        for path, text, h in to_embed:
+        for path in to_embed:
+            try:
+                text = Path(path).read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                continue
             try:
                 kept, vecs = self._embed_all(chunk_markdown(text, path))
             except BackendUnavailable:
                 aborted = True         # stop; no point taking a timeout per file
                 break
-            new_files[path] = {"hash": h, "chunks": kept, "vecs": vecs}
+            new_files[path] = {"hash": _hash(text), "chunks": kept, "vecs": vecs}
             changed += 1
             self._report_progress(changed, total)
         with self._lock:
@@ -245,7 +252,6 @@ class SemanticIndexManager:
         self._busy_enter()
         try:
             changed = False
-            deferred = False
             while not self._shutdown:  # a superseded/disabled manager bails out
                 with self._pending_lock:
                     if not self._pending:
@@ -262,15 +268,13 @@ class SemanticIndexManager:
                         self._pending.setdefault(path, op)
                     logger.warning("semantic index: backend unavailable, "
                                    "deferring incremental updates")
-                    deferred = True
+                    self._report_status(False)
                     break
                 except Exception:
                     logger.warning("semantic index: op %s on %s failed",
                                    op[0], os.path.basename(path), exc_info=True)
             if changed and not self._shutdown:
                 self._save_cache()     # one write per drain, not per file
-            if not self._shutdown:
-                self._report_status(not deferred)
         finally:
             self._busy_exit()
 
@@ -303,6 +307,7 @@ class SemanticIndexManager:
         with self._lock:
             self._files[path] = {"hash": h, "chunks": kept, "vecs": vecs}
             self._rebuild_index_locked()
+        self._report_status(True)  # a real embed succeeded → backend is up
         logger.info("semantic index: reindexed %s (%d chunks)",
                     os.path.basename(path), len(kept))
         return True

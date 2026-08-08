@@ -298,6 +298,35 @@ class TestSemanticIndexManager(unittest.TestCase):
         m.build()
         self.assertEqual(events, [False])   # fired once, on the transition
 
+    def test_backend_free_op_does_not_clear_unavailable(self):
+        # R27.1: a delete (no embed) must NOT report the backend as available.
+        events = []
+        m = SemanticIndexManager(
+            _StubEmbedder(), lambda: [str(self._vault)], self._state,
+            "ollama:test", min_score=0.3, on_status=events.append)
+        m.build()
+        m._report_status(False)      # pretend the backend went down
+        events.clear()
+        p = str(self._vault / "a.md")
+        self._park_pending(m, {p: ("remove",)})
+        m._drain_pending()
+        self.assertEqual(events, [])  # drop embedded nothing → status untouched
+
+    def test_successful_reindex_reports_recovery(self):
+        # R27.1: availability comes from an embed that actually succeeded.
+        events = []
+        m = SemanticIndexManager(
+            _StubEmbedder(), lambda: [str(self._vault)], self._state,
+            "ollama:test", min_score=0.3, on_status=events.append)
+        m.build()
+        m._report_status(False)
+        events.clear()
+        (self._vault / "a.md").write_text("changed alpha beta", encoding="utf-8")
+        p = str(self._vault / "a.md")
+        self._park_pending(m, {p: ("update",)})
+        m._drain_pending()
+        self.assertEqual(events, [True])  # embed succeeded → recovery reported
+
     def test_failed_build_is_not_cached_as_success(self):
         # R26.1: a build against a down backend must not persist an empty cache,
         # so the next start (backend up) actually re-embeds.

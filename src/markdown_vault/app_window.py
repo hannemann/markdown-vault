@@ -1344,12 +1344,23 @@ class MainWindow(Adw.ApplicationWindow):
         return False
 
     def _on_semantic_status(self, available: bool) -> None:
-        GLib.idle_add(self._set_semantic_available, bool(available))
+        # notify=True: a manager-driven recovery (a real embed succeeded) is worth
+        # a toast; the optimistic reset at (re)build start passes notify=False.
+        GLib.idle_add(self._set_semantic_available, bool(available), True)
 
-    def _set_semantic_available(self, available: bool) -> bool:
+    def _set_semantic_available(self, available: bool, notify: bool = False) -> bool:
+        was = self._sem_available
         self._sem_available = available
         self._update_status_bar()
+        if notify and available and not was:
+            self._toast("Semantic search: backend reachable again")
         return False
+
+    def _toast(self, text: str) -> None:
+        try:
+            self._toast_overlay.add_toast(Adw.Toast.new(text))
+        except Exception:
+            logger.debug("toast failed", exc_info=True)
 
     def _update_status_bar(self) -> bool:
         if not getattr(self, "_sem_available", True):
