@@ -61,12 +61,12 @@ const legend=document.getElementById("legend"), empty=document.getElementById("e
 let W=innerWidth,H=innerHeight,cx=W/2,cy=H/2;
 let nodes=[],links=[],byId={},centerId=null,adj={};
 let tx=0,ty=0,scale=1,alpha=0,raf=0;
-let tagFilter=[],searchQ="";
+let tagFilter=[],searchQ="",hoverId=null;
 
 function radius(n){return 5+Math.min(9,Math.sqrt(n.degree||0)*2)+(n.center?3:0);}
 
 function setGraph(payload){
-  tagFilter=[]; searchQ="";
+  tagFilter=[]; searchQ=""; hoverId=null;
   const prev={}; nodes.forEach(n=>prev[n.id]=n);
   const arr=payload.nodes||[];
   nodes=arr.map((n,i)=>{
@@ -132,13 +132,7 @@ function positions(){
     if(el)el.g.setAttribute("transform","translate("+n.x+","+n.y+")");});
   view.setAttribute("transform","translate("+tx+","+ty+") scale("+scale+")");
 }
-function highlight(id){
-  const near=id?new Set([id,...adj[id]]):null;
-  nodes.forEach(n=>elNodes[n.id]&&elNodes[n.id].g.classList.toggle("faded",
-    near?!near.has(n.id):false));
-  elEdges.forEach(({l,e})=>l.classList.toggle("faded",
-    near?!(near.has(e.source)&&near.has(e.target)):false));
-}
+function highlight(id){hoverId=id;applyFilters();}  // hover is one input to fade
 
 function step(){
   const K=6000, L=70;
@@ -194,16 +188,19 @@ addEventListener("resize",()=>{W=innerWidth;H=innerHeight;cx=W/2;cy=H/2;
 function passTag(n){return tagFilter.length===0||(n.tags||[]).some(t=>tagFilter.indexOf(t)>=0);}
 function matchSearch(n){return !searchQ||label(n).toLowerCase().indexOf(searchQ)>=0
   ||(n.id||"").toLowerCase().indexOf(searchQ)>=0;}
+function nearHover(id){return hoverId===id||(adj[hoverId]&&adj[hoverId].has(id));}
+// A node is dimmed if the search excludes it OR a hover excludes it — both
+// contribute so leaving a hover restores (not clears) the search dim.
+function faded(n){return (searchQ&&!matchSearch(n))||(hoverId&&!nearHover(n.id));}
 function applyFilters(){
   const shown=new Set();
   nodes.forEach(n=>{const el=elNodes[n.id];if(!el)return;
     const vis=passTag(n); el.g.style.display=vis?"":"none";
-    el.g.classList.toggle("faded", vis&&searchQ&&!matchSearch(n));
+    el.g.classList.toggle("faded", vis&&!!faded(n));
     if(vis)shown.add(n.id);});
   elEdges.forEach(({l,e})=>{const both=shown.has(e.source)&&shown.has(e.target);
     l.style.display=both?"":"none";
-    l.classList.toggle("faded", both&&searchQ&&
-      !(matchSearch(byId[e.source])&&matchSearch(byId[e.target])));});
+    l.classList.toggle("faded", both&&(faded(byId[e.source])||faded(byId[e.target])));});
   empty.style.display=(shown.size===0)?"flex":"none";
 }
 function zoomTo(list){

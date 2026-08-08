@@ -246,6 +246,7 @@ class MainWindow(Adw.ApplicationWindow):
         # Cached full wikilink graph (rebuilt when the backlink index mutates).
         self._graph_full = None
         self._graph_seq = -1
+        self._graph_explorer = None  # lazy GraphExplorer for the Graph view mode
         self._file_index = FileIndex()
         # R16.2: monotonic generation for the async backlink build — a worker
         # result from a superseded schedule is discarded on apply.
@@ -598,6 +599,7 @@ class MainWindow(Adw.ApplicationWindow):
             ("edit",   "document-edit-symbolic",        "Edit (Ctrl+1)"),
             ("split",  "view-dual-symbolic",            "Split (Ctrl+2)"),
             ("render", "document-properties-symbolic",  "Preview (Ctrl+3)"),
+            ("graph",  "network-wired-symbolic",        "Graph (Ctrl+4)"),
         ):
             btn = Gtk.ToggleButton(icon_name=icon)
             btn.set_tooltip_text(tooltip)
@@ -801,6 +803,14 @@ class MainWindow(Adw.ApplicationWindow):
                 lambda _a, _p, m=mode: self._set_view_mode(m),
             )
             self.add_action(action)
+
+        # Graph mode is a content overlay, not a per-tab view mode — route it
+        # through the toggle button so entering/leaving works identically.
+        graph_action = Gio.SimpleAction.new("view-graph", None)
+        graph_action.connect(
+            "activate",
+            lambda *_: self._view_toggle_buttons["graph"].set_active(True))
+        self.add_action(graph_action)
 
         self._apply_keybindings()
 
@@ -1796,7 +1806,60 @@ class MainWindow(Adw.ApplicationWindow):
             return
         if not toggle_btn.get_active():
             return
-        self._view_mode_manager.set_view_mode(toggle_btn._mode)  # type: ignore[attr-defined]
+        mode = toggle_btn._mode  # type: ignore[attr-defined]
+        if mode == "graph":
+            self._enter_graph_mode()
+            return
+        self._exit_graph_mode()  # restore the tab's content if the graph was up
+        self._view_mode_manager.set_view_mode(mode)
+
+    def _enter_graph_mode(self) -> None:
+        """Show the full-graph explorer in the content area (lazy WebView)."""
+        if self._graph_explorer is None:
+            from .graph_explorer import GraphExplorer
+            self._graph_explorer = GraphExplorer(
+                get_payload=self._graph_explorer_payload)
+            self._graph_explorer.connect(
+                "node-activated", self._on_graph_node_activated)
+            self._content_stack.add_named(self._graph_explorer, "__graph__")
+        self._graph_explorer.refresh()
+        self._content_stack.set_visible_child_name("__graph__")
+
+    def _exit_graph_mode(self) -> None:
+        """Restore the current tab's content if the graph page is showing."""
+        if self._content_stack.get_visible_child_name() != "__graph__":
+            return
+        tab = self._tab_bar.get_current_tab()
+        if tab and tab.file_path:
+            self._content_stack.set_visible_child_name(tab.file_path)
+        else:
+            self._content_stack.set_visible_child_name("__welcome__")
+
+    def _graph_explorer_payload(self, scope: str):
+        """Full (or current-vault) graph as a render payload for the explorer."""
+        from . import graph
+        seq = self._backlink_index.mutation_seq
+        if self._graph_full is None or seq != self._graph_seq:
+            self._graph_full = self._build_full_graph()
+            self._graph_seq = seq
+        full = self._graph_full
+        if scope == "current" and self._active_vault:
+            keep = {n.id for n in full.nodes if n.vault == self._active_vault}
+            full = graph.Graph(
+                [n for n in full.nodes if n.id in keep],
+                [e for e in full.edges if e.source in keep and e.target in keep])
+        tab = self._tab_bar.get_current_tab()
+        center = tab.file_path if tab else None
+        colors = graph.vault_palette(self._vault_tree.get_vault_paths())
+        return graph.to_payload(full, colors, center=center)
+
+    def _on_graph_node_activated(self, _explorer, path: str) -> None:
+        """A node was clicked → open the file in the tab, leaving graph mode."""
+        default = self._settings.get("default_view_mode", "render")
+        self._open_file(path, view_mode=default)
+        btn = self._view_toggle_buttons.get(default)
+        if btn is not None:
+            btn.set_active(True)  # untoggles graph + applies the default mode
 
     def _apply_view_mode(self) -> None:
         self._view_mode_manager.apply_view_mode()
@@ -2252,6 +2315,11 @@ class MainWindow(Adw.ApplicationWindow):
             self._sidebar.teardown()  # also tear down the graph WebView
         except Exception:
             logger.debug("sidebar teardown failed", exc_info=True)
+        if getattr(self, "_graph_explorer", None) is not None:
+            try:
+                self._graph_explorer.teardown()
+            except Exception:
+                logger.debug("graph explorer teardown failed", exc_info=True)
 
     # ── Autosave ───────────────────────────────────────────────────
 
