@@ -43,7 +43,7 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 gi.require_version("WebKit", "6.0")
 
-from gi.repository import Gtk, Adw, WebKit, GObject, Gdk, GLib
+from gi.repository import Gtk, Adw, WebKit, GObject, Gdk, GLib, Gio
 
 
 import unicodedata
@@ -590,6 +590,7 @@ class Preview(Gtk.ScrolledWindow):
         wv.set_background_color(bg)
 
         wv.connect("decide-policy", self._on_decide_policy)
+        wv.connect("context-menu", self._on_context_menu)
 
         ctrl = wv.get_user_content_manager()
         ctrl.connect(
@@ -644,6 +645,83 @@ class Preview(Gtk.ScrolledWindow):
 
     def _emit_link(self, resolved: str, new_tab: bool) -> None:
         self.emit("link-clicked-new-tab" if new_tab else "link-clicked", resolved)
+
+    def _open_external(self, uri: str) -> None:
+        GLib.idle_add(Gtk.show_uri, self.get_root(), uri, Gdk.CURRENT_TIME)
+
+    def _copy_to_clipboard(self, text: str) -> None:
+        self.get_clipboard().set(text)
+
+    def _resolve_internal_link(self, uri: str) -> str | None:
+        """Resolve a link URI to an existing .md file, or ``None``.
+
+        Mirrors the resolution logic of :meth:`_on_decide_policy` but never
+        touches navigation — used to decide what a context-menu entry acts on.
+        External links (http/mailto) and unresolvable targets return ``None``.
+        """
+        if not uri or uri.startswith(("http://", "https://", "mailto:")):
+            return None
+        if uri.startswith("vault:"):
+            return self._resolve_wikilink_page(uri)
+        path_str = uri[7:] if uri.startswith("file://") else uri
+        return self._resolve_wikilink(unquote(path_str))
+
+    def _ctx_item(self, name: str, label: str, callback) -> "WebKit.ContextMenuItem":
+        """Build a context-menu item backed by a throwaway ``Gio.SimpleAction``.
+
+        The action is retained in ``_ctx_actions`` for the lifetime of the menu
+        so it is not garbage-collected before the user activates it.
+        """
+        action = Gio.SimpleAction.new(name, None)
+        action.connect("activate", lambda *_: callback())
+        self._ctx_actions.append(action)
+        return WebKit.ContextMenuItem.new_from_gaction(action, label, None)
+
+    def _on_context_menu(self, _web_view, context_menu, hit_test_result):
+        """Replace WebKit's default menu with a curated, app-specific one.
+
+        Browser stock entries (Back/Forward/Reload/Download …) are meaningless
+        here, so the menu is rebuilt from scratch per context: internal link,
+        external link, text selection, or empty (no menu).
+        """
+        context_menu.remove_all()
+        self._ctx_actions = []  # keep gactions alive while the menu is shown
+
+        if hit_test_result.context_is_link():
+            uri = hit_test_result.get_link_uri()
+            resolved = self._resolve_internal_link(uri)
+            if resolved:
+                context_menu.append(
+                    self._ctx_item("open-link", "Open",
+                                   lambda: self._emit_link(resolved, False)))
+                context_menu.append(
+                    self._ctx_item("open-link-new-tab", "Open in New Tab",
+                                   lambda: self._emit_link(resolved, True)))
+                context_menu.append(WebKit.ContextMenuItem.new_separator())
+                context_menu.append(
+                    self._ctx_item("copy-link", "Copy Link",
+                                   lambda: self._copy_to_clipboard(resolved)))
+                return False
+            if uri and uri.startswith(("http://", "https://", "mailto:")):
+                context_menu.append(
+                    self._ctx_item("open-browser", "Open in Browser",
+                                   lambda: self._open_external(uri)))
+                context_menu.append(WebKit.ContextMenuItem.new_separator())
+                context_menu.append(
+                    self._ctx_item("copy-link", "Copy Link",
+                                   lambda: self._copy_to_clipboard(uri)))
+                return False
+            # A link that resolves to nothing internal — show no menu.
+            return True
+
+        if hit_test_result.context_is_selection():
+            context_menu.append(
+                WebKit.ContextMenuItem.new_from_stock_action(
+                    WebKit.ContextMenuAction.COPY))
+            return False
+
+        # Empty area / plain content — suppress the menu entirely.
+        return True
 
     def _on_decide_policy(self, _web_view, decision, decision_type):
         """Intercept link clicks and resolve wikilinks to .md files.
