@@ -11,7 +11,7 @@ vs. backlink); the local neighbourhood is computed undirected.
 
 import colorsys
 import hashlib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 @dataclass
@@ -20,6 +20,7 @@ class Node:
     label: str         # display name (file stem)
     vault: str         # owning vault path (colour grouping)
     degree: int = 0    # total links in + out (node size)
+    tags: list = field(default_factory=list)  # frontmatter tags (for filtering)
 
 
 @dataclass
@@ -42,14 +43,17 @@ def _stem(path: str) -> str:
     return base[:-3] if base.endswith(".md") else base
 
 
-def build_graph(file_vaults: dict, edges) -> Graph:
+def build_graph(file_vaults: dict, edges, file_tags: dict = None) -> Graph:
     """Build the full graph.
 
     *file_vaults*: ``{file_path: vault_path}`` for every node.
     *edges*: iterable of ``(source_path, target_path)``.  Edges touching an
     unknown file, self-loops and duplicates are dropped; degree counts both ends.
+    *file_tags*: optional ``{file_path: [tag, …]}`` (frontmatter tags), attached
+    to each node for tag filtering in the graph explorer.
     """
-    nodes = {p: Node(id=p, label=_stem(p), vault=v)
+    file_tags = file_tags or {}
+    nodes = {p: Node(id=p, label=_stem(p), vault=v, tags=list(file_tags.get(p, [])))
              for p, v in file_vaults.items()}
     seen = set()
     kept = []
@@ -137,7 +141,7 @@ def to_payload(graph: Graph, colors: dict, center: str = None) -> dict:
         "nodes": [
             {"id": n.id, "label": n.label, "vault": n.vault,
              "color": colors.get(n.vault, "#888888"),
-             "degree": n.degree, "center": n.id == center}
+             "degree": n.degree, "center": n.id == center, "tags": n.tags}
             for n in graph.nodes
         ],
         "edges": [{"source": e.source, "target": e.target} for e in graph.edges],

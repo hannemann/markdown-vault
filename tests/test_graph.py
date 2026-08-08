@@ -28,6 +28,13 @@ class TestBuildGraph(unittest.TestCase):
         self.assertEqual(by_id["/v/b.md"].degree, 1)
         self.assertEqual(by_id["/v/c.md"].degree, 0)
 
+    def test_tags_attached_to_nodes(self):
+        gr = g.build_graph(self._fv(), [],
+                           file_tags={"/v/a.md": ["work", "urgent"]})
+        by_id = {n.id: n for n in gr.nodes}
+        self.assertEqual(by_id["/v/a.md"].tags, ["work", "urgent"])
+        self.assertEqual(by_id["/v/b.md"].tags, [])  # untagged → empty
+
     def test_drops_unknown_self_and_duplicate_edges(self):
         gr = g.build_graph(self._fv(), [
             ("/v/a.md", "/v/a.md"),        # self-loop
@@ -101,12 +108,14 @@ class TestPaletteAndPayload(unittest.TestCase):
 
     def test_payload_shape_and_center(self):
         gr = g.build_graph({"/v/a.md": "/v", "/v/b.md": "/v"},
-                           [("/v/a.md", "/v/b.md")])
+                           [("/v/a.md", "/v/b.md")],
+                           file_tags={"/v/a.md": ["work"]})
         payload = g.to_payload(gr, g.vault_palette(["/v"]), center="/v/a.md")
         centre = [n for n in payload["nodes"] if n["center"]]
         self.assertEqual(len(centre), 1)
         self.assertEqual(centre[0]["id"], "/v/a.md")
         self.assertEqual(centre[0]["color"], g.color_for_vault("/v"))
+        self.assertEqual(centre[0]["tags"], ["work"])
         self.assertEqual(payload["edges"], [{"source": "/v/a.md", "target": "/v/b.md"}])
 
 

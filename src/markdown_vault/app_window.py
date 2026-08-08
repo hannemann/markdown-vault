@@ -1273,21 +1273,35 @@ class MainWindow(Adw.ApplicationWindow):
         """Assemble the whole wikilink graph: files (walked, incl. subdirs) as
         nodes, resolved backlink keys as edges."""
         from . import graph
+        from .search_backend import frontmatter_tags
         bi = self._backlink_index
         file_vaults = {}
+        file_tags = {}
         for vault in self._vault_tree.get_vault_paths():
             for root, dirs, names in os.walk(vault):
                 dirs[:] = [d for d in dirs if not d.startswith(".")]
                 for name in names:
-                    if name.endswith(".md"):
-                        file_vaults[os.path.join(root, name)] = vault
+                    if not name.endswith(".md"):
+                        continue
+                    path = os.path.join(root, name)
+                    file_vaults[path] = vault
+                    try:
+                        # Frontmatter is at the very top; a bounded head read
+                        # keeps tag extraction cheap over the whole vault.
+                        with open(path, "r", encoding="utf-8", errors="replace") as fh:
+                            head = fh.read(4096)
+                        tags = frontmatter_tags(head)
+                        if tags:
+                            file_tags[path] = tags
+                    except OSError:
+                        pass
         key_to_file = {}
         for f in file_vaults:
             key = bi.canonical_key(f)
             if key:
                 key_to_file[key] = f
         edges = graph.edges_from_backlinks(bi.outgoing_targets(), key_to_file)
-        return graph.build_graph(file_vaults, edges)
+        return graph.build_graph(file_vaults, edges, file_tags)
 
     def _on_sidebar_file_requested(self, _sidebar, file_path: str) -> None:
         vault = self._find_vault_for_file(file_path)

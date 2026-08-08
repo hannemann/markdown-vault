@@ -441,6 +441,12 @@ def _has_tags(text: str, wanted: list[str]) -> bool:
     return bool(have) and all(w.lower() in have for w in wanted)
 
 
+def frontmatter_tags(text: str) -> list[str]:
+    """Public: the ``tags`` from a leading YAML frontmatter block (same source of
+    truth as the ``tag:`` search filter; used by the graph explorer)."""
+    return _frontmatter_tags(text)
+
+
 def _frontmatter_tags(text: str) -> list[str]:
     """Extract the ``tags`` field from a leading YAML frontmatter block."""
     if not text.startswith("---"):
