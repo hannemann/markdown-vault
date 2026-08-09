@@ -278,8 +278,9 @@ _DEFAULT_SETTINGS = {
     "semantic_backend": "onnx",  # "onnx" (local, recommended) or "ollama" (server)
     "semantic_ollama_url": "http://localhost:11434",
     "semantic_ollama_model": "nomic-embed-text",
-    "semantic_onnx_model": "",       # path to model.onnx (empty → data dir default)
-    "semantic_onnx_tokenizer": "",   # path to tokenizer.json (empty → default)
+    # Folder holding the ONNX files (model.onnx + tokenizer.json); it is both the
+    # download target and the load source. Empty → the app data dir default.
+    "semantic_onnx_dir": "",
     "semantic_onnx_model_url":
         "https://huggingface.co/Xenova/paraphrase-multilingual-MiniLM-L12-v2/"
         "resolve/main/onnx/model.onnx",

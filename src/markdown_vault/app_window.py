@@ -1511,11 +1511,10 @@ class MainWindow(Adw.ApplicationWindow):
         backend = self._settings.get("semantic_backend", "onnx")
         if backend == "onnx":
             from .semantic_search import OnnxEmbedder
-            default_dir = config.STATE_DIR / "onnx"
-            model = (self._settings.get("semantic_onnx_model")
-                     or str(default_dir / "model.onnx"))
-            tokenizer = (self._settings.get("semantic_onnx_tokenizer")
-                         or str(default_dir / "tokenizer.json"))
+            onnx_dir = (self._settings.get("semantic_onnx_dir")
+                        or str(config.STATE_DIR / "onnx"))
+            model = str(Path(onnx_dir) / "model.onnx")
+            tokenizer = str(Path(onnx_dir) / "tokenizer.json")
             logger.info("semantic search: onnx backend (model=%s)", model)
             return OnnxEmbedder(model, tokenizer), self._onnx_sig(model, tokenizer)
         from .semantic_search import OllamaEmbedder
