@@ -96,6 +96,13 @@ class TestFirstRow(unittest.TestCase):
         self.assertTrue(ok)
         self.assertEqual((start, end), (0, len("hello world")))
 
+    def test_last_question_accessors_persist_value(self):
+        p = self._palette()
+        p.set_last_question("which planet is heaviest?")
+        self.assertEqual(p.get_last_question(), "which planet is heaviest?")
+        p.set_last_question(None)  # tolerate a missing/None restore
+        self.assertEqual(p.get_last_question(), "")
+
 
 if __name__ == "__main__":
     unittest.main()

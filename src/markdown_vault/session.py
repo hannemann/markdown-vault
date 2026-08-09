@@ -33,6 +33,7 @@ def save_session(
     sidebar_paned_position: int = 0,
     main_paned_position: int = 0,
     nav_history: dict | None = None,
+    ask_last_question: str = "",
 ) -> None:
     """Write the current session state to disk.
 
@@ -57,6 +58,7 @@ def save_session(
         "sidebar_paned_position": sidebar_paned_position,
         "main_paned_position": main_paned_position,
         "nav_history": nav_history or {"history": [], "pos": -1},
+        "ask_last_question": ask_last_question,
     }
     try:
         SESSION_FILE.write_text(json.dumps(data, indent=2), encoding="utf-8")
@@ -84,6 +86,7 @@ def load_session() -> dict:
     data.setdefault("search_paned_position", 0)
     data.setdefault("sidebar_paned_position", 0)
     data.setdefault("main_paned_position", 0)
+    data.setdefault("ask_last_question", "")
     # Migration: old sessions had top-level "tabs" + "active_tab".
     _migrate_legacy_session(data)
     return data
@@ -160,4 +163,5 @@ def _defaults() -> dict:
         "search_paned_position": 0,
         "sidebar_paned_position": 0,
         "main_paned_position": 0,
+        "ask_last_question": "",
     }

@@ -73,21 +73,19 @@ class QuickOpenPalette(Adw.Dialog):
         entry_keys.connect("key-pressed", self._on_entry_key)
         self._entry.add_controller(entry_keys)
         header.append(self._entry)
-        if ask_answer is not None:
-            self._ask_toggle = Gtk.ToggleButton()
-            self._ask_toggle.set_icon_name("dialog-question-symbolic")
-            self._ask_toggle.set_tooltip_text(
-                "Ask — answer from your notes (instead of jumping to a file)")
-            self._ask_toggle.connect("toggled", self._on_ask_toggled)
-            header.append(self._ask_toggle)
-        self._scope_dropdown = None
-        if self._scope:
-            from .vault_scope import VaultScope
-            self._scope_dropdown = VaultScope(
-                self._scope["get_vaults_named"], self._scope["get_active"],
-                self._scope["get_scope"], self._scope["set_scope"],
-                on_change=self._on_scope_changed)
-            header.append(self._scope_dropdown)
+        # Submit button for mouse users — mirrors pressing Enter (open the
+        # selected file, or run the question in Ask mode).
+        self._submit = Gtk.Button(label="↵")  # ↵ return glyph (U+21B5)
+        self._submit.add_css_class("suggested-action")  # reads as the primary button
+        self._submit.set_tooltip_text("Run — search or ask (Enter)")
+        self._submit.connect("clicked",
+                             lambda *_: self._on_entry_activate(self._entry))
+        header.append(self._submit)
+        self._close_btn = Gtk.Button(icon_name="window-close-symbolic")
+        self._close_btn.add_css_class("flat")
+        self._close_btn.set_tooltip_text("Close (Esc)")
+        self._close_btn.connect("clicked", lambda *_: self.close())
+        header.append(self._close_btn)
         box.append(header)
 
         box.append(Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL))
@@ -104,6 +102,33 @@ class QuickOpenPalette(Adw.Dialog):
         scrolled.set_child(self._results)
         scrolled.set_vexpand(True)
         box.append(scrolled)
+
+        # Footer: vault scope + mode toggle, right-aligned, so the entry above
+        # gets the full header width.
+        footer = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        footer.set_halign(Gtk.Align.END)
+        footer.set_margin_top(6)
+        footer.set_margin_bottom(8)
+        footer.set_margin_start(8)
+        footer.set_margin_end(8)
+        self._scope_dropdown = None
+        if self._scope:
+            from .vault_scope import VaultScope
+            self._scope_dropdown = VaultScope(
+                self._scope["get_vaults_named"], self._scope["get_active"],
+                self._scope["get_scope"], self._scope["set_scope"],
+                on_change=self._on_scope_changed)
+            footer.append(self._scope_dropdown)
+        if ask_answer is not None:
+            self._ask_toggle = Gtk.ToggleButton()
+            self._ask_toggle.set_icon_name("dialog-question-symbolic")
+            self._ask_toggle.set_tooltip_text(
+                "Ask — answer from your notes (instead of jumping to a file)")
+            self._ask_toggle.connect("toggled", self._on_ask_toggled)
+            footer.append(self._ask_toggle)
+        if self._scope or ask_answer is not None:
+            box.append(Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL))
+            box.append(footer)
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -136,6 +161,14 @@ class QuickOpenPalette(Adw.Dialog):
     def refresh_scope(self) -> None:
         if self._scope_dropdown is not None:
             self._scope_dropdown.refresh()
+
+    def get_last_question(self) -> str:
+        """The most recently asked question — persisted across restarts so the
+        palette reopens with the Ask entry pre-filled."""
+        return self._last_question
+
+    def set_last_question(self, text: str) -> None:
+        self._last_question = text or ""
 
     def _on_scope_changed(self) -> None:
         """Scope changed via the dropdown: re-run the current search so it takes
@@ -275,7 +308,8 @@ class QuickOpenPalette(Adw.Dialog):
     def _answer_row(self, text: str) -> Gtk.ListBoxRow:
         """The generated answer. Selectable (a keyboard stop so ↓ lands here
         first, its text highlighted for copy) but not activatable (nothing to
-        open); Ctrl+C here copies the whole answer."""
+        open); Ctrl+C here copies the whole answer. A copy button appears in the
+        top-right corner on mouse hover for pointer users."""
         row = Gtk.ListBoxRow()
         row.set_activatable(False)
         row.set_selectable(True)
@@ -288,8 +322,28 @@ class QuickOpenPalette(Adw.Dialog):
         label.set_margin_bottom(8)
         label.set_margin_start(8)
         label.set_margin_end(8)
-        row.set_child(label)
         self._answer_label = label
+
+        overlay = Gtk.Overlay()
+        overlay.set_child(label)
+        copy_btn = Gtk.Button(icon_name="edit-copy-symbolic")
+        copy_btn.add_css_class("flat")
+        copy_btn.add_css_class("circular")
+        copy_btn.set_tooltip_text("Copy answer")
+        copy_btn.set_halign(Gtk.Align.END)
+        copy_btn.set_valign(Gtk.Align.START)
+        copy_btn.set_margin_top(4)
+        copy_btn.set_margin_end(4)
+        copy_btn.set_opacity(0)  # hidden until the pointer hovers the row
+        copy_btn.connect("clicked", lambda *_: self._copy_answer())
+        overlay.add_overlay(copy_btn)
+
+        motion = Gtk.EventControllerMotion()
+        motion.connect("enter", lambda *_a: copy_btn.set_opacity(1))
+        motion.connect("leave", lambda *_a: copy_btn.set_opacity(0))
+        row.add_controller(motion)
+
+        row.set_child(overlay)
         return row
 
     def _source_row(self, source) -> Gtk.ListBoxRow:

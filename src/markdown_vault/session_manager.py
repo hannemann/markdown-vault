@@ -96,6 +96,7 @@ class SessionManager:
             sidebar_paned_position=ws["sidebar_paned_position"],
             main_paned_position=ws["main_paned_position"],
             nav_history=ws.get("nav_history"),
+            ask_last_question=ws.get("ask_last_question", ""),
         )
 
     def save_vault_session(self, active_vault, content_stack) -> None:

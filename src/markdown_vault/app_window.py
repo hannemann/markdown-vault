@@ -408,6 +408,8 @@ class MainWindow(Adw.ApplicationWindow):
             scope=self._scope_callbacks(),
         )
         self._quick_open.connect("file-selected", self._on_search_result_selected)
+        # Restore the last Ask question so the palette reopens pre-filled.
+        self._quick_open.set_last_question(_ses.get("ask_last_question", ""))
         self._search_bar.connect("close-requested", self._on_search_close_requested)
 
         self._search_paned = Gtk.Paned(orientation=Gtk.Orientation.VERTICAL)
@@ -2447,6 +2449,7 @@ class MainWindow(Adw.ApplicationWindow):
             "sidebar_paned_position": self._sidebar_paned.get_position(),
             "main_paned_position": self._main_paned.get_position(),
             "nav_history": self._nav_history.to_state(),
+            "ask_last_question": self._quick_open.get_last_question(),
         }
 
     def _on_close_request(self, *_args) -> bool:

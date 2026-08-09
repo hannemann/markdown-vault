@@ -86,6 +86,21 @@ class TestSessionVaultSessions(_TempSessionMixin, unittest.TestCase):
         self.assertEqual(vs["active_tab"], "/tmp/note.md")
         self.assertEqual(vs["mru"], ["/tmp/note.md"])
 
+    def test_ask_last_question_round_trips(self):
+        _ses.save_session(
+            width=1000,
+            height=800,
+            sidebar_visible=False,
+            active_vault="/tmp",
+            vault_sessions={},
+            ask_last_question="which planet is heaviest?",
+        )
+        loaded = _ses.load_session()
+        self.assertEqual(loaded["ask_last_question"], "which planet is heaviest?")
+
+    def test_ask_last_question_defaults_empty(self):
+        self.assertEqual(_ses.load_session()["ask_last_question"], "")
+
     def test_save_without_zoom_fields(self):
         tabs = [
             {
