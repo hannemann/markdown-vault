@@ -7,6 +7,7 @@ Changes are applied immediately and persisted to ``vaults.yaml``.
 
 import logging
 import threading
+from pathlib import Path
 
 import gi
 
@@ -16,7 +17,7 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 gi.require_version("Gdk", "4.0")
 
-from gi.repository import Gtk, Adw, GObject, Gdk, GLib
+from gi.repository import Gtk, Adw, GObject, Gdk, GLib, Gio
 
 from . import config
 from . import dialogs
@@ -284,17 +285,21 @@ class PreferencesDialog(Adw.PreferencesDialog):
 
         self.add(web)
 
-        # ── Search page ────────────────────────────────────────────
+        # ── Search page (overview → Embedding / Ask / Prompt subpages) ──
+        from . import ask as _ask
+        self._emb_subpage = self._build_embedding_subpage()
+        self._prompt_subpage = self._build_prompt_subpage(_ask)
+        self._ask_subpage = self._build_ask_subpage()
+
         search = Adw.PreferencesPage(title="Search", icon_name="edit-find-symbolic")
         sem_group = Adw.PreferencesGroup(
             title="Semantic search",
             description=(
                 "Find notes by meaning. Off by default; nothing is downloaded "
-                "or contacted while disabled. Recommended: Local (ONNX) — runs "
-                "in-process, no server, nothing leaves your machine, fast per "
-                "query; download the model + tokenizer below. Ollama is an "
-                "alternative if you already run a server (e.g. with a GPU). "
-                "Changes take effect after restart."
+                "or contacted while disabled. Recommended backend: Local (ONNX) "
+                "— runs in-process, no server, nothing leaves your machine. "
+                "Ollama is an alternative if you already run a server (e.g. with "
+                "a GPU). Changes take effect after restart."
             ),
         )
         search.add(sem_group)
@@ -315,136 +320,6 @@ class PreferencesDialog(Adw.PreferencesDialog):
         self._sem_backend_row.set_selected(self._sem_backend_index())
         self._sem_backend_row.connect("notify::selected", self._on_sem_backend_changed)
         sem_group.add(self._sem_backend_row)
-
-        # ONNX model + tokenizer: paste a URL and download into the app data
-        # dir with a live progress bar.  The download runs in a background
-        # thread; the backend picks the files up from the data dir on restart.
-        self._sem_model_url_row = Adw.EntryRow(title="ONNX model URL (model.onnx)")
-        self._sem_model_url_row.set_text(
-            self._settings.get("semantic_onnx_model_url", ""))
-        self._sem_model_url_row.connect(
-            "changed", self._on_entry_setting, "semantic_onnx_model_url")
-        model_btn = Gtk.Button(
-            icon_name="folder-download-symbolic", valign=Gtk.Align.CENTER)
-        model_btn.add_css_class("flat")
-        model_btn.set_tooltip_text("Download model.onnx")
-        model_btn.connect("clicked", self._on_download_onnx, "model")
-        self._sem_model_url_row.add_suffix(model_btn)
-        self._sem_model_dl_btn = model_btn
-        sem_group.add(self._sem_model_url_row)
-
-        self._sem_model_progress = Gtk.ProgressBar(
-            show_text=True, visible=False,
-            margin_start=12, margin_end=12, margin_bottom=6)
-        sem_group.add(self._sem_model_progress)
-
-        self._sem_tok_url_row = Adw.EntryRow(title="Tokenizer URL (tokenizer.json)")
-        self._sem_tok_url_row.set_text(
-            self._settings.get("semantic_onnx_tokenizer_url", ""))
-        self._sem_tok_url_row.connect(
-            "changed", self._on_entry_setting, "semantic_onnx_tokenizer_url")
-        tok_btn = Gtk.Button(
-            icon_name="folder-download-symbolic", valign=Gtk.Align.CENTER)
-        tok_btn.add_css_class("flat")
-        tok_btn.set_tooltip_text("Download tokenizer.json")
-        tok_btn.connect("clicked", self._on_download_onnx, "tokenizer")
-        self._sem_tok_url_row.add_suffix(tok_btn)
-        self._sem_tok_dl_btn = tok_btn
-        sem_group.add(self._sem_tok_url_row)
-
-        self._sem_tok_progress = Gtk.ProgressBar(
-            show_text=True, visible=False,
-            margin_start=12, margin_end=12, margin_bottom=6)
-        sem_group.add(self._sem_tok_progress)
-
-        # Optional custom file locations (blank = the app data dir default).
-        # Downloads land here and the backend loads from here, so changing a
-        # path refreshes the presence indicator below.
-        self._sem_onnx_model_path_row = Adw.EntryRow(
-            title="Model path (optional, blank = default)")
-        self._sem_onnx_model_path_row.set_text(
-            self._settings.get("semantic_onnx_model", ""))
-        self._sem_onnx_model_path_row.connect(
-            "changed", self._on_onnx_path_changed, "semantic_onnx_model")
-        sem_group.add(self._sem_onnx_model_path_row)
-
-        self._sem_onnx_tok_path_row = Adw.EntryRow(
-            title="Tokenizer path (optional, blank = default)")
-        self._sem_onnx_tok_path_row.set_text(
-            self._settings.get("semantic_onnx_tokenizer", ""))
-        self._sem_onnx_tok_path_row.connect(
-            "changed", self._on_onnx_path_changed, "semantic_onnx_tokenizer")
-        sem_group.add(self._sem_onnx_tok_path_row)
-
-        # Presence indicator for the ONNX files + a real load/embed self-test.
-        self._sem_onnx_status_row = Adw.ActionRow(title="Model files")
-        self._sem_onnx_status_icon = Gtk.Image()
-        self._sem_onnx_status_row.add_prefix(self._sem_onnx_status_icon)
-        self._sem_onnx_test_btn = Gtk.Button(label="Test", valign=Gtk.Align.CENTER)
-        self._sem_onnx_test_btn.connect("clicked", self._on_test_onnx)
-        self._sem_onnx_status_row.add_suffix(self._sem_onnx_test_btn)
-        self._sem_onnx_status_row.set_activatable_widget(self._sem_onnx_test_btn)
-        sem_group.add(self._sem_onnx_status_row)
-
-        # Detected onnxruntime version + recommendation (probed off-thread so
-        # importing the heavy library never blocks opening Preferences).
-        self._sem_onnx_runtime_row = Adw.ActionRow(
-            title="ONNX runtime", subtitle="Checking…")
-        sem_group.add(self._sem_onnx_runtime_row)
-
-        # Collapsible guidance for choosing a model yourself.
-        self._sem_onnx_help_row = Adw.ExpanderRow(
-            title="How to pick your own ONNX model",
-            subtitle="What to search for and which files you need",
-        )
-        help_label = Gtk.Label(
-            label=(
-                "Semantic search needs a sentence-embedding model exported to "
-                "ONNX. Find one on Hugging Face and paste each file's URL above "
-                "(use the file's “Copy download link”, i.e. the "
-                ".../resolve/main/... address).\n\n"
-                "What to look for:\n"
-                "•  A feature-extraction / sentence-similarity model in ONNX "
-                "format — e.g. the Xenova/ or sentence-transformers/ orgs. "
-                "Xenova repos ship ready ONNX exports in an onnx/ folder.\n"
-                "•  Two files: model.onnx (or model_quantized.onnx — smaller and "
-                "faster, slightly lower quality) and tokenizer.json.\n"
-                "•  Multilingual if your notes aren't English-only (e.g. "
-                "paraphrase-multilingual-MiniLM-L12-v2); English-only models are "
-                "smaller and faster.\n"
-                "•  It must output token embeddings (the app mean-pools them). "
-                "Classification or reranker models won't work.\n\n"
-                "Good search terms: “sentence-transformers onnx”, “Xenova "
-                "MiniLM”, “feature-extraction onnx”. Both BERT- and XLM-R-style "
-                "models work — the app auto-detects the inputs a model needs."
-            ),
-            wrap=True, xalign=0.0,
-            margin_top=6, margin_bottom=12, margin_start=12, margin_end=12,
-        )
-        help_label.add_css_class("dim-label")
-        self._sem_onnx_help_row.add_row(help_label)
-        sem_group.add(self._sem_onnx_help_row)
-
-        self._sem_url_row = Adw.EntryRow(title="Ollama URL")
-        self._sem_url_row.set_text(
-            self._settings.get("semantic_ollama_url", "http://localhost:11434"))
-        self._sem_url_row.connect("changed", self._on_entry_setting, "semantic_ollama_url")
-        sem_group.add(self._sem_url_row)
-
-        self._sem_model_row = Adw.EntryRow(title="Embedding model")
-        self._sem_model_row.set_text(
-            self._settings.get("semantic_ollama_model", "nomic-embed-text"))
-        self._sem_model_row.connect("changed", self._on_entry_setting, "semantic_ollama_model")
-        sem_group.add(self._sem_model_row)
-
-        self._sem_ollama_test_row = Adw.ActionRow(
-            title="Test connection",
-            subtitle="Embed a probe with the current URL + model")
-        self._sem_ollama_test_btn = Gtk.Button(label="Test", valign=Gtk.Align.CENTER)
-        self._sem_ollama_test_btn.connect("clicked", self._on_test_ollama)
-        self._sem_ollama_test_row.add_suffix(self._sem_ollama_test_btn)
-        self._sem_ollama_test_row.set_activatable_widget(self._sem_ollama_test_btn)
-        sem_group.add(self._sem_ollama_test_row)
 
         self._sem_score_row = Adw.SpinRow(
             title="Minimum similarity",
@@ -473,19 +348,18 @@ class PreferencesDialog(Adw.PreferencesDialog):
         self._sem_rebuild_row.set_activatable_widget(self._sem_rebuild_btn)
         sem_group.add(self._sem_rebuild_row)
 
-        # Grey out the rows that the selected backend does not use.
-        self._sem_onnx_widgets = [
-            self._sem_model_url_row, self._sem_model_progress,
-            self._sem_tok_url_row, self._sem_tok_progress,
-            self._sem_onnx_model_path_row, self._sem_onnx_tok_path_row,
-            self._sem_onnx_status_row, self._sem_onnx_runtime_row,
-            self._sem_onnx_help_row,
-        ]
-        self._sem_ollama_widgets = [
-            self._sem_url_row, self._sem_model_row, self._sem_ollama_test_row,
-        ]
+        # Navigation into the detailed configuration subpages.
+        cfg_group = Adw.PreferencesGroup(title="Configuration")
+        cfg_group.add(self._nav_row(
+            "Embedding", "Model that turns notes into vectors", self._emb_subpage))
+        cfg_group.add(self._nav_row(
+            "Ask (answers from your notes)",
+            "Chat model + prompt for synthesized answers", self._ask_subpage))
+        search.add(cfg_group)
+
         self._update_sem_backend_sensitivity()
         self._refresh_onnx_status()
+        self._refresh_ask_models()
         threading.Thread(target=self._probe_onnx_runtime, daemon=True).start()
 
         self.add(search)
@@ -597,6 +471,251 @@ class PreferencesDialog(Adw.PreferencesDialog):
 
         self.add(debug)
 
+    # ── Search subpages ─────────────────────────────────────────────
+
+    def _nav_row(self, title, subtitle, subpage):
+        """An activatable row with a chevron that pushes *subpage*."""
+        row = Adw.ActionRow(title=title, subtitle=subtitle, activatable=True)
+        row.add_suffix(Gtk.Image(icon_name="go-next-symbolic"))
+        row.connect("activated", lambda *_: self.push_subpage(subpage))
+        return row
+
+    @staticmethod
+    def _subpage(title, page):
+        """Wrap an ``Adw.PreferencesPage`` as a pushable navigation subpage.
+
+        The page needs its own header bar for the back button — an
+        ``Adw.PreferencesPage`` has none — so put it in a toolbar view. The
+        ``Adw.HeaderBar`` auto-shows a back button inside the navigation stack.
+        """
+        toolbar = Adw.ToolbarView()
+        toolbar.add_top_bar(Adw.HeaderBar())
+        toolbar.set_content(page)
+        return Adw.NavigationPage(title=title, child=toolbar)
+
+    def _build_embedding_subpage(self):
+        """Backend detail: the local (ONNX) model and the Ollama alternative.
+        The overview's Backend combo greys whichever set is inactive."""
+        page = Adw.PreferencesPage(title="Embedding")
+
+        local = Adw.PreferencesGroup(
+            title="Local (ONNX)",
+            description=(
+                "Runs in-process, nothing leaves your machine. Recommended "
+                "model: paraphrase-multilingual-MiniLM-L12-v2 (multilingual) — "
+                "the default URLs below point at it. English-only notes can use "
+                "a smaller English model for a speed-up."
+            ),
+        )
+        page.add(local)
+
+        # ONNX model + tokenizer: paste a URL and download into the model folder
+        # with a live progress bar.  The download runs in a background thread;
+        # the backend picks the files up from the folder on restart.
+        self._sem_model_url_row = Adw.EntryRow(title="ONNX model URL (model.onnx)")
+        self._sem_model_url_row.set_text(
+            self._settings.get("semantic_onnx_model_url", ""))
+        self._sem_model_url_row.connect(
+            "changed", self._on_entry_setting, "semantic_onnx_model_url")
+        model_btn = Gtk.Button(
+            icon_name="folder-download-symbolic", valign=Gtk.Align.CENTER)
+        model_btn.add_css_class("flat")
+        model_btn.set_tooltip_text("Download model.onnx")
+        model_btn.connect("clicked", self._on_download_onnx, "model")
+        self._sem_model_url_row.add_suffix(model_btn)
+        self._sem_model_dl_btn = model_btn
+        local.add(self._sem_model_url_row)
+
+        self._sem_model_progress = Gtk.ProgressBar(
+            show_text=True, visible=False,
+            margin_start=12, margin_end=12, margin_bottom=6)
+        local.add(self._sem_model_progress)
+
+        self._sem_tok_url_row = Adw.EntryRow(title="Tokenizer URL (tokenizer.json)")
+        self._sem_tok_url_row.set_text(
+            self._settings.get("semantic_onnx_tokenizer_url", ""))
+        self._sem_tok_url_row.connect(
+            "changed", self._on_entry_setting, "semantic_onnx_tokenizer_url")
+        tok_btn = Gtk.Button(
+            icon_name="folder-download-symbolic", valign=Gtk.Align.CENTER)
+        tok_btn.add_css_class("flat")
+        tok_btn.set_tooltip_text("Download tokenizer.json")
+        tok_btn.connect("clicked", self._on_download_onnx, "tokenizer")
+        self._sem_tok_url_row.add_suffix(tok_btn)
+        self._sem_tok_dl_btn = tok_btn
+        local.add(self._sem_tok_url_row)
+
+        self._sem_tok_progress = Gtk.ProgressBar(
+            show_text=True, visible=False,
+            margin_start=12, margin_end=12, margin_bottom=6)
+        local.add(self._sem_tok_progress)
+
+        # Folder the ONNX files live in — both the download target and the load
+        # source. Display-only (no typing): pick a folder or reset to the app
+        # data dir default. Changing it refreshes the presence indicator below.
+        self._sem_onnx_dir_row = Adw.ActionRow(title="Model folder")
+        pick_btn = Gtk.Button(icon_name="folder-open-symbolic",
+                              valign=Gtk.Align.CENTER, tooltip_text="Choose folder…")
+        pick_btn.add_css_class("flat")
+        pick_btn.connect("clicked", lambda *_: self._choose_onnx_dir())
+        reset_btn = Gtk.Button(icon_name="edit-clear-symbolic",
+                               valign=Gtk.Align.CENTER, tooltip_text="Reset to default")
+        reset_btn.add_css_class("flat")
+        reset_btn.connect("clicked", lambda *_: self._on_onnx_dir_selected(""))
+        self._sem_onnx_dir_row.add_suffix(reset_btn)
+        self._sem_onnx_dir_row.add_suffix(pick_btn)
+        self._sem_onnx_dir_row.set_activatable_widget(pick_btn)
+        self._refresh_onnx_dir_row()
+        local.add(self._sem_onnx_dir_row)
+
+        # Presence indicator for the ONNX files + a real load/embed self-test.
+        self._sem_onnx_status_row = Adw.ActionRow(title="Model files")
+        self._sem_onnx_status_icon = Gtk.Image()
+        self._sem_onnx_status_row.add_prefix(self._sem_onnx_status_icon)
+        self._sem_onnx_test_btn = Gtk.Button(label="Test", valign=Gtk.Align.CENTER)
+        self._sem_onnx_test_btn.connect("clicked", self._on_test_onnx)
+        self._sem_onnx_status_row.add_suffix(self._sem_onnx_test_btn)
+        self._sem_onnx_status_row.set_activatable_widget(self._sem_onnx_test_btn)
+        local.add(self._sem_onnx_status_row)
+
+        # Detected onnxruntime version + recommendation (probed off-thread so
+        # importing the heavy library never blocks opening Preferences).
+        self._sem_onnx_runtime_row = Adw.ActionRow(
+            title="ONNX runtime", subtitle="Checking…")
+        local.add(self._sem_onnx_runtime_row)
+
+        # Collapsible guidance for choosing a model yourself.
+        self._sem_onnx_help_row = Adw.ExpanderRow(
+            title="How to pick your own ONNX model",
+            subtitle="What to search for and which files you need",
+        )
+        help_label = Gtk.Label(
+            label=(
+                "Semantic search needs a sentence-embedding model exported to "
+                "ONNX. Find one on Hugging Face and paste each file's URL above "
+                "(use the file's “Copy download link”, i.e. the "
+                ".../resolve/main/... address).\n\n"
+                "What to look for:\n"
+                "•  A feature-extraction / sentence-similarity model in ONNX "
+                "format — e.g. the Xenova/ or sentence-transformers/ orgs. "
+                "Xenova repos ship ready ONNX exports in an onnx/ folder.\n"
+                "•  Two files: model.onnx (or model_quantized.onnx — smaller and "
+                "faster, slightly lower quality) and tokenizer.json.\n"
+                "•  Multilingual if your notes aren't English-only (e.g. "
+                "paraphrase-multilingual-MiniLM-L12-v2); English-only models are "
+                "smaller and faster.\n"
+                "•  It must output token embeddings (the app mean-pools them). "
+                "Classification or reranker models won't work.\n\n"
+                "Good search terms: “sentence-transformers onnx”, “Xenova "
+                "MiniLM”, “feature-extraction onnx”. Both BERT- and XLM-R-style "
+                "models work — the app auto-detects the inputs a model needs."
+            ),
+            wrap=True, xalign=0.0,
+            margin_top=6, margin_bottom=12, margin_start=12, margin_end=12,
+        )
+        help_label.add_css_class("dim-label")
+        self._sem_onnx_help_row.add_row(help_label)
+        local.add(self._sem_onnx_help_row)
+
+        ollama = Adw.PreferencesGroup(
+            title="Ollama (server)",
+            description="Alternative backend if you already run an Ollama "
+                        "server. Recommended embedding model: nomic-embed-text.")
+        page.add(ollama)
+
+        self._sem_url_row = Adw.EntryRow(title="Ollama URL")
+        self._sem_url_row.set_text(
+            self._settings.get("semantic_ollama_url", "http://localhost:11434"))
+        self._sem_url_row.connect("changed", self._on_entry_setting, "semantic_ollama_url")
+        ollama.add(self._sem_url_row)
+
+        self._sem_model_row = Adw.EntryRow(title="Embedding model")
+        self._sem_model_row.set_text(
+            self._settings.get("semantic_ollama_model", "nomic-embed-text"))
+        self._sem_model_row.connect("changed", self._on_entry_setting, "semantic_ollama_model")
+        ollama.add(self._sem_model_row)
+
+        self._sem_ollama_test_row = Adw.ActionRow(
+            title="Test connection",
+            subtitle="Embed a probe with the current URL + model")
+        self._sem_ollama_test_btn = Gtk.Button(label="Test", valign=Gtk.Align.CENTER)
+        self._sem_ollama_test_btn.connect("clicked", self._on_test_ollama)
+        self._sem_ollama_test_row.add_suffix(self._sem_ollama_test_btn)
+        self._sem_ollama_test_row.set_activatable_widget(self._sem_ollama_test_btn)
+        ollama.add(self._sem_ollama_test_row)
+
+        # Grey out the group the selected backend does not use.
+        self._sem_onnx_widgets = [local]
+        self._sem_ollama_widgets = [ollama]
+        return self._subpage("Embedding", page)
+
+    def _build_ask_subpage(self):
+        """Chat model that writes grounded answers, plus a link to its prompt."""
+        page = Adw.PreferencesPage(title="Ask")
+        group = Adw.PreferencesGroup(
+            title="Ask (answers from your notes)",
+            description="The quick-open 'ask' mode answers a question from your "
+                        "notes via a local Ollama chat model. Recommended: "
+                        "llama3.2 — fast and CPU-friendly. Larger models "
+                        "(qwen2.5:7b, mistral) are sharper but need a GPU.")
+        page.add(group)
+
+        self._ask_url_row = Adw.EntryRow(title="Ollama URL")
+        self._ask_url_row.set_text(
+            self._settings.get("ask_ollama_url", "http://localhost:11434"))
+        self._ask_url_row.connect("changed", self._on_entry_setting, "ask_ollama_url")
+        group.add(self._ask_url_row)
+
+        self._ask_model_combo = Adw.ComboRow(title="Model")
+        self._ask_model_list = Gtk.StringList()
+        self._ask_model_combo.set_model(self._ask_model_list)
+        self._ask_model_combo.connect("notify::selected", self._on_ask_model_selected)
+        group.add(self._ask_model_combo)
+
+        self._ask_models_row = Adw.ActionRow(
+            title="Available models", subtitle="Fetched from the Ollama server")
+        ask_refresh_btn = Gtk.Button(label="Refresh", valign=Gtk.Align.CENTER)
+        ask_refresh_btn.connect("clicked", lambda *_: self._refresh_ask_models())
+        self._ask_models_row.add_suffix(ask_refresh_btn)
+        self._ask_models_row.set_activatable_widget(ask_refresh_btn)
+        group.add(self._ask_models_row)
+
+        group.add(self._nav_row(
+            "System prompt", "Grounding instructions sent to the model",
+            self._prompt_subpage))
+        return self._subpage("Ask", page)
+
+    def _build_prompt_subpage(self, _ask):
+        """The editable system prompt with a reset-to-default action."""
+        page = Adw.PreferencesPage(title="System prompt")
+        group = Adw.PreferencesGroup(
+            title="System prompt",
+            description="Grounding instructions sent to the model. {language} is "
+                        "replaced with the answer language. Reset restores the "
+                        "built-in default and keeps tracking future improvements.")
+        reset_btn = Gtk.Button(label="Reset", valign=Gtk.Align.CENTER)
+        reset_btn.set_tooltip_text("Reset to the built-in default prompt")
+        reset_btn.connect(
+            "clicked",
+            lambda *_: self._ask_prompt_view.get_buffer().set_text(_ask._SYSTEM))
+        group.set_header_suffix(reset_btn)
+        page.add(group)
+
+        self._ask_prompt_view = Gtk.TextView(wrap_mode=Gtk.WrapMode.WORD_CHAR)
+        for m in (self._ask_prompt_view.set_top_margin, self._ask_prompt_view.set_bottom_margin,
+                  self._ask_prompt_view.set_left_margin, self._ask_prompt_view.set_right_margin):
+            m(6)
+        self._ask_prompt_view.get_buffer().set_text(
+            self._settings.get("ask_system_prompt") or _ask._SYSTEM)
+        self._ask_prompt_view.get_buffer().connect("changed", self._on_ask_prompt_changed)
+        prompt_scroll = Gtk.ScrolledWindow(
+            hscrollbar_policy=Gtk.PolicyType.NEVER, min_content_height=300,
+            vexpand=True, margin_bottom=24)
+        prompt_scroll.add_css_class("card")
+        prompt_scroll.set_child(self._ask_prompt_view)
+        group.add(prompt_scroll)
+        return self._subpage("System prompt", page)
+
     # ── Handlers ────────────────────────────────────────────────────
 
     def _on_toggle_setting(self, row, _pspec, key) -> None:
@@ -606,6 +725,89 @@ class PreferencesDialog(Adw.PreferencesDialog):
     def _on_entry_setting(self, row, key) -> None:
         self._settings[key] = row.get_text().strip()
         self._persist_debounced()
+
+    def _on_ask_prompt_changed(self, buffer) -> None:
+        from . import ask as _ask
+        text = buffer.get_text(
+            buffer.get_start_iter(), buffer.get_end_iter(), False)
+        # Store empty when unchanged from the built-in default, so the prompt
+        # keeps tracking future improvements instead of pinning this snapshot.
+        self._settings["ask_system_prompt"] = (
+            "" if text.strip() == _ask._SYSTEM.strip() else text)
+        self._persist_debounced()
+
+    def _on_ask_model_selected(self, combo, _pspec) -> None:
+        item = combo.get_selected_item()
+        if item is not None:
+            self._settings["ask_model"] = item.get_string()
+            self._persist_debounced()
+
+    def _refresh_ask_models(self) -> None:
+        """Fetch the model list from the ask Ollama server, off the main thread."""
+        import json
+        import urllib.request
+        url = self._settings.get(
+            "ask_ollama_url", "http://localhost:11434").rstrip("/")
+        self._ask_models_row.set_subtitle("Loading…")
+
+        def worker():
+            try:
+                req = urllib.request.Request(url + "/api/tags")
+                data = json.loads(urllib.request.urlopen(req, timeout=6).read())
+                models = [m["name"] for m in data.get("models", []) if m.get("name")]
+                GLib.idle_add(self._populate_ask_models, models, None)
+            except Exception as exc:  # noqa: BLE001 — surface any failure inline
+                GLib.idle_add(self._populate_ask_models, None, str(exc))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _populate_ask_models(self, models, error) -> bool:
+        if error is not None:
+            self._ask_models_row.set_subtitle(f"Not reachable: {error}")
+            self._ask_models_row.add_css_class("error")
+            return False
+        self._ask_models_row.remove_css_class("error")
+        if not models:
+            self._ask_models_row.set_subtitle("No models on the server")
+            return False
+        current = self._settings.get("ask_model", "llama3.2")
+        if current and current not in models:
+            models = [current] + models  # keep the saved choice selectable
+        self._ask_model_list.splice(0, self._ask_model_list.get_n_items(), models)
+        try:
+            self._ask_model_combo.set_selected(models.index(current))
+        except ValueError:
+            self._ask_model_combo.set_selected(0)
+        self._ask_models_row.set_subtitle(f"{len(models)} models")
+        return False
+
+    def _refresh_onnx_dir_row(self) -> None:
+        """Show the active ONNX folder (and mark when it's the default)."""
+        d = self._onnx_dir()
+        default = config.STATE_DIR / "onnx"
+        suffix = "  (default)" if d == default else ""
+        self._sem_onnx_dir_row.set_subtitle(str(d) + suffix)
+
+    def _choose_onnx_dir(self) -> None:
+        """Folder chooser for the ONNX directory, opening at the current one."""
+        dialog = Gtk.FileDialog(title="Select ONNX model folder")
+        start = self._onnx_dir()
+        try:
+            probe = start if start.exists() else start.parent
+            if probe.exists():
+                dialog.set_initial_folder(Gio.File.new_for_path(str(probe)))
+        except Exception:  # noqa: BLE001
+            pass
+
+        def done(dlg, result):
+            try:
+                gfile = dlg.select_folder_finish(result)
+            except GLib.Error:
+                return  # cancelled or failed
+            if gfile is not None and gfile.get_path():
+                self._on_onnx_dir_selected(gfile.get_path())
+
+        dialog.select_folder(self.get_root(), None, done)
 
     def _on_sem_backend_changed(self, row, _pspec) -> None:
         self._settings["semantic_backend"] = self._sem_backends[row.get_selected()]
@@ -659,20 +861,22 @@ class PreferencesDialog(Adw.PreferencesDialog):
 
     # ── Backend connection / model self-tests ─────────────────────
 
-    def _onnx_paths(self):
-        """Resolve the ONNX model + tokenizer paths the backend would use."""
-        default = config.STATE_DIR / "onnx"
-        model = (self._settings.get("semantic_onnx_model")
-                 or str(default / "model.onnx"))
-        tok = (self._settings.get("semantic_onnx_tokenizer")
-               or str(default / "tokenizer.json"))
-        from pathlib import Path
-        return Path(model), Path(tok)
+    def _onnx_dir(self) -> Path:
+        """The folder the backend loads model.onnx + tokenizer.json from (and the
+        download writes to). Blank setting → the app data dir default."""
+        return Path(self._settings.get("semantic_onnx_dir")
+                    or str(config.STATE_DIR / "onnx"))
 
-    def _on_onnx_path_changed(self, row, key) -> None:
-        self._settings[key] = row.get_text().strip()
+    def _onnx_paths(self):
+        """Resolve the ONNX model + tokenizer file paths inside the folder."""
+        d = self._onnx_dir()
+        return d / "model.onnx", d / "tokenizer.json"
+
+    def _on_onnx_dir_selected(self, path: str) -> None:
+        self._settings["semantic_onnx_dir"] = path
         self._persist_debounced()
-        self._refresh_onnx_status()  # download target + presence follow the path
+        self._refresh_onnx_dir_row()
+        self._refresh_onnx_status()  # download target + presence follow the folder
 
     def _refresh_onnx_status(self) -> None:
         """Update the model-files indicator (present / missing + sizes)."""
