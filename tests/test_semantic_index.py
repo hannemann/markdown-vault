@@ -466,6 +466,18 @@ class TestRetrieveAndNoteText(unittest.TestCase):
         txt = m._note_text(str(note), around=block[:200])
         self.assertIn("ENDTOKEN", txt)
 
+    def test_note_text_keeps_head_when_barely_over_cap(self):  # R36.1
+        # Note only marginally over the cap, short match in the middle: the head
+        # (H1/frontmatter) must not be shifted out and the budget not wasted.
+        cap = SemanticIndexManager._MAX_NOTE_CHARS
+        note = self._v1 / "head.md"
+        body = "HEADTOKEN\n" + "a" * 5000 + "MIDMATCH" + "b" * (cap + 13 - 5000)
+        note.write_text(body, encoding="utf-8")
+        m = self._built([self._v1])
+        txt = m._note_text(str(note), around="MIDMATCH")
+        self.assertIn("HEADTOKEN", txt)  # head kept (no needless shift)
+        self.assertIn("MIDMATCH", txt)
+
 
 if __name__ == "__main__":
     unittest.main()

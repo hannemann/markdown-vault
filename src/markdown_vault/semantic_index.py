@@ -568,8 +568,12 @@ class SemanticIndexManager:
         start = 0
         if around:
             i = txt.find(around[:200].strip())
-            if i >= 0:  # centre the window on the match (regardless of the cap)
-                start = max(0, i - self._MAX_NOTE_CHARS // 3)
+            # Only shift off the head when the match would otherwise be cut, and
+            # clamp to the tail so the whole budget is used (keeps the H1/intro on
+            # a note that is only marginally over the cap).
+            if i >= 0 and i + len(around) > self._MAX_NOTE_CHARS:
+                start = max(0, min(i - self._MAX_NOTE_CHARS // 3,
+                                   len(txt) - self._MAX_NOTE_CHARS))
         return txt[start:start + self._MAX_NOTE_CHARS]
 
     def _top_hits(self, query, top_k):
