@@ -60,5 +60,26 @@ class TestSemanticAppend(unittest.TestCase):
         self.assertEqual(calls, [])
 
 
+class TestFirstRow(unittest.TestCase):
+    """R37.1 — ↓ must reach the citation rows past the non-openable answer row."""
+
+    def _palette(self):
+        return QuickOpenPalette(make_engine=lambda: None, semantic_query=lambda q: [])
+
+    def test_first_row_skips_non_openable_answer_row(self):
+        from markdown_vault.ask import Source
+        p = self._palette()
+        p._results.append(p._answer_row("the answer"))          # no _mv_open
+        p._results.append(p._source_row(Source(1, "/v/cite.md", 42)))  # openable
+        first = p._first_row()
+        self.assertIsNotNone(first)
+        self.assertEqual(first._mv_open, ("/v/cite.md", 42))
+
+    def test_message_only_yields_none(self):
+        p = self._palette()
+        p._results.append(p._message_row("No files"))
+        self.assertIsNone(p._first_row())
+
+
 if __name__ == "__main__":
     unittest.main()

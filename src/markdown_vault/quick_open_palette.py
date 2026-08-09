@@ -399,10 +399,15 @@ class QuickOpenPalette(Adw.Dialog):
         return False
 
     def _first_row(self):
-        row = self._results.get_row_at_index(0)
-        if row is not None and getattr(row, "_mv_open", None) is None:
-            return None  # the "no files" message row
-        return row
+        # First activatable (openable) row — scan forward, not just index 0, so
+        # in Ask mode ↓ reaches the citation rows past the non-openable answer
+        # row. A lone "no files"/message row has no _mv_open → None.
+        i = 0
+        while (row := self._results.get_row_at_index(i)) is not None:
+            if getattr(row, "_mv_open", None) is not None:
+                return row
+            i += 1
+        return None
 
 
 def _highlight_positions(name: str, positions: list) -> str:
