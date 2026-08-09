@@ -51,11 +51,12 @@ class SearchBar(Gtk.Box):
     _DEBOUNCE_MS = 150
 
     def __init__(self, get_vault_paths=None, get_active_vault=None,
-                 semantic_query=None) -> None:
+                 semantic_query=None, scope=None) -> None:
         super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=0)
         self._get_vault_paths = get_vault_paths
         self._get_active_vault = get_active_vault
         self._semantic_query = semantic_query  # callable(query) -> list[FileResult]
+        self._scope = scope  # shared vault-scope callbacks (see _scope_callbacks)
         self.set_visible(False)
         self.set_vexpand(True)
 
@@ -94,17 +95,19 @@ class SearchBar(Gtk.Box):
             btn.connect("toggled", lambda *_: self._run_search())
             input_box.append(btn)
 
-        # Scope: all vaults (default) vs. the active vault only.
-        scope_sep = Gtk.Separator(orientation=Gtk.Orientation.VERTICAL)
-        scope_sep.set_margin_start(2)
-        scope_sep.set_margin_end(2)
-        input_box.append(scope_sep)
-
-        self._scope_btn = Gtk.ToggleButton(icon_name="folder-symbolic")
-        self._scope_btn.add_css_class("flat")
-        self._scope_btn.set_tooltip_text("Search the current vault only")
-        self._scope_btn.connect("toggled", self._on_scope_toggled)
-        input_box.append(self._scope_btn)
+        # Scope: shared vault-scope dropdown (current vault / all / a vault).
+        self._scope_dropdown = None
+        if self._scope:
+            scope_sep = Gtk.Separator(orientation=Gtk.Orientation.VERTICAL)
+            scope_sep.set_margin_start(2)
+            scope_sep.set_margin_end(2)
+            input_box.append(scope_sep)
+            from .vault_scope import VaultScope
+            self._scope_dropdown = VaultScope(
+                self._scope["get_vaults_named"], self._scope["get_active"],
+                self._scope["get_scope"], self._scope["set_scope"],
+                on_change=self._run_search)
+            input_box.append(self._scope_dropdown)
 
         self._spinner = Gtk.Spinner()
         self._spinner.set_visible(False)
@@ -215,20 +218,15 @@ class SearchBar(Gtk.Box):
         )
 
     def _scope_vaults(self) -> list:
-        """The vault paths to search, honouring the scope toggle."""
-        all_vaults = list(self._get_vault_paths()) if self._get_vault_paths else []
-        if self._scope_btn.get_active() and self._get_active_vault:
-            active = self._get_active_vault()
-            if active:
-                return [active]
-        return all_vaults
+        """The vault paths to search, honouring the shared scope selection."""
+        if self._scope:
+            return list(self._scope["scope_vaults"]())
+        return list(self._get_vault_paths()) if self._get_vault_paths else []
 
-    def _on_scope_toggled(self, btn) -> None:
-        self._entry.set_placeholder_text(
-            "Search the current vault…" if btn.get_active()
-            else "Search across all vaults…"
-        )
-        self._run_search()
+    def refresh_scope(self) -> None:
+        """Rebuild the scope dropdown (active-vault or scope changed elsewhere)."""
+        if self._scope_dropdown is not None:
+            self._scope_dropdown.refresh()
 
     # ------------------------------------------------------------------
     # Search lifecycle

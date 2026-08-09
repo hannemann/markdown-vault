@@ -497,9 +497,10 @@ class SemanticIndexManager:
                 break
         return results
 
-    def retrieve(self, query, top_k: int = 6):
+    def retrieve(self, query, top_k: int = 6, vaults=None):
         """Top *note-level* ``(passage, score)`` for RAG answering — one passage
-        per note, holding the note's WHOLE text.
+        per note, holding the note's WHOLE text. *vaults*, if given, restricts
+        results to files under those vault roots (scope for the Ask feature).
 
         Retrieval matches at chunk granularity, but a comparison question ("which
         planet is the heaviest?") needs each candidate note's *full* data block,
@@ -513,9 +514,16 @@ class SemanticIndexManager:
         subject to the front (``erde`` → ``erde.md``), instead of burying it
         among near-identical siblings. Scoped to RAG only.
         """
-        hits = self._top_hits(query, top_k * 2)  # wide pool → still top_k notes
+        # Widen the pool when a vault filter may discard many hits.
+        hits = self._top_hits(query, top_k * (6 if vaults else 2))
         if not hits:
             return []
+        if vaults:
+            roots = tuple(os.path.abspath(v) + os.sep for v in vaults)
+            hits = [(c, s) for c, s in hits
+                    if os.path.abspath(c.path).startswith(roots)]
+            if not hits:
+                return []
         terms = _query_terms(query)
         if terms:
             hits = sorted(

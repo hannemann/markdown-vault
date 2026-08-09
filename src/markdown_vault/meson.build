@@ -48,6 +48,7 @@ py_sources = files(
    'validation.py',
    'view_mode_manager.py',
    'vault_monitor.py',
+  'vault_scope.py',
   'vault_tree.py',
   'wikilink_autofix.py',
 )

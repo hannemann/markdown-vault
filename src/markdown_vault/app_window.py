@@ -123,6 +123,8 @@ class MainWindow(Adw.ApplicationWindow):
         self._setup_complete = False
         self._view_toggle_buttons: dict[str, Gtk.ToggleButton] = {}
         self._active_vault: str | None = None
+        # Shared search scope for all searches: "current" | "all" | vault path.
+        self._search_scope: str = "current"
 
         # Guard against re-entrant position clamping.
         self._paned_clamping: bool = False
@@ -392,6 +394,7 @@ class MainWindow(Adw.ApplicationWindow):
             semantic_query=lambda q: (
                 self._semantic_index.query_files(q) if self._semantic_index else []
             ),
+            scope=self._scope_callbacks(),
         )
         self._search_bar.connect("file-selected", self._on_search_result_selected)
 
@@ -401,6 +404,7 @@ class MainWindow(Adw.ApplicationWindow):
                 self._semantic_index.query_open(q) if self._semantic_index else []
             ),
             ask_answer=self._ask_answer,
+            scope=self._scope_callbacks(),
         )
         self._quick_open.connect("file-selected", self._on_search_result_selected)
         self._search_bar.connect("close-requested", self._on_search_close_requested)
@@ -1019,6 +1023,7 @@ class MainWindow(Adw.ApplicationWindow):
         # Switch.
         self._active_vault = new_vault
         self._vault_tree.set_active_vault(new_vault)
+        self._refresh_scope_selectors()  # "current" entry follows the active vault
         # Defer tab closure + restore to next idle iteration (avoid GTK widget lifecycle conflict).
         GLib.idle_add(self._switch_vault_complete_phase3, new_vault, open_file_path, post_open_fn)
 
@@ -1389,6 +1394,44 @@ class MainWindow(Adw.ApplicationWindow):
                 return self._LANG_NAMES.get(code, code)
         return "English"
 
+    # ── Search scope (shared by full-text, semantic, Ask) ───────────
+
+    def _scope_callbacks(self) -> dict:
+        """Callbacks a search surface needs to host a shared VaultScope selector
+        and honour the current scope."""
+        return {
+            "get_vaults_named": self._vaults_named,
+            "get_active": lambda: self._active_vault,
+            "get_scope": lambda: self._search_scope,
+            "set_scope": self._set_search_scope,
+            "scope_vaults": self._scope_vault_paths,
+        }
+
+    def _vaults_named(self) -> list:
+        """``[(name, path)]`` for the configured vaults, in config order."""
+        return [(v["name"], v["path"]) for v in config.load_vaults()]
+
+    def _set_search_scope(self, scope: str) -> None:
+        self._search_scope = scope
+        self._refresh_scope_selectors()  # keep both selectors in sync
+
+    def _refresh_scope_selectors(self) -> None:
+        for surface in (self._search_bar, self._quick_open):
+            refresh = getattr(surface, "refresh_scope", None)
+            if refresh:
+                refresh()
+
+    def _scope_vault_paths(self) -> list:
+        """Resolve the current scope to a list of vault root paths."""
+        allv = list(self._vault_tree.get_vault_paths())
+        scope = self._search_scope
+        if scope == "all":
+            return allv
+        if scope == "current":
+            return [self._active_vault] if self._active_vault else allv
+        return [scope] if scope in allv else (
+            [self._active_vault] if self._active_vault else allv)
+
     def _ask_answer(self, question: str):
         """RAG: retrieve passages from the semantic index and let a local Ollama
         model write a grounded answer.  Runs off the main thread (quick-open
@@ -1399,7 +1442,8 @@ class MainWindow(Adw.ApplicationWindow):
             return ask.Answer(
                 text="Semantic search is not active — without an index I can't "
                      "search your notes.")
-        hits = self._semantic_index.retrieve(question, top_k=6)
+        hits = self._semantic_index.retrieve(
+            question, top_k=6, vaults=self._scope_vault_paths())
         logger.info(
             "ask %r -> %d passages: %s", question, len(hits),
             [("/".join(c.path.rsplit("/", 2)[-2:]), round(s, 3)) for c, s in hits])

@@ -6,6 +6,7 @@ a fresh engine on open, renders results and handles keyboard navigation.
 """
 
 import logging
+import os
 import threading
 from pathlib import Path
 
@@ -33,11 +34,13 @@ class QuickOpenPalette(Adw.Dialog):
     MAX_RESULTS = 40
     _SEMANTIC_MIN_CHARS = 2
 
-    def __init__(self, make_engine, semantic_query=None, ask_answer=None) -> None:
+    def __init__(self, make_engine, semantic_query=None, ask_answer=None,
+                 scope=None) -> None:
         super().__init__()
         self._make_engine = make_engine
         self._semantic_query = semantic_query  # callable(query) -> list, off-thread
         self._ask_answer = ask_answer          # callable(question) -> ask.Answer
+        self._scope = scope                    # shared vault-scope callbacks
         self._engine = None
         self._sem_generation = 0        # invalidates in-flight semantic queries
         self._ask_mode = False
@@ -71,6 +74,14 @@ class QuickOpenPalette(Adw.Dialog):
                 "Fragen — Antwort aus deinen Notizen (statt Datei-Sprung)")
             self._ask_toggle.connect("toggled", self._on_ask_toggled)
             header.append(self._ask_toggle)
+        self._scope_dropdown = None
+        if self._scope:
+            from .vault_scope import VaultScope
+            self._scope_dropdown = VaultScope(
+                self._scope["get_vaults_named"], self._scope["get_active"],
+                self._scope["get_scope"], self._scope["set_scope"],
+                on_change=self._refresh)
+            header.append(self._scope_dropdown)
         box.append(header)
 
         box.append(Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL))
@@ -96,9 +107,23 @@ class QuickOpenPalette(Adw.Dialog):
         """Build a fresh index, show recent files and present over *parent*."""
         self._engine = self._make_engine()
         self._entry.set_text("")
+        self.refresh_scope()
         self._refresh()
         self.present(parent)
         self._entry.grab_focus()
+
+    def refresh_scope(self) -> None:
+        if self._scope_dropdown is not None:
+            self._scope_dropdown.refresh()
+
+    def _scope_filter(self, results):
+        """Keep only results under the currently scoped vault roots."""
+        if not self._scope:
+            return results
+        roots = tuple(os.path.abspath(v) + os.sep
+                      for v in self._scope["scope_vaults"]())
+        return [r for r in results
+                if os.path.abspath(r.path).startswith(roots)]
 
     def _refresh(self) -> None:
         if self._ask_mode:
@@ -108,7 +133,8 @@ class QuickOpenPalette(Adw.Dialog):
         self._sem_generation += 1  # discard any in-flight semantic query
         if self._engine is None:
             return
-        results = self._engine.search(query, limit=self.MAX_RESULTS)
+        results = self._scope_filter(
+            self._engine.search(query, limit=self.MAX_RESULTS))
         self._shown_paths = {r.path for r in results}
         if results:
             for r in results:
@@ -140,7 +166,8 @@ class QuickOpenPalette(Adw.Dialog):
         """Append semantic-only hits once they arrive (if still current)."""
         if generation != self._sem_generation:
             return False  # superseded by newer input
-        fresh = [r for r in results if r.path not in self._shown_paths]
+        fresh = self._scope_filter(
+            [r for r in results if r.path not in self._shown_paths])
         if not fresh:
             return False
         # Drop the "No files" placeholder if that's all there is.
