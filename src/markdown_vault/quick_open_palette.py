@@ -35,12 +35,15 @@ class QuickOpenPalette(Adw.Dialog):
     _SEMANTIC_MIN_CHARS = 2
 
     def __init__(self, make_engine, semantic_query=None, ask_answer=None,
-                 scope=None) -> None:
+                 scope=None, can_ask=None) -> None:
         super().__init__()
         self._make_engine = make_engine
         self._semantic_query = semantic_query  # callable(query) -> list, off-thread
         self._ask_answer = ask_answer          # callable(question) -> ask.Answer
+        self._can_ask = can_ask                # () -> bool: is Ask usable right now?
         self._scope = scope                    # shared vault-scope callbacks
+        self._mode_locked = False              # user explicitly chose a mode
+        self._suppress_toggle = False          # guard programmatic toggle changes
         self._engine = None
         self._sem_generation = 0        # invalidates in-flight semantic queries
         self._ask_mode = False
@@ -100,11 +103,6 @@ class QuickOpenPalette(Adw.Dialog):
         scrolled.set_vexpand(True)
         box.append(scrolled)
 
-        # Default to Ask mode when the feature is available (activating the
-        # toggle now — after _results exists — runs _on_ask_toggled safely).
-        if self._ask_answer is not None:
-            self._ask_toggle.set_active(True)
-
     # ------------------------------------------------------------------
     # Lifecycle
     # ------------------------------------------------------------------
@@ -112,6 +110,15 @@ class QuickOpenPalette(Adw.Dialog):
     def open(self, parent: Gtk.Widget) -> None:
         """Build a fresh index, show recent files and present over *parent*."""
         self._engine = self._make_engine()
+        # Default to Ask mode only when it can actually work (semantic search
+        # enabled AND the index is built) and the user hasn't picked a mode this
+        # session — otherwise the file switcher stays the default it always was.
+        if self._ask_answer is not None and not self._mode_locked:
+            want = bool(self._can_ask()) if self._can_ask else False
+            if want != self._ask_mode:
+                self._suppress_toggle = True
+                self._ask_toggle.set_active(want)  # updates mode + chrome
+                self._suppress_toggle = False
         # In ask mode keep the last question beside its (still shown) answer, and
         # preselect it so the user can edit or replace it right away.
         if self._ask_mode and self._last_question:
@@ -316,6 +323,8 @@ class QuickOpenPalette(Adw.Dialog):
 
     def _on_ask_toggled(self, btn) -> None:
         self._ask_mode = btn.get_active()
+        if not self._suppress_toggle:
+            self._mode_locked = True  # remember the user's explicit choice
         self._ask_generation += 1  # cancel any in-flight answer
         self._clear()
         if self._ask_mode:

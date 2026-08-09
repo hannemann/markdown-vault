@@ -531,25 +531,40 @@ class SemanticIndexManager:
                 key=lambda cs: (_boost(cs[0], terms), cs[1]),
                 reverse=True,
             )
-        seen: dict[str, float] = {}
+        seen: dict[str, tuple] = {}
         for chunk, score in hits:
             if chunk.path not in seen:
-                seen[chunk.path] = score
+                seen[chunk.path] = (score, chunk)
             if len(seen) >= top_k:
                 break
-        return [(Chunk(path, 1, self._note_text(path)), score)
-                for path, score in seen.items()]
+        return [(Chunk(path, 1, self._note_text(path, best.text)), score)
+                for path, (score, best) in seen.items()]
 
-    def _note_text(self, path: str) -> str:
-        """Whole note text for a note-level passage — read from disk (truest to
-        the file), falling back to the indexed chunks if the read fails."""
+    # Per-note generation-context cap. The model gets whole notes (a comparison
+    # needs the full data block), but an unbounded 6 × whole-file could post
+    # hundreds of KB and either time out or be silently truncated by the server
+    # — and truncation is the worse outcome: the excerpts vanish while the
+    # "cite [n]" instruction survives, producing confident wrong citations. Cap
+    # each note, windowed around the matching chunk so the relevant part stays.
+    _MAX_NOTE_CHARS = 8000
+
+    def _note_text(self, path: str, around: str = "") -> str:
+        """Note text for a note-level passage — read from disk (truest to the
+        file, falling back to the indexed chunks), capped to _MAX_NOTE_CHARS."""
         try:
-            return Path(path).read_text(encoding="utf-8", errors="replace")
+            txt = Path(path).read_text(encoding="utf-8", errors="replace")
         except OSError:
             entry = self._files.get(path)
-            if entry and entry.get("chunks"):
-                return "\n\n".join(c.text for c in entry["chunks"])
-            return ""
+            txt = ("\n\n".join(c.text for c in entry["chunks"])
+                   if entry and entry.get("chunks") else "")
+        if len(txt) <= self._MAX_NOTE_CHARS:
+            return txt
+        start = 0
+        if around:
+            i = txt.find(around[:200].strip())
+            if i > self._MAX_NOTE_CHARS:
+                start = i - self._MAX_NOTE_CHARS // 3
+        return txt[start:start + self._MAX_NOTE_CHARS]
 
     def _top_hits(self, query, top_k):
         if not query:

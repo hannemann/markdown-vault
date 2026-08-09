@@ -404,6 +404,8 @@ class MainWindow(Adw.ApplicationWindow):
                 self._semantic_index.query_open(q) if self._semantic_index else []
             ),
             ask_answer=self._ask_answer,
+            can_ask=lambda: bool(self._settings.get("semantic_search_enabled"))
+            and self._semantic_index is not None,
             scope=self._scope_callbacks(),
         )
         self._quick_open.connect("file-selected", self._on_search_result_selected)
