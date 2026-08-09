@@ -96,6 +96,14 @@ class TestFirstRow(unittest.TestCase):
         self.assertTrue(ok)
         self.assertEqual((start, end), (0, len("hello world")))
 
+    def test_answer_copy_button_hidden_and_unfocusable(self):
+        # R39.1 — the hover copy button must not be a hidden Tab stop: it starts
+        # invisible (out of hit-test/a11y) and is never focusable.
+        p = self._palette()
+        row = p._answer_row("the answer")
+        self.assertFalse(row._mv_copy.get_visible())
+        self.assertFalse(row._mv_copy.get_focusable())
+
     def test_last_question_accessors_persist_value(self):
         p = self._palette()
         p.set_last_question("which planet is heaviest?")

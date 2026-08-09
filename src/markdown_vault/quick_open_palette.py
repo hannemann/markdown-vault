@@ -57,7 +57,10 @@ class QuickOpenPalette(Adw.Dialog):
         self.set_content_height(480)
 
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
-        self.set_child(box)
+        # Wrap in a ToastOverlay so copy actions can flash a "Copied!" pill.
+        self._toast_overlay = Adw.ToastOverlay()
+        self._toast_overlay.set_child(box)
+        self.set_child(self._toast_overlay)
 
         header = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         header.set_margin_top(8)
@@ -327,20 +330,26 @@ class QuickOpenPalette(Adw.Dialog):
         overlay = Gtk.Overlay()
         overlay.set_child(label)
         copy_btn = Gtk.Button(icon_name="edit-copy-symbolic")
-        copy_btn.add_css_class("flat")
+        copy_btn.add_css_class("osd")  # opaque overlay chip so it stands out on text
         copy_btn.add_css_class("circular")
         copy_btn.set_tooltip_text("Copy answer")
         copy_btn.set_halign(Gtk.Align.END)
         copy_btn.set_valign(Gtk.Align.START)
         copy_btn.set_margin_top(4)
         copy_btn.set_margin_end(4)
-        copy_btn.set_opacity(0)  # hidden until the pointer hovers the row
+        # A mouse-only affordance: keyboard users copy with Ctrl+C on the row.
+        # Toggle real visibility (not opacity) so a hidden button stays out of
+        # the focus chain, hit-testing and the a11y tree (R39.1); keep it
+        # unfocusable so Tab never lands on it either.
+        copy_btn.set_focusable(False)
+        copy_btn.set_visible(False)
         copy_btn.connect("clicked", lambda *_: self._copy_answer())
         overlay.add_overlay(copy_btn)
+        row._mv_copy = copy_btn
 
         motion = Gtk.EventControllerMotion()
-        motion.connect("enter", lambda *_a: copy_btn.set_opacity(1))
-        motion.connect("leave", lambda *_a: copy_btn.set_opacity(0))
+        motion.connect("enter", lambda *_a: copy_btn.set_visible(True))
+        motion.connect("leave", lambda *_a: copy_btn.set_visible(False))
         row.add_controller(motion)
 
         row.set_child(overlay)
@@ -495,6 +504,7 @@ class QuickOpenPalette(Adw.Dialog):
     def _copy_answer(self) -> None:
         if self._answer_text:
             self.get_clipboard().set(self._answer_text)
+            self._toast_overlay.add_toast(Adw.Toast(title="Copied!", timeout=2))
 
 
 def _highlight_positions(name: str, positions: list) -> str:
