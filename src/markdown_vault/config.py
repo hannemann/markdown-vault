@@ -294,12 +294,13 @@ _DEFAULT_SETTINGS = {
     "ask_backend": "ollama",  # "ollama" (/api/chat) or "openai" (llama.cpp /v1)
     "ask_ollama_url": "http://localhost:11434",
     "ask_model": "llama3.2",
-    "ask_system_prompt": "",  # empty → the built-in default (ask._SYSTEM)
+    "ask_system_prompt": "",  # empty → the built-in default (ask.DEFAULT_SYSTEM_PROMPT)
     # Reasoning models (Qwen3, …) think before answering: accurate but slow. For
     # grounded note Q&A, disabling it is faster and better calibrated. Only sent
     # to the backend when False, so non-reasoning models are unaffected.
     "ask_reasoning": True,
 }
+
 
 def default(key):
     """The built-in default value for a setting *key* (``""`` if unknown).

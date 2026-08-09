@@ -84,7 +84,7 @@ class QuickOpenPalette(Adw.Dialog):
             self._scope_dropdown = VaultScope(
                 self._scope["get_vaults_named"], self._scope["get_active"],
                 self._scope["get_scope"], self._scope["set_scope"],
-                on_change=self._refresh)
+                on_change=self._on_scope_changed)
             header.append(self._scope_dropdown)
         box.append(header)
 
@@ -134,6 +134,18 @@ class QuickOpenPalette(Adw.Dialog):
     def refresh_scope(self) -> None:
         if self._scope_dropdown is not None:
             self._scope_dropdown.refresh()
+
+    def _on_scope_changed(self) -> None:
+        """Scope changed via the dropdown: re-run the current search so it takes
+        effect immediately — in Ask mode, re-answer the current/last question
+        (instead of _refresh, which no-ops in Ask mode and looks inert)."""
+        if self._ask_mode:
+            question = self._entry.get_text().strip() or self._last_question
+            if question:
+                self._entry.set_text(question)
+                self._run_ask()
+                return
+        self._refresh()
 
     def _scope_filter(self, results):
         """Keep only results under the currently scoped vault roots."""

@@ -50,11 +50,10 @@ class SearchBar(Gtk.Box):
     MAX_RESULTS = 50
     _DEBOUNCE_MS = 150
 
-    def __init__(self, get_vault_paths=None, get_active_vault=None,
-                 semantic_query=None, scope=None) -> None:
+    def __init__(self, get_vault_paths=None, semantic_query=None,
+                 scope=None) -> None:
         super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=0)
         self._get_vault_paths = get_vault_paths
-        self._get_active_vault = get_active_vault
         self._semantic_query = semantic_query  # callable(query) -> list[FileResult]
         self._scope = scope  # shared vault-scope callbacks (see _scope_callbacks)
         self.set_visible(False)

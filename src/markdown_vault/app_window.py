@@ -390,7 +390,6 @@ class MainWindow(Adw.ApplicationWindow):
 
         self._search_bar = SearchBar(
             get_vault_paths=self._vault_tree.get_vault_paths,
-            get_active_vault=lambda: self._active_vault,
             semantic_query=lambda q: (
                 self._semantic_index.query_files(q) if self._semantic_index else []
             ),

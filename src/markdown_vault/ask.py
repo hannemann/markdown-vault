@@ -14,8 +14,16 @@ import re
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
+from typing import Protocol
 
 logger = logging.getLogger(__name__)
+
+
+class ChatBackend(Protocol):
+    """Anything that turns a (system, user) prompt into a reply — OllamaChat or
+    OpenAIChat both satisfy this structurally."""
+
+    def chat(self, system: str, user: str) -> str: ...
 
 
 @dataclass
@@ -51,6 +59,9 @@ _SYSTEM = (
     "- If the values needed are missing, say so. Otherwise give a direct answer.\n"
     "- Answer concisely, and write the answer in {language}."
 )
+
+#: Public alias — the built-in prompt the Preferences editor resets to.
+DEFAULT_SYSTEM_PROMPT = _SYSTEM
 
 
 def build_messages(question: str, hits, language: str = "English",
@@ -159,7 +170,7 @@ class OpenAIChat:
         return _THINK_RE.sub("", text).strip()
 
 
-def answer(question: str, hits, chat: OllamaChat, language: str = "English",
+def answer(question: str, hits, chat: ChatBackend, language: str = "English",
            system_template: str | None = None) -> Answer:
     """Retrieve-augmented generation: ground *question* in *hits* and ask *chat*.
 
@@ -171,7 +182,7 @@ def answer(question: str, hits, chat: OllamaChat, language: str = "English",
     system, user, sources = build_messages(question, hits, language, system_template)
     try:
         text = chat.chat(system, user)
-    except (urllib.error.URLError, OSError, ValueError) as exc:
+    except (OSError, ValueError) as exc:  # URLError is an OSError subclass
         logger.warning("ollama chat failed: %s", exc)
         return Answer(text="", sources=sources, error=str(exc))
     return Answer(text=text, sources=sources)

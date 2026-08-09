@@ -748,7 +748,7 @@ class PreferencesDialog(Adw.PreferencesDialog):
         reset_btn.set_tooltip_text("Reset to the built-in default prompt")
         reset_btn.connect(
             "clicked",
-            lambda *_: self._ask_prompt_view.get_buffer().set_text(_ask._SYSTEM))
+            lambda *_: self._ask_prompt_view.get_buffer().set_text(_ask.DEFAULT_SYSTEM_PROMPT))
         group.set_header_suffix(reset_btn)
         page.add(group)
 
@@ -757,7 +757,7 @@ class PreferencesDialog(Adw.PreferencesDialog):
                   self._ask_prompt_view.set_left_margin, self._ask_prompt_view.set_right_margin):
             m(6)
         self._ask_prompt_view.get_buffer().set_text(
-            self._settings.get("ask_system_prompt") or _ask._SYSTEM)
+            self._settings.get("ask_system_prompt") or _ask.DEFAULT_SYSTEM_PROMPT)
         self._ask_prompt_view.get_buffer().connect("changed", self._on_ask_prompt_changed)
         prompt_scroll = Gtk.ScrolledWindow(
             hscrollbar_policy=Gtk.PolicyType.NEVER, min_content_height=300,
@@ -784,7 +784,7 @@ class PreferencesDialog(Adw.PreferencesDialog):
         # Store empty when unchanged from the built-in default, so the prompt
         # keeps tracking future improvements instead of pinning this snapshot.
         self._settings["ask_system_prompt"] = (
-            "" if text.strip() == _ask._SYSTEM.strip() else text)
+            "" if text.strip() == _ask.DEFAULT_SYSTEM_PROMPT.strip() else text)
         self._persist_debounced()
 
     def _on_ask_model_selected(self, combo, _pspec) -> None:
