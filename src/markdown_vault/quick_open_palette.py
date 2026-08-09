@@ -33,12 +33,15 @@ class QuickOpenPalette(Adw.Dialog):
     MAX_RESULTS = 40
     _SEMANTIC_MIN_CHARS = 2
 
-    def __init__(self, make_engine, semantic_query=None) -> None:
+    def __init__(self, make_engine, semantic_query=None, ask_answer=None) -> None:
         super().__init__()
         self._make_engine = make_engine
         self._semantic_query = semantic_query  # callable(query) -> list, off-thread
+        self._ask_answer = ask_answer          # callable(question) -> ask.Answer
         self._engine = None
         self._sem_generation = 0        # invalidates in-flight semantic queries
+        self._ask_mode = False
+        self._ask_generation = 0        # invalidates in-flight answers
         self._shown_paths: set[str] = set()
         self.set_title("Quick Open")
         self.set_content_width(640)
@@ -47,19 +50,28 @@ class QuickOpenPalette(Adw.Dialog):
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
         self.set_child(box)
 
-        self._entry = Gtk.SearchEntry()
+        header = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        header.set_margin_top(8)
+        header.set_margin_bottom(8)
+        header.set_margin_start(8)
+        header.set_margin_end(8)
+        self._entry = Gtk.SearchEntry(hexpand=True)
         self._entry.set_placeholder_text("Go to file…")
-        self._entry.set_margin_top(8)
-        self._entry.set_margin_bottom(8)
-        self._entry.set_margin_start(8)
-        self._entry.set_margin_end(8)
         self._entry.connect("search-changed", lambda _e: self._refresh())
         self._entry.connect("activate", self._on_entry_activate)
         self._entry.connect("stop-search", lambda _e: self.close())
         entry_keys = Gtk.EventControllerKey()
         entry_keys.connect("key-pressed", self._on_entry_key)
         self._entry.add_controller(entry_keys)
-        box.append(self._entry)
+        header.append(self._entry)
+        if ask_answer is not None:
+            self._ask_toggle = Gtk.ToggleButton()
+            self._ask_toggle.set_icon_name("dialog-question-symbolic")
+            self._ask_toggle.set_tooltip_text(
+                "Fragen — Antwort aus deinen Notizen (statt Datei-Sprung)")
+            self._ask_toggle.connect("toggled", self._on_ask_toggled)
+            header.append(self._ask_toggle)
+        box.append(header)
 
         box.append(Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL))
 
@@ -89,6 +101,8 @@ class QuickOpenPalette(Adw.Dialog):
         self._entry.grab_focus()
 
     def _refresh(self) -> None:
+        if self._ask_mode:
+            return  # the entry holds a question; answering runs on Enter
         query = self._entry.get_text().strip()
         self._clear()
         self._sem_generation += 1  # discard any in-flight semantic query
@@ -198,6 +212,38 @@ class QuickOpenPalette(Adw.Dialog):
         row.set_child(label)
         return row
 
+    def _answer_row(self, text: str) -> Gtk.ListBoxRow:
+        """A non-activatable row holding the generated answer (selectable to copy)."""
+        row = Gtk.ListBoxRow()
+        row.set_activatable(False)
+        row.set_selectable(False)
+        label = Gtk.Label(label=text)
+        label.set_xalign(0)
+        label.set_wrap(True)
+        label.set_selectable(True)
+        label.set_margin_top(8)
+        label.set_margin_bottom(8)
+        label.set_margin_start(8)
+        label.set_margin_end(8)
+        row.set_child(label)
+        return row
+
+    def _source_row(self, source) -> Gtk.ListBoxRow:
+        """A citation row; activating it opens the note at the passage line."""
+        row = Gtk.ListBoxRow()
+        row._mv_open = (source.path, source.line)
+        label = Gtk.Label(
+            label=f"[{source.n}]  {Path(source.path).stem}:{source.line}")
+        label.set_xalign(0)
+        label.add_css_class("dim-label")
+        label.add_css_class("mono")
+        label.set_ellipsize(1)  # PANGO_ELLIPSIZE_START — keep the tail
+        label.set_margin_top(2)
+        label.set_margin_bottom(2)
+        label.set_margin_start(8)
+        row.set_child(label)
+        return row
+
     def _clear(self) -> None:
         child = self._results.get_first_child()
         while child is not None:
@@ -213,6 +259,9 @@ class QuickOpenPalette(Adw.Dialog):
         self._activate(row)
 
     def _on_entry_activate(self, _entry) -> None:
+        if self._ask_mode:
+            self._run_ask()
+            return
         row = self._results.get_selected_row() or self._first_row()
         self._activate(row)
 
@@ -221,6 +270,54 @@ class QuickOpenPalette(Adw.Dialog):
         if target is not None:
             self.close()
             self.emit("file-selected", target[0], target[1])
+
+    # ------------------------------------------------------------------
+    # Ask mode (RAG): answer from the user's notes instead of jumping to a file
+    # ------------------------------------------------------------------
+
+    def _on_ask_toggled(self, btn) -> None:
+        self._ask_mode = btn.get_active()
+        self._ask_generation += 1  # cancel any in-flight answer
+        self._clear()
+        if self._ask_mode:
+            self._entry.set_placeholder_text("Frage stellen und Enter drücken…")
+            self._results.append(self._message_row("Frage eingeben, dann Enter."))
+        else:
+            self._entry.set_placeholder_text("Go to file…")
+            self._refresh()
+        self._entry.grab_focus()
+
+    def _run_ask(self) -> None:
+        question = self._entry.get_text().strip()
+        if not question or self._ask_answer is None:
+            return
+        self._clear()
+        self._results.append(self._message_row("Denke nach…"))
+        self._ask_generation += 1
+        generation = self._ask_generation
+
+        def worker():
+            try:
+                ans = self._ask_answer(question)
+            except Exception as exc:  # noqa: BLE001 — surface any failure to the UI
+                logger.debug("ask failed", exc_info=True)
+                from .ask import Answer
+                ans = Answer(text="", error=str(exc))
+            GLib.idle_add(self._show_answer, generation, ans)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _show_answer(self, generation: int, ans) -> bool:
+        if generation != self._ask_generation:
+            return False  # superseded by a newer question / mode switch
+        self._clear()
+        if ans.error:
+            self._results.append(self._message_row(f"Fehler: {ans.error}"))
+            return False
+        self._results.append(self._answer_row(ans.text or "(leere Antwort)"))
+        for source in ans.sources:
+            self._results.append(self._source_row(source))
+        return False
 
     def _on_entry_key(self, _ctrl, keyval, _keycode, _state) -> bool:
         if keyval in (Gdk.KEY_Down, Gdk.KEY_KP_Down):

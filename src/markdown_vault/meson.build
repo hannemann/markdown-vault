@@ -31,6 +31,7 @@ py_sources = files(
   'preferences.py',
   'preview.py',
   'quick_open.py',
+  'ask.py',
   'quick_open_palette.py',
   'search.py',
   'search_backend.py',

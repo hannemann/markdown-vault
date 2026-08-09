@@ -400,6 +400,7 @@ class MainWindow(Adw.ApplicationWindow):
             semantic_query=lambda q: (
                 self._semantic_index.query_open(q) if self._semantic_index else []
             ),
+            ask_answer=self._ask_answer,
         )
         self._quick_open.connect("file-selected", self._on_search_result_selected)
         self._search_bar.connect("close-requested", self._on_search_close_requested)
@@ -1369,6 +1370,26 @@ class MainWindow(Adw.ApplicationWindow):
         tab.editor.scroll_to_line(line, yalign=0.0)
         text = tab.editor.get_text()
         tab.preview.scroll_to_line(line, text)
+
+    def _ask_answer(self, question: str):
+        """RAG: retrieve passages from the semantic index and let a local Ollama
+        model write a grounded answer.  Runs off the main thread (quick-open
+        worker); returns an :class:`ask.Answer`.
+        """
+        from . import ask
+        if self._semantic_index is None:
+            return ask.Answer(
+                text="Die semantische Suche ist nicht aktiv — ohne Index kann "
+                     "ich deine Notizen nicht durchsuchen.")
+        hits = self._semantic_index.retrieve(question, top_k=8)
+        logger.info(
+            "ask %r -> %d passages: %s", question, len(hits),
+            [("/".join(c.path.rsplit("/", 2)[-2:]), round(s, 3)) for c, s in hits])
+        chat = ask.OllamaChat(
+            model=self._settings.get("ask_model", "llama3.2"),
+            url=self._settings.get("semantic_ollama_url", "http://localhost:11434"),
+        )
+        return ask.answer(question, hits, chat)
 
     def _start_semantic_search(self) -> None:
         """Build the semantic index in the background when enabled (opt-in).

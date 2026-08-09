@@ -287,6 +287,9 @@ _DEFAULT_SETTINGS = {
         "https://huggingface.co/Xenova/paraphrase-multilingual-MiniLM-L12-v2/"
         "resolve/main/tokenizer.json",
     "semantic_min_score": 0.35,
+    # Ask/answer (RAG): a local Ollama chat model writes answers grounded in the
+    # retrieved passages. Reuses semantic_ollama_url.
+    "ask_model": "llama3.2",
 }
 
 # Setting key → environment variable consumed by WebKitGTK at startup.
