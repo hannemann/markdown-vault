@@ -75,7 +75,7 @@ class QuickOpenPalette(Adw.Dialog):
             self._ask_toggle = Gtk.ToggleButton()
             self._ask_toggle.set_icon_name("dialog-question-symbolic")
             self._ask_toggle.set_tooltip_text(
-                "Fragen — Antwort aus deinen Notizen (statt Datei-Sprung)")
+                "Ask — answer from your notes (instead of jumping to a file)")
             self._ask_toggle.connect("toggled", self._on_ask_toggled)
             header.append(self._ask_toggle)
         self._scope_dropdown = None
@@ -328,8 +328,8 @@ class QuickOpenPalette(Adw.Dialog):
         self._ask_generation += 1  # cancel any in-flight answer
         self._clear()
         if self._ask_mode:
-            self._entry.set_placeholder_text("Frage stellen und Enter drücken…")
-            self._results.append(self._message_row("Frage eingeben, dann Enter."))
+            self._entry.set_placeholder_text("Ask a question and press Enter…")
+            self._results.append(self._message_row("Type a question, then Enter."))
         else:
             self._entry.set_placeholder_text("Go to file…")
             self._refresh()
@@ -341,7 +341,7 @@ class QuickOpenPalette(Adw.Dialog):
             return
         self._last_question = question
         self._clear()
-        self._results.append(self._message_row("Denke nach…"))
+        self._results.append(self._message_row("Thinking…"))
         self._ask_generation += 1
         generation = self._ask_generation
 
@@ -361,9 +361,9 @@ class QuickOpenPalette(Adw.Dialog):
             return False  # superseded by a newer question / mode switch
         self._clear()
         if ans.error:
-            self._results.append(self._message_row(f"Fehler: {ans.error}"))
+            self._results.append(self._message_row(f"Error: {ans.error}"))
             return False
-        self._results.append(self._answer_row(ans.text or "(leere Antwort)"))
+        self._results.append(self._answer_row(ans.text or "(empty answer)"))
         for source in ans.sources:
             self._results.append(self._source_row(source))
         return False
