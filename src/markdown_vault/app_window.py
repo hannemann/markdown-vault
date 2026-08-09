@@ -1399,7 +1399,7 @@ class MainWindow(Adw.ApplicationWindow):
             return ask.Answer(
                 text="Semantic search is not active — without an index I can't "
                      "search your notes.")
-        hits = self._semantic_index.retrieve(question, top_k=8)
+        hits = self._semantic_index.retrieve(question, top_k=6)
         logger.info(
             "ask %r -> %d passages: %s", question, len(hits),
             [("/".join(c.path.rsplit("/", 2)[-2:]), round(s, 3)) for c, s in hits])

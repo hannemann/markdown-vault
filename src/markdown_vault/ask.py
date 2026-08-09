@@ -39,13 +39,15 @@ class Answer:
 _SYSTEM = (
     "You answer the user's question using ONLY the provided note excerpts — never "
     "from outside knowledge. Rules:\n"
-    "- Base every statement on a specific excerpt and cite it by number, e.g. [1], [2].\n"
-    "- State only what an excerpt EXPLICITLY says about the thing asked about; do "
-    "not infer beyond it and do not read comparisons or metaphors as facts.\n"
-    "- Each excerpt is a separate note and may be about a different topic; never "
-    "carry a fact from one excerpt to another, and use only the excerpts relevant "
-    "to the question.\n"
-    "- When in doubt, leave it out. If the information is missing entirely, say so.\n"
+    "- Base every value you use on a specific excerpt and cite it by number, e.g. [1], [2].\n"
+    "- You MAY compare, rank, count and combine values ACROSS several excerpts to "
+    "reach the answer — e.g. to find the largest, smallest, most or fewest, pick "
+    "the extreme among the excerpted values. Every number you compare must come "
+    "from an excerpt.\n"
+    "- Do not invent facts that are not in any excerpt, and do not read metaphors "
+    "or comparisons as facts.\n"
+    "- Use only the excerpts relevant to the question; ignore the rest.\n"
+    "- If the values needed are missing, say so. Otherwise give a direct answer.\n"
     "- Answer concisely, and write the answer in {language}."
 )
 

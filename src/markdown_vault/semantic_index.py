@@ -497,21 +497,23 @@ class SemanticIndexManager:
                 break
         return results
 
-    def retrieve(self, query, top_k: int = 8):
-        """Top ``(chunk, score)`` passages for RAG answering.
+    def retrieve(self, query, top_k: int = 6):
+        """Top *note-level* ``(passage, score)`` for RAG answering — one passage
+        per note, holding the note's WHOLE text.
 
-        Unlike :meth:`query_files`/:meth:`query_open` (best chunk per *file*),
-        this keeps chunk granularity and the passage ``text`` — that is what the
-        answer generator needs to ground on.
+        Retrieval matches at chunk granularity, but a comparison question ("which
+        planet is the heaviest?") needs each candidate note's *full* data block,
+        not just the single chunk whose phrasing matched — the deciding number
+        (mass, density, …) usually sits in a different section than the match.
+        So the best chunk per note wins the slot, then the whole note is handed
+        to the generator. Keeping context to a few whole notes (not many stray
+        chunks) is what small local models answer reliably on.
 
-        A **title/name boost** fixes the "was wissen wir über X" case: when the
-        question names an entity that has its own note (``erde`` → ``erde.md``),
-        pure embedding similarity buries that note among its near-identical
-        siblings.  Chunks whose note name matches a question term are ranked
-        ahead of the rest, so the note actually *about* the subject comes first.
-        Scoped to RAG only — the plain semantic search ranking is untouched.
+        A **title/name boost** additionally floats the note actually *about* the
+        subject to the front (``erde`` → ``erde.md``), instead of burying it
+        among near-identical siblings. Scoped to RAG only.
         """
-        hits = self._top_hits(query, top_k)
+        hits = self._top_hits(query, top_k * 2)  # wide pool → still top_k notes
         if not hits:
             return []
         terms = _query_terms(query)
@@ -521,7 +523,25 @@ class SemanticIndexManager:
                 key=lambda cs: (_boost(cs[0], terms), cs[1]),
                 reverse=True,
             )
-        return hits[:top_k]
+        seen: dict[str, float] = {}
+        for chunk, score in hits:
+            if chunk.path not in seen:
+                seen[chunk.path] = score
+            if len(seen) >= top_k:
+                break
+        return [(Chunk(path, 1, self._note_text(path)), score)
+                for path, score in seen.items()]
+
+    def _note_text(self, path: str) -> str:
+        """Whole note text for a note-level passage — read from disk (truest to
+        the file), falling back to the indexed chunks if the read fails."""
+        try:
+            return Path(path).read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            entry = self._files.get(path)
+            if entry and entry.get("chunks"):
+                return "\n\n".join(c.text for c in entry["chunks"])
+            return ""
 
     def _top_hits(self, query, top_k):
         if not query:
