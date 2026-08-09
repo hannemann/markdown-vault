@@ -49,6 +49,8 @@ class QuickOpenPalette(Adw.Dialog):
         self._ask_mode = False
         self._ask_generation = 0        # invalidates in-flight answers
         self._last_question = ""        # kept so reopening shows it beside the answer
+        self._answer_label = None       # the answer row's label (for copy-select)
+        self._answer_text = ""          # plain answer text, copied on Ctrl+C
         self._shown_paths: set[str] = set()
         self.set_title("Quick Open")
         self.set_content_width(640)
@@ -271,10 +273,13 @@ class QuickOpenPalette(Adw.Dialog):
         return row
 
     def _answer_row(self, text: str) -> Gtk.ListBoxRow:
-        """A non-activatable row holding the generated answer (selectable to copy)."""
+        """The generated answer. Selectable (a keyboard stop so ↓ lands here
+        first, its text highlighted for copy) but not activatable (nothing to
+        open); Ctrl+C here copies the whole answer."""
         row = Gtk.ListBoxRow()
         row.set_activatable(False)
-        row.set_selectable(False)
+        row.set_selectable(True)
+        row._mv_answer = True
         label = Gtk.Label(label=text)
         label.set_xalign(0)
         label.set_wrap(True)
@@ -284,6 +289,7 @@ class QuickOpenPalette(Adw.Dialog):
         label.set_margin_start(8)
         label.set_margin_end(8)
         row.set_child(label)
+        self._answer_label = label
         return row
 
     def _source_row(self, source) -> Gtk.ListBoxRow:
@@ -375,39 +381,66 @@ class QuickOpenPalette(Adw.Dialog):
         if ans.error:
             self._results.append(self._message_row(f"Error: {ans.error}"))
             return False
-        self._results.append(self._answer_row(ans.text or "(empty answer)"))
+        self._answer_text = ans.text or "(empty answer)"
+        self._results.append(self._answer_row(self._answer_text))
         for source in ans.sources:
             self._results.append(self._source_row(source))
         return False
 
     def _on_entry_key(self, _ctrl, keyval, _keycode, _state) -> bool:
         if keyval in (Gdk.KEY_Down, Gdk.KEY_KP_Down):
-            row = self._first_row()
+            row = self._first_stop()
             if row is not None:
                 self._results.select_row(row)
                 row.grab_focus()
+                self._maybe_select_answer(row)
                 return True
         if keyval in (Gdk.KEY_Up, Gdk.KEY_KP_Up):
             return True  # keep focus in the entry
         return False
 
-    def _on_results_key(self, _ctrl, keyval, _keycode, _state) -> bool:
+    def _on_results_key(self, _ctrl, keyval, _keycode, state) -> bool:
         if keyval in (Gdk.KEY_Up, Gdk.KEY_KP_Up):
-            if self._results.get_selected_row() is self._first_row():
+            if self._results.get_selected_row() is self._first_stop():
                 self._entry.grab_focus()
+                return True
+        if (state & Gdk.ModifierType.CONTROL_MASK
+                and keyval in (Gdk.KEY_c, Gdk.KEY_C)):
+            sel = self._results.get_selected_row()
+            if sel is not None and getattr(sel, "_mv_answer", False):
+                self._copy_answer()
                 return True
         return False
 
+    def _first_stop(self):
+        # First keyboard-landing row: the first *selectable* row. In Ask mode
+        # that is the answer row (↓ lands there to copy before the citations);
+        # in file mode it is the first result; a lone message row is
+        # non-selectable → None (↓ stays inert).
+        i = 0
+        while (row := self._results.get_row_at_index(i)) is not None:
+            if row.get_selectable():
+                return row
+            i += 1
+        return None
+
     def _first_row(self):
-        # First activatable (openable) row — scan forward, not just index 0, so
-        # in Ask mode ↓ reaches the citation rows past the non-openable answer
-        # row. A lone "no files"/message row has no _mv_open → None.
+        # First activatable (openable) row — Enter-to-open fallback (file mode).
         i = 0
         while (row := self._results.get_row_at_index(i)) is not None:
             if getattr(row, "_mv_open", None) is not None:
                 return row
             i += 1
         return None
+
+    def _maybe_select_answer(self, row) -> None:
+        """Landing on the answer row highlights its whole text for copying."""
+        if getattr(row, "_mv_answer", False) and self._answer_label is not None:
+            self._answer_label.select_region(0, -1)
+
+    def _copy_answer(self) -> None:
+        if self._answer_text:
+            self.get_clipboard().set(self._answer_text)
 
 
 def _highlight_positions(name: str, positions: list) -> str:

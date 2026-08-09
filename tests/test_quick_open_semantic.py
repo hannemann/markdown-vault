@@ -80,6 +80,22 @@ class TestFirstRow(unittest.TestCase):
         p._results.append(p._message_row("No files"))
         self.assertIsNone(p._first_row())
 
+    def test_first_stop_lands_on_answer_before_citations(self):
+        from markdown_vault.ask import Source
+        p = self._palette()
+        answer = p._answer_row("the answer")
+        p._results.append(answer)
+        p._results.append(p._source_row(Source(1, "/v/cite.md", 42)))
+        self.assertIs(p._first_stop(), answer)  # ↓ lands on the answer first
+
+    def test_maybe_select_answer_selects_full_text(self):
+        p = self._palette()
+        row = p._answer_row("hello world")
+        p._maybe_select_answer(row)
+        ok, start, end = p._answer_label.get_selection_bounds()
+        self.assertTrue(ok)
+        self.assertEqual((start, end), (0, len("hello world")))
+
 
 if __name__ == "__main__":
     unittest.main()
