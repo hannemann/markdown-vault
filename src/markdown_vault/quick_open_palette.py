@@ -45,6 +45,7 @@ class QuickOpenPalette(Adw.Dialog):
         self._sem_generation = 0        # invalidates in-flight semantic queries
         self._ask_mode = False
         self._ask_generation = 0        # invalidates in-flight answers
+        self._last_question = ""        # kept so reopening shows it beside the answer
         self._shown_paths: set[str] = set()
         self.set_title("Quick Open")
         self.set_content_width(640)
@@ -99,6 +100,11 @@ class QuickOpenPalette(Adw.Dialog):
         scrolled.set_vexpand(True)
         box.append(scrolled)
 
+        # Default to Ask mode when the feature is available (activating the
+        # toggle now — after _results exists — runs _on_ask_toggled safely).
+        if self._ask_answer is not None:
+            self._ask_toggle.set_active(True)
+
     # ------------------------------------------------------------------
     # Lifecycle
     # ------------------------------------------------------------------
@@ -106,7 +112,13 @@ class QuickOpenPalette(Adw.Dialog):
     def open(self, parent: Gtk.Widget) -> None:
         """Build a fresh index, show recent files and present over *parent*."""
         self._engine = self._make_engine()
-        self._entry.set_text("")
+        # In ask mode keep the last question beside its (still shown) answer, and
+        # preselect it so the user can edit or replace it right away.
+        if self._ask_mode and self._last_question:
+            self._entry.set_text(self._last_question)
+            self._entry.select_region(0, -1)
+        else:
+            self._entry.set_text("")
         self.refresh_scope()
         self._refresh()
         self.present(parent)
@@ -318,6 +330,7 @@ class QuickOpenPalette(Adw.Dialog):
         question = self._entry.get_text().strip()
         if not question or self._ask_answer is None:
             return
+        self._last_question = question
         self._clear()
         self._results.append(self._message_row("Denke nach…"))
         self._ask_generation += 1
