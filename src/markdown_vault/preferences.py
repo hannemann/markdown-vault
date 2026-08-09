@@ -473,6 +473,40 @@ class PreferencesDialog(Adw.PreferencesDialog):
 
     # ── Search subpages ─────────────────────────────────────────────
 
+    _LABEL_WIDTH = 140  # fixed title column so all fields start at the same x
+
+    def _entry_row(self, title, key, trailing=None):
+        """A list row whose value field is a plain ``Gtk.Entry``, so the default
+        shows as an always-visible placeholder (like an HTML ``<input
+        placeholder>``) — unlike ``Adw.EntryRow``, whose floating title covers
+        the placeholder slot until focused.
+
+        The row is hand-built (not ``Adw.ActionRow``, whose central title area
+        expands so a suffix entry never fills the row): a fixed-width label, then
+        the entry which ``hexpand``s to the row's right edge, then an optional
+        *trailing* widget (e.g. a download button). So all fields start at the
+        same x, and a row without a trailing widget lengthens the field by
+        exactly that button's width — left and right edges line up. Returns
+        ``(row, entry)``.
+        """
+        row = Adw.PreferencesRow(activatable=False)
+        box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12,
+                      margin_start=12, margin_end=12, margin_top=10, margin_bottom=10)
+        box.append(Gtk.Label(label=title, xalign=0.0, valign=Gtk.Align.CENTER,
+                             width_request=self._LABEL_WIDTH))
+        entry = Gtk.Entry(hexpand=True, valign=Gtk.Align.CENTER)
+        entry.set_text(self._settings.get(key, "") or "")
+        value = config.default(key)
+        if value:
+            entry.set_placeholder_text(f"{value} (default)")
+        entry.connect("changed", self._on_entry_setting, key)
+        box.append(entry)
+        if trailing is not None:
+            trailing.set_valign(Gtk.Align.CENTER)
+            box.append(trailing)
+        row.set_child(box)
+        return row, entry
+
     def _nav_row(self, title, subtitle, subpage):
         """An activatable row with a chevron that pushes *subpage*."""
         row = Adw.ActionRow(title=title, subtitle=subtitle, activatable=True)
@@ -512,17 +546,13 @@ class PreferencesDialog(Adw.PreferencesDialog):
         # ONNX model + tokenizer: paste a URL and download into the model folder
         # with a live progress bar.  The download runs in a background thread;
         # the backend picks the files up from the folder on restart.
-        self._sem_model_url_row = Adw.EntryRow(title="ONNX model URL (model.onnx)")
-        self._sem_model_url_row.set_text(
-            self._settings.get("semantic_onnx_model_url", ""))
-        self._sem_model_url_row.connect(
-            "changed", self._on_entry_setting, "semantic_onnx_model_url")
         model_btn = Gtk.Button(
             icon_name="folder-download-symbolic", valign=Gtk.Align.CENTER)
         model_btn.add_css_class("flat")
         model_btn.set_tooltip_text("Download model.onnx")
         model_btn.connect("clicked", self._on_download_onnx, "model")
-        self._sem_model_url_row.add_suffix(model_btn)
+        self._sem_model_url_row, self._sem_model_url_entry = self._entry_row(
+            "Model URL", "semantic_onnx_model_url", trailing=model_btn)
         self._sem_model_dl_btn = model_btn
         local.add(self._sem_model_url_row)
 
@@ -531,17 +561,13 @@ class PreferencesDialog(Adw.PreferencesDialog):
             margin_start=12, margin_end=12, margin_bottom=6)
         local.add(self._sem_model_progress)
 
-        self._sem_tok_url_row = Adw.EntryRow(title="Tokenizer URL (tokenizer.json)")
-        self._sem_tok_url_row.set_text(
-            self._settings.get("semantic_onnx_tokenizer_url", ""))
-        self._sem_tok_url_row.connect(
-            "changed", self._on_entry_setting, "semantic_onnx_tokenizer_url")
         tok_btn = Gtk.Button(
             icon_name="folder-download-symbolic", valign=Gtk.Align.CENTER)
         tok_btn.add_css_class("flat")
         tok_btn.set_tooltip_text("Download tokenizer.json")
         tok_btn.connect("clicked", self._on_download_onnx, "tokenizer")
-        self._sem_tok_url_row.add_suffix(tok_btn)
+        self._sem_tok_url_row, self._sem_tok_url_entry = self._entry_row(
+            "Tokenizer URL", "semantic_onnx_tokenizer_url", trailing=tok_btn)
         self._sem_tok_dl_btn = tok_btn
         local.add(self._sem_tok_url_row)
 
@@ -623,16 +649,12 @@ class PreferencesDialog(Adw.PreferencesDialog):
                         "server. Recommended embedding model: nomic-embed-text.")
         page.add(ollama)
 
-        self._sem_url_row = Adw.EntryRow(title="Ollama URL")
-        self._sem_url_row.set_text(
-            self._settings.get("semantic_ollama_url", "http://localhost:11434"))
-        self._sem_url_row.connect("changed", self._on_entry_setting, "semantic_ollama_url")
+        self._sem_url_row, self._sem_url_entry = self._entry_row(
+            "Ollama URL", "semantic_ollama_url")
         ollama.add(self._sem_url_row)
 
-        self._sem_model_row = Adw.EntryRow(title="Embedding model")
-        self._sem_model_row.set_text(
-            self._settings.get("semantic_ollama_model", "nomic-embed-text"))
-        self._sem_model_row.connect("changed", self._on_entry_setting, "semantic_ollama_model")
+        self._sem_model_row, self._sem_model_entry = self._entry_row(
+            "Embedding model", "semantic_ollama_model")
         ollama.add(self._sem_model_row)
 
         self._sem_ollama_test_row = Adw.ActionRow(
@@ -647,7 +669,12 @@ class PreferencesDialog(Adw.PreferencesDialog):
         # Grey out the group the selected backend does not use.
         self._sem_onnx_widgets = [local]
         self._sem_ollama_widgets = [ollama]
-        return self._subpage("Embedding", page)
+        subpage = self._subpage("Embedding", page)
+        # Don't auto-focus the first entry: an empty (default) field would open
+        # with a focus ring + placeholder, which looks half-filled. Let the
+        # resting state show the plain title; the hint appears on click.
+        subpage.connect("shown", lambda *_: self.set_focus(None))
+        return subpage
 
     def _build_ask_subpage(self):
         """Chat model that writes grounded answers, plus a link to its prompt."""
@@ -660,30 +687,32 @@ class PreferencesDialog(Adw.PreferencesDialog):
                         "(qwen2.5:7b, mistral) are sharper but need a GPU.")
         page.add(group)
 
-        self._ask_url_row = Adw.EntryRow(title="Ollama URL")
-        self._ask_url_row.set_text(
-            self._settings.get("ask_ollama_url", "http://localhost:11434"))
-        self._ask_url_row.connect("changed", self._on_entry_setting, "ask_ollama_url")
+        self._ask_url_row, self._ask_url_entry = self._entry_row(
+            "Ollama URL", "ask_ollama_url")
         group.add(self._ask_url_row)
 
-        self._ask_model_combo = Adw.ComboRow(title="Model")
+        # The model list is fetched from the server; a refresh icon sits in the
+        # row next to the selected model, and the subtitle carries the status
+        # (count, "Loading…", or an unreachable-server error).
+        self._ask_model_combo = Adw.ComboRow(
+            title="Model", subtitle="Fetched from the Ollama server")
         self._ask_model_list = Gtk.StringList()
         self._ask_model_combo.set_model(self._ask_model_list)
         self._ask_model_combo.connect("notify::selected", self._on_ask_model_selected)
-        group.add(self._ask_model_combo)
-
-        self._ask_models_row = Adw.ActionRow(
-            title="Available models", subtitle="Fetched from the Ollama server")
-        ask_refresh_btn = Gtk.Button(label="Refresh", valign=Gtk.Align.CENTER)
+        ask_refresh_btn = Gtk.Button(
+            icon_name="view-refresh-symbolic", valign=Gtk.Align.CENTER,
+            tooltip_text="Refresh model list")
+        ask_refresh_btn.add_css_class("flat")
         ask_refresh_btn.connect("clicked", lambda *_: self._refresh_ask_models())
-        self._ask_models_row.add_suffix(ask_refresh_btn)
-        self._ask_models_row.set_activatable_widget(ask_refresh_btn)
-        group.add(self._ask_models_row)
+        self._ask_model_combo.add_suffix(ask_refresh_btn)
+        group.add(self._ask_model_combo)
 
         group.add(self._nav_row(
             "System prompt", "Grounding instructions sent to the model",
             self._prompt_subpage))
-        return self._subpage("Ask", page)
+        subpage = self._subpage("Ask", page)
+        subpage.connect("shown", lambda *_: self.set_focus(None))  # see Embedding
+        return subpage
 
     def _build_prompt_subpage(self, _ask):
         """The editable system prompt with a reset-to-default action."""
@@ -746,9 +775,9 @@ class PreferencesDialog(Adw.PreferencesDialog):
         """Fetch the model list from the ask Ollama server, off the main thread."""
         import json
         import urllib.request
-        url = self._settings.get(
-            "ask_ollama_url", "http://localhost:11434").rstrip("/")
-        self._ask_models_row.set_subtitle("Loading…")
+        url = (self._settings.get("ask_ollama_url")
+               or config.default("ask_ollama_url")).rstrip("/")
+        self._ask_model_combo.set_subtitle("Loading…")
 
         def worker():
             try:
@@ -763,14 +792,14 @@ class PreferencesDialog(Adw.PreferencesDialog):
 
     def _populate_ask_models(self, models, error) -> bool:
         if error is not None:
-            self._ask_models_row.set_subtitle(f"Not reachable: {error}")
-            self._ask_models_row.add_css_class("error")
+            self._ask_model_combo.set_subtitle(f"Not reachable: {error}")
+            self._ask_model_combo.add_css_class("error")
             return False
-        self._ask_models_row.remove_css_class("error")
+        self._ask_model_combo.remove_css_class("error")
         if not models:
-            self._ask_models_row.set_subtitle("No models on the server")
+            self._ask_model_combo.set_subtitle("No models on the server")
             return False
-        current = self._settings.get("ask_model", "llama3.2")
+        current = self._settings.get("ask_model") or config.default("ask_model")
         if current and current not in models:
             models = [current] + models  # keep the saved choice selectable
         self._ask_model_list.splice(0, self._ask_model_list.get_n_items(), models)
@@ -778,7 +807,7 @@ class PreferencesDialog(Adw.PreferencesDialog):
             self._ask_model_combo.set_selected(models.index(current))
         except ValueError:
             self._ask_model_combo.set_selected(0)
-        self._ask_models_row.set_subtitle(f"{len(models)} models")
+        self._ask_model_combo.set_subtitle(f"{len(models)} models")
         return False
 
     def _refresh_onnx_dir_row(self) -> None:
@@ -900,8 +929,10 @@ class PreferencesDialog(Adw.PreferencesDialog):
         self._sem_onnx_test_btn.set_sensitive(both)
 
     def _on_test_ollama(self, button) -> None:
-        url = self._sem_url_row.get_text().strip()
-        model = self._sem_model_row.get_text().strip()
+        url = (self._sem_url_entry.get_text().strip()
+               or config.default("semantic_ollama_url"))
+        model = (self._sem_model_entry.get_text().strip()
+                 or config.default("semantic_ollama_model"))
         button.set_sensitive(False)
         self._sem_ollama_test_row.set_subtitle("Testing…")
         threading.Thread(
@@ -964,10 +995,12 @@ class PreferencesDialog(Adw.PreferencesDialog):
     def _on_download_onnx(self, button, which) -> None:
         model_p, tok_p = self._onnx_paths()
         if which == "model":
-            url = self._sem_model_url_row.get_text().strip()
+            url = (self._sem_model_url_entry.get_text().strip()
+                   or config.default("semantic_onnx_model_url"))
             filename, bar, target = "model.onnx", self._sem_model_progress, model_p
         else:
-            url = self._sem_tok_url_row.get_text().strip()
+            url = (self._sem_tok_url_entry.get_text().strip()
+                   or config.default("semantic_onnx_tokenizer_url"))
             filename, bar, target = "tokenizer.json", self._sem_tok_progress, tok_p
         if not url:
             return
