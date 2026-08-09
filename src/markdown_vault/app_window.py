@@ -1404,8 +1404,8 @@ class MainWindow(Adw.ApplicationWindow):
             "ask %r -> %d passages: %s", question, len(hits),
             [("/".join(c.path.rsplit("/", 2)[-2:]), round(s, 3)) for c, s in hits])
         chat = ask.OllamaChat(
-            model=self._settings.get("ask_model", "llama3.2"),
-            url=self._settings.get("ask_ollama_url", "http://localhost:11434"),
+            model=self._settings.get("ask_model") or config.default("ask_model"),
+            url=self._settings.get("ask_ollama_url") or config.default("ask_ollama_url"),
         )
         return ask.answer(
             question, hits, chat,
@@ -1540,8 +1540,10 @@ class MainWindow(Adw.ApplicationWindow):
             logger.info("semantic search: onnx backend (model=%s)", model)
             return OnnxEmbedder(model, tokenizer), self._onnx_sig(model, tokenizer)
         from .semantic_search import OllamaEmbedder
-        model = self._settings.get("semantic_ollama_model", "nomic-embed-text")
-        url = self._settings.get("semantic_ollama_url", "http://localhost:11434")
+        model = (self._settings.get("semantic_ollama_model")
+                 or config.default("semantic_ollama_model"))
+        url = (self._settings.get("semantic_ollama_url")
+               or config.default("semantic_ollama_url"))
         logger.info("semantic search: ollama backend (model=%s)", model)
         return OllamaEmbedder(model, url), f"ollama:{model}"
 

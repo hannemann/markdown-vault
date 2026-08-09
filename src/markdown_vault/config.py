@@ -296,6 +296,16 @@ _DEFAULT_SETTINGS = {
     "ask_system_prompt": "",  # empty → the built-in default (ask._SYSTEM)
 }
 
+def default(key):
+    """The built-in default value for a setting *key* (``""`` if unknown).
+
+    Use ``settings.get(key) or config.default(key)`` at read sites so a field
+    the user has cleared to an empty string falls back to the default instead
+    of an empty value.
+    """
+    return _DEFAULT_SETTINGS.get(key, "")
+
+
 # Setting key → environment variable consumed by WebKitGTK at startup.
 _WEBKIT_ENV_KEYS = {
     "webkit_disable_dmabuf": "WEBKIT_DISABLE_DMABUF_RENDERER",
