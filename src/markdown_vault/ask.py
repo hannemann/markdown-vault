@@ -10,6 +10,7 @@ sources — it does not draw on outside/training knowledge.
 import json
 import logging
 import os
+import re
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
@@ -78,17 +79,26 @@ def build_messages(question: str, hits, language: str = "English",
     return system, user, sources
 
 
+# A reasoning model (Qwen3, DeepSeek-R1, …) emits a <think>…</think> block that
+# we never want in the grounded answer — strip it defensively regardless of the
+# backend's own filtering.
+_THINK_RE = re.compile(r"<think>.*?</think>", re.S)
+
+
 class OllamaChat:
     """Chat completion via a running Ollama server (``POST /api/chat``).
 
     No extra Python dependency; with a localhost URL nothing leaves the machine.
+    *think* toggles a reasoning model's thinking: leave ``None`` for the model's
+    default (safe for models that don't support it), or ``False`` to disable it.
     """
 
     def __init__(self, model: str, url: str = "http://localhost:11434",
-                 timeout: float = 120.0) -> None:
+                 timeout: float = 120.0, think: bool | None = None) -> None:
         self.model = model
         self.url = url.rstrip("/")
         self.timeout = timeout
+        self.think = think
 
     def chat(self, system: str, user: str) -> str:
         payload = {
@@ -100,6 +110,8 @@ class OllamaChat:
             "stream": False,
             "options": {"temperature": 0.2},
         }
+        if self.think is not None:   # only send when overriding, else model default
+            payload["think"] = self.think
         body = json.dumps(payload).encode()
         req = urllib.request.Request(
             self.url + "/api/chat", data=body,
@@ -107,7 +119,44 @@ class OllamaChat:
         )
         with urllib.request.urlopen(req, timeout=self.timeout) as resp:
             data = json.loads(resp.read())
-        return ((data.get("message") or {}).get("content") or "").strip()
+        text = ((data.get("message") or {}).get("content") or "")
+        return _THINK_RE.sub("", text).strip()
+
+
+class OpenAIChat:
+    """Chat completion via an OpenAI-compatible server (llama.cpp, vLLM, …):
+    ``POST /v1/chat/completions``. *url* is the server base (e.g.
+    ``http://host:8080``). *think=False* disables a reasoning model's thinking
+    via ``chat_template_kwargs`` (llama.cpp / Qwen3)."""
+
+    def __init__(self, model: str, url: str = "http://localhost:8080",
+                 timeout: float = 120.0, think: bool | None = None) -> None:
+        self.model = model
+        self.url = url.rstrip("/")
+        self.timeout = timeout
+        self.think = think
+
+    def chat(self, system: str, user: str) -> str:
+        payload = {
+            "model": self.model or "default",  # llama.cpp ignores it; keep valid
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+            "stream": False,
+            "temperature": 0.2,
+        }
+        if self.think is False:
+            payload["chat_template_kwargs"] = {"enable_thinking": False}
+        body = json.dumps(payload).encode()
+        req = urllib.request.Request(
+            self.url + "/v1/chat/completions", data=body,
+            headers={"Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+            data = json.loads(resp.read())
+        text = ((data.get("choices") or [{}])[0].get("message") or {}).get("content") or ""
+        return _THINK_RE.sub("", text).strip()
 
 
 def answer(question: str, hits, chat: OllamaChat, language: str = "English",

@@ -291,9 +291,14 @@ _DEFAULT_SETTINGS = {
     # Ask/answer (RAG): a local Ollama chat model writes answers grounded in the
     # retrieved passages. Its own URL (default localhost) so it runs locally,
     # independent of the embedder backend.
+    "ask_backend": "ollama",  # "ollama" (/api/chat) or "openai" (llama.cpp /v1)
     "ask_ollama_url": "http://localhost:11434",
     "ask_model": "llama3.2",
     "ask_system_prompt": "",  # empty → the built-in default (ask._SYSTEM)
+    # Reasoning models (Qwen3, …) think before answering: accurate but slow. For
+    # grounded note Q&A, disabling it is faster and better calibrated. Only sent
+    # to the backend when False, so non-reasoning models are unaffected.
+    "ask_reasoning": True,
 }
 
 def default(key):

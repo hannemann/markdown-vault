@@ -1403,10 +1403,15 @@ class MainWindow(Adw.ApplicationWindow):
         logger.info(
             "ask %r -> %d passages: %s", question, len(hits),
             [("/".join(c.path.rsplit("/", 2)[-2:]), round(s, 3)) for c, s in hits])
-        chat = ask.OllamaChat(
-            model=self._settings.get("ask_model") or config.default("ask_model"),
-            url=self._settings.get("ask_ollama_url") or config.default("ask_ollama_url"),
-        )
+        model = self._settings.get("ask_model") or config.default("ask_model")
+        url = self._settings.get("ask_ollama_url") or config.default("ask_ollama_url")
+        # Only override thinking when the user turned reasoning OFF, so
+        # non-reasoning models (and Ollama, which errors on an unknown "think")
+        # keep their default behaviour.
+        think = False if not self._settings.get("ask_reasoning", True) else None
+        cls = (ask.OpenAIChat if self._settings.get("ask_backend") == "openai"
+               else ask.OllamaChat)
+        chat = cls(model=model, url=url, think=think)
         return ask.answer(
             question, hits, chat,
             language=self._answer_language(),

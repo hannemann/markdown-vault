@@ -681,21 +681,33 @@ class PreferencesDialog(Adw.PreferencesDialog):
         page = Adw.PreferencesPage(title="Ask")
         group = Adw.PreferencesGroup(
             title="Ask (answers from your notes)",
-            description="The quick-open 'ask' mode answers a question from your "
-                        "notes via a local Ollama chat model. Recommended: "
-                        "llama3.2 — fast and CPU-friendly. Larger models "
-                        "(qwen2.5:7b, mistral) are sharper but need a GPU.")
+            description="The quick-open 'ask' mode answers from your notes via a "
+                        "local chat model. Backend: Ollama, or an OpenAI-compatible "
+                        "server like llama.cpp. Recommended: llama3.2 — fast and "
+                        "CPU-friendly; a strong model (e.g. Qwen3) answers far "
+                        "better where the hardware allows.")
         page.add(group)
 
+        self._ask_backends = ["ollama", "openai"]
+        self._ask_backend_row = Adw.ComboRow(
+            title="Backend",
+            model=Gtk.StringList.new(
+                ["Ollama (/api/chat)", "OpenAI-compatible — llama.cpp (/v1)"]))
+        b = self._settings.get("ask_backend", "ollama")
+        self._ask_backend_row.set_selected(
+            self._ask_backends.index(b) if b in self._ask_backends else 0)
+        self._ask_backend_row.connect("notify::selected", self._on_ask_backend_changed)
+        group.add(self._ask_backend_row)
+
         self._ask_url_row, self._ask_url_entry = self._entry_row(
-            "Ollama URL", "ask_ollama_url")
+            "Server URL", "ask_ollama_url")
         group.add(self._ask_url_row)
 
         # The model list is fetched from the server; a refresh icon sits in the
         # row next to the selected model, and the subtitle carries the status
         # (count, "Loading…", or an unreachable-server error).
         self._ask_model_combo = Adw.ComboRow(
-            title="Model", subtitle="Fetched from the Ollama server")
+            title="Model", subtitle="Fetched from the server")
         self._ask_model_list = Gtk.StringList()
         self._ask_model_combo.set_model(self._ask_model_list)
         self._ask_model_combo.connect("notify::selected", self._on_ask_model_selected)
@@ -706,6 +718,16 @@ class PreferencesDialog(Adw.PreferencesDialog):
         ask_refresh_btn.connect("clicked", lambda *_: self._refresh_ask_models())
         self._ask_model_combo.add_suffix(ask_refresh_btn)
         group.add(self._ask_model_combo)
+
+        self._ask_reasoning_row = Adw.SwitchRow(
+            title="Reasoning",
+            subtitle="Let a reasoning model (Qwen3, …) think before answering — "
+                     "more accurate but much slower. Off is faster and usually "
+                     "enough for grounded note answers.")
+        self._ask_reasoning_row.set_active(self._settings.get("ask_reasoning", True))
+        self._ask_reasoning_row.connect(
+            "notify::active", self._on_toggle_setting, "ask_reasoning")
+        group.add(self._ask_reasoning_row)
 
         group.add(self._nav_row(
             "System prompt", "Grounding instructions sent to the model",
@@ -771,19 +793,31 @@ class PreferencesDialog(Adw.PreferencesDialog):
             self._settings["ask_model"] = item.get_string()
             self._persist_debounced()
 
+    def _on_ask_backend_changed(self, row, _pspec) -> None:
+        self._settings["ask_backend"] = self._ask_backends[row.get_selected()]
+        self._persist()
+        self._refresh_ask_models()  # different endpoint per backend
+
     def _refresh_ask_models(self) -> None:
-        """Fetch the model list from the ask Ollama server, off the main thread."""
+        """Fetch the model list off the main thread — from Ollama's /api/tags or
+        the OpenAI-compatible /v1/models, depending on the selected backend."""
         import json
         import urllib.request
         url = (self._settings.get("ask_ollama_url")
                or config.default("ask_ollama_url")).rstrip("/")
+        openai = self._settings.get("ask_backend") == "openai"
+        endpoint = "/v1/models" if openai else "/api/tags"
         self._ask_model_combo.set_subtitle("Loading…")
 
         def worker():
             try:
-                req = urllib.request.Request(url + "/api/tags")
+                req = urllib.request.Request(url + endpoint)
                 data = json.loads(urllib.request.urlopen(req, timeout=6).read())
-                models = [m["name"] for m in data.get("models", []) if m.get("name")]
+                # Ollama: {"models":[{"name":…}]}; OpenAI/llama.cpp:
+                # {"data":[{"id":…}]} or {"models":[{"name"/"id":…}]}.
+                items = data.get("models") or data.get("data") or []
+                models = [m.get("name") or m.get("id") for m in items
+                          if (m.get("name") or m.get("id"))]
                 GLib.idle_add(self._populate_ask_models, models, None)
             except Exception as exc:  # noqa: BLE001 — surface any failure inline
                 GLib.idle_add(self._populate_ask_models, None, str(exc))
