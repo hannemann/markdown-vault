@@ -793,8 +793,21 @@ class PreferencesDialog(Adw.PreferencesDialog):
             self._settings["ask_model"] = item.get_string()
             self._persist_debounced()
 
+    # Typical server URL per backend — llama.cpp serves :8080, Ollama :11434.
+    _ASK_BACKEND_URLS = {"ollama": "http://localhost:11434",
+                         "openai": "http://localhost:8080"}
+
     def _on_ask_backend_changed(self, row, _pspec) -> None:
-        self._settings["ask_backend"] = self._ask_backends[row.get_selected()]
+        backend = self._ask_backends[row.get_selected()]
+        self._settings["ask_backend"] = backend
+        # Point the URL hint (and an empty/other-default value) at the new
+        # backend's port, so switching to llama.cpp doesn't silently keep :11434.
+        default_url = self._ASK_BACKEND_URLS.get(backend)
+        if default_url:
+            self._ask_url_entry.set_placeholder_text(f"{default_url} (default)")
+            cur = self._ask_url_entry.get_text().strip()
+            if not cur or cur in self._ASK_BACKEND_URLS.values():
+                self._ask_url_entry.set_text(default_url)  # fires changed → saves
         self._persist()
         self._refresh_ask_models()  # different endpoint per backend
 

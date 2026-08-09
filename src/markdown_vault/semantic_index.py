@@ -35,30 +35,35 @@ def _hash(text: str) -> str:
 
 # Common German (+ a few English) filler words that carry no entity signal, so a
 # note is never boosted just because the question contains "über" or "wissen".
+# Only ≥4-char entries — shorter tokens are already dropped by the length filter
+# in _query_terms, so listing them here would be dead weight.
 _ASK_STOPWORDS = frozenset({
     "über", "oder", "auch", "eine", "einen", "einem", "sind", "haben", "kann",
-    "mehr", "dass", "wie", "was", "wir", "den", "der", "die", "das", "und",
-    "ist", "von", "mit", "für", "dem", "des", "ein", "aus", "auf", "zum", "zur",
-    "als", "bei", "ich", "weiss", "wissen", "gibt", "habe", "hat", "sich",
-    "noch", "nur", "man", "wird", "welche", "welcher", "warum", "wieso", "alle",
+    "mehr", "dass", "weiss", "wissen", "gibt", "habe", "sich", "noch", "wird",
+    "welche", "welcher", "warum", "wieso", "alle",
     "about", "what", "which", "know", "tell", "does", "have",
 })
+
+# One Unicode-aware tokenizer for all three matchers, so a query term, a file
+# name and a heading tokenise identically — otherwise `café` matches only via
+# the whole-stem shortcut and `mein café.md` never does.
+_WORD_RE = re.compile(r"\w+", re.UNICODE)
+
+
+def _tokenize(text: str) -> set:
+    return set(_WORD_RE.findall(text.lower()))
 
 
 def _query_terms(query: str) -> set:
     """Content words from a question — lowercased, stopwords and short tokens
     dropped — used to match against note names."""
-    toks = re.split(r"[^0-9a-zA-Zäöüßáéíóú]+", query.lower())
-    return {t for t in toks if len(t) >= 4 and t not in _ASK_STOPWORDS}
+    return {t for t in _tokenize(query) if len(t) >= 4 and t not in _ASK_STOPWORDS}
 
 
 def _name_matches(path: str, terms: set) -> bool:
     """Whether a note's file name shares a whole word with the question terms."""
     stem = os.path.splitext(os.path.basename(path))[0].lower()
-    if stem in terms:
-        return True
-    stem_tokens = {t for t in re.split(r"[^0-9a-zäöüß]+", stem) if t}
-    return bool(stem_tokens & terms)
+    return stem in terms or bool(_tokenize(stem) & terms)
 
 
 # A file-name match is a strong "this note is about X" signal — ranked just below
@@ -73,8 +78,7 @@ def _heading_words_by_level(text: str) -> dict:
         m = re.match(r"\s{0,3}(#{1,6})\s+(.*)", line)
         if not m:
             continue
-        words = {t for t in re.split(r"[^0-9a-zäöüß]+", m.group(2).lower()) if t}
-        out.setdefault(len(m.group(1)), set()).update(words)
+        out.setdefault(len(m.group(1)), set()).update(_tokenize(m.group(2)))
     return out
 
 

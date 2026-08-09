@@ -324,6 +324,18 @@ _WEBKIT_ENV_KEYS = {
 _last_logged_settings = None
 
 
+def _migrate_settings(settings: dict) -> None:
+    """In-place migration of renamed/removed settings for old configs."""
+    # semantic_onnx_model / semantic_onnx_tokenizer were replaced by the folder
+    # setting semantic_onnx_dir; carry a custom old location over so semantic
+    # search keeps finding the model instead of silently reverting to default.
+    if not settings.get("semantic_onnx_dir"):
+        old = (settings.get("semantic_onnx_model")
+               or settings.get("semantic_onnx_tokenizer"))
+        if old:
+            settings["semantic_onnx_dir"] = os.path.dirname(old)
+
+
 def load_settings() -> dict:
     """Load app settings from vaults.yaml, with safe defaults."""
     try:
@@ -337,6 +349,7 @@ def load_settings() -> dict:
         return dict(_DEFAULT_SETTINGS)
     settings = dict(_DEFAULT_SETTINGS)
     settings.update(data.get("settings") or {})
+    _migrate_settings(settings)
     global _last_logged_settings
     loggable = {k: v for k, v in settings.items() if k != "loglevel"}
     if loggable != _last_logged_settings:
