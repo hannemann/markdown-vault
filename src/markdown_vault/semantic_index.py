@@ -16,6 +16,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 import threading
 from pathlib import Path
 
@@ -30,6 +31,63 @@ _INDEX_FORMAT_VERSION = "6"
 
 def _hash(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8", "replace")).hexdigest()
+
+
+# Common German (+ a few English) filler words that carry no entity signal, so a
+# note is never boosted just because the question contains "über" or "wissen".
+_ASK_STOPWORDS = frozenset({
+    "über", "oder", "auch", "eine", "einen", "einem", "sind", "haben", "kann",
+    "mehr", "dass", "wie", "was", "wir", "den", "der", "die", "das", "und",
+    "ist", "von", "mit", "für", "dem", "des", "ein", "aus", "auf", "zum", "zur",
+    "als", "bei", "ich", "weiss", "wissen", "gibt", "habe", "hat", "sich",
+    "noch", "nur", "man", "wird", "welche", "welcher", "warum", "wieso", "alle",
+    "about", "what", "which", "know", "tell", "does", "have",
+})
+
+
+def _query_terms(query: str) -> set:
+    """Content words from a question — lowercased, stopwords and short tokens
+    dropped — used to match against note names."""
+    toks = re.split(r"[^0-9a-zA-Zäöüßáéíóú]+", query.lower())
+    return {t for t in toks if len(t) >= 4 and t not in _ASK_STOPWORDS}
+
+
+def _name_matches(path: str, terms: set) -> bool:
+    """Whether a note's file name shares a whole word with the question terms."""
+    stem = os.path.splitext(os.path.basename(path))[0].lower()
+    if stem in terms:
+        return True
+    stem_tokens = {t for t in re.split(r"[^0-9a-zäöüß]+", stem) if t}
+    return bool(stem_tokens & terms)
+
+
+# A file-name match is a strong "this note is about X" signal — ranked just below
+# an H1 heading (the written title) and level with an H2.
+_FILENAME_BOOST = 5
+
+
+def _heading_words_by_level(text: str) -> dict:
+    """``{level: words}`` — whole words per Markdown heading level in a chunk."""
+    out: dict = {}
+    for line in text.split("\n"):
+        m = re.match(r"\s{0,3}(#{1,6})\s+(.*)", line)
+        if not m:
+            continue
+        words = {t for t in re.split(r"[^0-9a-zäöüß]+", m.group(2).lower()) if t}
+        out.setdefault(len(m.group(1)), set()).update(words)
+    return out
+
+
+def _boost(chunk, terms: set) -> int:
+    """Retrieval boost (higher ranks first). The shallower the matching heading,
+    the bigger the boost — H1=6 … H6=1 — because a top-level heading is the
+    note's title while a deep sub-heading is a passing mention. A file-name match
+    contributes _FILENAME_BOOST. A chunk's boost is the strongest match it has."""
+    best = _FILENAME_BOOST if _name_matches(chunk.path, terms) else 0
+    for level, words in _heading_words_by_level(chunk.text).items():
+        if words & terms:
+            best = max(best, 7 - level)  # H1 -> 6, H6 -> 1
+    return best
 
 
 class BackendUnavailable(Exception):
@@ -438,6 +496,32 @@ class SemanticIndexManager:
             if len(results) >= top_k:
                 break
         return results
+
+    def retrieve(self, query, top_k: int = 8):
+        """Top ``(chunk, score)`` passages for RAG answering.
+
+        Unlike :meth:`query_files`/:meth:`query_open` (best chunk per *file*),
+        this keeps chunk granularity and the passage ``text`` — that is what the
+        answer generator needs to ground on.
+
+        A **title/name boost** fixes the "was wissen wir über X" case: when the
+        question names an entity that has its own note (``erde`` → ``erde.md``),
+        pure embedding similarity buries that note among its near-identical
+        siblings.  Chunks whose note name matches a question term are ranked
+        ahead of the rest, so the note actually *about* the subject comes first.
+        Scoped to RAG only — the plain semantic search ranking is untouched.
+        """
+        hits = self._top_hits(query, top_k)
+        if not hits:
+            return []
+        terms = _query_terms(query)
+        if terms:
+            hits = sorted(
+                hits,
+                key=lambda cs: (_boost(cs[0], terms), cs[1]),
+                reverse=True,
+            )
+        return hits[:top_k]
 
     def _top_hits(self, query, top_k):
         if not query:
