@@ -1371,6 +1371,24 @@ class MainWindow(Adw.ApplicationWindow):
         text = tab.editor.get_text()
         tab.preview.scroll_to_line(line, text)
 
+    # Locale code → English language name for the "answer in {language}" prompt.
+    _LANG_NAMES = {
+        "de": "German", "en": "English", "fr": "French", "es": "Spanish",
+        "it": "Italian", "pt": "Portuguese", "nl": "Dutch", "pl": "Polish",
+        "ru": "Russian", "tr": "Turkish", "cs": "Czech", "sv": "Swedish",
+        "da": "Danish", "fi": "Finnish", "no": "Norwegian", "uk": "Ukrainian",
+        "ja": "Japanese", "zh": "Chinese", "ko": "Korean",
+    }
+
+    def _answer_language(self) -> str:
+        """The language the answer should be written in — the user's OS UI
+        language (falls back to English)."""
+        for loc in GLib.get_language_names():
+            code = loc.split(".")[0].split("_")[0].lower()
+            if code and code not in ("c", "posix"):
+                return self._LANG_NAMES.get(code, code)
+        return "English"
+
     def _ask_answer(self, question: str):
         """RAG: retrieve passages from the semantic index and let a local Ollama
         model write a grounded answer.  Runs off the main thread (quick-open
@@ -1379,17 +1397,21 @@ class MainWindow(Adw.ApplicationWindow):
         from . import ask
         if self._semantic_index is None:
             return ask.Answer(
-                text="Die semantische Suche ist nicht aktiv — ohne Index kann "
-                     "ich deine Notizen nicht durchsuchen.")
+                text="Semantic search is not active — without an index I can't "
+                     "search your notes.")
         hits = self._semantic_index.retrieve(question, top_k=8)
         logger.info(
             "ask %r -> %d passages: %s", question, len(hits),
             [("/".join(c.path.rsplit("/", 2)[-2:]), round(s, 3)) for c, s in hits])
         chat = ask.OllamaChat(
             model=self._settings.get("ask_model", "llama3.2"),
-            url=self._settings.get("semantic_ollama_url", "http://localhost:11434"),
+            url=self._settings.get("ask_ollama_url", "http://localhost:11434"),
         )
-        return ask.answer(question, hits, chat)
+        return ask.answer(
+            question, hits, chat,
+            language=self._answer_language(),
+            system_template=self._settings.get("ask_system_prompt") or None,
+        )
 
     def _start_semantic_search(self) -> None:
         """Build the semantic index in the background when enabled (opt-in).

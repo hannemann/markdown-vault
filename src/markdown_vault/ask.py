@@ -33,39 +33,47 @@ class Answer:
     error: str | None = None
 
 
+# The rules are in English (a neutral instruction language the model follows
+# regardless of output language); {language} is the user's OS language, which the
+# answer must be written in — not the language these rules or the notes are in.
 _SYSTEM = (
-    "Du beantwortest die Frage des Nutzers ausschließlich aus den bereitgestellten "
-    "Notiz-Auszügen. Wichtige Regeln:\n"
-    "- Jeder Auszug stammt aus einer EIGENEN Notiz (Dateiname ist angegeben) und "
-    "kann ein ANDERES Thema behandeln. Übertrage Eigenschaften niemals von einem "
-    "Thema auf ein anderes (Ringe eines Gasriesen gehören z. B. nicht zur Erde).\n"
-    "- Verwende nur Auszüge, die sich direkt auf das Thema der Frage beziehen; "
-    "ignoriere die übrigen.\n"
-    "- Erfinde nichts und nutze kein Vorwissen. Fehlt die Information wirklich, "
-    "sage: \"Das steht nicht in deinen Notizen.\"\n"
-    "- Antworte knapp auf Deutsch und belege mit Quellennummern wie [1], [2]."
+    "You answer the user's question using ONLY the provided note excerpts — never "
+    "from outside knowledge. Rules:\n"
+    "- Base every statement on a specific excerpt and cite it by number, e.g. [1], [2].\n"
+    "- State only what an excerpt EXPLICITLY says about the thing asked about; do "
+    "not infer beyond it and do not read comparisons or metaphors as facts.\n"
+    "- Each excerpt is a separate note and may be about a different topic; never "
+    "carry a fact from one excerpt to another, and use only the excerpts relevant "
+    "to the question.\n"
+    "- When in doubt, leave it out. If the information is missing entirely, say so.\n"
+    "- Answer concisely, and write the answer in {language}."
 )
 
 
-def build_messages(question: str, hits) -> tuple[str, str, list]:
+def build_messages(question: str, hits, language: str = "English",
+                   system_template: str | None = None) -> tuple[str, str, list]:
     """Build ``(system, user, sources)`` from a question and retrieved hits.
 
     *hits* is a list of ``(chunk, score)`` where *chunk* has ``path``, ``line``
-    and ``text`` (the semantic index's :class:`Chunk`).
+    and ``text`` (the semantic index's :class:`Chunk`).  *system_template* is the
+    (user-configurable) system prompt; its ``{language}`` placeholder is filled
+    with *language* — via ``str.replace`` so a custom prompt with stray ``{}``
+    can't crash the call.
     """
     sources: list = []
     blocks: list = []
     for i, (chunk, _score) in enumerate(hits, start=1):
         name = os.path.basename(chunk.path)
         sources.append(Source(n=i, path=chunk.path, line=chunk.line))
-        blocks.append(f"[{i}] {name} (Zeile {chunk.line}):\n{chunk.text.strip()}")
-    context = "\n\n".join(blocks) if blocks else "(keine Auszüge)"
+        blocks.append(f"[{i}] {name} (line {chunk.line}):\n{chunk.text.strip()}")
+    context = "\n\n".join(blocks) if blocks else "(no excerpts)"
+    system = (system_template or _SYSTEM).replace("{language}", language)
     user = (
-        f"Frage: {question}\n\n"
-        f"Notiz-Auszüge:\n{context}\n\n"
-        "Beantworte die Frage nur aus diesen Auszügen."
+        f"Question: {question}\n\n"
+        f"Note excerpts:\n{context}\n\n"
+        "Answer the question using only these excerpts."
     )
-    return _SYSTEM, user, sources
+    return system, user, sources
 
 
 class OllamaChat:
@@ -100,11 +108,16 @@ class OllamaChat:
         return ((data.get("message") or {}).get("content") or "").strip()
 
 
-def answer(question: str, hits, chat: OllamaChat) -> Answer:
-    """Retrieve-augmented generation: ground *question* in *hits* and ask *chat*."""
+def answer(question: str, hits, chat: OllamaChat, language: str = "English",
+           system_template: str | None = None) -> Answer:
+    """Retrieve-augmented generation: ground *question* in *hits* and ask *chat*.
+
+    *language* is the language the answer must be written in; *system_template*
+    the (user-configurable) system prompt.
+    """
     if not hits:
-        return Answer(text="Dazu finde ich nichts in deinen Notizen.")
-    system, user, sources = build_messages(question, hits)
+        return Answer(text="I couldn't find anything about that in your notes.")
+    system, user, sources = build_messages(question, hits, language, system_template)
     try:
         text = chat.chat(system, user)
     except (urllib.error.URLError, OSError, ValueError) as exc:

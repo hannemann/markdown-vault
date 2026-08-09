@@ -289,8 +289,11 @@ _DEFAULT_SETTINGS = {
         "resolve/main/tokenizer.json",
     "semantic_min_score": 0.35,
     # Ask/answer (RAG): a local Ollama chat model writes answers grounded in the
-    # retrieved passages. Reuses semantic_ollama_url.
+    # retrieved passages. Its own URL (default localhost) so it runs locally,
+    # independent of the embedder backend.
+    "ask_ollama_url": "http://localhost:11434",
     "ask_model": "llama3.2",
+    "ask_system_prompt": "",  # empty → the built-in default (ask._SYSTEM)
 }
 
 # Setting key → environment variable consumed by WebKitGTK at startup.
