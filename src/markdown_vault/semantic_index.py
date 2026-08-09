@@ -46,8 +46,10 @@ _ASK_STOPWORDS = frozenset({
 
 # One Unicode-aware tokenizer for all three matchers, so a query term, a file
 # name and a heading tokenise identically — otherwise `café` matches only via
-# the whole-stem shortcut and `mein café.md` never does.
-_WORD_RE = re.compile(r"\w+", re.UNICODE)
+# the whole-stem shortcut and `mein café.md` never does. `[^\W_]` is a word
+# character except the underscore, so `snake_case.md` splits into two boostable
+# words (plain `\w` would keep it whole and lose the filename boost).
+_WORD_RE = re.compile(r"[^\W_]+", re.UNICODE)
 
 
 def _tokenize(text: str) -> set:
@@ -566,8 +568,8 @@ class SemanticIndexManager:
         start = 0
         if around:
             i = txt.find(around[:200].strip())
-            if i > self._MAX_NOTE_CHARS:
-                start = i - self._MAX_NOTE_CHARS // 3
+            if i >= 0:  # centre the window on the match (regardless of the cap)
+                start = max(0, i - self._MAX_NOTE_CHARS // 3)
         return txt[start:start + self._MAX_NOTE_CHARS]
 
     def _top_hits(self, query, top_k):

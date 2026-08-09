@@ -382,6 +382,10 @@ class TestBoostHelpers(unittest.TestCase):
     def test_query_terms_drop_short_and_stopwords(self):
         self.assertEqual(_query_terms("was wissen wir über jupiter"), {"jupiter"})
 
+    def test_tokenize_splits_underscore(self):  # R35.1
+        self.assertEqual(_tokenize("snake_case"), {"snake", "case"})
+        self.assertTrue(_name_matches("/v/snake_case.md", {"snake"}))
+
     def test_stopwords_are_all_reachable(self):
         self.assertTrue(all(len(w) >= 4 for w in _ASK_STOPWORDS))
 
@@ -450,6 +454,17 @@ class TestRetrieveAndNoteText(unittest.TestCase):
         txt = m._note_text(str(big), around="NEEDLE")
         self.assertLessEqual(len(txt), m._MAX_NOTE_CHARS)
         self.assertIn("NEEDLE", txt)  # window kept the matching region
+
+    def test_note_text_window_keeps_match_just_under_cap(self):  # R35.4
+        # A long matching block starting just under the cap: the fix windows
+        # around it, so its END survives; the old head-only cut dropped it.
+        cap = SemanticIndexManager._MAX_NOTE_CHARS
+        block = "STARTTOKEN" + "z" * 800 + "ENDTOKEN"
+        note = self._v1 / "edge.md"
+        note.write_text("x" * (cap - 100) + block + "y" * 3000, encoding="utf-8")
+        m = self._built([self._v1])
+        txt = m._note_text(str(note), around=block[:200])
+        self.assertIn("ENDTOKEN", txt)
 
 
 if __name__ == "__main__":

@@ -330,11 +330,14 @@ def _migrate_settings(settings: dict) -> None:
     # semantic_onnx_model / semantic_onnx_tokenizer were replaced by the folder
     # setting semantic_onnx_dir; carry a custom old location over so semantic
     # search keeps finding the model instead of silently reverting to default.
-    if not settings.get("semantic_onnx_dir"):
-        old = (settings.get("semantic_onnx_model")
-               or settings.get("semantic_onnx_tokenizer"))
-        if old:
-            settings["semantic_onnx_dir"] = os.path.dirname(old)
+    # Drop both old keys unconditionally so the migration is one-shot once the
+    # config is next saved — otherwise they linger and a later "reset to default"
+    # (dir → "") gets silently undone by re-deriving from them on every load.
+    model = settings.pop("semantic_onnx_model", None)
+    tokenizer = settings.pop("semantic_onnx_tokenizer", None)
+    old = model or tokenizer
+    if old and not settings.get("semantic_onnx_dir"):
+        settings["semantic_onnx_dir"] = os.path.dirname(old)
 
 
 def load_settings() -> dict:

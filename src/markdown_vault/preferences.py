@@ -701,6 +701,10 @@ class PreferencesDialog(Adw.PreferencesDialog):
 
         self._ask_url_row, self._ask_url_entry = self._entry_row(
             "Server URL", "ask_ollama_url")
+        # Hint the saved backend's port immediately (not only on a later switch).
+        saved_url = self._ASK_BACKEND_URLS.get(self._settings.get("ask_backend"))
+        if saved_url:
+            self._ask_url_entry.set_placeholder_text(f"{saved_url} (default)")
         group.add(self._ask_url_row)
 
         # The model list is fetched from the server; a refresh icon sits in the
