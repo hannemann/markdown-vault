@@ -366,5 +366,91 @@ class TestSemanticIndexManager(unittest.TestCase):
         self.assertNotIn("bad.md", paths)  # failing chunk skipped
 
 
+from markdown_vault.semantic_index import (
+    _tokenize, _query_terms, _name_matches, _heading_words_by_level, _boost,
+    _ASK_STOPWORDS,
+)
+from markdown_vault.semantic_search import Chunk
+
+
+class TestBoostHelpers(unittest.TestCase):
+    """Pure title/heading-boost helpers (no I/O)."""
+
+    def test_tokenize_is_unicode(self):
+        self.assertEqual(_tokenize("Café über Föö"), {"café", "über", "föö"})
+
+    def test_query_terms_drop_short_and_stopwords(self):
+        self.assertEqual(_query_terms("was wissen wir über jupiter"), {"jupiter"})
+
+    def test_stopwords_are_all_reachable(self):
+        self.assertTrue(all(len(w) >= 4 for w in _ASK_STOPWORDS))
+
+    def test_name_matches_accented_and_kebab(self):
+        self.assertTrue(_name_matches("/v/mein café.md", {"café"}))
+        self.assertTrue(_name_matches("/v/richtlinie-homeoffice.md", {"homeoffice"}))
+        self.assertFalse(_name_matches("/v/richtlinie-urlaub.md", {"homeoffice"}))
+
+    def test_heading_words_by_level(self):
+        hw = _heading_words_by_level("# Erde\n## Steckbrief\ntext\n### Große Monde")
+        self.assertEqual(hw[1], {"erde"})
+        self.assertEqual(hw[2], {"steckbrief"})
+        self.assertEqual(hw[3], {"große", "monde"})
+
+    def test_boost_prefers_shallower_heading_over_filename(self):
+        # filename match = 5; H1 = 6, H2 = 5, H3 = 4.
+        self.assertEqual(_boost(Chunk("/v/erde.md", 1, "# Erde"), {"erde"}), 6)
+        self.assertEqual(_boost(Chunk("/v/erde.md", 1, "### Erde"), {"erde"}), 5)  # name wins
+        self.assertEqual(_boost(Chunk("/v/mars.md", 1, "## Erde"), {"erde"}), 5)  # H2 only
+        self.assertEqual(_boost(Chunk("/v/mars.md", 1, "nothing"), {"erde"}), 0)
+
+
+class TestRetrieveAndNoteText(unittest.TestCase):
+    def setUp(self):
+        self._v1 = Path(tempfile.mkdtemp())
+        self._v2 = Path(tempfile.mkdtemp())
+        self._state = Path(tempfile.mkdtemp())
+        (self._v1 / "alpha.md").write_text(
+            "# Alpha\n\nalpha alpha\n\n## More\nalpha again", encoding="utf-8")
+        (self._v1 / "beta.md").write_text("beta beta", encoding="utf-8")
+        (self._v2 / "gamma.md").write_text("gamma gamma", encoding="utf-8")
+
+    def tearDown(self):
+        for p in (self._v1, self._v2, self._state):
+            shutil.rmtree(p, ignore_errors=True)
+
+    def _built(self, vaults):
+        m = SemanticIndexManager(
+            _StubEmbedder(), lambda: [str(v) for v in vaults], self._state,
+            "t", min_score=0.0)
+        m.build()
+        return m
+
+    def test_note_level_returns_whole_note_and_dedups(self):
+        m = self._built([self._v1])
+        hits = m.retrieve("alpha", top_k=6)
+        paths = [c.path for c, _ in hits]
+        self.assertEqual(len(paths), len(set(paths)))  # one passage per note
+        alpha = next(c for c, _ in hits if c.path.endswith("alpha.md"))
+        self.assertIn("## More", alpha.text)  # whole note, not the one chunk
+        self.assertEqual(alpha.line, 1)
+
+    def test_vault_filter_scopes_results(self):
+        m = self._built([self._v1, self._v2])
+        hits = m.retrieve("gamma", top_k=6, vaults=[str(self._v2)])
+        self.assertTrue(hits)
+        self.assertTrue(all(c.path.startswith(str(self._v2)) for c, _ in hits))
+        scoped = m.retrieve("gamma", top_k=6, vaults=[str(self._v1)])
+        self.assertTrue(all(not c.path.endswith("gamma.md") for c, _ in scoped))
+
+    def test_note_text_caps_and_windows_around_match(self):
+        big = self._v1 / "big.md"
+        big.write_text("HEAD\n" + "x" * 20000 + "\nNEEDLE\n" + "y" * 20000,
+                       encoding="utf-8")
+        m = self._built([self._v1])
+        txt = m._note_text(str(big), around="NEEDLE")
+        self.assertLessEqual(len(txt), m._MAX_NOTE_CHARS)
+        self.assertIn("NEEDLE", txt)  # window kept the matching region
+
+
 if __name__ == "__main__":
     unittest.main()

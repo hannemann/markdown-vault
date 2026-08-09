@@ -357,5 +357,29 @@ class TestWebkitEnv(_TempConfigMixin, unittest.TestCase):
             self.assertNotIn("WEBKIT_DISABLE_COMPOSITING_MODE", os.environ)
 
 
+class TestDefaultAndMigration(unittest.TestCase):
+    def test_default_returns_builtin(self):
+        self.assertEqual(_cfg.default("ask_model"), "llama3.2")
+        self.assertEqual(_cfg.default("ask_backend"), "ollama")
+
+    def test_default_unknown_key_is_empty(self):
+        self.assertEqual(_cfg.default("no_such_key"), "")
+
+    def test_migrate_derives_onnx_dir_from_old_model(self):
+        s = {"semantic_onnx_dir": "", "semantic_onnx_model": "/x/y/model.onnx"}
+        _cfg._migrate_settings(s)
+        self.assertEqual(s["semantic_onnx_dir"], "/x/y")
+
+    def test_migrate_keeps_existing_dir(self):
+        s = {"semantic_onnx_dir": "/keep", "semantic_onnx_model": "/x/y/model.onnx"}
+        _cfg._migrate_settings(s)
+        self.assertEqual(s["semantic_onnx_dir"], "/keep")
+
+    def test_migrate_noop_without_old_keys(self):
+        s = {"semantic_onnx_dir": ""}
+        _cfg._migrate_settings(s)
+        self.assertEqual(s["semantic_onnx_dir"], "")
+
+
 if __name__ == "__main__":
     unittest.main()
