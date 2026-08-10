@@ -1436,38 +1436,15 @@ class MainWindow(Adw.ApplicationWindow):
             [self._active_vault] if self._active_vault else allv)
 
     def _ask_answer(self, question: str):
-        """RAG: retrieve passages from the semantic index and let a local Ollama
-        model write a grounded answer.  Runs off the main thread (quick-open
-        worker); returns an :class:`ask.Answer`.
+        """RAG: retrieve passages and let the configured local model write a
+        grounded answer.  Runs off the main thread (quick-open worker); returns
+        an :class:`ask.Answer`.  The retrieval/backend/budget wiring lives in
+        :func:`ask.answer_question`.
         """
         from . import ask
-        if self._semantic_index is None:
-            return ask.Answer(
-                text="Semantic search is not active — without an index I can't "
-                     "search your notes.")
-        hits = self._semantic_index.retrieve(
-            question, top_k=6, vaults=self._scope_vault_paths())
-        logger.info(
-            "ask %r -> %d passages: %s", question, len(hits),
-            [("/".join(c.path.rsplit("/", 2)[-2:]), round(s, 3)) for c, s in hits])
-        model = self._settings.get("ask_model") or config.default("ask_model")
-        url = self._settings.get("ask_ollama_url") or config.default("ask_ollama_url")
-        # Only override thinking when the user turned reasoning OFF, so
-        # non-reasoning models (and Ollama, which errors on an unknown "think")
-        # keep their default behaviour.
-        think = False if not self._settings.get("ask_reasoning", True) else None
-        cls = (ask.OpenAIChat if self._settings.get("ask_backend") == "openai"
-               else ask.OllamaChat)
-        kwargs = dict(model=model, url=url, think=think)
-        if cls is ask.OllamaChat:  # llama.cpp sizes its context server-side
-            kwargs["num_ctx"] = int(self._settings.get("ask_num_ctx")
-                                    or config.default("ask_num_ctx"))
-        chat = cls(**kwargs)
-        return ask.answer(
-            question, hits, chat,
-            language=self._answer_language(),
-            system_template=self._settings.get("ask_system_prompt") or None,
-        )
+        return ask.answer_question(
+            question, self._semantic_index, self._settings,
+            self._scope_vault_paths(), self._answer_language())
 
     def _start_semantic_search(self) -> None:
         """Build the semantic index in the background when enabled (opt-in).

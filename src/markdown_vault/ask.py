@@ -14,6 +14,7 @@ import re
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
+from types import SimpleNamespace
 from typing import Protocol
 
 logger = logging.getLogger(__name__)
@@ -276,15 +277,77 @@ class OpenAIChat:
         return _THINK_RE.sub("", text).strip()
 
 
+# Context budget --------------------------------------------------------------
+# A rough chars-per-token for German/English. The budget is a safety net against
+# prompt truncation, not a tokenizer, so an approximation is fine.
+_CHARS_PER_TOKEN = 3.5
+# Tokens held back from the context window for the system prompt, the question
+# and the answer the model still has to generate.
+_ANSWER_RESERVE_TOKENS = 1024
+
+
+def context_char_budget(num_ctx: int) -> int:
+    """Characters of note excerpts that fit *num_ctx* tokens, leaving room for
+    the system prompt, question and the generated answer."""
+    return max(0, int((num_ctx - _ANSWER_RESERVE_TOKENS) * _CHARS_PER_TOKEN))
+
+
+def _center(text: str, keep: int) -> str:
+    """The middle *keep* characters of *text* (a note's chunk is already
+    windowed around its match, so its centre is its most relevant part)."""
+    if keep >= len(text):
+        return text
+    start = (len(text) - keep) // 2
+    return text[start:start + keep]
+
+
+def fit_to_budget(hits, budget: int):
+    """Fit ranked *hits* into a *budget* of characters without truncating the
+    prompt.
+
+    Every note keeps at least an equal centred floor slice (so none is dropped
+    and breadth survives), then the leftover budget tops up the notes best-first
+    toward their full text.  When everything already fits (the common case for
+    normal-sized notes) the hits are returned unchanged.
+    """
+    if not hits or budget <= 0:
+        return hits
+    if sum(len(c.text) for c, _ in hits) <= budget:
+        return hits
+    n = len(hits)
+    floor = budget // n
+    keep = [min(len(c.text), floor) for c, _ in hits]
+    leftover = budget - sum(keep)
+    for i, (c, _) in enumerate(hits):        # top up best-first
+        if leftover <= 0:
+            break
+        add = min(len(c.text) - keep[i], leftover)
+        keep[i] += add
+        leftover -= add
+    out = []
+    for (c, sc), k in zip(hits, keep):
+        if k >= len(c.text):
+            out.append((c, sc))
+        else:
+            out.append(
+                (SimpleNamespace(path=c.path, line=c.line,
+                                 text=_center(c.text, k)), sc))
+    return out
+
+
 def answer(question: str, hits, chat: ChatBackend, language: str = "English",
-           system_template: str | None = None) -> Answer:
+           system_template: str | None = None, char_budget: int | None = None) -> Answer:
     """Retrieve-augmented generation: ground *question* in *hits* and ask *chat*.
 
     *language* is the language the answer must be written in; *system_template*
-    the (user-configurable) system prompt.
+    the (user-configurable) system prompt.  *char_budget*, when given, caps the
+    excerpt characters (see :func:`fit_to_budget`) so the prompt fits the
+    backend's context window instead of being silently truncated.
     """
     if not hits:
         return Answer(text="I couldn't find anything about that in your notes.")
+    if char_budget:
+        hits = fit_to_budget(hits, char_budget)
     system, user, sources = build_messages(question, hits, language, system_template)
     try:
         text = chat.chat(system, user)
@@ -293,3 +356,44 @@ def answer(question: str, hits, chat: ChatBackend, language: str = "English",
         return Answer(text="", sources=sources, error=str(exc))
     cleaned, cited, warnings = verify_citations(text, sources)
     return Answer(text=cleaned, sources=cited, warnings=warnings)
+
+
+#: How many note passages the Ask pipeline retrieves for a question.
+TOP_K = 10
+
+
+def answer_question(question: str, semantic_index, settings: dict, vaults,
+                    language: str, top_k: int = TOP_K) -> Answer:
+    """The full Ask pipeline: retrieve the top passages for *question* from
+    *semantic_index* (scoped to *vaults*), build the configured chat backend,
+    and let it write a grounded, citation-verified answer.
+
+    This is the single source of the retrieval + backend + context-budget
+    wiring, so every caller exercises identical logic instead of restating it.
+    """
+    from . import config  # local import keeps ask import-light for tests
+    if semantic_index is None:
+        return Answer(text="Semantic search is not active — without an index I "
+                           "can't search your notes.")
+    hits = semantic_index.retrieve(question, top_k=top_k, vaults=vaults)
+    logger.info(
+        "ask %r -> %d passages: %s", question, len(hits),
+        [("/".join(c.path.rsplit("/", 2)[-2:]), round(s, 3)) for c, s in hits])
+    model = settings.get("ask_model") or config.default("ask_model")
+    url = settings.get("ask_ollama_url") or config.default("ask_ollama_url")
+    # Only override thinking when the user turned reasoning OFF, so non-reasoning
+    # models (and Ollama, which errors on an unknown "think") keep their default.
+    think = False if not settings.get("ask_reasoning", True) else None
+    cls = OpenAIChat if settings.get("ask_backend") == "openai" else OllamaChat
+    kwargs = dict(model=model, url=url, think=think)
+    # Ollama: set the context window and cap excerpts to fit it. llama.cpp sizes
+    # its context server-side, so we set neither num_ctx nor a client budget.
+    char_budget = None
+    if cls is OllamaChat:
+        num_ctx = int(settings.get("ask_num_ctx") or config.default("ask_num_ctx"))
+        kwargs["num_ctx"] = num_ctx
+        char_budget = context_char_budget(num_ctx)
+    chat = cls(**kwargs)
+    return answer(question, hits, chat, language=language,
+                  system_template=settings.get("ask_system_prompt") or None,
+                  char_budget=char_budget)

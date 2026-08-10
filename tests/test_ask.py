@@ -232,6 +232,44 @@ class TestVerifyCitationsThorough(unittest.TestCase):
         self.assertEqual(warns, [])
 
 
+class TestBudgetFill(unittest.TestCase):
+    """fit_to_budget: never truncate the prompt, never drop a note."""
+
+    def _hits(self, *sizes):
+        return [(_chunk(f"/v/n{i}.md", 1, "x" * s), 1.0 - i * 0.01)
+                for i, s in enumerate(sizes)]
+
+    def test_context_char_budget_leaves_answer_room(self):
+        self.assertEqual(ask.context_char_budget(8192),
+                         int((8192 - 1024) * 3.5))
+        self.assertEqual(ask.context_char_budget(0), 0)  # never negative
+
+    def test_within_budget_is_unchanged(self):
+        hits = self._hits(100, 200, 300)
+        self.assertIs(ask.fit_to_budget(hits, 10000), hits)
+
+    def test_over_budget_keeps_every_note_within_budget(self):
+        hits = self._hits(1000, 1000, 1000, 1000)   # 4000 chars
+        out = ask.fit_to_budget(hits, 2000)
+        self.assertEqual(len(out), len(hits))        # nobody dropped
+        self.assertLessEqual(sum(len(c.text) for c, _ in out), 2000)
+        self.assertTrue(all(c.text for c, _ in out))  # each keeps a floor
+
+    def test_topping_favours_the_best_note(self):
+        # best note (first) is large, rest tiny → it should get the leftover.
+        hits = self._hits(4000, 50, 50)
+        out = ask.fit_to_budget(hits, 1000)
+        self.assertGreater(len(out[0][0].text), len(out[1][0].text))
+        # small notes fit whole (below the floor) and are returned as-is
+        self.assertEqual(out[1][0].text, "x" * 50)
+
+    def test_centre_slice_keeps_the_middle(self):
+        hits = [(_chunk("/v/a.md", 1, "START" + "y" * 90 + "END"), 1.0)]
+        out = ask.fit_to_budget(hits, 20)
+        self.assertNotIn("START", out[0][0].text)
+        self.assertNotIn("END", out[0][0].text)
+
+
 class TestOllamaChatPayload(unittest.TestCase):
     """The Ollama request must raise num_ctx above the truncating default."""
 
