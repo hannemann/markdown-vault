@@ -451,6 +451,8 @@ class QuickOpenPalette(Adw.Dialog):
         self._results.append(self._answer_row(self._answer_text))
         for source in ans.sources:
             self._results.append(self._source_row(source))
+        for warning in getattr(ans, "warnings", []):
+            self._results.append(self._message_row(f"⚠ {warning}"))
         return False
 
     def _on_entry_key(self, _ctrl, keyval, _keycode, _state) -> bool:

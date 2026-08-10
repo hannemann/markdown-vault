@@ -28,11 +28,16 @@ class ChatBackend(Protocol):
 
 @dataclass
 class Source:
-    """A note passage handed to the model, numbered for citation."""
+    """A note passage handed to the model, numbered for citation.
+
+    *text* is the excerpt itself, kept so citation verification can check the
+    answer's numbers against what the excerpt actually contains.
+    """
 
     n: int
     path: str
     line: int
+    text: str = ""
 
 
 @dataclass
@@ -40,6 +45,7 @@ class Answer:
     text: str
     sources: list = field(default_factory=list)
     error: str | None = None
+    warnings: list = field(default_factory=list)
 
 
 # The rules are in English (a neutral instruction language the model follows
@@ -78,7 +84,7 @@ def build_messages(question: str, hits, language: str = "English",
     blocks: list = []
     for i, (chunk, _score) in enumerate(hits, start=1):
         name = os.path.basename(chunk.path)
-        sources.append(Source(n=i, path=chunk.path, line=chunk.line))
+        sources.append(Source(n=i, path=chunk.path, line=chunk.line, text=chunk.text))
         blocks.append(f"[{i}] {name} (line {chunk.line}):\n{chunk.text.strip()}")
     context = "\n\n".join(blocks) if blocks else "(no excerpts)"
     system = (system_template or _SYSTEM).replace("{language}", language)
@@ -88,6 +94,97 @@ def build_messages(question: str, hits, language: str = "English",
         "Answer the question using only these excerpts."
     )
     return system, user, sources
+
+
+# Citation markers the model writes, e.g. "[1]", "[1, 2]".  One group may hold
+# several comma-separated numbers.
+_CITE_RE = re.compile(r"\[\s*(\d+(?:\s*,\s*\d+)*)\s*\]")
+# A number token: digits with interior grouping/decimal separators.
+_NUM_RE = re.compile(r"\d[\d.,]*\d|\d")
+# A value *attributed* to a source: a number directly before the citation on the
+# SAME line, with only unit-ish words between (e.g. "318 Earth masses [1]", "95
+# moons [1]").  The gap allows spaces/tabs but NOT newlines, and a clause
+# boundary (comma) breaks the class — so a list item like "- Jupiter: 95" is not
+# bridged across a paragraph to a later "Aus [4]", and a synthesised "5 planets
+# in total, see [1]" is not treated as attributed either.
+_ATTRIB_RE = re.compile(r"(\d[\d.,]*\d|\d)[A-Za-zÀ-ÿ%°/·×\- \t]{0,15}$")
+# How far back from a citation we look for that attributed number.
+_ATTRIB_WINDOW = 40
+
+
+def _norm_num(tok: str) -> str:
+    """Digits only, so "1.898" / "1,898" / "1898" compare equal."""
+    return re.sub(r"[.,\s]", "", tok)
+
+
+def _excerpt_numbers(text: str) -> set:
+    return {n for n in (_norm_num(m) for m in _NUM_RE.findall(text)) if n}
+
+
+def _cited_nums(group: str) -> list:
+    return [int(x) for x in re.split(r"\s*,\s*", group.strip())]
+
+
+def verify_citations(text: str, sources: list) -> tuple[str, list, list]:
+    """Check an answer's citations against the excerpts it was given.
+
+    Returns ``(cleaned_text, cited_sources, warnings)``:
+
+    * **Stufe 1 (referential integrity):** citation markers pointing outside
+      ``1..N`` are *invented sources* — they are stripped from the text and
+      reported.  The returned sources are only those the answer actually cited
+      (falling back to all excerpts when it cited none, so a forgetful model
+      never yields an empty source list).
+    * **Stufe 2a (numeric grounding):** a number the answer attributes directly
+      to a source — the pattern ``"<value> … [n]"`` — must occur in excerpt
+      ``[n]``.  If it does not, that is flagged (advisory).  Numbers *not*
+      attributed to a specific source (synthesised counts/sums) are left alone,
+      so cross-excerpt derivation is not penalised.
+    """
+    n = len(sources)
+    by_n = {s.n: s for s in sources}
+    warnings: list = []
+
+    # --- Stufe 1 -------------------------------------------------------
+    all_cited = [c for m in _CITE_RE.finditer(text) for c in _cited_nums(m.group(1))]
+    invalid = sorted({c for c in all_cited if c not in by_n})
+    valid = sorted({c for c in all_cited if c in by_n})
+
+    def _prune(m):
+        keep = [c for c in _cited_nums(m.group(1)) if c in by_n]
+        return "[" + ", ".join(map(str, keep)) + "]" if keep else ""
+
+    cleaned = _CITE_RE.sub(_prune, text)
+    cleaned = re.sub(r"\s+([.,;:!?])", r"\1", cleaned)      # tidy " ." left behind
+    cleaned = re.sub(r"[ \t]{2,}", " ", cleaned).strip()
+
+    if invalid:
+        marks = ", ".join(f"[{c}]" for c in invalid)
+        warnings.append(
+            f"Removed invented citation {marks} — only {n} "
+            f"excerpt{'s' if n != 1 else ''} were provided.")
+
+    cited_sources = ([by_n[c] for c in valid if c in by_n] if valid
+                     else list(sources))
+
+    # --- Stufe 2a ------------------------------------------------------
+    for m in _CITE_RE.finditer(cleaned):
+        ns = [c for c in _cited_nums(m.group(1)) if c in by_n]
+        if not ns:
+            continue
+        before = cleaned[max(0, m.start() - _ATTRIB_WINDOW):m.start()]
+        am = _ATTRIB_RE.search(before)
+        if am is None:                 # no number attributed to this citation
+            continue
+        val = am.group(1)
+        norm = _norm_num(val)
+        if norm and not any(norm in _excerpt_numbers(by_n[c].text) for c in ns):
+            marks = ", ".join(f"[{c}]" for c in ns)
+            warnings.append(
+                f"Value {val} is attributed to {marks} but isn't in that "
+                f"excerpt — verify.")
+
+    return cleaned, cited_sources, list(dict.fromkeys(warnings))
 
 
 # A reasoning model (Qwen3, DeepSeek-R1, …) emits a <think>…</think> block that
@@ -185,4 +282,5 @@ def answer(question: str, hits, chat: ChatBackend, language: str = "English",
     except (OSError, ValueError) as exc:  # URLError is an OSError subclass
         logger.warning("ollama chat failed: %s", exc)
         return Answer(text="", sources=sources, error=str(exc))
-    return Answer(text=text, sources=sources)
+    cleaned, cited, warnings = verify_citations(text, sources)
+    return Answer(text=cleaned, sources=cited, warnings=warnings)
