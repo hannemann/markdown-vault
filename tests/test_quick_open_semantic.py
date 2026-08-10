@@ -97,12 +97,22 @@ class TestFirstRow(unittest.TestCase):
         self.assertEqual((start, end), (0, len("hello world")))
 
     def test_answer_copy_button_hidden_and_unfocusable(self):
-        # R39.1 — the hover copy button must not be a hidden Tab stop: it starts
+        # R39.1 — the sticky copy button must not be a hidden Tab stop: it starts
         # invisible (out of hit-test/a11y) and is never focusable.
         p = self._palette()
-        row = p._answer_row("the answer")
-        self.assertFalse(row._mv_copy.get_visible())
-        self.assertFalse(row._mv_copy.get_focusable())
+        self.assertFalse(p._copy_btn.get_visible())
+        self.assertFalse(p._copy_btn.get_focusable())
+
+    def test_reveal_copy_needs_an_answer(self):
+        # Hovering reveals the button only when there is an answer to copy.
+        p = self._palette()
+        p._reveal_copy(True)
+        self.assertFalse(p._copy_btn.get_visible())   # no answer yet
+        p._has_answer = True
+        p._reveal_copy(True)
+        self.assertTrue(p._copy_btn.get_visible())
+        p._reveal_copy(False)
+        self.assertFalse(p._copy_btn.get_visible())
 
     def test_last_question_accessors_persist_value(self):
         p = self._palette()

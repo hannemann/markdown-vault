@@ -53,6 +53,7 @@ class QuickOpenPalette(Adw.Dialog):
         self._last_question = ""        # kept so reopening shows it beside the answer
         self._answer_label = None       # the answer row's label (for copy-select)
         self._answer_text = ""          # plain answer text, copied on Ctrl+C
+        self._has_answer = False        # gates the sticky copy button
         self._shown_paths: set[str] = set()
         self.set_title("Quick Open")
         self.set_content_width(640)
@@ -106,7 +107,30 @@ class QuickOpenPalette(Adw.Dialog):
         scrolled = Gtk.ScrolledWindow()
         scrolled.set_child(self._results)
         scrolled.set_vexpand(True)
-        box.append(scrolled)
+
+        # Copy button for mouse users — pinned to the top-right of the scroll
+        # viewport (not the answer row) so it stays put while the answer scrolls.
+        # Hidden until there's an answer AND the pointer is over the results;
+        # unfocusable so Tab never lands on it (keyboard users use Ctrl+C).
+        results_overlay = Gtk.Overlay()
+        results_overlay.set_child(scrolled)
+        self._copy_btn = Gtk.Button(icon_name="edit-copy-symbolic")
+        self._copy_btn.add_css_class("osd")
+        self._copy_btn.add_css_class("circular")
+        self._copy_btn.set_tooltip_text("Copy answer")
+        self._copy_btn.set_halign(Gtk.Align.END)
+        self._copy_btn.set_valign(Gtk.Align.START)
+        self._copy_btn.set_margin_top(6)
+        self._copy_btn.set_margin_end(14)   # clear the scrollbar
+        self._copy_btn.set_focusable(False)
+        self._copy_btn.set_visible(False)
+        self._copy_btn.connect("clicked", lambda *_: self._copy_answer())
+        results_overlay.add_overlay(self._copy_btn)
+        motion = Gtk.EventControllerMotion()
+        motion.connect("enter", lambda *_a: self._reveal_copy(True))
+        motion.connect("leave", lambda *_a: self._reveal_copy(False))
+        results_overlay.add_controller(motion)
+        box.append(results_overlay)
 
         # Footer: vault scope + mode toggle, right-aligned, so the entry above
         # gets the full header width.
@@ -313,8 +337,9 @@ class QuickOpenPalette(Adw.Dialog):
     def _answer_row(self, text: str) -> Gtk.ListBoxRow:
         """The generated answer. Selectable (a keyboard stop so ↓ lands here
         first, its text highlighted for copy) but not activatable (nothing to
-        open); Ctrl+C here copies the whole answer. A copy button appears in the
-        top-right corner on mouse hover for pointer users."""
+        open); Ctrl+C here copies the whole answer. The copy button for mouse
+        users is sticky over the scroll area (see __init__), not on this row, so
+        it stays put while the answer scrolls."""
         row = Gtk.ListBoxRow()
         row.set_activatable(False)
         row.set_selectable(True)
@@ -328,33 +353,7 @@ class QuickOpenPalette(Adw.Dialog):
         label.set_margin_start(8)
         label.set_margin_end(8)
         self._answer_label = label
-
-        overlay = Gtk.Overlay()
-        overlay.set_child(label)
-        copy_btn = Gtk.Button(icon_name="edit-copy-symbolic")
-        copy_btn.add_css_class("osd")  # opaque overlay chip so it stands out on text
-        copy_btn.add_css_class("circular")
-        copy_btn.set_tooltip_text("Copy answer")
-        copy_btn.set_halign(Gtk.Align.END)
-        copy_btn.set_valign(Gtk.Align.START)
-        copy_btn.set_margin_top(4)
-        copy_btn.set_margin_end(4)
-        # A mouse-only affordance: keyboard users copy with Ctrl+C on the row.
-        # Toggle real visibility (not opacity) so a hidden button stays out of
-        # the focus chain, hit-testing and the a11y tree (R39.1); keep it
-        # unfocusable so Tab never lands on it either.
-        copy_btn.set_focusable(False)
-        copy_btn.set_visible(False)
-        copy_btn.connect("clicked", lambda *_: self._copy_answer())
-        overlay.add_overlay(copy_btn)
-        row._mv_copy = copy_btn
-
-        motion = Gtk.EventControllerMotion()
-        motion.connect("enter", lambda *_a: copy_btn.set_visible(True))
-        motion.connect("leave", lambda *_a: copy_btn.set_visible(False))
-        row.add_controller(motion)
-
-        row.set_child(overlay)
+        row.set_child(label)
         return row
 
     def _source_row(self, source) -> Gtk.ListBoxRow:
@@ -380,6 +379,13 @@ class QuickOpenPalette(Adw.Dialog):
             nxt = child.get_next_sibling()
             self._results.remove(child)
             child = nxt
+        self._has_answer = False
+        self._copy_btn.set_visible(False)
+
+    def _reveal_copy(self, show: bool) -> None:
+        """Show the sticky copy button while the pointer is over the results —
+        but only when there is actually an answer to copy."""
+        self._copy_btn.set_visible(show and self._has_answer)
 
     # ------------------------------------------------------------------
     # Activation & keyboard
@@ -453,6 +459,9 @@ class QuickOpenPalette(Adw.Dialog):
             self._results.append(self._source_row(source))
         for warning in getattr(ans, "warnings", []):
             self._results.append(self._message_row(f"⚠ {warning}"))
+        # Arm the copy button, but keep it hidden until the pointer hovers the
+        # results — showing it up-front distracts while reading.
+        self._has_answer = True
         return False
 
     def _on_entry_key(self, _ctrl, keyval, _keycode, _state) -> bool:
