@@ -109,6 +109,129 @@ class TestVerifyCitations(unittest.TestCase):
         self.assertEqual(warns, [])
 
 
+class TestVerifyCitationsThorough(unittest.TestCase):
+    """Systematic edge coverage for verify_citations (see ask-next-steps)."""
+
+    # --- Stufe 1: referential integrity -------------------------------
+
+    def test_multiple_valid_citations_reduce_to_cited_subset_in_order(self):
+        srcs = [_src(1, "a"), _src(2, "b"), _src(3, "c")]
+        _t, cited, warns = ask.verify_citations("See [3] and [1].", srcs)
+        self.assertEqual([s.n for s in cited], [1, 3])  # ascending, only cited
+        self.assertEqual(warns, [])
+
+    def test_duplicate_valid_citation_listed_once(self):
+        srcs = [_src(1, "a"), _src(2, "b")]
+        _t, cited, _w = ask.verify_citations("[1] and again [1].", srcs)
+        self.assertEqual([s.n for s in cited], [1])
+
+    def test_all_invalid_falls_back_to_all_sources_and_warns(self):
+        srcs = [_src(1, "a"), _src(2, "b")]
+        text, cited, warns = ask.verify_citations("Only [9] here.", srcs)
+        self.assertEqual(text, "Only here.")
+        self.assertEqual([s.n for s in cited], [1, 2])  # fallback: all
+        self.assertTrue(any("[9]" in w for w in warns))
+
+    def test_grouped_valid_citation_maps_both_sources(self):
+        srcs = [_src(1, "a"), _src(2, "b"), _src(3, "c")]
+        _t, cited, _w = ask.verify_citations("Both [1, 2].", srcs)
+        self.assertEqual([s.n for s in cited], [1, 2])
+
+    def test_whitespace_inside_brackets_is_parsed(self):
+        srcs = [_src(1, "a"), _src(2, "b")]
+        text, cited, warns = ask.verify_citations("X [ 1 , 2 ].", srcs)
+        self.assertEqual([s.n for s in cited], [1, 2])
+        self.assertEqual(warns, [])
+        self.assertEqual(text, "X [1, 2].")  # normalised spacing
+
+    def test_leading_citation_stripped_and_trimmed(self):
+        srcs = [_src(1, "a")]
+        text, _c, _w = ask.verify_citations("[9] Jupiter is big.", srcs)
+        self.assertEqual(text, "Jupiter is big.")
+
+    def test_invented_number_reported_once_when_repeated(self):
+        srcs = [_src(1, "a")]
+        _t, _c, warns = ask.verify_citations("[7] foo [7] bar.", srcs)
+        self.assertEqual(len(warns), 1)
+
+    def test_non_contiguous_source_numbers_stay_valid(self):
+        # After eingedampfen the model may cite e.g. [1] and [4]; both real.
+        srcs = [_src(1, "a"), _src(4, "d")]
+        _t, cited, warns = ask.verify_citations("See [1] and [4].", srcs)
+        self.assertEqual([s.n for s in cited], [1, 4])
+        self.assertEqual(warns, [])
+
+    def test_singular_excerpt_grammar(self):
+        srcs = [_src(1, "a")]
+        _t, _c, warns = ask.verify_citations("Bad [5].", srcs)
+        self.assertTrue(any("1 excerpt to cite" in w for w in warns))
+
+    def test_no_sources_does_not_crash(self):
+        text, cited, warns = ask.verify_citations("Answer [1].", [])
+        self.assertEqual(text, "Answer.")
+        self.assertEqual(cited, [])
+        self.assertTrue(warns)
+
+    def test_plain_text_without_citations_is_unchanged(self):
+        srcs = [_src(1, "a")]
+        text, cited, warns = ask.verify_citations("Just prose, no cites.", srcs)
+        self.assertEqual(text, "Just prose, no cites.")
+        self.assertEqual([s.n for s in cited], [1])
+        self.assertEqual(warns, [])
+
+    # --- Stufe 2a: numeric attribution --------------------------------
+
+    def test_comma_clause_breaks_attribution(self):
+        srcs = [_src(1, "no numbers here at all")]
+        _t, _c, warns = ask.verify_citations("5 planets, see [1].", srcs)
+        self.assertEqual(warns, [])  # "5" separated by a comma → not attributed
+
+    def test_decimal_comma_normalises(self):
+        srcs = [_src(1, "Umlaufzeit 11,86 Jahre")]
+        _t, _c, warns = ask.verify_citations("Es sind 11,86 Jahre [1].", srcs)
+        self.assertEqual(warns, [])
+
+    def test_percent_value_present(self):
+        srcs = [_src(1, "etwa 50% der Masse")]
+        _t, _c, warns = ask.verify_citations("Rund 50% davon [1].", srcs)
+        self.assertEqual(warns, [])
+
+    def test_zero_value_present(self):
+        srcs = [_src(1, "Merkur hat 0 Monde")]
+        _t, _c, warns = ask.verify_citations("Merkur: 0 Monde [1].", srcs)
+        self.assertEqual(warns, [])
+
+    def test_group_attribution_present_in_one_excerpt_is_ok(self):
+        srcs = [_src(1, "Jupiter 318 Erdmassen"), _src(2, "nichts")]
+        _t, _c, warns = ask.verify_citations("Masse 318 [1, 2].", srcs)
+        self.assertEqual(warns, [])
+
+    def test_group_attribution_absent_from_all_excerpts_warns(self):
+        srcs = [_src(1, "keine zahl"), _src(2, "auch nicht")]
+        _t, _c, warns = ask.verify_citations("Masse 318 [1, 2].", srcs)
+        self.assertTrue(any("318" in w for w in warns))
+
+    def test_mixed_attributed_numbers_flag_only_absent(self):
+        srcs = [_src(1, "hat 318 Erdmassen")]
+        _t, _c, warns = ask.verify_citations(
+            "A 318 [1] und B 999 [1].", srcs)
+        joined = " ".join(warns)
+        self.assertIn("999", joined)
+        self.assertNotIn("318", joined)
+
+    def test_repeated_absent_value_warned_once(self):
+        srcs = [_src(1, "leer")]
+        _t, _c, warns = ask.verify_citations("X 999 [1]. Y 999 [1].", srcs)
+        self.assertEqual(len(warns), 1)
+
+    def test_adjacent_citations_do_not_attribute_bracket_digits(self):
+        # "[1][2]" — the "1" inside the first bracket must not be read as a
+        # value attributed to [2].
+        srcs = [_src(1, "a"), _src(2, "b")]
+        _t, _c, warns = ask.verify_citations("Facts [1][2].", srcs)
+        self.assertEqual(warns, [])
+
+
 class TestOllamaChatPayload(unittest.TestCase):
     """The Ollama request must raise num_ctx above the truncating default."""
 
