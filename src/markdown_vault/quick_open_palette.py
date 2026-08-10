@@ -8,7 +8,6 @@ a fresh engine on open, renders results and handles keyboard navigation.
 import logging
 import os
 import threading
-from pathlib import Path
 
 import gi
 
@@ -16,6 +15,9 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 
 from gi.repository import Gtk, Adw, GObject, GLib, Gdk
+
+from . import path_utils
+from .quick_open import fuzzy_match
 
 logger = logging.getLogger(__name__)
 
@@ -271,25 +273,25 @@ class QuickOpenPalette(Adw.Dialog):
         text = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
         text.set_hexpand(True)
 
-        # When an alias (or path) matched, show it highlighted and keep the
-        # real file name in the subtitle so the target stays clear.
-        label_text = result.matched_text or result.name
-        subtitle = result.folder
-        if result.matched_text:
-            subtitle = f"{result.name}  ·  {result.folder}"
-
+        # The hit's title is its vault-relative path ("<vault>/<path>", no .md)
+        # so the vault and location are visible without a second line.  Bold the
+        # characters of the current query that occur in that path.
+        display = path_utils.vault_relative_name(result.path)
         name = Gtk.Label()
         name.set_xalign(0)
         name.set_ellipsize(3)  # PANGO_ELLIPSIZE_END
-        name.set_markup(_highlight_positions(label_text, result.positions))
+        name.set_markup(_highlight_positions(display, _match_positions(
+            self._entry.get_text().strip(), display)))
         text.append(name)
 
-        folder = Gtk.Label(label=subtitle)
-        folder.set_xalign(0)
-        folder.add_css_class("dim-label")
-        folder.add_css_class("mono")
-        folder.set_ellipsize(1)  # PANGO_ELLIPSIZE_START — keep the tail
-        text.append(folder)
+        # Only when a frontmatter alias is what matched, show it so the reason
+        # for the hit stays clear (the path above wouldn't reveal it).
+        if result.matched_text and result.matched_text != result.name:
+            alias = Gtk.Label(label=f"≡ {result.matched_text}")
+            alias.set_xalign(0)
+            alias.add_css_class("dim-label")
+            alias.set_ellipsize(3)  # PANGO_ELLIPSIZE_END
+            text.append(alias)
 
         box.append(text)
         row.set_child(box)
@@ -360,7 +362,8 @@ class QuickOpenPalette(Adw.Dialog):
         row = Gtk.ListBoxRow()
         row._mv_open = (source.path, source.line)
         label = Gtk.Label(
-            label=f"[{source.n}]  {Path(source.path).stem}:{source.line}")
+            label=f"[{source.n}]  "
+                  f"{path_utils.vault_relative_name(source.path)}:{source.line}")
         label.set_xalign(0)
         label.add_css_class("dim-label")
         label.add_css_class("mono")
@@ -505,6 +508,19 @@ class QuickOpenPalette(Adw.Dialog):
         if self._answer_text:
             self.get_clipboard().set(self._answer_text)
             self._toast_overlay.add_toast(Adw.Toast(title="Copied!", timeout=2))
+
+
+def _match_positions(query: str, text: str) -> list:
+    """Char indices in *text* the fuzzy *query* matches, for bolding the title.
+
+    Recomputed against the *displayed* path (not the ranking's positions, which
+    index the file stem or an alias), so the highlight lines up with what is
+    shown.  Empty when there is no query or no subsequence match.
+    """
+    if not query:
+        return []
+    hit = fuzzy_match(query, text)
+    return hit[1] if hit else []
 
 
 def _highlight_positions(name: str, positions: list) -> str:

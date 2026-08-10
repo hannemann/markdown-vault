@@ -19,7 +19,6 @@ import logging
 import os
 import re
 import threading
-from pathlib import Path
 
 import gi
 
@@ -28,7 +27,7 @@ gi.require_version("Adw", "1")
 
 from gi.repository import Gtk, GObject, GLib, Gdk
 
-from . import search_backend
+from . import path_utils, search_backend
 
 logger = logging.getLogger(__name__)
 
@@ -348,18 +347,14 @@ class SearchBar(Gtk.Box):
             marker.set_tooltip_text("Semantic match")
             box.append(marker)
 
-        name = Gtk.Label(label=Path(fr.path).name)
+        # The file identity is its vault-relative path ("<vault>/<path>", no
+        # .md) so the hit's vault and location are visible at a glance.
+        name = Gtk.Label(label=path_utils.vault_relative_name(fr.path))
         name.add_css_class("search-file-name")
         name.set_xalign(0)
+        name.set_ellipsize(3)  # PANGO_ELLIPSIZE_END — keep the vault name
+        name.set_hexpand(True)
         box.append(name)
-
-        folder = Gtk.Label(label=str(Path(fr.path).parent))
-        folder.add_css_class("dim-label")
-        folder.add_css_class("mono")
-        folder.set_xalign(0)
-        folder.set_ellipsize(1)  # PANGO_ELLIPSIZE_START — keep the tail visible
-        folder.set_hexpand(True)
-        box.append(folder)
 
         if fr.total_matches:
             count = Gtk.Label(label=str(fr.total_matches))

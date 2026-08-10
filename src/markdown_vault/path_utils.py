@@ -93,6 +93,24 @@ def find_vault_name_for_path(file_path: str) -> str | None:
     return None
 
 
+def vault_relative_name(file_path: str) -> str:
+    """``<vault name>/<path/to/file>`` without the ``.md`` extension.
+
+    Shown as the title of a search / quick-open hit (and in Ask-mode citations)
+    so the vault and location of a result are visible at a glance instead of a
+    bare file stem.  Falls back to the file's stem when it is outside every
+    configured vault.
+    """
+    for entry in config.load_vaults():
+        if _path_is_within(entry["path"], file_path):
+            rel = os.path.relpath(file_path, entry["path"])
+            if rel.lower().endswith(".md"):
+                rel = rel[:-3]
+            return f"{entry['name']}/{rel}"
+    stem = os.path.basename(file_path)
+    return stem[:-3] if stem.lower().endswith(".md") else stem
+
+
 def find_vault_for_dir(dir_path: str, vault_paths: list[str] | None = None) -> str | None:
     """Return the vault root that contains *dir_path*, or ``None``.
 

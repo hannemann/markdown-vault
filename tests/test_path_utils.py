@@ -159,6 +159,32 @@ class TestResolveVaultPath(_TempConfigMixin, unittest.TestCase):
         self.assertNotEqual(first, third)
 
 
+class TestVaultRelativeName(_TempConfigMixin, unittest.TestCase):
+    """Tests for vault_relative_name() — the hit-row title."""
+
+    def setUp(self):
+        super().setUp()
+        from markdown_vault.path_utils import vault_relative_name
+        self._name = vault_relative_name
+        _cfg.CONFIG_FILE.write_text(
+            "vaults:\n"
+            "  - name: Wissenschaft\n    path: /vaults/Wissenschaft\n"
+            "  - name: Business\n    path: /vaults/Business\n",
+            encoding="utf-8",
+        )
+
+    def test_file_at_vault_root(self):
+        self.assertEqual(self._name("/vaults/Wissenschaft/Jupiter.md"),
+                         "Wissenschaft/Jupiter")
+
+    def test_file_in_subdir(self):
+        self.assertEqual(self._name("/vaults/Wissenschaft/Planeten/Mars.md"),
+                         "Wissenschaft/Planeten/Mars")
+
+    def test_file_outside_vaults_falls_back_to_stem(self):
+        self.assertEqual(self._name("/elsewhere/notes/loose.md"), "loose")
+
+
 class TestResolveWikilink(_TempConfigMixin, unittest.TestCase):
     """Tests for resolve_wikilink()."""
 
