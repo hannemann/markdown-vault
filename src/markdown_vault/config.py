@@ -299,6 +299,11 @@ _DEFAULT_SETTINGS = {
     # grounded note Q&A, disabling it is faster and better calibrated. Only sent
     # to the backend when False, so non-reasoning models are unaffected.
     "ask_reasoning": True,
+    # Context window (tokens) requested from Ollama. Its own default (2048)
+    # truncates multi-note contexts; note-level retrieval needs more. Larger =
+    # fits more/longer notes, but costs memory. Only used by the Ollama backend
+    # (llama.cpp sizes its context server-side).
+    "ask_num_ctx": 8192,
 }
 
 

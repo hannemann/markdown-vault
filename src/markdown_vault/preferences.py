@@ -733,6 +733,19 @@ class PreferencesDialog(Adw.PreferencesDialog):
             "notify::active", self._on_toggle_setting, "ask_reasoning")
         group.add(self._ask_reasoning_row)
 
+        self._ask_ctx_row = Adw.SpinRow(
+            title="Context window",
+            subtitle="Tokens sent to Ollama. Its default (2048) truncates "
+                     "multi-note answers; higher fits more/longer notes but uses "
+                     "more memory. Not used by the llama.cpp backend.",
+            adjustment=Gtk.Adjustment.new(
+                self._settings.get("ask_num_ctx", 8192),
+                2048, 32768, 1024, 4096, 0.0),
+            digits=0,
+        )
+        self._ask_ctx_row.connect("notify::value", self._on_ask_num_ctx_changed)
+        group.add(self._ask_ctx_row)
+
         group.add(self._nav_row(
             "System prompt", "Grounding instructions sent to the model",
             self._prompt_subpage))
@@ -1121,6 +1134,11 @@ class PreferencesDialog(Adw.PreferencesDialog):
     def _on_min_score_changed(self, _row, _pspec) -> None:
         self._settings["semantic_min_score"] = round(
             self._sem_score_row.get_adjustment().get_value(), 2)
+        self._persist()
+
+    def _on_ask_num_ctx_changed(self, _row, _pspec) -> None:
+        self._settings["ask_num_ctx"] = int(
+            self._ask_ctx_row.get_adjustment().get_value())
         self._persist()
 
     _PERSIST_DEBOUNCE_MS = 600

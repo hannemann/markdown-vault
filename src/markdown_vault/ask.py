@@ -160,9 +160,10 @@ def verify_citations(text: str, sources: list) -> tuple[str, list, list]:
 
     if invalid:
         marks = ", ".join(f"[{c}]" for c in invalid)
+        excerpts = f"{n} excerpt{'' if n == 1 else 's'}"
         warnings.append(
-            f"Removed invented citation {marks} — only {n} "
-            f"excerpt{'s' if n != 1 else ''} were provided.")
+            f"Removed invented citation {marks} — the answer had only "
+            f"{excerpts} to cite.")
 
     cited_sources = ([by_n[c] for c in valid if c in by_n] if valid
                      else list(sources))
@@ -201,12 +202,20 @@ class OllamaChat:
     default (safe for models that don't support it), or ``False`` to disable it.
     """
 
+    #: Context window requested from Ollama.  Its default (num_ctx=2048) silently
+    #: truncates the prompt, and note-level retrieval (whole notes) routinely
+    #: exceeds that — a truncated prompt makes the model refuse or drop its
+    #: citations.  8192 covers the typical multi-note context on a GPU host.
+    DEFAULT_NUM_CTX = 8192
+
     def __init__(self, model: str, url: str = "http://localhost:11434",
-                 timeout: float = 120.0, think: bool | None = None) -> None:
+                 timeout: float = 120.0, think: bool | None = None,
+                 num_ctx: int = DEFAULT_NUM_CTX) -> None:
         self.model = model
         self.url = url.rstrip("/")
         self.timeout = timeout
         self.think = think
+        self.num_ctx = num_ctx
 
     def chat(self, system: str, user: str) -> str:
         payload = {
@@ -216,7 +225,7 @@ class OllamaChat:
                 {"role": "user", "content": user},
             ],
             "stream": False,
-            "options": {"temperature": 0.2},
+            "options": {"temperature": 0.2, "num_ctx": self.num_ctx},
         }
         if self.think is not None:   # only send when overriding, else model default
             payload["think"] = self.think

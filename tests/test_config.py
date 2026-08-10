@@ -275,6 +275,14 @@ class TestSettings(_TempConfigMixin, unittest.TestCase):
         s = _cfg.load_settings()
         self.assertEqual(s["autosave_interval"], 30)
 
+    def test_ask_num_ctx_default_and_round_trip(self):
+        self.assertEqual(_cfg.default("ask_num_ctx"), 8192)
+        self.assertEqual(_cfg.load_settings()["ask_num_ctx"], 8192)
+        settings = _cfg.load_settings()
+        settings["ask_num_ctx"] = 16384
+        _cfg.save_settings(settings)
+        self.assertEqual(_cfg.load_settings()["ask_num_ctx"], 16384)
+
     def test_save_and_load_round_trip(self):
         settings = _cfg.load_settings()
         settings["autosave_interval"] = 60

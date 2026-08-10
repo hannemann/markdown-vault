@@ -109,6 +109,37 @@ class TestVerifyCitations(unittest.TestCase):
         self.assertEqual(warns, [])
 
 
+class TestOllamaChatPayload(unittest.TestCase):
+    """The Ollama request must raise num_ctx above the truncating default."""
+
+    def _capture(self, **kwargs):
+        import io, json
+        from unittest import mock
+        captured = {}
+
+        class FakeResp(io.BytesIO):
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+
+        def fake_urlopen(req, timeout=None):
+            captured["body"] = json.loads(req.data.decode())
+            return FakeResp(json.dumps({"message": {"content": "hi"}}).encode())
+
+        with mock.patch("markdown_vault.ask.urllib.request.urlopen", fake_urlopen):
+            out = ask.OllamaChat("m", "http://x", **kwargs).chat("s", "u")
+        return out, captured["body"]
+
+    def test_default_num_ctx_is_large(self):
+        out, body = self._capture()
+        self.assertEqual(out, "hi")
+        self.assertEqual(body["options"]["num_ctx"], ask.OllamaChat.DEFAULT_NUM_CTX)
+        self.assertGreaterEqual(body["options"]["num_ctx"], 8192)
+
+    def test_num_ctx_is_overridable(self):
+        _out, body = self._capture(num_ctx=4096)
+        self.assertEqual(body["options"]["num_ctx"], 4096)
+
+
 class TestAnswer(unittest.TestCase):
     def test_no_hits_returns_grounded_fallback(self):
         a = ask.answer("q", [], chat=None)  # chat must not be called with no hits

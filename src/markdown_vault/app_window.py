@@ -1458,7 +1458,11 @@ class MainWindow(Adw.ApplicationWindow):
         think = False if not self._settings.get("ask_reasoning", True) else None
         cls = (ask.OpenAIChat if self._settings.get("ask_backend") == "openai"
                else ask.OllamaChat)
-        chat = cls(model=model, url=url, think=think)
+        kwargs = dict(model=model, url=url, think=think)
+        if cls is ask.OllamaChat:  # llama.cpp sizes its context server-side
+            kwargs["num_ctx"] = int(self._settings.get("ask_num_ctx")
+                                    or config.default("ask_num_ctx"))
+        chat = cls(**kwargs)
         return ask.answer(
             question, hits, chat,
             language=self._answer_language(),
