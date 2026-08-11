@@ -8,6 +8,7 @@ a fresh engine on open, renders results and handles keyboard navigation.
 import logging
 import os
 import threading
+import time
 
 import gi
 
@@ -37,12 +38,23 @@ class QuickOpenPalette(Adw.Dialog):
     _SEMANTIC_MIN_CHARS = 2
 
     def __init__(self, make_engine, semantic_query=None, ask_answer=None,
-                 scope=None, can_ask=None) -> None:
+                 scope=None, can_ask=None, ask_candidates=None,
+                 ask_answer_selected=None, get_top_k=None) -> None:
         super().__init__()
         self._make_engine = make_engine
         self._semantic_query = semantic_query  # callable(query) -> list, off-thread
         self._ask_answer = ask_answer          # callable(question) -> ask.Answer
         self._can_ask = can_ask                # () -> bool: is Ask usable right now?
+        # "Pick your own sources": candidates() -> [(path, score)], and
+        # answer_selected(question, paths) -> ask.Answer; get_top_k() -> int cap.
+        self._ask_candidates = ask_candidates
+        self._ask_answer_selected = ask_answer_selected
+        self._get_top_k = get_top_k
+        self._pick_toggle = None        # "pick sources" toggle (footer)
+        self._answer_btn = None         # "Answer (n)" button shown while picking
+        self._candidates = []           # [(path, score)] currently offered
+        self._selected: list[str] = []  # chosen paths (ordered, capped at top_k)
+        self._pick_question = ""        # the question the candidates are for
         self._scope = scope                    # shared vault-scope callbacks
         self._mode_locked = False              # user explicitly chose a mode
         self._suppress_toggle = False          # guard programmatic toggle changes
@@ -54,6 +66,9 @@ class QuickOpenPalette(Adw.Dialog):
         self._answer_label = None       # the answer row's label (for copy-select)
         self._answer_text = ""          # plain answer text, copied on Ctrl+C
         self._has_answer = False        # gates the sticky copy button
+        self._timer_label = None        # footer elapsed-time readout (ask mode)
+        self._timer_id = None           # GLib source ticking the elapsed time
+        self._ask_started = 0.0         # time.monotonic() when the ask began
         self._shown_paths: set[str] = set()
         self.set_title("Quick Open")
         self.set_content_width(640)
@@ -132,14 +147,24 @@ class QuickOpenPalette(Adw.Dialog):
         results_overlay.add_controller(motion)
         box.append(results_overlay)
 
-        # Footer: vault scope + mode toggle, right-aligned, so the entry above
-        # gets the full header width.
+        # Footer: an elapsed-time readout on the left (Ask mode), the vault scope
+        # and mode toggle on the right. The timer label hexpands, pushing the
+        # controls to the right edge.
         footer = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-        footer.set_halign(Gtk.Align.END)
         footer.set_margin_top(6)
         footer.set_margin_bottom(8)
         footer.set_margin_start(8)
         footer.set_margin_end(8)
+        self._timer_label = Gtk.Label(xalign=0)
+        self._timer_label.add_css_class("dim-label")
+        self._timer_label.set_hexpand(True)
+        footer.append(self._timer_label)
+        # "Answer (n)" — the confirm button while picking sources (hidden otherwise).
+        self._answer_btn = Gtk.Button(label="Answer")
+        self._answer_btn.add_css_class("suggested-action")
+        self._answer_btn.set_visible(False)
+        self._answer_btn.connect("clicked", lambda *_: self._answer_from_selection())
+        footer.append(self._answer_btn)
         self._scope_dropdown = None
         if self._scope:
             from .vault_scope import VaultScope
@@ -148,6 +173,13 @@ class QuickOpenPalette(Adw.Dialog):
                 self._scope["get_scope"], self._scope["set_scope"],
                 on_change=self._on_scope_changed)
             footer.append(self._scope_dropdown)
+        if ask_candidates is not None:
+            self._pick_toggle = Gtk.ToggleButton()
+            self._pick_toggle.set_icon_name("view-list-symbolic")
+            self._pick_toggle.set_tooltip_text(
+                "Pick sources — choose which notes to answer from")
+            self._pick_toggle.connect("toggled", self._on_pick_toggled)
+            footer.append(self._pick_toggle)
         if ask_answer is not None:
             self._ask_toggle = Gtk.ToggleButton()
             self._ask_toggle.set_icon_name("dialog-question-symbolic")
@@ -334,6 +366,28 @@ class QuickOpenPalette(Adw.Dialog):
         row.set_child(label)
         return row
 
+    def _thinking_row(self) -> Gtk.ListBoxRow:
+        """The 'Thinking…' placeholder with a spinner pinned to its right —
+        a running-indicator while the (possibly slow, local) model answers."""
+        row = Gtk.ListBoxRow()
+        row.set_activatable(False)
+        row.set_selectable(False)
+        box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        label = Gtk.Label(label="Thinking…")
+        label.set_xalign(0)
+        label.set_hexpand(True)          # pushes the spinner to the right edge
+        label.add_css_class("dim-label")
+        label.set_margin_top(6)
+        label.set_margin_bottom(6)
+        label.set_margin_start(8)
+        box.append(label)
+        spinner = Gtk.Spinner()
+        spinner.set_margin_end(8)
+        spinner.start()
+        box.append(spinner)
+        row.set_child(box)
+        return row
+
     def _answer_row(self, text: str) -> Gtk.ListBoxRow:
         """The generated answer. Selectable (a keyboard stop so ↓ lands here
         first, its text highlighted for copy) but not activatable (nothing to
@@ -381,11 +435,41 @@ class QuickOpenPalette(Adw.Dialog):
             child = nxt
         self._has_answer = False
         self._copy_btn.set_visible(False)
+        self._stop_ticking()
+        if self._timer_label is not None:
+            self._timer_label.set_text("")
+        self._candidates = []
+        self._selected = []
+        if self._answer_btn is not None:
+            self._answer_btn.set_visible(False)
 
     def _reveal_copy(self, show: bool) -> None:
         """Show the sticky copy button while the pointer is over the results —
         but only when there is actually an answer to copy."""
         self._copy_btn.set_visible(show and self._has_answer)
+
+    # ------------------------------------------------------------------
+    # Ask elapsed-time readout (footer, left) — ticks while the model runs
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _fmt_secs(seconds: float) -> str:
+        return f"{seconds:.1f}".replace(".", ",") + " s"
+
+    def _start_timer(self) -> None:
+        self._ask_started = time.monotonic()
+        self._stop_ticking()
+        self._timer_label.set_text(self._fmt_secs(0.0))
+        self._timer_id = GLib.timeout_add(100, self._tick)
+
+    def _tick(self) -> bool:
+        self._timer_label.set_text(self._fmt_secs(time.monotonic() - self._ask_started))
+        return True  # keep ticking
+
+    def _stop_ticking(self) -> None:
+        if self._timer_id is not None:
+            GLib.source_remove(self._timer_id)
+            self._timer_id = None
 
     # ------------------------------------------------------------------
     # Activation & keyboard
@@ -396,10 +480,23 @@ class QuickOpenPalette(Adw.Dialog):
 
     def _on_entry_activate(self, _entry) -> None:
         if self._ask_mode:
-            self._run_ask()
+            if self._pick_active():
+                self._show_candidates()
+            else:
+                self._run_ask()
             return
         row = self._results.get_selected_row() or self._first_row()
         self._activate(row)
+
+    def _pick_active(self) -> bool:
+        return (self._pick_toggle is not None and self._pick_toggle.get_active()
+                and self._ask_candidates is not None)
+
+    def _top_k(self) -> int:
+        try:
+            return max(1, int(self._get_top_k())) if self._get_top_k else 10
+        except (TypeError, ValueError):
+            return 10
 
     def _activate(self, row) -> None:
         target = getattr(row, "_mv_open", None) if row is not None else None
@@ -431,7 +528,8 @@ class QuickOpenPalette(Adw.Dialog):
             return
         self._last_question = question
         self._clear()
-        self._results.append(self._message_row("Thinking…"))
+        self._results.append(self._thinking_row())
+        self._start_timer()
         self._ask_generation += 1
         generation = self._ask_generation
 
@@ -449,9 +547,11 @@ class QuickOpenPalette(Adw.Dialog):
     def _show_answer(self, generation: int, ans) -> bool:
         if generation != self._ask_generation:
             return False  # superseded by a newer question / mode switch
-        self._clear()
+        elapsed = time.monotonic() - self._ask_started
+        self._clear()          # also stops the ticking timer + clears its label
         if ans.error:
             self._results.append(self._message_row(f"Error: {ans.error}"))
+            self._timer_label.set_text(self._fmt_secs(elapsed))
             return False
         self._answer_text = ans.text or "(empty answer)"
         self._results.append(self._answer_row(self._answer_text))
@@ -459,10 +559,128 @@ class QuickOpenPalette(Adw.Dialog):
             self._results.append(self._source_row(source))
         for warning in getattr(ans, "warnings", []):
             self._results.append(self._message_row(f"⚠ {warning}"))
-        # Arm the copy button, but keep it hidden until the pointer hovers the
-        # results — showing it up-front distracts while reading.
+        # Leave the total time in the footer, and arm the copy button (hidden
+        # until the pointer hovers the results — up-front it distracts).
+        self._timer_label.set_text(self._fmt_secs(elapsed))
         self._has_answer = True
         return False
+
+    # ------------------------------------------------------------------
+    # Pick-your-own-sources: offer the top candidates, answer from the chosen
+    # ------------------------------------------------------------------
+
+    def _on_pick_toggled(self, _btn) -> None:
+        if self._ask_mode:
+            self._clear()
+            self._results.append(self._message_row("Type a question, then Enter."))
+
+    def _show_candidates(self) -> None:
+        question = self._entry.get_text().strip()
+        if not question or self._ask_candidates is None:
+            return
+        self._pick_question = question
+        self._last_question = question
+        self._clear()
+        self._results.append(self._message_row("Finding candidates…"))
+        self._ask_generation += 1
+        generation = self._ask_generation
+
+        def worker():
+            try:
+                cands = self._ask_candidates(question)
+            except Exception:  # noqa: BLE001 — surface an empty list to the UI
+                logger.debug("candidate retrieval failed", exc_info=True)
+                cands = []
+            GLib.idle_add(self._show_candidate_list, generation, cands)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _show_candidate_list(self, generation: int, cands) -> bool:
+        if generation != self._ask_generation:
+            return False
+        self._clear()
+        if not cands:
+            self._results.append(self._message_row("No candidate notes found."))
+            return False
+        self._candidates = cands
+        self._selected = [p for p, _ in cands[:self._top_k()]]  # pre-select top-k
+        for path, score in cands:
+            self._results.append(self._candidate_row(path, score))
+        self._update_answer_btn()
+        first = self._results.get_row_at_index(0)
+        if first is not None:
+            self._results.select_row(first)
+            first.grab_focus()
+        return False
+
+    def _candidate_row(self, path, score) -> Gtk.ListBoxRow:
+        row = Gtk.ListBoxRow()
+        row.set_activatable(False)
+        row._mv_pick_path = path
+        box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        box.set_margin_top(2)
+        box.set_margin_bottom(2)
+        box.set_margin_start(8)
+        box.set_margin_end(8)
+        check = Gtk.CheckButton()
+        check.set_active(path in self._selected)
+        check.set_can_focus(False)          # keyboard focus stays on the row
+        check.connect("toggled", self._on_candidate_toggled, path)
+        row._mv_check = check
+        box.append(check)
+        title = Gtk.Label(label=path_utils.vault_relative_name(path))
+        title.set_xalign(0)
+        title.set_hexpand(True)
+        title.set_ellipsize(3)              # PANGO_ELLIPSIZE_END
+        box.append(title)
+        sc = Gtk.Label(label=f"≈{score:.2f}")
+        sc.add_css_class("dim-label")
+        sc.add_css_class("mono")
+        box.append(sc)
+        row.set_child(box)
+        return row
+
+    def _on_candidate_toggled(self, check, path) -> None:
+        if check.get_active():
+            if path in self._selected:
+                pass
+            elif len(self._selected) >= self._top_k():
+                check.set_active(False)     # cap reached — refuse the extra pick
+                return
+            else:
+                self._selected.append(path)
+        elif path in self._selected:
+            self._selected.remove(path)
+        self._update_answer_btn()
+
+    def _update_answer_btn(self) -> None:
+        n = len(self._selected)
+        self._answer_btn.set_label(f"Answer ({n})")
+        self._answer_btn.set_sensitive(n >= 1)
+        self._answer_btn.set_visible(True)
+        self._timer_label.set_text(f"{n}/{self._top_k()} selected")
+
+    def _answer_from_selection(self) -> None:
+        if not self._selected or self._ask_answer_selected is None:
+            return
+        question = self._pick_question
+        paths = list(self._selected)
+        self._clear()
+        self._results.append(self._thinking_row())
+        self._start_timer()
+        self._ask_generation += 1
+        generation = self._ask_generation
+
+        def worker():
+            try:
+                ans = self._ask_answer_selected(question, paths)
+            except Exception as exc:  # noqa: BLE001 — surface failure to the UI
+                logger.debug("ask (selected) failed", exc_info=True)
+                from .ask import Answer
+                ans = Answer(text="", error=str(exc))
+            GLib.idle_add(self._show_answer, generation, ans)
+
+        threading.Thread(target=worker, daemon=True).start()
 
     def _on_entry_key(self, _ctrl, keyval, _keycode, _state) -> bool:
         if keyval in (Gdk.KEY_Down, Gdk.KEY_KP_Down):
@@ -477,6 +695,14 @@ class QuickOpenPalette(Adw.Dialog):
         return False
 
     def _on_results_key(self, _ctrl, keyval, _keycode, state) -> bool:
+        # Pick-sources: Space toggles the highlighted candidate, Enter answers.
+        sel = self._results.get_selected_row()
+        if keyval == Gdk.KEY_space and sel is not None and hasattr(sel, "_mv_check"):
+            sel._mv_check.set_active(not sel._mv_check.get_active())
+            return True
+        if keyval in (Gdk.KEY_Return, Gdk.KEY_KP_Enter) and self._candidates:
+            self._answer_from_selection()
+            return True
         if keyval in (Gdk.KEY_Up, Gdk.KEY_KP_Up):
             if self._results.get_selected_row() is self._first_stop():
                 self._entry.grab_focus()

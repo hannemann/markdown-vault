@@ -551,6 +551,12 @@ class SemanticIndexManager:
             out.append((Chunk(path, 1, self._note_text(path, around)), 0.0))
         return out
 
+    def note_hits(self, paths):
+        """``(passage, score)`` for an explicit list of note *paths* — whole
+        notes, no ranking. For the Ask "pick your own sources" flow, where the
+        user selected the context notes instead of letting retrieval choose."""
+        return [(Chunk(p, 1, self._note_text(p, "")), 0.0) for p in paths]
+
     def _semantic_notes(self, query, pool: int, limit: int, vaults):
         """Ranked note candidates ``[(path, score, best_chunk)]`` — the best
         chunk per note, boosted, deduped, up to *limit*. Shared by plain and

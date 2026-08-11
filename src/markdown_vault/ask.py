@@ -367,7 +367,8 @@ TOP_K = 10
 
 
 def answer_question(question: str, semantic_index, settings: dict, vaults,
-                    language: str, top_k: int | None = None) -> Answer:
+                    language: str, top_k: int | None = None,
+                    note_paths=None) -> Answer:
     """The full Ask pipeline: retrieve the top passages for *question* from
     *semantic_index* (scoped to *vaults*), build the configured chat backend,
     and let it write a grounded, citation-verified answer.
@@ -375,16 +376,20 @@ def answer_question(question: str, semantic_index, settings: dict, vaults,
     This is the single source of the retrieval + backend + context-budget
     wiring, so every caller exercises identical logic instead of restating it.
     *top_k* defaults to the user's ``ask_top_k`` setting; pass it explicitly only
-    to override (e.g. an eval sweep).
+    to override (e.g. an eval sweep).  *note_paths*, when given, skips retrieval
+    and uses exactly those notes as context (the user picked them).
     """
     from . import config  # local import keeps ask import-light for tests
     if semantic_index is None:
         return Answer(text="Semantic search is not active — without an index I "
                            "can't search your notes.")
-    if top_k is None:
-        top_k = int(settings.get("ask_top_k") or config.default("ask_top_k"))
-    hits = semantic_index.retrieve(question, top_k=top_k, vaults=vaults,
-                                   hybrid=bool(settings.get("ask_hybrid")))
+    if note_paths:
+        hits = semantic_index.note_hits(note_paths)
+    else:
+        if top_k is None:
+            top_k = int(settings.get("ask_top_k") or config.default("ask_top_k"))
+        hits = semantic_index.retrieve(question, top_k=top_k, vaults=vaults,
+                                       hybrid=bool(settings.get("ask_hybrid")))
     logger.info(
         "ask %r -> %d passages: %s", question, len(hits),
         [("/".join(c.path.rsplit("/", 2)[-2:]), round(s, 3)) for c, s in hits])

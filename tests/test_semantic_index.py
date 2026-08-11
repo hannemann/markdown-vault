@@ -96,6 +96,16 @@ class TestSemanticIndexManager(unittest.TestCase):
         self.assertNotIn("c.md", plain)     # embedding blurred the exact token
         self.assertIn("c.md", hybrid)       # BM25 fusion brought it back
 
+    def test_note_hits_returns_whole_notes_for_given_paths(self):
+        m = self._manager(_StubEmbedder())
+        m.build()
+        p = str(self._vault / "a.md")
+        hits = m.note_hits([p])
+        self.assertEqual(len(hits), 1)
+        chunk, score = hits[0]
+        self.assertEqual(chunk.path, p)
+        self.assertIn("alpha", chunk.text)   # whole note text
+
     def test_cache_hit_skips_reembedding(self):
         self._manager(_StubEmbedder()).build()          # builds + caches
         m2 = self._manager(_PoisonEmbedder())            # would raise if it embedded

@@ -403,6 +403,10 @@ class MainWindow(Adw.ApplicationWindow):
                 self._semantic_index.query_open(q) if self._semantic_index else []
             ),
             ask_answer=self._ask_answer,
+            ask_candidates=self._ask_candidates,
+            ask_answer_selected=lambda q, paths: self._ask_answer(q, note_paths=paths),
+            get_top_k=lambda: int(self._settings.get("ask_top_k")
+                                  or config.default("ask_top_k")),
             can_ask=lambda: bool(self._settings.get("semantic_search_enabled"))
             and self._semantic_index is not None,
             scope=self._scope_callbacks(),
@@ -1435,16 +1439,29 @@ class MainWindow(Adw.ApplicationWindow):
         return [scope] if scope in allv else (
             [self._active_vault] if self._active_vault else allv)
 
-    def _ask_answer(self, question: str):
+    def _ask_answer(self, question: str, note_paths=None):
         """RAG: retrieve passages and let the configured local model write a
         grounded answer.  Runs off the main thread (quick-open worker); returns
         an :class:`ask.Answer`.  The retrieval/backend/budget wiring lives in
-        :func:`ask.answer_question`.
+        :func:`ask.answer_question`.  *note_paths*, if given, uses exactly those
+        user-picked notes as context instead of retrieving.
         """
         from . import ask
         return ask.answer_question(
             question, self._semantic_index, self._settings,
-            self._scope_vault_paths(), self._answer_language())
+            self._scope_vault_paths(), self._answer_language(),
+            note_paths=note_paths)
+
+    def _ask_candidates(self, question: str):
+        """Top-20 candidate notes (path, score) for the 'pick your own sources'
+        Ask flow — same scoped, hybrid retrieval, just wider and without the LLM.
+        """
+        if self._semantic_index is None:
+            return []
+        hits = self._semantic_index.retrieve(
+            question, top_k=20, vaults=self._scope_vault_paths(),
+            hybrid=bool(self._settings.get("ask_hybrid")))
+        return [(c.path, s) for c, s in hits]
 
     def _start_semantic_search(self) -> None:
         """Build the semantic index in the background when enabled (opt-in).

@@ -122,5 +122,41 @@ class TestFirstRow(unittest.TestCase):
         self.assertEqual(p.get_last_question(), "")
 
 
+class TestCandidatePick(unittest.TestCase):
+    """Pick-your-own-sources: pre-selection, cap, and freeing a slot."""
+
+    def _palette(self, top_k=3):
+        return QuickOpenPalette(
+            make_engine=lambda: None, semantic_query=lambda q: [],
+            ask_candidates=lambda q: [], ask_answer_selected=lambda q, p: None,
+            get_top_k=lambda: top_k)
+
+    def _cands(self, n=5):
+        return [(f"/v/n{i}.md", 1.0 - i * 0.1) for i in range(n)]
+
+    def test_preselects_top_k(self):
+        p = self._palette(top_k=3)
+        p._show_candidate_list(p._ask_generation, self._cands())
+        self.assertEqual(p._selected, ["/v/n0.md", "/v/n1.md", "/v/n2.md"])
+
+    def test_cap_blocks_extra_selection(self):
+        p = self._palette(top_k=3)
+        p._show_candidate_list(p._ask_generation, self._cands())
+        row = p._results.get_row_at_index(3)          # 4th candidate, unselected
+        row._mv_check.set_active(True)                # refused at the cap
+        self.assertFalse(row._mv_check.get_active())
+        self.assertNotIn("/v/n3.md", p._selected)
+        self.assertEqual(len(p._selected), 3)
+
+    def test_deselect_frees_a_slot(self):
+        p = self._palette(top_k=3)
+        p._show_candidate_list(p._ask_generation, self._cands())
+        p._results.get_row_at_index(0)._mv_check.set_active(False)  # drop n0
+        self.assertNotIn("/v/n0.md", p._selected)
+        p._results.get_row_at_index(3)._mv_check.set_active(True)   # now fits
+        self.assertIn("/v/n3.md", p._selected)
+        self.assertEqual(len(p._selected), 3)
+
+
 if __name__ == "__main__":
     unittest.main()
