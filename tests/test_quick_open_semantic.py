@@ -157,6 +157,29 @@ class TestCandidatePick(unittest.TestCase):
         self.assertIn("/v/n3.md", p._selected)
         self.assertEqual(len(p._selected), 3)
 
+    def _score_labels(self, p):
+        labels = []
+        row = p._results.get_first_child()
+        while row is not None:
+            box = row.get_child()
+            last = box.get_last_child()          # the relevance label
+            labels.append(last.get_text())
+            row = row.get_next_sibling()
+        return labels
+
+    def test_score_is_shown_relative_to_top(self):
+        # R42.4 — scale-free relevance: the top candidate is 100%, the rest are
+        # a spread of percentages (not a couple of collapsed raw values).
+        p = self._palette(top_k=3)
+        # tiny RRF-like scores that :.2f would collapse to "≈0.03"/"≈0.02"
+        p._show_candidate_list(p._ask_generation,
+                               [("/v/a.md", 0.032), ("/v/b.md", 0.028),
+                                ("/v/c.md", 0.016)])
+        labels = self._score_labels(p)
+        self.assertEqual(labels[0], "100%")            # top candidate
+        self.assertEqual(labels[-1], "50%")            # 0.016 / 0.032
+        self.assertEqual(len(set(labels)), 3)          # spread, not collapsed
+
 
 if __name__ == "__main__":
     unittest.main()

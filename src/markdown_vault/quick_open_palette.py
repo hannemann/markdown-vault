@@ -604,8 +604,9 @@ class QuickOpenPalette(Adw.Dialog):
             return False
         self._candidates = cands
         self._selected = [p for p, _ in cands[:self._top_k()]]  # pre-select top-k
+        top = max((s for _, s in cands), default=0.0) or 1.0
         for path, score in cands:
-            self._results.append(self._candidate_row(path, score))
+            self._results.append(self._candidate_row(path, score / top))
         self._update_answer_btn()
         first = self._results.get_row_at_index(0)
         if first is not None:
@@ -613,7 +614,7 @@ class QuickOpenPalette(Adw.Dialog):
             first.grab_focus()
         return False
 
-    def _candidate_row(self, path, score) -> Gtk.ListBoxRow:
+    def _candidate_row(self, path, relevance) -> Gtk.ListBoxRow:
         row = Gtk.ListBoxRow()
         row.set_activatable(False)
         row._mv_pick_path = path
@@ -633,7 +634,10 @@ class QuickOpenPalette(Adw.Dialog):
         title.set_hexpand(True)
         title.set_ellipsize(3)              # PANGO_ELLIPSIZE_END
         box.append(title)
-        sc = Gtk.Label(label=f"≈{score:.2f}")
+        # Relevance relative to the top candidate (0–100%): scale-free, so it
+        # reads the same whether the scores are cosine or RRF, and it spreads
+        # the batch instead of collapsing to a couple of rounded values.
+        sc = Gtk.Label(label=f"{relevance:.0%}")
         sc.add_css_class("dim-label")
         sc.add_css_class("mono")
         box.append(sc)
