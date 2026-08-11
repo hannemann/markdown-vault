@@ -454,7 +454,7 @@ class QuickOpenPalette(Adw.Dialog):
 
     @staticmethod
     def _fmt_secs(seconds: float) -> str:
-        return f"{seconds:.1f}".replace(".", ",") + " s"
+        return f"{seconds:.1f} s"          # period: the palette chrome is English
 
     def _start_timer(self) -> None:
         self._ask_started = time.monotonic()
