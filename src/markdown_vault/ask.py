@@ -336,14 +336,17 @@ def fit_to_budget(hits, budget: int):
     return out
 
 
+# Where the context-window control lives — the Ask subpage sits under Search.
+_CTX_WINDOW_PATH = "Preferences → Search → Ask → Context window"
+
+
 def budget_warning(kept: int, retrieved: int) -> list:
     """The user-facing note when the context budget dropped notes, so the trim
     is visible instead of silent (Answer.warnings renders it)."""
     dropped = retrieved - kept
     if dropped <= 0:
         return []
-    tail = ("To fit more, raise the context window (Preferences → Ask → "
-            "Context window).")
+    tail = f"To fit more, raise the context window ({_CTX_WINDOW_PATH})."
     if kept == 0:
         return [f"None of the {retrieved} matching notes fit the model's "
                 f"context window — they are larger than it allows. {tail}"]
@@ -351,32 +354,39 @@ def budget_warning(kept: int, retrieved: int) -> list:
             f"window; the {dropped} least-relevant did not. {tail}"]
 
 
+def _no_context_answer() -> Answer:
+    """The reply when the budget fits no note at all — there is nothing to ground
+    on, so we don't spend a backend round-trip on an empty "(no excerpts)" prompt
+    (which would only invite the model to invent). The text carries the
+    explanation, so it is not also duplicated as a warning banner."""
+    return Answer(
+        text="I found matching notes, but none fit the model's context window, "
+             "so there's nothing I can ground an answer on. Raise the context "
+             f"window in {_CTX_WINDOW_PATH}.")
+
+
 def answer(question: str, hits, chat: ChatBackend, language: str = "English",
-           system_template: str | None = None, char_budget: int | None = None) -> Answer:
+           system_template: str | None = None, char_budget: int | None = None,
+           extra_warnings: list | None = None) -> Answer:
     """Retrieve-augmented generation: ground *question* in *hits* and ask *chat*.
 
     *language* is the language the answer must be written in; *system_template*
     the (user-configurable) system prompt.  *char_budget*, when given, caps the
     excerpt characters (see :func:`fit_to_budget`) so the prompt fits the
     backend's context window instead of being silently truncated — and a warning
-    reports any notes the cap dropped.
+    reports any notes the cap dropped.  *extra_warnings* are prepended to the
+    result, so a caller that already applied the budget (and logged it) can pass
+    the note through instead of having it re-computed here.
     """
     if not hits:
         return Answer(text="I couldn't find anything about that in your notes.")
-    extra: list = []
+    extra = list(extra_warnings or [])
     if char_budget:
         fitted = fit_to_budget(hits, char_budget)
-        extra = budget_warning(len(fitted), len(hits))
+        extra += budget_warning(len(fitted), len(hits))
         hits = fitted
-    if not hits:
-        # The budget fit no note at all — there is nothing to ground an answer
-        # on, so don't spend a backend round-trip on an empty "(no excerpts)"
-        # prompt (which would only invite the model to invent).
-        return Answer(
-            text="I found matching notes, but none fit the model's context "
-                 "window, so there's nothing I can ground an answer on. Raise "
-                 "the context window in Preferences → Ask.",
-            warnings=extra)
+        if not hits:
+            return _no_context_answer()
     system, user, sources = build_messages(question, hits, language, system_template)
     try:
         text = chat.chat(system, user)
@@ -425,13 +435,20 @@ def answer_question(question: str, semantic_index, settings: dict, vaults,
         num_ctx = int(settings.get("ask_num_ctx") or config.default("ask_num_ctx"))
         kwargs["num_ctx"] = num_ctx
         char_budget = context_char_budget(num_ctx)
-    # Log what actually reaches the model (post-budget), not the pre-budget count.
-    shown = fit_to_budget(hits, char_budget) if char_budget else hits
+    # Apply the budget once here (not again in answer()): the log and the warning
+    # both need the post-budget set, so fit, then hand the fitted hits down.
+    retrieved = len(hits)
+    budget_note: list = []
+    if char_budget:
+        hits = fit_to_budget(hits, char_budget)
+        budget_note = budget_warning(len(hits), retrieved)
     logger.info(
         "ask %r -> %d/%d passages (context budget): %s",
-        question, len(shown), len(hits),
-        [("/".join(c.path.rsplit("/", 2)[-2:]), round(s, 3)) for c, s in shown])
+        question, len(hits), retrieved,
+        [("/".join(c.path.rsplit("/", 2)[-2:]), round(s, 3)) for c, s in hits])
+    if not hits:                              # budget fit nothing — don't call out
+        return _no_context_answer()
     chat = cls(**kwargs)
     return answer(question, hits, chat, language=language,
                   system_template=settings.get("ask_system_prompt") or None,
-                  char_budget=char_budget)
+                  extra_warnings=budget_note)

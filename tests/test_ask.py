@@ -281,7 +281,8 @@ class TestBudgetFill(unittest.TestCase):
         warn = ask.budget_warning(4, 10)
         self.assertEqual(len(warn), 1)
         self.assertIn("4 of 10", warn[0])
-        self.assertIn("Context window", warn[0])           # names the setting
+        # names the real path — the Ask subpage lives under Search
+        self.assertIn("Search → Ask → Context window", warn[0])
 
     def test_budget_warning_when_nothing_fits(self):
         # R43.1 — the top-ranked note must not be called "least-relevant" when
@@ -305,8 +306,8 @@ class TestBudgetFill(unittest.TestCase):
         chat = SimpleNamespace(chat=lambda s, u: called.append(1) or "nope [1]")
         ans = ask.answer("q", hits, chat, char_budget=100)
         self.assertEqual(called, [])                       # no backend call
-        self.assertTrue(ans.warnings)                      # explains the drop
-        self.assertIn("context window", ans.text)
+        self.assertEqual(ans.warnings, [])                 # not duplicated as a banner
+        self.assertIn("Search → Ask → Context window", ans.text)
 
 
 class TestOllamaChatPayload(unittest.TestCase):
