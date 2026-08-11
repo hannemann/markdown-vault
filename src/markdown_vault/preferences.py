@@ -733,6 +733,16 @@ class PreferencesDialog(Adw.PreferencesDialog):
             "notify::active", self._on_toggle_setting, "ask_reasoning")
         group.add(self._ask_reasoning_row)
 
+        self._ask_hybrid_row = Adw.SwitchRow(
+            title="Hybrid retrieval",
+            subtitle="Fuse a keyword (BM25) ranking into the semantic search so "
+                     "exact tokens — names, config keys, shortcuts — that "
+                     "embeddings blur still surface. Helps most on large vaults.")
+        self._ask_hybrid_row.set_active(self._settings.get("ask_hybrid", True))
+        self._ask_hybrid_row.connect(
+            "notify::active", self._on_toggle_setting, "ask_hybrid")
+        group.add(self._ask_hybrid_row)
+
         self._ask_ctx_row = Adw.SpinRow(
             title="Context window",
             subtitle="Tokens sent to Ollama. Its default (2048) truncates "

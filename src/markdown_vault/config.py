@@ -304,6 +304,12 @@ _DEFAULT_SETTINGS = {
     # fits more/longer notes, but costs memory. Only used by the Ollama backend
     # (llama.cpp sizes its context server-side).
     "ask_num_ctx": 8192,
+    # Hybrid retrieval: fuse a BM25 (keyword) ranking into the semantic one so
+    # exact tokens (names, config keys, shortcuts) that embeddings blur still
+    # surface, and relevant notes rank higher. On by default (measured +10/100
+    # on a gold set, never worse); the Preferences switch can disable it if the
+    # extra BM25 index is unwanted on a very large vault.
+    "ask_hybrid": True,
 }
 
 

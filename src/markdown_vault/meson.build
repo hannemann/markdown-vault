@@ -32,6 +32,7 @@ py_sources = files(
   'preview.py',
   'quick_open.py',
   'ask.py',
+  'lexical_search.py',
   'quick_open_palette.py',
   'search.py',
   'search_backend.py',

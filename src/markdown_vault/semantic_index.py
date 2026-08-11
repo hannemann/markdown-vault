@@ -20,6 +20,7 @@ import re
 import threading
 from pathlib import Path
 
+from . import lexical_search
 from .semantic_search import Chunk, VectorIndex, chunk_markdown
 
 logger = logging.getLogger(__name__)
@@ -133,6 +134,10 @@ class SemanticIndexManager:
         self._on_progress = on_progress  # on_progress(done, total) during a build
         # path -> {"hash": str, "chunks": list[Chunk], "vecs": np.ndarray}
         self._files: dict[str, dict] = {}
+        # Lazy BM25 (sparse) index for hybrid retrieval, cached by a
+        # (files, mtimes) signature so it rebuilds only when notes change.
+        self._lex: lexical_search.BM25Index | None = None
+        self._lex_sig: tuple | None = None
         self._json_path = self._state_dir / "semantic-index.json"
         self._npy_path = self._state_dir / "semantic-index.npy"
         # Incremental-update queue: one worker drains a coalesced (path -> op)
@@ -503,7 +508,7 @@ class SemanticIndexManager:
                 break
         return results
 
-    def retrieve(self, query, top_k: int = 6, vaults=None):
+    def retrieve(self, query, top_k: int = 6, vaults=None, hybrid: bool = False):
         """Top *note-level* ``(passage, score)`` for RAG answering — one passage
         per note, holding the note's WHOLE text. *vaults*, if given, restricts
         results to files under those vault roots (scope for the Ask feature).
@@ -519,9 +524,38 @@ class SemanticIndexManager:
         A **title/name boost** additionally floats the note actually *about* the
         subject to the front (``erde`` → ``erde.md``), instead of burying it
         among near-identical siblings. Scoped to RAG only.
+
+        With *hybrid*, a BM25 (sparse) ranking is fused in via Reciprocal Rank
+        Fusion, so notes matched by an exact token (proper noun, config key,
+        shortcut) that the embedding blurred still surface.
         """
         # Widen the pool when a vault filter may discard many hits.
-        hits = self._top_hits(query, top_k * (6 if vaults else 2))
+        pool = top_k * (6 if vaults else 2)
+        limit = top_k
+        if hybrid:                       # need more candidates to fuse against
+            pool = max(pool, top_k * 5, 60)
+            limit = max(top_k * 3, 30)
+        notes = self._semantic_notes(query, pool, limit, vaults)
+        if not hybrid:
+            return [(Chunk(path, 1, self._note_text(path, best.text)), score)
+                    for path, score, best in notes[:top_k]]
+
+        sem_paths = [os.path.abspath(p) for p, _, _ in notes]
+        lex_paths = self._lexical(vaults).search(query, limit)
+        fused = lexical_search.reciprocal_rank_fusion([sem_paths, lex_paths])[:top_k]
+        best_by_path = {os.path.abspath(p): b for p, _, b in notes}
+        out = []
+        for path in fused:
+            best = best_by_path.get(path)
+            around = best.text if best is not None else ""
+            out.append((Chunk(path, 1, self._note_text(path, around)), 0.0))
+        return out
+
+    def _semantic_notes(self, query, pool: int, limit: int, vaults):
+        """Ranked note candidates ``[(path, score, best_chunk)]`` — the best
+        chunk per note, boosted, deduped, up to *limit*. Shared by plain and
+        hybrid retrieval."""
+        hits = self._top_hits(query, pool)
         if not hits:
             return []
         if vaults:
@@ -541,10 +575,33 @@ class SemanticIndexManager:
         for chunk, score in hits:
             if chunk.path not in seen:
                 seen[chunk.path] = (score, chunk)
-            if len(seen) >= top_k:
+            if len(seen) >= limit:
                 break
-        return [(Chunk(path, 1, self._note_text(path, best.text)), score)
-                for path, (score, best) in seen.items()]
+        return [(path, score, best) for path, (score, best) in seen.items()]
+
+    def _lexical(self, vaults) -> "lexical_search.BM25Index":
+        """Lazily build (and cache) a BM25 index over the ``.md`` notes under
+        *vaults* (or all managed vaults). Rebuilds only when the file set or an
+        mtime changes."""
+        roots = [os.path.abspath(v) for v in (vaults or self._get_vault_paths())]
+        files = []
+        for root in roots:
+            for dirpath, dirnames, filenames in os.walk(root):
+                dirnames[:] = [d for d in dirnames if not d.startswith(".")]
+                files += [os.path.join(dirpath, f)
+                          for f in filenames if f.endswith(".md")]
+        sig = tuple(sorted((f, int(os.path.getmtime(f)))
+                           for f in files if os.path.exists(f)))
+        if self._lex is None or self._lex_sig != sig:
+            docs = {}
+            for f, _ in sig:
+                try:
+                    docs[f] = Path(f).read_text(encoding="utf-8", errors="replace")
+                except OSError:
+                    pass
+            self._lex = lexical_search.BM25Index(docs)
+            self._lex_sig = sig
+        return self._lex
 
     # Per-note generation-context cap. The model gets whole notes (a comparison
     # needs the full data block), but an unbounded 6 × whole-file could post

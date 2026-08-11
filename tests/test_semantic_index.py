@@ -81,6 +81,21 @@ class TestSemanticIndexManager(unittest.TestCase):
         self.assertTrue(res[0].semantic)
         self.assertEqual(res[0].matches[0].line, 1)
 
+    def test_hybrid_recovers_exact_token_semantic_missed(self):
+        # c.md's distinctive token isn't in the stub embedder's vocab → the
+        # semantic side can't rank it, but BM25 (hybrid) recovers it.
+        (self._vault / "c.md").write_text("configkey vaults.yaml here",
+                                          encoding="utf-8")
+        m = self._manager(_StubEmbedder())
+        m.build()
+        scope = [str(self._vault)]
+        plain = {Path(c.path).name for c, _ in
+                 m.retrieve("configkey", top_k=5, vaults=scope)}
+        hybrid = {Path(c.path).name for c, _ in
+                  m.retrieve("configkey", top_k=5, vaults=scope, hybrid=True)}
+        self.assertNotIn("c.md", plain)     # embedding blurred the exact token
+        self.assertIn("c.md", hybrid)       # BM25 fusion brought it back
+
     def test_cache_hit_skips_reembedding(self):
         self._manager(_StubEmbedder()).build()          # builds + caches
         m2 = self._manager(_PoisonEmbedder())            # would raise if it embedded

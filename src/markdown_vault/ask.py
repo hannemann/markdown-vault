@@ -379,7 +379,8 @@ def answer_question(question: str, semantic_index, settings: dict, vaults,
     if semantic_index is None:
         return Answer(text="Semantic search is not active — without an index I "
                            "can't search your notes.")
-    hits = semantic_index.retrieve(question, top_k=top_k, vaults=vaults)
+    hits = semantic_index.retrieve(question, top_k=top_k, vaults=vaults,
+                                   hybrid=bool(settings.get("ask_hybrid")))
     logger.info(
         "ask %r -> %d passages: %s", question, len(hits),
         [("/".join(c.path.rsplit("/", 2)[-2:]), round(s, 3)) for c, s in hits])
