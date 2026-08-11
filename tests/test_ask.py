@@ -264,10 +264,29 @@ class TestBudgetFill(unittest.TestCase):
         self.assertEqual([len(c.text) for c, _ in out], [600, 400])
 
     def test_head_not_middle_survives(self):
-        hits = [(_chunk("/v/a.md", 1, "START" + "y" * 90 + "END"), 1.0)]
-        out = ask.fit_to_budget(hits, 20)
+        hits = [(_chunk("/v/a.md", 1, "START" + "y" * 600 + "END"), 1.0)]
+        out = ask.fit_to_budget(hits, 400)
         self.assertTrue(out[0][0].text.startswith("START"))  # head kept
         self.assertNotIn("END", out[0][0].text)
+
+    def test_tiny_boundary_sliver_is_dropped(self):
+        # R42.3 — a boundary note with < _MIN_BOUNDARY_CHARS of room left is not
+        # handed over as a citable sliver; it is dropped.
+        hits = self._hits(600, 600)
+        out = ask.fit_to_budget(hits, 700)     # note0 whole, 100 left for note1
+        self.assertEqual([len(c.text) for c, _ in out], [600])
+
+    def test_budget_warning_reports_the_drop(self):
+        self.assertEqual(ask.budget_warning(10, 10), [])   # nothing dropped
+        warn = ask.budget_warning(4, 10)
+        self.assertEqual(len(warn), 1)
+        self.assertIn("4 of 10", warn[0])
+
+    def test_answer_warns_when_budget_drops_notes(self):
+        hits = [(_chunk(f"/v/n{i}.md", 1, "x" * 1000), 1.0) for i in range(4)]
+        chat = SimpleNamespace(chat=lambda s, u: "ok [1]")
+        ans = ask.answer("q", hits, chat, char_budget=1500)
+        self.assertTrue(any("notes fit" in w for w in ans.warnings))
 
 
 class TestOllamaChatPayload(unittest.TestCase):

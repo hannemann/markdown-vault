@@ -296,12 +296,18 @@ def context_char_budget(num_ctx: int) -> int:
     return max(0, int((num_ctx - _ANSWER_RESERVE_TOKENS) * _CHARS_PER_TOKEN))
 
 
+# A boundary note kept only as a head must still be substantial enough to be a
+# useful, citable source — a 10-character sliver is noise, so drop it instead.
+_MIN_BOUNDARY_CHARS = 200
+
+
 def fit_to_budget(hits, budget: int):
     """Fit ranked *hits* into a *budget* of characters without truncating the
     prompt — and without corrupting a note.
 
     Notes are kept whole, best-first, until the budget is spent; the note that
-    straddles the boundary keeps its *head*, and any lower-ranked notes past it
+    straddles the boundary keeps its *head* (if at least ``_MIN_BOUNDARY_CHARS``
+    of it fit — a shorter sliver is dropped), and any lower-ranked notes past it
     are dropped.  This deliberately favours a few intact notes over many
     fragments: slicing each note down to an equal floor threw away both the
     note's head and its matched passage (a mid-note slice is incoherent context
@@ -321,11 +327,24 @@ def fit_to_budget(hits, budget: int):
         if len(c.text) <= room:
             out.append((c, sc))
             used += len(c.text)
-        else:                                    # boundary note: keep its head
+        elif room >= _MIN_BOUNDARY_CHARS:        # boundary note: keep its head
             out.append((SimpleNamespace(path=c.path, line=c.line,
                                         text=c.text[:room]), sc))
             break
+        else:                                    # too little room left — drop it
+            break
     return out
+
+
+def budget_warning(kept: int, retrieved: int) -> list:
+    """The user-facing note when the context budget dropped lower-ranked notes,
+    so the trim is visible instead of silent (Answer.warnings renders it)."""
+    dropped = retrieved - kept
+    if dropped <= 0:
+        return []
+    return [f"Context budget: {kept} of {retrieved} notes fit the model's "
+            f"window; {dropped} lower-ranked note{'' if dropped == 1 else 's'} "
+            f"left out. Fewer, larger notes hit this — see Context notes/window."]
 
 
 def answer(question: str, hits, chat: ChatBackend, language: str = "English",
@@ -335,12 +354,16 @@ def answer(question: str, hits, chat: ChatBackend, language: str = "English",
     *language* is the language the answer must be written in; *system_template*
     the (user-configurable) system prompt.  *char_budget*, when given, caps the
     excerpt characters (see :func:`fit_to_budget`) so the prompt fits the
-    backend's context window instead of being silently truncated.
+    backend's context window instead of being silently truncated — and a warning
+    reports any notes the cap dropped.
     """
     if not hits:
         return Answer(text="I couldn't find anything about that in your notes.")
+    extra: list = []
     if char_budget:
-        hits = fit_to_budget(hits, char_budget)
+        fitted = fit_to_budget(hits, char_budget)
+        extra = budget_warning(len(fitted), len(hits))
+        hits = fitted
     system, user, sources = build_messages(question, hits, language, system_template)
     try:
         text = chat.chat(system, user)
@@ -348,7 +371,7 @@ def answer(question: str, hits, chat: ChatBackend, language: str = "English",
         logger.warning("ollama chat failed: %s", exc)
         return Answer(text="", sources=sources, error=str(exc))
     cleaned, cited, warnings = verify_citations(text, sources)
-    return Answer(text=cleaned, sources=cited, warnings=warnings)
+    return Answer(text=cleaned, sources=cited, warnings=extra + warnings)
 
 
 def answer_question(question: str, semantic_index, settings: dict, vaults,
@@ -375,9 +398,6 @@ def answer_question(question: str, semantic_index, settings: dict, vaults,
             top_k = int(settings.get("ask_top_k") or config.default("ask_top_k"))
         hits = semantic_index.retrieve(question, top_k=top_k, vaults=vaults,
                                        hybrid=bool(settings.get("ask_hybrid")))
-    logger.info(
-        "ask %r -> %d passages: %s", question, len(hits),
-        [("/".join(c.path.rsplit("/", 2)[-2:]), round(s, 3)) for c, s in hits])
     model = settings.get("ask_model") or config.default("ask_model")
     url = settings.get("ask_ollama_url") or config.default("ask_ollama_url")
     # Only override thinking when the user turned reasoning OFF, so non-reasoning
@@ -392,6 +412,12 @@ def answer_question(question: str, semantic_index, settings: dict, vaults,
         num_ctx = int(settings.get("ask_num_ctx") or config.default("ask_num_ctx"))
         kwargs["num_ctx"] = num_ctx
         char_budget = context_char_budget(num_ctx)
+    # Log what actually reaches the model (post-budget), not the pre-budget count.
+    shown = fit_to_budget(hits, char_budget) if char_budget else hits
+    logger.info(
+        "ask %r -> %d/%d passages (context budget): %s",
+        question, len(shown), len(hits),
+        [("/".join(c.path.rsplit("/", 2)[-2:]), round(s, 3)) for c, s in shown])
     chat = cls(**kwargs)
     return answer(question, hits, chat, language=language,
                   system_template=settings.get("ask_system_prompt") or None,
