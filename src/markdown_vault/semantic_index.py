@@ -136,8 +136,7 @@ class SemanticIndexManager:
         self._files: dict[str, dict] = {}
         # Lazy BM25 (sparse) index for hybrid retrieval, cached by a
         # (files, mtimes) signature so it rebuilds only when notes change.
-        self._lex: lexical_search.BM25Index | None = None
-        self._lex_key: tuple | None = None       # (roots, file-signature)
+        self._lex_cache: dict = {}               # scope roots -> (signature, BM25)
         self._lex_lock = threading.Lock()        # built from the ask worker thread
         self._json_path = self._state_dir / "semantic-index.json"
         self._npy_path = self._state_dir / "semantic-index.npy"
@@ -592,11 +591,11 @@ class SemanticIndexManager:
 
     def _lexical(self, vaults) -> "lexical_search.BM25Index":
         """Lazily build (and cache) a BM25 index over the ``.md`` notes under
-        *vaults* (or all managed vaults). Rebuilds only when the *scope roots*,
-        the file set or an mtime changes — keying on the roots too stops an
-        alternating vault scope from thrashing the whole index every question.
-        The cache is guarded by a lock because retrieval runs on the ask worker
-        thread."""
+        *vaults* (or all managed vaults). One cache slot *per scope*, so
+        alternating the vault scope swaps between kept indices instead of
+        rebuilding the whole thing every question; a slot rebuilds only when its
+        file set or an mtime changes. Guarded by a lock because retrieval runs on
+        the ask worker thread."""
         roots = tuple(sorted(os.path.abspath(v)
                              for v in (vaults or self._get_vault_paths())))
         files = []
@@ -605,20 +604,22 @@ class SemanticIndexManager:
                 dirnames[:] = [d for d in dirnames if not d.startswith(".")]
                 files += [os.path.join(dirpath, f)
                           for f in filenames if f.endswith(".md")]
-        key = (roots, tuple(sorted((f, int(os.path.getmtime(f)))
-                                   for f in files if os.path.exists(f))))
+        sig = tuple(sorted((f, int(os.path.getmtime(f)))
+                           for f in files if os.path.exists(f)))
         with self._lex_lock:
-            if self._lex is None or self._lex_key != key:
+            cached = self._lex_cache.get(roots)
+            if cached is None or cached[0] != sig:
                 docs = {}
-                for f, _ in key[1]:
+                for f, _ in sig:
                     try:
                         docs[f] = Path(f).read_text(encoding="utf-8",
                                                     errors="replace")
                     except OSError:
                         pass
-                self._lex = lexical_search.BM25Index(docs)
-                self._lex_key = key
-            return self._lex
+                index = lexical_search.BM25Index(docs)
+                self._lex_cache[roots] = (sig, index)
+                return index
+            return cached[1]
 
     # Per-note generation-context cap. The model gets whole notes (a comparison
     # needs the full data block), but an unbounded 6 × whole-file could post

@@ -1,5 +1,6 @@
 """Tests for markdown_vault.semantic_index.SemanticIndexManager."""
 
+import os
 import shutil
 import tempfile
 import unittest
@@ -108,9 +109,10 @@ class TestSemanticIndexManager(unittest.TestCase):
         self.assertTrue(hits)
         self.assertTrue(all(score > 0 for _, score in hits))
 
-    def test_lexical_cache_rebuilds_when_scope_changes(self):
-        # R41.2 — the BM25 cache is keyed on the scope roots, so switching vault
-        # scope swaps the index instead of serving a stale one.
+    def test_lexical_cache_keeps_a_slot_per_scope(self):
+        # R42.1 — one cache slot per scope: alternating the vault scope swaps
+        # between kept indices instead of rebuilding the whole BM25 index every
+        # question.
         sub = self._vault / "sub"
         sub.mkdir()
         (sub / "d.md").write_text("configkey here", encoding="utf-8")
@@ -118,8 +120,20 @@ class TestSemanticIndexManager(unittest.TestCase):
         m.build()
         idx_all = m._lexical([str(self._vault)])
         idx_sub = m._lexical([str(sub)])
-        self.assertIsNot(idx_all, idx_sub)              # different scope → rebuilt
-        self.assertIs(m._lexical([str(sub)]), idx_sub)  # same scope → cached
+        self.assertIsNot(idx_all, idx_sub)                      # distinct scopes
+        # switching back and forth returns the SAME cached indices (no rebuild)
+        self.assertIs(m._lexical([str(self._vault)]), idx_all)
+        self.assertIs(m._lexical([str(sub)]), idx_sub)
+
+    def test_lexical_cache_rebuilds_on_mtime_change(self):
+        # a slot rebuilds only when its own file set / mtime changes.
+        m = self._manager(_StubEmbedder())
+        m.build()
+        idx = m._lexical([str(self._vault)])
+        stamp = int(os.path.getmtime(self._vault / "a.md")) + 5
+        (self._vault / "a.md").write_text("alpha changed here", encoding="utf-8")
+        os.utime(self._vault / "a.md", (stamp, stamp))
+        self.assertIsNot(m._lexical([str(self._vault)]), idx)   # rebuilt
 
     def test_note_hits_returns_whole_notes_for_given_paths(self):
         m = self._manager(_StubEmbedder())
