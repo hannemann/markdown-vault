@@ -296,46 +296,35 @@ def context_char_budget(num_ctx: int) -> int:
     return max(0, int((num_ctx - _ANSWER_RESERVE_TOKENS) * _CHARS_PER_TOKEN))
 
 
-def _center(text: str, keep: int) -> str:
-    """The middle *keep* characters of *text* (a note's chunk is already
-    windowed around its match, so its centre is its most relevant part)."""
-    if keep >= len(text):
-        return text
-    start = (len(text) - keep) // 2
-    return text[start:start + keep]
-
-
 def fit_to_budget(hits, budget: int):
     """Fit ranked *hits* into a *budget* of characters without truncating the
-    prompt.
+    prompt — and without corrupting a note.
 
-    Every note keeps at least an equal centred floor slice (so none is dropped
-    and breadth survives), then the leftover budget tops up the notes best-first
-    toward their full text.  When everything already fits (the common case for
+    Notes are kept whole, best-first, until the budget is spent; the note that
+    straddles the boundary keeps its *head*, and any lower-ranked notes past it
+    are dropped.  This deliberately favours a few intact notes over many
+    fragments: slicing each note down to an equal floor threw away both the
+    note's head and its matched passage (a mid-note slice is incoherent context
+    for the model).  When everything already fits (the common case for
     normal-sized notes) the hits are returned unchanged.
     """
     if not hits or budget <= 0:
         return hits
     if sum(len(c.text) for c, _ in hits) <= budget:
         return hits
-    n = len(hits)
-    floor = budget // n
-    keep = [min(len(c.text), floor) for c, _ in hits]
-    leftover = budget - sum(keep)
-    for i, (c, _) in enumerate(hits):        # top up best-first
-        if leftover <= 0:
-            break
-        add = min(len(c.text) - keep[i], leftover)
-        keep[i] += add
-        leftover -= add
     out = []
-    for (c, sc), k in zip(hits, keep):
-        if k >= len(c.text):
+    used = 0
+    for c, sc in hits:
+        room = budget - used
+        if room <= 0:
+            break
+        if len(c.text) <= room:
             out.append((c, sc))
-        else:
-            out.append(
-                (SimpleNamespace(path=c.path, line=c.line,
-                                 text=_center(c.text, k)), sc))
+            used += len(c.text)
+        else:                                    # boundary note: keep its head
+            out.append((SimpleNamespace(path=c.path, line=c.line,
+                                        text=c.text[:room]), sc))
+            break
     return out
 
 
@@ -360,10 +349,6 @@ def answer(question: str, hits, chat: ChatBackend, language: str = "English",
         return Answer(text="", sources=sources, error=str(exc))
     cleaned, cited, warnings = verify_citations(text, sources)
     return Answer(text=cleaned, sources=cited, warnings=warnings)
-
-
-#: How many note passages the Ask pipeline retrieves for a question.
-TOP_K = 10
 
 
 def answer_question(question: str, semantic_index, settings: dict, vaults,
