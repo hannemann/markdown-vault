@@ -743,6 +743,19 @@ class PreferencesDialog(Adw.PreferencesDialog):
             "notify::active", self._on_toggle_setting, "ask_hybrid")
         group.add(self._ask_hybrid_row)
 
+        self._ask_topk_row = Adw.SpinRow(
+            title="Context notes",
+            subtitle="How many notes are sent to the model as context. On CPU "
+                     "the model spends almost all its time reading them, so fewer "
+                     "= much faster (roughly linear). Recommended: 10 on a GPU, "
+                     "~5 on a slow CPU.",
+            adjustment=Gtk.Adjustment.new(
+                self._settings.get("ask_top_k", 10), 3, 20, 1, 5, 0.0),
+            digits=0,
+        )
+        self._ask_topk_row.connect("notify::value", self._on_ask_top_k_changed)
+        group.add(self._ask_topk_row)
+
         self._ask_ctx_row = Adw.SpinRow(
             title="Context window",
             subtitle="Tokens sent to Ollama. Its default (2048) truncates "
@@ -1149,6 +1162,11 @@ class PreferencesDialog(Adw.PreferencesDialog):
     def _on_ask_num_ctx_changed(self, _row, _pspec) -> None:
         self._settings["ask_num_ctx"] = int(
             self._ask_ctx_row.get_adjustment().get_value())
+        self._persist()
+
+    def _on_ask_top_k_changed(self, _row, _pspec) -> None:
+        self._settings["ask_top_k"] = int(
+            self._ask_topk_row.get_adjustment().get_value())
         self._persist()
 
     _PERSIST_DEBOUNCE_MS = 600

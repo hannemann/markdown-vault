@@ -304,6 +304,10 @@ _DEFAULT_SETTINGS = {
     # fits more/longer notes, but costs memory. Only used by the Ollama backend
     # (llama.cpp sizes its context server-side).
     "ask_num_ctx": 8192,
+    # How many notes are retrieved as context for an answer. On CPU the model
+    # spends almost all its time *reading* this context, so fewer notes = much
+    # faster (roughly linear); 10 suits a GPU, ~5 a slow CPU.
+    "ask_top_k": 10,
     # Hybrid retrieval: fuse a BM25 (keyword) ranking into the semantic one so
     # exact tokens (names, config keys, shortcuts) that embeddings blur still
     # surface, and relevant notes rank higher. On by default (measured +10/100

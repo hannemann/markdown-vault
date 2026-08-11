@@ -367,18 +367,22 @@ TOP_K = 10
 
 
 def answer_question(question: str, semantic_index, settings: dict, vaults,
-                    language: str, top_k: int = TOP_K) -> Answer:
+                    language: str, top_k: int | None = None) -> Answer:
     """The full Ask pipeline: retrieve the top passages for *question* from
     *semantic_index* (scoped to *vaults*), build the configured chat backend,
     and let it write a grounded, citation-verified answer.
 
     This is the single source of the retrieval + backend + context-budget
     wiring, so every caller exercises identical logic instead of restating it.
+    *top_k* defaults to the user's ``ask_top_k`` setting; pass it explicitly only
+    to override (e.g. an eval sweep).
     """
     from . import config  # local import keeps ask import-light for tests
     if semantic_index is None:
         return Answer(text="Semantic search is not active — without an index I "
                            "can't search your notes.")
+    if top_k is None:
+        top_k = int(settings.get("ask_top_k") or config.default("ask_top_k"))
     hits = semantic_index.retrieve(question, top_k=top_k, vaults=vaults,
                                    hybrid=bool(settings.get("ask_hybrid")))
     logger.info(
