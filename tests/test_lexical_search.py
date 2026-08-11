@@ -58,6 +58,14 @@ class TestRRF(unittest.TestCase):
         lex = ["c", "a"]
         self.assertIn("c", L.reciprocal_rank_fusion([sem, lex]))
 
+    def test_rrf_scores_are_positive_and_rank_consistent(self):
+        # the scored variant backs both the picker's ≈score and the ask log.
+        scores = L.rrf_scores([["x", "y", "z"], ["z", "w", "x"]])
+        self.assertTrue(all(s > 0 for s in scores.values()))
+        # x (top of both) outranks w (bottom of one, absent from the other)
+        self.assertGreater(scores["x"], scores["w"])
+        self.assertEqual(sorted(scores, key=lambda p: -scores[p])[0], "x")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -96,6 +96,31 @@ class TestSemanticIndexManager(unittest.TestCase):
         self.assertNotIn("c.md", plain)     # embedding blurred the exact token
         self.assertIn("c.md", hybrid)       # BM25 fusion brought it back
 
+    def test_hybrid_hits_carry_a_real_score(self):
+        # R41.3 — fused hits must keep a ranking signal (not a flat 0.0), so the
+        # source picker's ≈score and the ask log stay meaningful.
+        (self._vault / "c.md").write_text("configkey vaults.yaml here",
+                                          encoding="utf-8")
+        m = self._manager(_StubEmbedder())
+        m.build()
+        hits = m.retrieve("configkey", top_k=5, vaults=[str(self._vault)],
+                          hybrid=True)
+        self.assertTrue(hits)
+        self.assertTrue(all(score > 0 for _, score in hits))
+
+    def test_lexical_cache_rebuilds_when_scope_changes(self):
+        # R41.2 — the BM25 cache is keyed on the scope roots, so switching vault
+        # scope swaps the index instead of serving a stale one.
+        sub = self._vault / "sub"
+        sub.mkdir()
+        (sub / "d.md").write_text("configkey here", encoding="utf-8")
+        m = self._manager(_StubEmbedder())
+        m.build()
+        idx_all = m._lexical([str(self._vault)])
+        idx_sub = m._lexical([str(sub)])
+        self.assertIsNot(idx_all, idx_sub)              # different scope → rebuilt
+        self.assertIs(m._lexical([str(sub)]), idx_sub)  # same scope → cached
+
     def test_note_hits_returns_whole_notes_for_given_paths(self):
         m = self._manager(_StubEmbedder())
         m.build()

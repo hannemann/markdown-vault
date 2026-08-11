@@ -52,15 +52,24 @@ class BM25Index:
         return sorted(scores, key=lambda p: -scores[p])[:top_k]
 
 
-def reciprocal_rank_fusion(rankings: list[list[str]], k: int = 60) -> list[str]:
-    """Fuse several ranked path lists into one (Reciprocal Rank Fusion).
+def rrf_scores(rankings: list[list[str]], k: int = 60) -> dict[str, float]:
+    """The Reciprocal Rank Fusion score of each path across *rankings*.
 
     Each list contributes ``1 / (k + rank)`` to a path's score, so a document
-    ranked well by *either* retriever floats up. The result is never worse than
-    the better single retriever on the items they agree on.
+    ranked well by *either* retriever floats up.
     """
     score: dict[str, float] = collections.defaultdict(float)
     for ranking in rankings:
         for rank, path in enumerate(ranking):
             score[path] += 1.0 / (k + rank + 1)
+    return score
+
+
+def reciprocal_rank_fusion(rankings: list[list[str]], k: int = 60) -> list[str]:
+    """Fuse several ranked path lists into one (Reciprocal Rank Fusion).
+
+    The result is never worse than the better single retriever on the items they
+    agree on. See :func:`rrf_scores` for the per-path fusion score.
+    """
+    score = rrf_scores(rankings, k)
     return sorted(score, key=lambda p: -score[p])

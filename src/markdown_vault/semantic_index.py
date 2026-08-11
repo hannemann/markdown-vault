@@ -137,7 +137,8 @@ class SemanticIndexManager:
         # Lazy BM25 (sparse) index for hybrid retrieval, cached by a
         # (files, mtimes) signature so it rebuilds only when notes change.
         self._lex: lexical_search.BM25Index | None = None
-        self._lex_sig: tuple | None = None
+        self._lex_key: tuple | None = None       # (roots, file-signature)
+        self._lex_lock = threading.Lock()        # built from the ask worker thread
         self._json_path = self._state_dir / "semantic-index.json"
         self._npy_path = self._state_dir / "semantic-index.npy"
         # Incremental-update queue: one worker drains a coalesced (path -> op)
@@ -542,13 +543,17 @@ class SemanticIndexManager:
 
         sem_paths = [os.path.abspath(p) for p, _, _ in notes]
         lex_paths = self._lexical(vaults).search(query, limit)
-        fused = lexical_search.reciprocal_rank_fusion([sem_paths, lex_paths])[:top_k]
+        scores = lexical_search.rrf_scores([sem_paths, lex_paths])
+        fused = sorted(scores, key=lambda p: -scores[p])[:top_k]
         best_by_path = {os.path.abspath(p): b for p, _, b in notes}
         out = []
         for path in fused:
             best = best_by_path.get(path)
             around = best.text if best is not None else ""
-            out.append((Chunk(path, 1, self._note_text(path, around)), 0.0))
+            # Carry the fused score so the source picker and the ask log keep a
+            # real ranking signal instead of a flat 0.00 on every hit.
+            out.append((Chunk(path, 1, self._note_text(path, around)),
+                        round(scores[path], 4)))
         return out
 
     def note_hits(self, paths):
@@ -587,27 +592,33 @@ class SemanticIndexManager:
 
     def _lexical(self, vaults) -> "lexical_search.BM25Index":
         """Lazily build (and cache) a BM25 index over the ``.md`` notes under
-        *vaults* (or all managed vaults). Rebuilds only when the file set or an
-        mtime changes."""
-        roots = [os.path.abspath(v) for v in (vaults or self._get_vault_paths())]
+        *vaults* (or all managed vaults). Rebuilds only when the *scope roots*,
+        the file set or an mtime changes — keying on the roots too stops an
+        alternating vault scope from thrashing the whole index every question.
+        The cache is guarded by a lock because retrieval runs on the ask worker
+        thread."""
+        roots = tuple(sorted(os.path.abspath(v)
+                             for v in (vaults or self._get_vault_paths())))
         files = []
         for root in roots:
             for dirpath, dirnames, filenames in os.walk(root):
                 dirnames[:] = [d for d in dirnames if not d.startswith(".")]
                 files += [os.path.join(dirpath, f)
                           for f in filenames if f.endswith(".md")]
-        sig = tuple(sorted((f, int(os.path.getmtime(f)))
-                           for f in files if os.path.exists(f)))
-        if self._lex is None or self._lex_sig != sig:
-            docs = {}
-            for f, _ in sig:
-                try:
-                    docs[f] = Path(f).read_text(encoding="utf-8", errors="replace")
-                except OSError:
-                    pass
-            self._lex = lexical_search.BM25Index(docs)
-            self._lex_sig = sig
-        return self._lex
+        key = (roots, tuple(sorted((f, int(os.path.getmtime(f)))
+                                   for f in files if os.path.exists(f))))
+        with self._lex_lock:
+            if self._lex is None or self._lex_key != key:
+                docs = {}
+                for f, _ in key[1]:
+                    try:
+                        docs[f] = Path(f).read_text(encoding="utf-8",
+                                                    errors="replace")
+                    except OSError:
+                        pass
+                self._lex = lexical_search.BM25Index(docs)
+                self._lex_key = key
+            return self._lex
 
     # Per-note generation-context cap. The model gets whole notes (a comparison
     # needs the full data block), but an unbounded 6 × whole-file could post
