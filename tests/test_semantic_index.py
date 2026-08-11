@@ -125,6 +125,27 @@ class TestSemanticIndexManager(unittest.TestCase):
         self.assertIs(m._lexical([str(self._vault)]), idx_all)
         self.assertIs(m._lexical([str(sub)]), idx_sub)
 
+    def test_lexical_cache_evicts_least_recently_used(self):
+        # the per-scope cache is bounded: past the cap the least-recently-used
+        # slot is evicted (and rebuilt on next use).
+        subs = []
+        for name in ("s1", "s2", "s3"):
+            d = self._vault / name
+            d.mkdir()
+            (d / "n.md").write_text("configkey here", encoding="utf-8")
+            subs.append(str(d))
+        m = self._manager(_StubEmbedder())
+        m.build()
+        m._LEX_CACHE_MAX = 2
+        a = m._lexical([subs[0]])
+        m._lexical([subs[1]])
+        m._lexical([subs[0]])                    # touch s0 → s1 is now the LRU
+        b_again = m._lexical([subs[1]])          # keep a handle before eviction
+        m._lexical([subs[0]])                    # touch s0 again → s1 LRU
+        m._lexical([subs[2]])                    # inserts s2 → evicts s1
+        self.assertIs(m._lexical([subs[0]]), a)  # s0 survived
+        self.assertIsNot(m._lexical([subs[1]]), b_again)  # s1 was rebuilt
+
     def test_lexical_cache_rebuilds_on_mtime_change(self):
         # a slot rebuilds only when its own file set / mtime changes.
         m = self._manager(_StubEmbedder())

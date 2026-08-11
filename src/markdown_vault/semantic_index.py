@@ -589,13 +589,17 @@ class SemanticIndexManager:
                 break
         return [(path, score, best) for path, (score, best) in seen.items()]
 
+    _LEX_CACHE_MAX = 8   # scopes are few (all vaults + per-vault); cap anyway
+
     def _lexical(self, vaults) -> "lexical_search.BM25Index":
         """Lazily build (and cache) a BM25 index over the ``.md`` notes under
         *vaults* (or all managed vaults). One cache slot *per scope*, so
         alternating the vault scope swaps between kept indices instead of
         rebuilding the whole thing every question; a slot rebuilds only when its
-        file set or an mtime changes. Guarded by a lock because retrieval runs on
-        the ask worker thread."""
+        file set or an mtime changes. The cache is an LRU bounded to
+        ``_LEX_CACHE_MAX`` slots — the "all vaults" slot necessarily overlaps the
+        per-vault slots, and the bound keeps that duplication in check. Guarded by
+        a lock because retrieval runs on the ask worker thread."""
         roots = tuple(sorted(os.path.abspath(v)
                              for v in (vaults or self._get_vault_paths())))
         files = []
@@ -607,19 +611,22 @@ class SemanticIndexManager:
         sig = tuple(sorted((f, int(os.path.getmtime(f)))
                            for f in files if os.path.exists(f)))
         with self._lex_lock:
-            cached = self._lex_cache.get(roots)
-            if cached is None or cached[0] != sig:
-                docs = {}
-                for f, _ in sig:
-                    try:
-                        docs[f] = Path(f).read_text(encoding="utf-8",
-                                                    errors="replace")
-                    except OSError:
-                        pass
-                index = lexical_search.BM25Index(docs)
-                self._lex_cache[roots] = (sig, index)
-                return index
-            return cached[1]
+            cache = self._lex_cache
+            cached = cache.pop(roots, None)          # pop: re-insert = move to end
+            if cached is not None and cached[0] == sig:
+                cache[roots] = cached                # refresh recency (LRU)
+                return cached[1]
+            docs = {}
+            for f, _ in sig:
+                try:
+                    docs[f] = Path(f).read_text(encoding="utf-8", errors="replace")
+                except OSError:
+                    pass
+            index = lexical_search.BM25Index(docs)
+            cache[roots] = (sig, index)
+            while len(cache) > self._LEX_CACHE_MAX:
+                cache.pop(next(iter(cache)))          # evict least-recently-used
+            return index
 
     # Per-note generation-context cap. The model gets whole notes (a comparison
     # needs the full data block), but an unbounded 6 × whole-file could post
