@@ -88,13 +88,29 @@ class TestFirstRow(unittest.TestCase):
         p._results.append(p._source_row(Source(1, "/v/cite.md", 42)))
         self.assertIs(p._first_stop(), answer)  # ↓ lands on the answer first
 
-    def test_maybe_select_answer_selects_full_text(self):
+    def test_copy_answer_yields_the_markdown_source(self):
+        # The answer is rendered as Markdown, but copying must give the raw
+        # source (pipes and all), not the rendered surface.
         p = self._palette()
-        row = p._answer_row("hello world")
-        p._maybe_select_answer(row)
-        ok, start, end = p._answer_label.get_selection_bounds()
-        self.assertTrue(ok)
-        self.assertEqual((start, end), (0, len("hello world")))
+        p._answer_text = "| a | b |\n|---|---|\n| 1 | 2 |"
+        copied = {}
+        p.get_clipboard = lambda: type("C", (), {"set": lambda _s, v:
+                                                  copied.setdefault("v", v)})()
+        p._toast_overlay = type("T", (), {"add_toast": lambda *_a: None})()
+        p._copy_answer()
+        self.assertEqual(copied["v"], "| a | b |\n|---|---|\n| 1 | 2 |")
+
+    def test_rendered_answer_content_is_selectable_for_visible_copy(self):
+        # rendered text is selectable so select + context menu copies the
+        # visible text; the button (below) still copies the Markdown source.
+        p = self._palette()
+        row = p._answer_row("**bold** and a table")
+        label = row.get_child().get_first_child()
+        self.assertTrue(label.get_selectable())
+
+    def test_copy_button_tooltip_mentions_markdown_source(self):
+        p = self._palette()
+        self.assertIn("Markdown source", p._copy_btn.get_tooltip_text())
 
     def test_answer_copy_button_hidden_and_unfocusable(self):
         # R39.1 — the sticky copy button must not be a hidden Tab stop: it starts

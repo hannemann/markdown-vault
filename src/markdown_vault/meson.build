@@ -24,6 +24,7 @@ py_sources = files(
    'logging_setup.py',
    'main.py',
   'markdown_help.py',
+  'markdown_widgets.py',
   'monitor_handler.py',
   'mru.py',
   'paned_sizer.py',
