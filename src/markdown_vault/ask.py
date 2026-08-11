@@ -337,14 +337,18 @@ def fit_to_budget(hits, budget: int):
 
 
 def budget_warning(kept: int, retrieved: int) -> list:
-    """The user-facing note when the context budget dropped lower-ranked notes,
-    so the trim is visible instead of silent (Answer.warnings renders it)."""
+    """The user-facing note when the context budget dropped notes, so the trim
+    is visible instead of silent (Answer.warnings renders it)."""
     dropped = retrieved - kept
     if dropped <= 0:
         return []
-    return [f"Context budget: {kept} of {retrieved} notes fit the model's "
-            f"window; {dropped} lower-ranked note{'' if dropped == 1 else 's'} "
-            f"left out. Fewer, larger notes hit this — see Context notes/window."]
+    tail = ("To fit more, raise the context window (Preferences → Ask → "
+            "Context window).")
+    if kept == 0:
+        return [f"None of the {retrieved} matching notes fit the model's "
+                f"context window — they are larger than it allows. {tail}"]
+    return [f"{kept} of {retrieved} matching notes fit the model's context "
+            f"window; the {dropped} least-relevant did not. {tail}"]
 
 
 def answer(question: str, hits, chat: ChatBackend, language: str = "English",
@@ -364,6 +368,15 @@ def answer(question: str, hits, chat: ChatBackend, language: str = "English",
         fitted = fit_to_budget(hits, char_budget)
         extra = budget_warning(len(fitted), len(hits))
         hits = fitted
+    if not hits:
+        # The budget fit no note at all — there is nothing to ground an answer
+        # on, so don't spend a backend round-trip on an empty "(no excerpts)"
+        # prompt (which would only invite the model to invent).
+        return Answer(
+            text="I found matching notes, but none fit the model's context "
+                 "window, so there's nothing I can ground an answer on. Raise "
+                 "the context window in Preferences → Ask.",
+            warnings=extra)
     system, user, sources = build_messages(question, hits, language, system_template)
     try:
         text = chat.chat(system, user)

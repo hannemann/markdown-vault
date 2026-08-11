@@ -281,12 +281,32 @@ class TestBudgetFill(unittest.TestCase):
         warn = ask.budget_warning(4, 10)
         self.assertEqual(len(warn), 1)
         self.assertIn("4 of 10", warn[0])
+        self.assertIn("Context window", warn[0])           # names the setting
+
+    def test_budget_warning_when_nothing_fits(self):
+        # R43.1 — the top-ranked note must not be called "least-relevant" when
+        # in fact nothing fit at all.
+        warn = ask.budget_warning(0, 3)
+        self.assertEqual(len(warn), 1)
+        self.assertIn("None of the 3", warn[0])
+        self.assertNotIn("least-relevant", warn[0])
 
     def test_answer_warns_when_budget_drops_notes(self):
         hits = [(_chunk(f"/v/n{i}.md", 1, "x" * 1000), 1.0) for i in range(4)]
         chat = SimpleNamespace(chat=lambda s, u: "ok [1]")
         ans = ask.answer("q", hits, chat, char_budget=1500)
         self.assertTrue(any("notes fit" in w for w in ans.warnings))
+
+    def test_answer_skips_backend_when_no_note_fits(self):
+        # R43.2 — if the budget fits no note, don't spend a round-trip on an
+        # empty "(no excerpts)" prompt; return a grounded explanation.
+        hits = [(_chunk("/v/a.md", 1, "x" * 1000), 1.0)]
+        called = []
+        chat = SimpleNamespace(chat=lambda s, u: called.append(1) or "nope [1]")
+        ans = ask.answer("q", hits, chat, char_budget=100)
+        self.assertEqual(called, [])                       # no backend call
+        self.assertTrue(ans.warnings)                      # explains the drop
+        self.assertIn("context window", ans.text)
 
 
 class TestOllamaChatPayload(unittest.TestCase):
