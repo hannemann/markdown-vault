@@ -399,6 +399,29 @@ class TestAnswerQuestionLocalBackend(unittest.TestCase):
             llama_runtime.LlamaCppChat = orig_cls
         self.assertEqual(phases, ["loading", "thinking"])
 
+    def test_kv_settings_reach_the_local_backend(self):
+        from markdown_vault import llama_runtime
+        orig_av, orig_cls = llama_runtime.availability, llama_runtime.LlamaCppChat
+        seen = {}
+        llama_runtime.availability = lambda p: None
+        llama_runtime.LlamaCppChat = lambda *a, **k: seen.update(k) or SimpleNamespace(
+            chat=lambda s, u: "x [1]")
+        try:
+            ask.answer_question(
+                "q", self._sem(),
+                {"ask_engine": "auto", "ask_kv_type_k": "q8_0",
+                 "ask_kv_type_v": "q4_0", "ask_flash_attn": True,
+                 "ask_offload_kqv": False, "ask_use_mmap": False},
+                None, "English")
+        finally:
+            llama_runtime.availability = orig_av
+            llama_runtime.LlamaCppChat = orig_cls
+        self.assertEqual(seen.get("type_k"), "q8_0")
+        self.assertEqual(seen.get("type_v"), "q4_0")
+        self.assertTrue(seen.get("flash_attn"))
+        self.assertFalse(seen.get("offload_kqv"))
+        self.assertFalse(seen.get("use_mmap"))
+
     def test_should_cancel_reaches_the_local_backend(self):
         from markdown_vault import llama_runtime
         orig_av, orig_cls = llama_runtime.availability, llama_runtime.LlamaCppChat

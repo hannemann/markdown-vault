@@ -399,7 +399,8 @@ def answer(question: str, hits, chat: ChatBackend, language: str = "English",
 
 def answer_question(question: str, semantic_index, settings: dict, vaults,
                     language: str, top_k: int | None = None,
-                    note_paths=None, on_phase=None, should_cancel=None) -> Answer:
+                    note_paths=None, on_phase=None, on_token=None,
+                    should_cancel=None) -> Answer:
     """The full Ask pipeline: retrieve the top passages for *question* from
     *semantic_index* (scoped to *vaults*), build the configured chat backend,
     and let it write a grounded, citation-verified answer.
@@ -454,7 +455,12 @@ def answer_question(question: str, semantic_index, settings: dict, vaults,
                      or llama_runtime.default_threads())
         chat = llama_runtime.LlamaCppChat(
             gguf, num_ctx=num_ctx, n_gpu_layers=n_gpu_layers, n_threads=n_threads,
-            on_phase=on_phase, should_cancel=should_cancel)
+            type_k=settings.get("ask_kv_type_k") or "f16",
+            type_v=settings.get("ask_kv_type_v") or "f16",
+            flash_attn=bool(settings.get("ask_flash_attn")),
+            offload_kqv=bool(settings.get("ask_offload_kqv", True)),
+            use_mmap=bool(settings.get("ask_use_mmap", True)),
+            on_phase=on_phase, on_token=on_token, should_cancel=should_cancel)
         char_budget = context_char_budget(num_ctx)
     elif backend == "openai":
         chat = OpenAIChat(model=settings.get("ask_model") or config.default("ask_model"),

@@ -179,23 +179,148 @@ def default_threads() -> int:
     return max(1, physical_cores() // 2)
 
 
+def vram_bytes() -> int | None:
+    """Device-local GPU memory in bytes (amdgpu ``mem_info_vram_total`` — on an
+    APU this is the BIOS UMA carve-out). ``None`` if it can't be read."""
+    import glob
+    for f in glob.glob("/sys/class/drm/card*/device/mem_info_vram_total"):
+        try:
+            with open(f) as fh:
+                return int(fh.read().strip())
+        except (OSError, ValueError):
+            pass
+    return None
+
+
+def is_amd_gpu() -> bool:
+    """Whether an AMD GPU is present (PCI vendor ``0x1002``). Its Mesa/RADV Vulkan
+    driver has unstable flash-attention support — on older/APU parts it can fault
+    the device and abort the whole process — so the UI warns before enabling it."""
+    import glob
+    for f in glob.glob("/sys/class/drm/card*/device/vendor"):
+        try:
+            with open(f) as fh:
+                if fh.read().strip().lower() == "0x1002":
+                    return True
+        except OSError:
+            pass
+    return False
+
+
+def gtt_bytes() -> int | None:
+    """GTT (system memory the GPU can borrow) in bytes. On an APU this dwarfs the
+    small VRAM carve-out, which is how we tell shared-memory GPUs apart."""
+    import glob
+    for f in glob.glob("/sys/class/drm/card*/device/mem_info_gtt_total"):
+        try:
+            with open(f) as fh:
+                return int(fh.read().strip())
+        except (OSError, ValueError):
+            pass
+    return None
+
+
+def _usable_vram(vram: int) -> int:
+    """VRAM left for model weights after reserving KV cache + compute buffers +
+    desktop headroom."""
+    return max(0, vram - min(int(vram * 0.5), int(1.2 * 1024 ** 3)))
+
+
+def is_shared_memory_gpu() -> bool:
+    """Whether the GPU shares the CPU's RAM (an APU/iGPU): a small VRAM carve-out
+    with a much larger GTT pool. A dedicated GPU, where GTT is comparable to or
+    smaller than its VRAM, is not flagged."""
+    vram, gtt = vram_bytes(), gtt_bytes()
+    return bool(vram and gtt and gtt > vram * 2)
+
+
+def flash_attn_risky() -> bool:
+    """Whether enabling flash attention is likely to be unstable: an AMD GPU
+    (Mesa/RADV) that shares memory with the CPU — i.e. the older GCN/Vega-class
+    APUs whose Vulkan flash-attention path has faulted the device and aborted the
+    process. Dedicated AMD GPUs are excluded; they generally handle it fine."""
+    return is_amd_gpu() and is_shared_memory_gpu()
+
+
+def recommended_gpu_layers(model_path: str) -> int | None:
+    """'Layers that fit in VRAM' estimate for a *dedicated*-VRAM GPU:
+    ``usable_VRAM ÷ per-layer weight size``. ``None`` when VRAM or the layer
+    count is unknown. On a shared-memory GPU this number is misleading — see
+    :func:`gpu_layers_advice`."""
+    from . import config
+    vram = vram_bytes()
+    layers = config.gguf_n_layers(model_path)
+    if not vram or not layers or not os.path.exists(model_path):
+        return None
+    per_layer = os.path.getsize(model_path) / layers
+    return max(0, min(int(layers), int(_usable_vram(vram) / per_layer)))
+
+
+def gpu_layers_advice(model_path: str) -> str | None:
+    """A correct, hardware-aware GPU-layers recommendation string, or ``None``.
+
+    The key nuance: on a **shared-memory** GPU (an APU, where the CPU and GPU use
+    the same RAM) a *partial* offload is slower than either extreme — splitting
+    the graph forces the activations to be copied at every CPU↔GPU boundary. So
+    there the advice is all-or-nothing, not a layer count. Only a dedicated-VRAM
+    GPU that can't hold the whole model benefits from a partial offload."""
+    vram = vram_bytes()
+    if not vram or not os.path.exists(model_path):
+        return None
+    gb = vram / 1024 ** 3
+    if is_shared_memory_gpu():         # APU: a partial offload hurts (graph splits)
+        return (f"Shared-memory GPU ({gb:.1f} GB). Use 999 for the fastest "
+                "generation (a large model or prompt can freeze the desktop while "
+                "it runs) or 0 to keep the desktop responsive — a partial offload "
+                "is slower here (constant CPU↔GPU copying).")
+    # Dedicated-VRAM GPU: a partial offload of what doesn't fit is worthwhile.
+    if os.path.getsize(model_path) <= _usable_vram(vram):
+        return f"Fits in {gb:.1f} GB VRAM — offload all layers (999)."
+    layers = recommended_gpu_layers(model_path)
+    if layers is not None:
+        return (f"Bigger than the {gb:.1f} GB VRAM — about {layers} layers fit; "
+                "the rest run on the CPU.")
+    return f"Detected VRAM: {gb:.1f} GB."
+
+
+# KV-cache precision string → ggml type constant name. "f16" (and anything
+# unknown) keeps llama.cpp's own default, so it needs no override.
+_KV_GGML = {"q8_0": "GGML_TYPE_Q8_0", "q4_0": "GGML_TYPE_Q4_0"}
+
+
+def kv_needs_flash(type_v: str) -> bool:
+    """Whether a V-cache precision *type_v* needs flash attention — any value
+    below f16 does; the K cache can be quantized freely."""
+    return type_v in _KV_GGML
+
+
 def _load(key):
-    """Load a GGUF into a ``llama_cpp.Llama``. *key* is the cache key
-    ``(path, n_ctx, n_gpu_layers, n_threads)``."""
-    from llama_cpp import Llama
+    """Load a GGUF into a ``llama_cpp.Llama`` for cache *key*."""
+    import llama_cpp
     kwargs = _llama_kwargs(key)
+    for attr, kv_str in (("type_k", key[4]), ("type_v", key[5])):
+        name = _KV_GGML.get(kv_str)
+        if name is not None:
+            t = getattr(llama_cpp, name, None)
+            if t is not None:
+                kwargs[attr] = t
     logger.info("loading local model %s", kwargs)
-    return Llama(**kwargs)
+    return llama_cpp.Llama(**kwargs)
 
 
 def _llama_kwargs(key) -> dict:
-    """The ``Llama(**kwargs)`` for a cache *key* — pure, so the thread capping is
-    testable without loading a model."""
-    path, n_ctx, n_gpu_layers, n_threads = key
+    """The ``Llama(**kwargs)`` for a cache *key* — pure (no llama_cpp import), so
+    the thread/flash/offload wiring is testable without loading a model. The
+    *key* is ``(path, n_ctx, n_gpu_layers, n_threads, type_k, type_v, flash_attn,
+    offload_kqv, use_mmap)``; the KV-cache types are resolved to ggml constants
+    in :func:`_load`."""
+    (path, n_ctx, n_gpu_layers, n_threads, _tk, _tv, flash_attn,
+     offload_kqv, use_mmap) = key
     # verbose=True so llama-cpp-python doesn't install its own suppressing log
     # callback — ours (see _install_llama_logging) then receives the load logs.
     kwargs = dict(model_path=path, n_ctx=n_ctx, n_gpu_layers=n_gpu_layers,
-                  verbose=True)
+                  verbose=True, flash_attn=bool(flash_attn),
+                  offload_kqv=bool(offload_kqv), use_mmap=bool(use_mmap))
     if n_threads:
         # Cap BOTH pools. n_threads governs token generation, but prompt
         # processing (prefill) — the heavy all-core burst that dominates CPU
@@ -209,14 +334,18 @@ def _llama_kwargs(key) -> dict:
 
 
 def get_model(model_path: str, n_ctx: int, n_gpu_layers: int = 0,
-              n_threads: int = 0, on_load=None):
+              n_threads: int = 0, type_k: str = "f16", type_v: str = "f16",
+              flash_attn: bool = False, offload_kqv: bool = True,
+              use_mmap: bool = True, on_load=None):
     """The cached ``Llama`` for these parameters, loading (and evicting the
     previous one) only when the key changes. *on_load* is called right before an
     actual (cache-miss) load, so the UI can show a 'Loading model…' phase only
     when a load really happens."""
     global _MODEL, _MODEL_KEY
     _install_llama_logging()             # capture the load logs into the llama log
-    key = (model_path, int(n_ctx), int(n_gpu_layers), int(n_threads))
+    key = (model_path, int(n_ctx), int(n_gpu_layers), int(n_threads),
+           str(type_k), str(type_v), bool(flash_attn), bool(offload_kqv),
+           bool(use_mmap))
     with _LOCK:
         if _MODEL_KEY != key:
             if on_load is not None:
@@ -237,14 +366,23 @@ class LlamaCppChat:
 
     def __init__(self, model_path: str, num_ctx: int = 8192,
                  n_gpu_layers: int = 0, n_threads: int = 0,
-                 temperature: float = 0.2, on_phase=None, should_cancel=None,
+                 temperature: float = 0.2, type_k: str = "f16",
+                 type_v: str = "f16", flash_attn: bool = False,
+                 offload_kqv: bool = True, use_mmap: bool = True,
+                 on_phase=None, on_token=None, should_cancel=None,
                  _model=None) -> None:
         self.model_path = model_path
         self.num_ctx = num_ctx
         self.n_gpu_layers = n_gpu_layers
         self.n_threads = n_threads
         self.temperature = temperature
+        self.type_k = type_k
+        self.type_v = type_v
+        self.flash_attn = flash_attn
+        self.offload_kqv = offload_kqv
+        self.use_mmap = use_mmap
         self._on_phase = on_phase
+        self._on_token = on_token
         self._should_cancel = should_cancel
         self._model = _model
 
@@ -262,27 +400,42 @@ class LlamaCppChat:
         if self._model is not None:
             return self._model
         return get_model(self.model_path, self.num_ctx, self.n_gpu_layers,
-                         self.n_threads, on_load=lambda: self._phase("loading"))
+                         self.n_threads, type_k=self.type_k, type_v=self.type_v,
+                         flash_attn=self.flash_attn, offload_kqv=self.offload_kqv,
+                         use_mmap=self.use_mmap,
+                         on_load=lambda: self._phase("loading"))
 
     def chat(self, system: str, user: str) -> str:
         llama = self._llama()          # may fire "loading" on a cache miss
-        self._phase("thinking")
         # Arm the abort callback so closing the palette / asking again interrupts
         # the running decode (prompt processing included), not just its display.
         _install_abort(llama)
         _ABORT_HOLDER["fn"] = self._should_cancel
+        # Stream: the first iteration blocks on the prompt (prefill = "reading",
+        # where nothing is visible yet), then tokens flow. Each token is handed to
+        # on_token so the UI can render the answer live — the growing text is the
+        # progress, so no "writing" label is needed. A big prompt = a long
+        # "reading" phase, which is where the wait really goes.
+        self._phase("reading")
+        parts: list = []
         try:
-            out = llama.create_chat_completion(
+            stream = llama.create_chat_completion(
                 messages=[{"role": "system", "content": system},
                           {"role": "user", "content": user}],
-                temperature=self.temperature,
-            )
+                temperature=self.temperature, stream=True)
+            for chunk in stream:
+                if self._cancelled():
+                    break              # closed / new question — stop generating
+                piece = ((chunk.get("choices") or [{}])[0].get("delta")
+                         or {}).get("content")
+                if piece:
+                    parts.append(piece)
+                    if self._on_token is not None:
+                        self._on_token(piece)
         except Exception:          # noqa: BLE001
             if self._cancelled():
                 return ""          # intentionally aborted; the result is discarded
             raise
         finally:
             _ABORT_HOLDER["fn"] = None
-        text = ((out.get("choices") or [{}])[0].get("message") or {}).get(
-            "content") or ""
-        return text.strip()
+        return "".join(parts).strip()

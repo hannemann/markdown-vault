@@ -309,9 +309,21 @@ _DEFAULT_SETTINGS = {
         "https://huggingface.co/bartowski/Llama-3.2-3B-Instruct-GGUF/"
         "resolve/main/Llama-3.2-3B-Instruct-Q4_K_M.gguf",
     # llama.cpp runtime knobs. 0 GPU layers = pure CPU (safe default, works on a
-    # laptop); raise to offload layers to a GPU. 0 threads = let llama.cpp pick.
+    # laptop); raise to offload layers to a GPU. 0 threads = half the physical
+    # cores (resolved at runtime).
     "ask_n_gpu_layers": 0,
     "ask_n_threads": 0,
+    # KV-cache precision, chosen separately for the K and V caches: "f16"
+    # (default) or quantized "q8_0"/"q4_0". Quantizing K is free; quantizing V
+    # (type_v below f16) requires flash attention. offload_kqv keeps the KV cache
+    # on the GPU (off = in system RAM, freeing VRAM at some speed cost).
+    "ask_kv_type_k": "f16",
+    "ask_kv_type_v": "f16",
+    "ask_flash_attn": False,
+    "ask_offload_kqv": True,
+    # Memory-map the model file (default). Off loads it fully into RAM — slower
+    # first load, but no page-faults during the answer; needs enough free RAM.
+    "ask_use_mmap": True,
     "ask_system_prompt": "",  # empty → the built-in default (ask.DEFAULT_SYSTEM_PROMPT)
     # Reasoning models (Qwen3, …) think before answering: accurate but slow. For
     # grounded note Q&A, disabling it is faster and better calibrated. Only sent
@@ -403,6 +415,52 @@ def normalize_gguf_url(url: str) -> str:
     if "huggingface.co" in url and "/blob/" in url:
         return url.replace("/blob/", "/resolve/", 1)
     return url
+
+
+def gguf_n_layers(path) -> int | None:
+    """The transformer layer count (``*.block_count``) read straight from the
+    GGUF header — a few KB, no model load — so a GPU-layers recommendation can be
+    derived. ``None`` if the file isn't a readable GGUF or lacks the key."""
+    import struct
+    _SCALAR = {0: 1, 1: 1, 2: 2, 3: 2, 4: 4, 5: 4, 6: 4, 7: 1, 10: 8, 11: 8, 12: 8}
+    try:
+        with open(path, "rb") as f:
+            if f.read(4) != b"GGUF":
+                return None
+            f.read(4)                                   # version
+            f.read(8)                                   # tensor count
+            (kv_count,) = struct.unpack("<Q", f.read(8))
+
+            def read_str():
+                (n,) = struct.unpack("<Q", f.read(8))
+                return f.read(n)
+
+            def skip(vtype):
+                if vtype in _SCALAR:
+                    f.read(_SCALAR[vtype])
+                elif vtype == 8:                        # string
+                    read_str()
+                elif vtype == 9:                        # array
+                    (et,) = struct.unpack("<I", f.read(4))
+                    (cnt,) = struct.unpack("<Q", f.read(8))
+                    for _ in range(cnt):
+                        skip(et)
+                else:
+                    raise ValueError(f"unknown gguf type {vtype}")
+
+            for _ in range(kv_count):
+                key = read_str()
+                (vtype,) = struct.unpack("<I", f.read(4))
+                if key.endswith(b".block_count"):
+                    if vtype in (4, 5):
+                        return struct.unpack("<I", f.read(4))[0]
+                    if vtype in (10, 11):
+                        return struct.unpack("<Q", f.read(8))[0]
+                    return None
+                skip(vtype)
+    except (OSError, ValueError, struct.error):
+        return None
+    return None
 
 
 # Setting key → environment variable consumed by WebKitGTK at startup.

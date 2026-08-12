@@ -15,9 +15,16 @@ class _StubModel:
         self.reply = reply
         self.calls = []
 
-    def create_chat_completion(self, messages, temperature):
+    def create_chat_completion(self, messages, temperature, stream=False):
         self.calls.append((messages, temperature))
-        return {"choices": [{"message": {"content": self.reply}}]}
+        if not stream:
+            return {"choices": [{"message": {"content": self.reply}}]}
+
+        def gen():
+            yield {"choices": [{"delta": {"role": "assistant"}}]}   # no content
+            for ch in self.reply:
+                yield {"choices": [{"delta": {"content": ch}}]}
+        return gen()
 
 
 class TestAvailability(unittest.TestCase):
@@ -58,6 +65,15 @@ class TestChat(unittest.TestCase):
         self.assertEqual(temperature, 0.2)
         self.assertEqual(messages[0], {"role": "system", "content": "SYS"})
         self.assertEqual(messages[1], {"role": "user", "content": "USER"})
+
+    def test_streams_tokens_and_fires_reading_phase(self):
+        phases, tokens = [], []
+        chat = L.LlamaCppChat("/x", _model=_StubModel("hi there"),
+                              on_phase=phases.append, on_token=tokens.append)
+        self.assertEqual(chat.chat("s", "u"), "hi there")
+        self.assertEqual("".join(tokens), "hi there")   # streamed piece by piece
+        self.assertIn("reading", phases)                # prefill phase
+        self.assertNotIn("writing", phases)             # live text replaces it
 
     def test_tolerates_empty_and_malformed_reply(self):
         self.assertEqual(L.LlamaCppChat("/x", _model=_StubModel("")).chat("s", "u"),
@@ -123,6 +139,101 @@ class TestCancellation(unittest.TestCase):
         self.assertFalse(L._abort_predicate())      # no predicate → never aborts
 
 
+class TestGpuRecommendation(unittest.TestCase):
+    def test_vram_bytes_is_int_or_none(self):
+        self.assertIsInstance(L.vram_bytes(), (int, type(None)))
+
+    def test_is_amd_gpu_returns_bool(self):
+        self.assertIsInstance(L.is_amd_gpu(), bool)
+
+    def test_flash_attn_risky_only_for_amd_shared_memory(self):
+        oa, ov, og = L.is_amd_gpu, L.vram_bytes, L.gtt_bytes
+        L.vram_bytes = lambda: 2 * 1024 ** 3
+        L.gtt_bytes = lambda: 14 * 1024 ** 3            # shared (gtt >> vram)
+        try:
+            L.is_amd_gpu = lambda: True
+            self.assertTrue(L.flash_attn_risky())       # AMD + shared iGPU
+            L.is_amd_gpu = lambda: False
+            self.assertFalse(L.flash_attn_risky())      # not AMD → no warning
+            L.is_amd_gpu = lambda: True
+            L.gtt_bytes = lambda: 1 * 1024 ** 3         # dedicated (gtt < vram)
+            self.assertFalse(L.flash_attn_risky())      # AMD but dedicated → fine
+        finally:
+            L.is_amd_gpu, L.vram_bytes, L.gtt_bytes = oa, ov, og
+
+    def test_recommended_layers_estimate(self):
+        import os
+        import tempfile
+        from markdown_vault import config
+        f = tempfile.NamedTemporaryFile(suffix=".gguf", delete=False)
+        f.write(b"x" * 800)      # 800-byte "model", 10 layers → 80 B/layer
+        f.close()
+        ov, ol = L.vram_bytes, config.gguf_n_layers
+        L.vram_bytes = lambda: 1000            # reserve = 500 → usable 500
+        config.gguf_n_layers = lambda p: 10
+        try:
+            self.assertEqual(L.recommended_gpu_layers(f.name), 6)   # 500 // 80
+        finally:
+            L.vram_bytes, config.gguf_n_layers = ov, ol
+            os.unlink(f.name)
+
+    def test_advice_shared_memory_is_all_or_nothing(self):
+        import os
+        import tempfile
+        f = tempfile.NamedTemporaryFile(suffix=".gguf", delete=False)
+        f.write(b"x" * 100)
+        f.close()
+        ov, og = L.vram_bytes, L.gtt_bytes
+        L.vram_bytes = lambda: 2 * 1024 ** 3
+        L.gtt_bytes = lambda: 14 * 1024 ** 3        # gtt >> vram → APU
+        try:
+            advice = L.gpu_layers_advice(f.name)
+            self.assertIn("Shared-memory", advice)
+            self.assertIn("999", advice)
+            self.assertIn("0", advice)
+            self.assertNotIn("layers fit", advice)   # never a partial count
+        finally:
+            L.vram_bytes, L.gtt_bytes = ov, og
+            os.unlink(f.name)
+
+    def test_advice_dedicated_gpu_that_fits(self):
+        import os
+        import tempfile
+        f = tempfile.NamedTemporaryFile(suffix=".gguf", delete=False)
+        f.write(b"x" * 100)
+        f.close()
+        ov, og = L.vram_bytes, L.gtt_bytes
+        L.vram_bytes = lambda: 8 * 1024 ** 3
+        L.gtt_bytes = lambda: 1 * 1024 ** 3          # gtt < vram → dedicated
+        try:
+            self.assertIn("Fits", L.gpu_layers_advice(f.name))
+        finally:
+            L.vram_bytes, L.gtt_bytes = ov, og
+            os.unlink(f.name)
+
+    def test_recommended_layers_none_without_vram(self):
+        from markdown_vault import config
+        ov, ol = L.vram_bytes, config.gguf_n_layers
+        L.vram_bytes = lambda: None
+        config.gguf_n_layers = lambda p: 10
+        try:
+            self.assertIsNone(L.recommended_gpu_layers("/whatever.gguf"))
+        finally:
+            L.vram_bytes, config.gguf_n_layers = ov, ol
+
+
+class TestKvModes(unittest.TestCase):
+    def test_kv_ggml_mapping(self):
+        self.assertEqual(L._KV_GGML.get("q8_0"), "GGML_TYPE_Q8_0")
+        self.assertEqual(L._KV_GGML.get("q4_0"), "GGML_TYPE_Q4_0")
+        self.assertIsNone(L._KV_GGML.get("f16"))        # f16 = llama.cpp default
+
+    def test_kv_needs_flash_is_driven_by_v(self):
+        self.assertFalse(L.kv_needs_flash("f16"))       # V=f16 → no flash
+        self.assertTrue(L.kv_needs_flash("q8_0"))       # V quantized → flash
+        self.assertTrue(L.kv_needs_flash("q4_0"))
+
+
 class TestModelCache(unittest.TestCase):
     def setUp(self):
         L._MODEL = None
@@ -135,17 +246,29 @@ class TestModelCache(unittest.TestCase):
         L._MODEL = None
         L._MODEL_KEY = None
 
+    def _key(self, n_threads=0, tk="f16", tv="f16", flash=False, offload=True,
+             mmap=True):
+        return ("/m.gguf", 8192, 0, n_threads, tk, tv, flash, offload, mmap)
+
     def test_thread_cap_applies_to_prefill_too(self):
         # n_threads alone caps only generation; the prompt-processing burst is
         # governed by n_threads_batch, so a cap must set both or it does nothing.
-        kw = L._llama_kwargs(("/m.gguf", 8192, 0, 4))
+        kw = L._llama_kwargs(self._key(n_threads=4))
         self.assertEqual(kw["n_threads"], 4)
         self.assertEqual(kw["n_threads_batch"], 4)
 
     def test_auto_threads_leave_both_pools_unset(self):
-        kw = L._llama_kwargs(("/m.gguf", 8192, 0, 0))
+        kw = L._llama_kwargs(self._key(n_threads=0))
         self.assertNotIn("n_threads", kw)
         self.assertNotIn("n_threads_batch", kw)
+
+    def test_flash_offload_mmap_flow_into_kwargs(self):
+        kw = L._llama_kwargs(self._key(flash=True, offload=False, mmap=False))
+        self.assertTrue(kw["flash_attn"])
+        self.assertFalse(kw["offload_kqv"])
+        self.assertFalse(kw["use_mmap"])
+        # KV type isn't resolved here (needs the binding) — no type_k in kwargs.
+        self.assertNotIn("type_k", kw)
 
     def test_caches_and_reloads_only_on_key_change(self):
         loads = []

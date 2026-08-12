@@ -289,6 +289,7 @@ class PreferencesDialog(Adw.PreferencesDialog):
         from . import ask as _ask
         self._emb_subpage = self._build_embedding_subpage()
         self._prompt_subpage = self._build_prompt_subpage(_ask)
+        self._runtime_subpage = self._build_runtime_subpage()
         self._ask_subpage = self._build_ask_subpage()
 
         search = Adw.PreferencesPage(title="Search", icon_name="edit-find-symbolic")
@@ -676,6 +677,123 @@ class PreferencesDialog(Adw.PreferencesDialog):
         subpage.connect("shown", lambda *_: self.set_focus(None))
         return subpage
 
+    def _build_runtime_subpage(self):
+        """GPU/CPU/KV knobs for the in-process backend — on their own page so the
+        Ask overview stays light. Only relevant to the Local backend."""
+        page = Adw.PreferencesPage(title="Model runtime")
+        group = Adw.PreferencesGroup(
+            title="Local model runtime",
+            description="How the in-process model uses the CPU, GPU and memory.")
+        page.add(group)
+
+        self._ask_gpu_row = Adw.SpinRow(
+            title="GPU layers",
+            subtitle="Layers offloaded to the GPU. 0 = pure CPU, 999 = all.",
+            adjustment=Gtk.Adjustment.new(
+                self._settings.get("ask_n_gpu_layers", 0), 0, 999, 1, 8, 0.0),
+            digits=0)
+        self._ask_gpu_row.connect("notify::value", self._on_ask_gpu_layers_changed)
+        from . import llama_runtime
+        self._ask_gpu_row.set_visible(llama_runtime.supports_gpu())
+        group.add(self._ask_gpu_row)
+
+        self._ask_threads_row = Adw.SpinRow(
+            title="CPU threads",
+            subtitle="0 = half your physical cores, so the machine stays "
+                     "responsive while an answer is generated. More = faster "
+                     "answers but can slow the rest of the system; raise it "
+                     "gradually.",
+            adjustment=Gtk.Adjustment.new(
+                self._settings.get("ask_n_threads", 0), 0, 128, 1, 4, 0.0),
+            digits=0)
+        self._ask_threads_row.connect("notify::value", self._on_ask_threads_changed)
+        group.add(self._ask_threads_row)
+
+        # Separate K and V cache precision. Quantizing K is free; quantizing V
+        # needs flash attention.
+        self._ask_kv_types = ["f16", "q8_0", "q4_0"]
+        kv_labels = ["f16 — full (default)", "q8_0 — half", "q4_0 — quarter"]
+        self._ask_kv_k_row = Adw.ComboRow(
+            title="K cache",
+            subtitle="Key-cache precision. Quantizing K saves memory without "
+                     "needing flash attention.",
+            model=Gtk.StringList.new(kv_labels))
+        self._ask_kv_k_row.set_selected(self._kv_index("ask_kv_type_k"))
+        self._ask_kv_k_row.connect("notify::selected", self._on_ask_kv_k_changed)
+        group.add(self._ask_kv_k_row)
+
+        self._ask_kv_v_row = Adw.ComboRow(
+            title="V cache", model=Gtk.StringList.new(kv_labels))
+        self._ask_kv_v_row.set_selected(self._kv_index("ask_kv_type_v"))
+        self._ask_kv_v_row.connect("notify::selected", self._on_ask_kv_v_changed)
+        group.add(self._ask_kv_v_row)
+
+        base = "Faster attention, less memory; required for quantizing the V cache."
+        if llama_runtime.flash_attn_risky():
+            flash_subtitle = (base + " ⚠ On this GPU (an AMD shared-memory iGPU, "
+                              "Vulkan/RADV) it is often unstable and can crash the "
+                              "app with a device-lost error — quantize only the K "
+                              "cache (V = f16), which doesn't need it.")
+        else:
+            flash_subtitle = base + " Needed when the V cache is q8_0/q4_0."
+        self._ask_flash_row = Adw.SwitchRow(title="Flash attention",
+                                            subtitle=flash_subtitle)
+        self._ask_flash_row.set_active(self._settings.get("ask_flash_attn", False))
+        self._ask_flash_row.connect("notify::active", self._on_ask_flash_changed)
+        group.add(self._ask_flash_row)
+
+        self._ask_offload_row = Adw.SwitchRow(
+            title="KV cache on GPU",
+            subtitle="On stores the KV cache in VRAM; off keeps it in system RAM, "
+                     "freeing VRAM at some speed cost.")
+        self._ask_offload_row.set_active(self._settings.get("ask_offload_kqv", True))
+        self._ask_offload_row.connect("notify::active", self._on_toggle_setting,
+                                      "ask_offload_kqv")
+        group.add(self._ask_offload_row)
+
+        self._ask_mmap_row = Adw.SwitchRow(
+            title="Memory-map model",
+            subtitle="On (default) maps the model file lazily. Off loads it fully "
+                     "into RAM — a longer 'Loading model…' but no page-faults "
+                     "during the answer; needs enough free RAM.")
+        self._ask_mmap_row.set_active(self._settings.get("ask_use_mmap", True))
+        self._ask_mmap_row.connect("notify::active", self._on_toggle_setting,
+                                   "ask_use_mmap")
+        group.add(self._ask_mmap_row)
+        self._refresh_kv_hint()
+        return self._subpage("Model runtime", page)
+
+    def _kv_index(self, key: str) -> int:
+        v = self._settings.get(key, "f16")
+        return self._ask_kv_types.index(v) if v in self._ask_kv_types else 0
+
+    def _refresh_kv_hint(self) -> None:
+        """V-cache subtitle: warn when it's quantized but flash attention (which
+        it needs) is off — the user's decision basis."""
+        from . import llama_runtime
+        text = ("Value-cache precision. Quantizing V (below f16) needs flash "
+                "attention.")
+        if llama_runtime.kv_needs_flash(self._settings.get("ask_kv_type_v", "f16")) \
+                and not self._settings.get("ask_flash_attn"):
+            text += (" ⚠ Turn on Flash attention below"
+                     + (" (unstable on this GPU)." if llama_runtime.flash_attn_risky()
+                        else "."))
+        self._ask_kv_v_row.set_subtitle(text)
+
+    def _on_ask_kv_k_changed(self, row, _pspec) -> None:
+        self._settings["ask_kv_type_k"] = self._ask_kv_types[row.get_selected()]
+        self._persist()
+
+    def _on_ask_kv_v_changed(self, row, _pspec) -> None:
+        self._settings["ask_kv_type_v"] = self._ask_kv_types[row.get_selected()]
+        self._persist()
+        self._refresh_kv_hint()
+
+    def _on_ask_flash_changed(self, row, _pspec) -> None:
+        self._settings["ask_flash_attn"] = row.get_active()
+        self._persist()
+        self._refresh_kv_hint()
+
     def _build_ask_subpage(self):
         """Chat model that writes grounded answers, plus a link to its prompt."""
         page = Adw.PreferencesPage(title="Ask")
@@ -757,27 +875,12 @@ class PreferencesDialog(Adw.PreferencesDialog):
         self._ask_gguf_file_row.add_suffix(gguf_reset)
         group.add(self._ask_gguf_file_row)
 
-        self._ask_gpu_row = Adw.SpinRow(
-            title="GPU layers",
-            subtitle="Model layers offloaded to the GPU. 0 = pure CPU; a high "
-                     "value (e.g. 999) offloads the whole model.",
-            adjustment=Gtk.Adjustment.new(
-                self._settings.get("ask_n_gpu_layers", 0), 0, 999, 1, 8, 0.0),
-            digits=0)
-        self._ask_gpu_row.connect("notify::value", self._on_ask_gpu_layers_changed)
-        group.add(self._ask_gpu_row)
-
-        self._ask_threads_row = Adw.SpinRow(
-            title="CPU threads",
-            subtitle="0 = half your physical cores, so the machine stays "
-                     "responsive while an answer is generated. More threads = "
-                     "faster answers but can slow the rest of the system during a "
-                     "search; raise it gradually.",
-            adjustment=Gtk.Adjustment.new(
-                self._settings.get("ask_n_threads", 0), 0, 128, 1, 4, 0.0),
-            digits=0)
-        self._ask_threads_row.connect("notify::value", self._on_ask_threads_changed)
-        group.add(self._ask_threads_row)
+        # GPU layers, CPU threads and the KV-cache knobs live on their own
+        # subpage (built before this one), reached via this row.
+        self._ask_runtime_row = self._nav_row(
+            "Model runtime", "GPU layers, CPU threads, KV cache…",
+            self._runtime_subpage)
+        group.add(self._ask_runtime_row)
         # Model (download) rows: needed by the local backend in auto and manual.
         self._ask_model_rows = [self._ask_gguf_url_row, self._ask_gguf_file_row]
 
@@ -962,7 +1065,6 @@ class PreferencesDialog(Adw.PreferencesDialog):
         """Show only the rows the current engine + backend actually use, so a
         non-technical user in Automatic sees just the model download, and the GPU
         row appears only when the installed build can offload."""
-        from . import llama_runtime
         engine = self._settings.get("ask_engine") or config.default("ask_engine")
         off = engine == "off"
         manual = engine == "manual"
@@ -970,11 +1072,9 @@ class PreferencesDialog(Adw.PreferencesDialog):
         local = (not off) and backend == "local"
         for w in self._ask_model_rows:        # model download: auto + manual/local
             w.set_visible(local)
-        # Model selector: only in Manual (Automatic auto-picks the newest model).
+        # Model selector + the runtime subpage link: only in Manual, local.
         self._ask_gguf_combo.set_visible(manual and backend == "local")
-        self._ask_threads_row.set_visible(manual and backend == "local")
-        self._ask_gpu_row.set_visible(
-            manual and backend == "local" and llama_runtime.supports_gpu())
+        self._ask_runtime_row.set_visible(manual and backend == "local")
         for w in self._ask_server_rows:       # server URL + model list: manual only
             w.set_visible(manual and backend in ("ollama", "openai"))
         for w in self._ask_manual_rows:       # advanced tuning: manual only
@@ -1093,6 +1193,16 @@ class PreferencesDialog(Adw.PreferencesDialog):
             self._ask_gguf_file_row.set_subtitle(f"{p}  ·  {mb:.0f} MB")
         else:
             self._ask_gguf_file_row.set_subtitle(f"{p}  ·  not downloaded")
+        self._refresh_gpu_recommendation()
+
+    def _refresh_gpu_recommendation(self) -> None:
+        """Set the GPU-layers subtitle to a hardware-aware recommendation for the
+        selected model (updates when the model changes)."""
+        base = "Layers offloaded to the GPU. 0 = pure CPU, 999 = all."
+        from . import llama_runtime
+        advice = llama_runtime.gpu_layers_advice(
+            config.resolve_model_path(self._settings))
+        self._ask_gpu_row.set_subtitle(f"{base} {advice}" if advice else base)
 
     def _refresh_ask_models(self) -> None:
         """Fetch the model list off the main thread — from Ollama's /api/tags or

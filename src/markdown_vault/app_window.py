@@ -404,9 +404,10 @@ class MainWindow(Adw.ApplicationWindow):
             ),
             ask_answer=self._ask_answer,
             ask_candidates=self._ask_candidates,
-            ask_answer_selected=lambda q, paths, on_phase=None, should_cancel=None:
-            self._ask_answer(q, note_paths=paths, on_phase=on_phase,
-                             should_cancel=should_cancel),
+            ask_answer_selected=lambda q, paths, on_phase=None, on_token=None,
+            should_cancel=None: self._ask_answer(
+                q, note_paths=paths, on_phase=on_phase, on_token=on_token,
+                should_cancel=should_cancel),
             list_ask_models=self._list_ask_models,
             set_ask_model=self._set_ask_model,
             current_ask_model=lambda: config.resolve_model_path(self._settings),
@@ -1447,7 +1448,7 @@ class MainWindow(Adw.ApplicationWindow):
             [self._active_vault] if self._active_vault else allv)
 
     def _ask_answer(self, question: str, note_paths=None, on_phase=None,
-                    should_cancel=None):
+                    on_token=None, should_cancel=None):
         """RAG: retrieve passages and let the configured local model write a
         grounded answer.  Runs off the main thread (quick-open worker); returns
         an :class:`ask.Answer`.  The retrieval/backend/budget wiring lives in
@@ -1459,7 +1460,8 @@ class MainWindow(Adw.ApplicationWindow):
         return ask.answer_question(
             question, self._semantic_index, self._settings,
             self._scope_vault_paths(), self._answer_language(),
-            note_paths=note_paths, on_phase=on_phase, should_cancel=should_cancel)
+            note_paths=note_paths, on_phase=on_phase, on_token=on_token,
+            should_cancel=should_cancel)
 
     def _list_ask_models(self):
         """``(name, path)`` for each downloaded GGUF — feeds the palette's footer

@@ -60,8 +60,10 @@ class QuickOpenPalette(Adw.Dialog):
         self._model_dropdown = None
         self._model_paths: list[str] = []
         self._model_updating = False
-        self._phase_label = None        # the status row's label (loading/thinking)
+        self._phase_label = None        # the status row's label (loading/reading)
         self._phase_key = "thinking"    # current status phase
+        self._stream_label = None       # live answer label while tokens stream in
+        self._stream_text = ""          # accumulated streamed text
         self._pick_toggle = None        # "pick sources" toggle (footer)
         self._answer_btn = None         # "Answer (n)" button shown while picking
         self._candidates = []           # [(path, score)] currently offered
@@ -424,7 +426,10 @@ class QuickOpenPalette(Adw.Dialog):
         return row
 
     #: Status phase → label shown in the running row (timer appended live).
-    _PHASE_TEXT = {"loading": "Loading model…", "thinking": "Thinking…"}
+    #: 'reading' is the prefill (reading the prompt/notes — usually the longest
+    #: part), 'writing' the token generation; 'thinking' is a fallback (servers).
+    _PHASE_TEXT = {"loading": "Loading model…", "reading": "Reading your notes…",
+                   "writing": "Writing the answer…", "thinking": "Thinking…"}
 
     def _status_row(self) -> Gtk.ListBoxRow:
         """The running-status row with a spinner — its label reflects the current
@@ -501,6 +506,8 @@ class QuickOpenPalette(Adw.Dialog):
             self._timer_label.set_text("")
         self._candidates = []
         self._selected = []
+        self._stream_label = None
+        self._stream_text = ""
         if self._answer_btn is not None:
             self._answer_btn.set_visible(False)
 
@@ -611,11 +618,13 @@ class QuickOpenPalette(Adw.Dialog):
         self._ask_generation += 1
         generation = self._ask_generation
         on_phase = lambda p, g=generation: GLib.idle_add(self._set_phase, g, p)
+        on_token = lambda t, g=generation: GLib.idle_add(self._stream_delta, g, t)
         should_cancel = lambda g=generation: self._ask_generation != g
 
         def worker():
             try:
                 ans = self._ask_answer(question, on_phase=on_phase,
+                                       on_token=on_token,
                                        should_cancel=should_cancel)
             except Exception as exc:  # noqa: BLE001 — surface any failure to the UI
                 logger.debug("ask failed", exc_info=True)
@@ -640,6 +649,30 @@ class QuickOpenPalette(Adw.Dialog):
         label.set_margin_start(8)
         row.set_child(label)
         return row
+
+    def _stream_delta(self, generation: int, piece: str) -> bool:
+        """Append a streamed token to a live answer row (created on the first
+        token, replacing the 'Reading…' status). The growing text is the
+        progress indicator — no 'writing' label needed. _show_answer replaces it
+        with the final Markdown render + citations when generation finishes."""
+        if generation != self._ask_generation:
+            return False  # superseded
+        if self._stream_label is None:
+            self._clear()                      # drop the status row + stop ticking
+            self._stream_label = Gtk.Label(xalign=0, wrap=True, selectable=False)
+            for m in (self._stream_label.set_margin_top,
+                      self._stream_label.set_margin_bottom,
+                      self._stream_label.set_margin_start,
+                      self._stream_label.set_margin_end):
+                m(8)
+            row = Gtk.ListBoxRow()
+            row.set_activatable(False)
+            row.set_selectable(False)
+            row.set_child(self._stream_label)
+            self._results.append(row)
+        self._stream_text += piece
+        self._stream_label.set_text(self._stream_text)
+        return False
 
     def _show_answer(self, generation: int, ans) -> bool:
         if generation != self._ask_generation:
@@ -772,11 +805,13 @@ class QuickOpenPalette(Adw.Dialog):
         self._ask_generation += 1
         generation = self._ask_generation
         on_phase = lambda p, g=generation: GLib.idle_add(self._set_phase, g, p)
+        on_token = lambda t, g=generation: GLib.idle_add(self._stream_delta, g, t)
         should_cancel = lambda g=generation: self._ask_generation != g
 
         def worker():
             try:
                 ans = self._ask_answer_selected(question, paths, on_phase=on_phase,
+                                                on_token=on_token,
                                                 should_cancel=should_cancel)
             except Exception as exc:  # noqa: BLE001 — surface failure to the UI
                 logger.debug("ask (selected) failed", exc_info=True)

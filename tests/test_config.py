@@ -379,6 +379,13 @@ class TestDefaultAndMigration(unittest.TestCase):
         self.assertEqual(_cfg.default("ask_backend"), "local")
         self.assertEqual(_cfg.default("ask_engine"), "auto")
 
+    def test_kv_cache_defaults(self):
+        self.assertEqual(_cfg.default("ask_kv_type_k"), "f16")
+        self.assertEqual(_cfg.default("ask_kv_type_v"), "f16")
+        self.assertFalse(_cfg.default("ask_flash_attn"))
+        self.assertTrue(_cfg.default("ask_offload_kqv"))
+        self.assertTrue(_cfg.default("ask_use_mmap"))
+
     def test_default_gguf_path_is_under_state_dir(self):
         self.assertTrue(_cfg.default_gguf_path().endswith("models/model.gguf"))
 
@@ -417,6 +424,29 @@ class TestDefaultAndMigration(unittest.TestCase):
         finally:
             os.unlink(good.name)
             os.unlink(bad.name)
+
+    def test_gguf_n_layers_reads_block_count(self):
+        import os
+        import struct
+        import tempfile
+        # minimal GGUF: magic, version, tensor_count=0, 2 KV pairs (a string one
+        # to exercise skipping, then the uint32 block_count).
+        buf = b"GGUF" + struct.pack("<IQQ", 3, 0, 2)
+        for key, vtype, val in [(b"general.name", 8, b"x"),
+                                (b"llama.block_count", 4, 32)]:
+            buf += struct.pack("<Q", len(key)) + key + struct.pack("<I", vtype)
+            if vtype == 8:
+                buf += struct.pack("<Q", len(val)) + val
+            else:
+                buf += struct.pack("<I", val)
+        f = tempfile.NamedTemporaryFile(suffix=".gguf", delete=False)
+        f.write(buf)
+        f.close()
+        try:
+            self.assertEqual(_cfg.gguf_n_layers(f.name), 32)
+            self.assertIsNone(_cfg.gguf_n_layers("/no/such.gguf"))
+        finally:
+            os.unlink(f.name)
 
     def test_normalize_gguf_url_blob_to_resolve(self):
         blob = "https://huggingface.co/x/y/blob/main/m.gguf"
