@@ -30,6 +30,34 @@ _LOG_INSTALLED = False
 _LOG_LOCK = threading.Lock()
 _LOG_BUF: list = []
 
+# Cancellation. A ggml abort callback on the model context polls the current
+# generation's should_cancel predicate; returning True aborts the running
+# decode (prompt processing included). Strong ref to the ctypes callback kept.
+_ABORT_HOLDER: dict = {"fn": None}
+_ABORT_CB = None
+
+
+def _abort_predicate(_user_data=None) -> bool:
+    fn = _ABORT_HOLDER["fn"]
+    try:
+        return bool(fn()) if fn else False
+    except Exception:          # noqa: BLE001 — never abort on a broken predicate
+        return False
+
+
+def _install_abort(llama) -> None:
+    """Install the ggml abort callback on *llama*'s context (best-effort — some
+    builds/versions may not expose it, in which case cancellation degrades to
+    discarding the result while the compute finishes)."""
+    global _ABORT_CB
+    try:
+        import llama_cpp
+        if _ABORT_CB is None:
+            _ABORT_CB = llama_cpp.ggml_abort_callback(_abort_predicate)
+        llama_cpp.llama_set_abort_callback(llama._ctx.ctx, _ABORT_CB, None)
+    except Exception:          # noqa: BLE001 — no abort API / private layout moved
+        logger.debug("abort callback not installed", exc_info=True)
+
 
 def _install_llama_logging() -> None:
     """Route llama.cpp's own logs into the dedicated ``markdown-vault.llama.log``
@@ -181,14 +209,18 @@ def _llama_kwargs(key) -> dict:
 
 
 def get_model(model_path: str, n_ctx: int, n_gpu_layers: int = 0,
-              n_threads: int = 0):
+              n_threads: int = 0, on_load=None):
     """The cached ``Llama`` for these parameters, loading (and evicting the
-    previous one) only when the key changes."""
+    previous one) only when the key changes. *on_load* is called right before an
+    actual (cache-miss) load, so the UI can show a 'Loading model…' phase only
+    when a load really happens."""
     global _MODEL, _MODEL_KEY
     _install_llama_logging()             # capture the load logs into the llama log
     key = (model_path, int(n_ctx), int(n_gpu_layers), int(n_threads))
     with _LOCK:
         if _MODEL_KEY != key:
+            if on_load is not None:
+                on_load()
             _MODEL = _load(key)          # replaces the old model (frees its RAM)
             _MODEL_KEY = key
         return _MODEL
@@ -197,32 +229,60 @@ def get_model(model_path: str, n_ctx: int, n_gpu_layers: int = 0,
 class LlamaCppChat:
     """A :class:`ask.ChatBackend` over an in-process GGUF model.
 
-    *_model* is an injection seam for tests: pass a stub with a
-    ``create_chat_completion`` method and no real model is loaded.
+    *on_phase* is an optional ``callback(phase)`` the UI hooks for status: it
+    fires ``"loading"`` only when the model actually loads and ``"thinking"``
+    just before generation. *_model* is an injection seam for tests: pass a stub
+    with a ``create_chat_completion`` method and no real model is loaded.
     """
 
     def __init__(self, model_path: str, num_ctx: int = 8192,
                  n_gpu_layers: int = 0, n_threads: int = 0,
-                 temperature: float = 0.2, _model=None) -> None:
+                 temperature: float = 0.2, on_phase=None, should_cancel=None,
+                 _model=None) -> None:
         self.model_path = model_path
         self.num_ctx = num_ctx
         self.n_gpu_layers = n_gpu_layers
         self.n_threads = n_threads
         self.temperature = temperature
+        self._on_phase = on_phase
+        self._should_cancel = should_cancel
         self._model = _model
+
+    def _phase(self, name: str) -> None:
+        if self._on_phase is not None:
+            self._on_phase(name)
+
+    def _cancelled(self) -> bool:
+        try:
+            return bool(self._should_cancel and self._should_cancel())
+        except Exception:      # noqa: BLE001 — a broken predicate never aborts
+            return False
 
     def _llama(self):
         if self._model is not None:
             return self._model
-        return get_model(self.model_path, self.num_ctx,
-                         self.n_gpu_layers, self.n_threads)
+        return get_model(self.model_path, self.num_ctx, self.n_gpu_layers,
+                         self.n_threads, on_load=lambda: self._phase("loading"))
 
     def chat(self, system: str, user: str) -> str:
-        out = self._llama().create_chat_completion(
-            messages=[{"role": "system", "content": system},
-                      {"role": "user", "content": user}],
-            temperature=self.temperature,
-        )
+        llama = self._llama()          # may fire "loading" on a cache miss
+        self._phase("thinking")
+        # Arm the abort callback so closing the palette / asking again interrupts
+        # the running decode (prompt processing included), not just its display.
+        _install_abort(llama)
+        _ABORT_HOLDER["fn"] = self._should_cancel
+        try:
+            out = llama.create_chat_completion(
+                messages=[{"role": "system", "content": system},
+                          {"role": "user", "content": user}],
+                temperature=self.temperature,
+            )
+        except Exception:          # noqa: BLE001
+            if self._cancelled():
+                return ""          # intentionally aborted; the result is discarded
+            raise
+        finally:
+            _ABORT_HOLDER["fn"] = None
         text = ((out.get("choices") or [{}])[0].get("message") or {}).get(
             "content") or ""
         return text.strip()

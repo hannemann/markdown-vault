@@ -197,5 +197,86 @@ class TestCandidatePick(unittest.TestCase):
         self.assertEqual(len(set(labels)), 3)          # spread, not collapsed
 
 
+class TestStatusPhases(unittest.TestCase):
+    """The running row shows a phase ('Loading model…'/'Thinking…') + timer."""
+
+    def _palette(self):
+        return QuickOpenPalette(make_engine=lambda: None, semantic_query=lambda q: [],
+                                ask_answer=lambda q, on_phase=None: None)
+
+    def test_set_phase_updates_the_status_label(self):
+        p = self._palette()
+        p._ask_generation = 1
+        p._results.append(p._status_row())
+        p._start_timer()
+        p._set_phase(1, "loading")
+        self.assertIn("Loading model", p._phase_label.get_text())
+        p._set_phase(1, "thinking")
+        self.assertIn("Thinking", p._phase_label.get_text())
+        self.assertIn("s", p._phase_label.get_text())   # timer appended
+        p._stop_ticking()
+
+    def test_stale_generation_phase_is_ignored(self):
+        p = self._palette()
+        p._ask_generation = 2
+        p._results.append(p._status_row())
+        p._start_timer()
+        p._set_phase(2, "loading")
+        p._set_phase(1, "thinking")     # older question → ignored
+        self.assertIn("Loading model", p._phase_label.get_text())
+        p._stop_ticking()
+
+
+class TestCloseCancels(unittest.TestCase):
+    def test_close_bumps_generation_to_invalidate_and_abort(self):
+        p = QuickOpenPalette(
+            make_engine=lambda: None, semantic_query=lambda q: [],
+            ask_answer=lambda q, on_phase=None, should_cancel=None: None)
+        p._ask_generation = 5
+        p._on_closed()
+        self.assertEqual(p._ask_generation, 6)   # a captured should_cancel now True
+
+
+class TestFooterModelPicker(unittest.TestCase):
+    """Footer model picker: only with >1 model, in Ask mode; drives set_ask_model."""
+
+    def _palette(self, models, current=None):
+        chosen = {}
+        p = QuickOpenPalette(
+            make_engine=lambda: None, semantic_query=lambda q: [],
+            ask_answer=lambda q, on_phase=None: None,
+            list_ask_models=lambda: models,
+            set_ask_model=lambda path: chosen.__setitem__("path", path),
+            current_ask_model=lambda: current)
+        p._chosen = chosen
+        return p
+
+    def test_hidden_with_a_single_model(self):
+        p = self._palette([("a.gguf", "/a")])
+        p._ask_mode = True
+        p._refresh_models()
+        self.assertFalse(p._model_dropdown.get_visible())
+
+    def test_shown_and_preselected_with_several(self):
+        p = self._palette([("a.gguf", "/a"), ("b.gguf", "/b")], current="/b")
+        p._ask_mode = True
+        p._refresh_models()
+        self.assertTrue(p._model_dropdown.get_visible())
+        self.assertEqual(p._model_paths[p._model_dropdown.get_selected()], "/b")
+
+    def test_hidden_outside_ask_mode(self):
+        p = self._palette([("a.gguf", "/a"), ("b.gguf", "/b")])
+        p._ask_mode = False
+        p._refresh_models()
+        self.assertFalse(p._model_dropdown.get_visible())
+
+    def test_selecting_sets_the_model(self):
+        p = self._palette([("a.gguf", "/a"), ("b.gguf", "/b")], current="/a")
+        p._ask_mode = True
+        p._refresh_models()
+        p._model_dropdown.set_selected(1)          # → /b
+        self.assertEqual(p._chosen.get("path"), "/b")
+
+
 if __name__ == "__main__":
     unittest.main()

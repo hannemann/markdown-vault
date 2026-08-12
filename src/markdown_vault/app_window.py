@@ -404,7 +404,12 @@ class MainWindow(Adw.ApplicationWindow):
             ),
             ask_answer=self._ask_answer,
             ask_candidates=self._ask_candidates,
-            ask_answer_selected=lambda q, paths: self._ask_answer(q, note_paths=paths),
+            ask_answer_selected=lambda q, paths, on_phase=None, should_cancel=None:
+            self._ask_answer(q, note_paths=paths, on_phase=on_phase,
+                             should_cancel=should_cancel),
+            list_ask_models=self._list_ask_models,
+            set_ask_model=self._set_ask_model,
+            current_ask_model=lambda: config.resolve_model_path(self._settings),
             get_top_k=lambda: int(self._settings.get("ask_top_k")
                                   or config.default("ask_top_k")),
             can_ask=lambda: bool(self._settings.get("semantic_search_enabled"))
@@ -1441,18 +1446,31 @@ class MainWindow(Adw.ApplicationWindow):
         return [scope] if scope in allv else (
             [self._active_vault] if self._active_vault else allv)
 
-    def _ask_answer(self, question: str, note_paths=None):
+    def _ask_answer(self, question: str, note_paths=None, on_phase=None,
+                    should_cancel=None):
         """RAG: retrieve passages and let the configured local model write a
         grounded answer.  Runs off the main thread (quick-open worker); returns
         an :class:`ask.Answer`.  The retrieval/backend/budget wiring lives in
         :func:`ask.answer_question`.  *note_paths*, if given, uses exactly those
-        user-picked notes as context instead of retrieving.
+        user-picked notes as context instead of retrieving.  *on_phase* is the
+        UI status hook (loading/thinking).
         """
         from . import ask
         return ask.answer_question(
             question, self._semantic_index, self._settings,
             self._scope_vault_paths(), self._answer_language(),
-            note_paths=note_paths)
+            note_paths=note_paths, on_phase=on_phase, should_cancel=should_cancel)
+
+    def _list_ask_models(self):
+        """``(name, path)`` for each downloaded GGUF — feeds the palette's footer
+        model picker (only shown when there is more than one)."""
+        from pathlib import Path
+        return [(Path(p).name, str(p)) for p in config.list_models()]
+
+    def _set_ask_model(self, path: str) -> None:
+        """Select a model from the footer picker; the next answer uses it."""
+        self._settings["ask_gguf_path"] = path
+        config.save_settings(self._settings)
 
     def _ask_candidates(self, question: str):
         """Top-20 candidate notes (path, score) for the 'pick your own sources'

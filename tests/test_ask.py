@@ -374,6 +374,50 @@ class TestAnswerQuestionLocalBackend(unittest.TestCase):
             llama_runtime.availability = orig
         self.assertEqual(a.text, "MODEL MISSING")   # no backend call, just the reason
 
+    def test_local_backend_fires_load_and_think_phases(self):
+        from markdown_vault import llama_runtime
+        orig_av, orig_cls = llama_runtime.availability, llama_runtime.LlamaCppChat
+        phases = []
+        llama_runtime.availability = lambda p: None
+
+        def fake_backend(*a, **k):
+            on_phase = k.get("on_phase")
+
+            def chat(system, user):
+                if on_phase:
+                    on_phase("loading")
+                    on_phase("thinking")
+                return "answer [1]"
+            return SimpleNamespace(chat=chat)
+
+        llama_runtime.LlamaCppChat = fake_backend
+        try:
+            ask.answer_question("q", self._sem(), {"ask_engine": "auto"}, None,
+                                "English", on_phase=lambda p: phases.append(p))
+        finally:
+            llama_runtime.availability = orig_av
+            llama_runtime.LlamaCppChat = orig_cls
+        self.assertEqual(phases, ["loading", "thinking"])
+
+    def test_should_cancel_reaches_the_local_backend(self):
+        from markdown_vault import llama_runtime
+        orig_av, orig_cls = llama_runtime.availability, llama_runtime.LlamaCppChat
+        seen = {}
+        llama_runtime.availability = lambda p: None
+
+        def fake(*a, **k):
+            seen["sc"] = k.get("should_cancel")
+            return SimpleNamespace(chat=lambda s, u: "x [1]")
+
+        llama_runtime.LlamaCppChat = fake
+        try:
+            ask.answer_question("q", self._sem(), {"ask_engine": "auto"}, None,
+                                "English", should_cancel=lambda: True)
+        finally:
+            llama_runtime.availability = orig_av
+            llama_runtime.LlamaCppChat = orig_cls
+        self.assertTrue(callable(seen["sc"]) and seen["sc"]())
+
     def test_engine_off_generates_no_answer(self):
         called = []
         sem = SimpleNamespace(

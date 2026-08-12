@@ -39,7 +39,9 @@ class QuickOpenPalette(Adw.Dialog):
 
     def __init__(self, make_engine, semantic_query=None, ask_answer=None,
                  scope=None, can_ask=None, ask_candidates=None,
-                 ask_answer_selected=None, get_top_k=None) -> None:
+                 ask_answer_selected=None, get_top_k=None,
+                 list_ask_models=None, set_ask_model=None,
+                 current_ask_model=None) -> None:
         super().__init__()
         self._make_engine = make_engine
         self._semantic_query = semantic_query  # callable(query) -> list, off-thread
@@ -50,6 +52,16 @@ class QuickOpenPalette(Adw.Dialog):
         self._ask_candidates = ask_candidates
         self._ask_answer_selected = ask_answer_selected
         self._get_top_k = get_top_k
+        # Footer model picker (Ask): list_ask_models() -> [(name, path)],
+        # set_ask_model(path), current_ask_model() -> path. Shown only with >1.
+        self._list_ask_models = list_ask_models
+        self._set_ask_model = set_ask_model
+        self._current_ask_model = current_ask_model
+        self._model_dropdown = None
+        self._model_paths: list[str] = []
+        self._model_updating = False
+        self._phase_label = None        # the status row's label (loading/thinking)
+        self._phase_key = "thinking"    # current status phase
         self._pick_toggle = None        # "pick sources" toggle (footer)
         self._answer_btn = None         # "Answer (n)" button shown while picking
         self._candidates = []           # [(path, score)] currently offered
@@ -78,6 +90,10 @@ class QuickOpenPalette(Adw.Dialog):
         self._toast_overlay = Adw.ToastOverlay()
         self._toast_overlay.set_child(box)
         self.set_child(self._toast_overlay)
+        # Closing bumps the generation, which both discards a late answer and
+        # (via should_cancel) aborts an in-flight local decode instead of letting
+        # the model keep churning in the background.
+        self.connect("closed", lambda *_: self._on_closed())
 
         header = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         header.set_margin_top(8)
@@ -166,6 +182,14 @@ class QuickOpenPalette(Adw.Dialog):
         self._answer_btn.set_visible(False)
         self._answer_btn.connect("clicked", lambda *_: self._answer_from_selection())
         footer.append(self._answer_btn)
+        # Model picker (Ask): only appears with more than one downloaded model.
+        if self._list_ask_models is not None:
+            self._model_list = Gtk.StringList()
+            self._model_dropdown = Gtk.DropDown(model=self._model_list)
+            self._model_dropdown.set_tooltip_text("Answer model")
+            self._model_dropdown.set_visible(False)
+            self._model_dropdown.connect("notify::selected", self._on_model_selected)
+            footer.append(self._model_dropdown)
         self._scope_dropdown = None
         if self._scope:
             from .vault_scope import VaultScope
@@ -220,9 +244,41 @@ class QuickOpenPalette(Adw.Dialog):
         self.present(parent)
         self._entry.grab_focus()
 
+    def _on_closed(self) -> None:
+        """Invalidate any in-flight answer so it is both dropped and aborted."""
+        self._ask_generation += 1
+        self._stop_ticking()
+
     def refresh_scope(self) -> None:
         if self._scope_dropdown is not None:
             self._scope_dropdown.refresh()
+        self._refresh_models()
+
+    def _refresh_models(self) -> None:
+        """Populate and show the footer model picker only when Ask mode is on and
+        more than one model is downloaded."""
+        if self._model_dropdown is None:
+            return
+        models = self._list_ask_models() if self._list_ask_models else []
+        if len(models) < 2:
+            self._model_dropdown.set_visible(False)
+            return
+        self._model_updating = True
+        self._model_paths = [p for _, p in models]
+        self._model_list.splice(0, self._model_list.get_n_items(),
+                                [n for n, _ in models])
+        current = self._current_ask_model() if self._current_ask_model else None
+        if current in self._model_paths:
+            self._model_dropdown.set_selected(self._model_paths.index(current))
+        self._model_updating = False
+        self._model_dropdown.set_visible(self._ask_mode)
+
+    def _on_model_selected(self, dropdown, _pspec) -> None:
+        if self._model_updating or self._set_ask_model is None:
+            return
+        i = dropdown.get_selected()
+        if 0 <= i < len(self._model_paths):
+            self._set_ask_model(self._model_paths[i])
 
     def get_last_question(self) -> str:
         """The most recently asked question — persisted across restarts so the
@@ -367,15 +423,18 @@ class QuickOpenPalette(Adw.Dialog):
         row.set_child(label)
         return row
 
-    def _thinking_row(self) -> Gtk.ListBoxRow:
-        """The 'Thinking…' placeholder with a spinner pinned to its right —
-        a running-indicator while the (possibly slow, local) model answers."""
+    #: Status phase → label shown in the running row (timer appended live).
+    _PHASE_TEXT = {"loading": "Loading model…", "thinking": "Thinking…"}
+
+    def _status_row(self) -> Gtk.ListBoxRow:
+        """The running-status row with a spinner — its label reflects the current
+        phase ('Loading model…' only when the model actually loads, else
+        'Thinking…') with the elapsed time ticking behind it."""
         row = Gtk.ListBoxRow()
         row.set_activatable(False)
         row.set_selectable(False)
         box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
-        label = Gtk.Label(label="Thinking…")
-        label.set_xalign(0)
+        label = Gtk.Label(xalign=0)
         label.set_hexpand(True)          # pushes the spinner to the right edge
         label.add_css_class("dim-label")
         label.set_margin_top(6)
@@ -387,6 +446,8 @@ class QuickOpenPalette(Adw.Dialog):
         spinner.start()
         box.append(spinner)
         row.set_child(box)
+        self._phase_label = label
+        self._render_phase()
         return row
 
     def _answer_row(self, text: str) -> Gtk.ListBoxRow:
@@ -456,14 +517,30 @@ class QuickOpenPalette(Adw.Dialog):
     def _fmt_secs(seconds: float) -> str:
         return f"{seconds:.1f} s"          # period: the palette chrome is English
 
+    def _render_phase(self) -> None:
+        """Draw the running row's label: '<phase>  <elapsed>'."""
+        if self._phase_label is None:
+            return
+        text = self._PHASE_TEXT.get(self._phase_key, "Thinking…")
+        elapsed = self._fmt_secs(time.monotonic() - self._ask_started)
+        self._phase_label.set_text(f"{text}  {elapsed}")
+
+    def _set_phase(self, generation: int, phase: str) -> bool:
+        """Switch the status phase (called from the worker via idle_add)."""
+        if generation == self._ask_generation:
+            self._phase_key = phase
+            self._render_phase()
+        return False  # one-shot idle callback
+
     def _start_timer(self) -> None:
         self._ask_started = time.monotonic()
+        self._phase_key = "thinking"
         self._stop_ticking()
-        self._timer_label.set_text(self._fmt_secs(0.0))
+        self._render_phase()
         self._timer_id = GLib.timeout_add(100, self._tick)
 
     def _tick(self) -> bool:
-        self._timer_label.set_text(self._fmt_secs(time.monotonic() - self._ask_started))
+        self._render_phase()
         return True  # keep ticking
 
     def _stop_ticking(self) -> None:
@@ -520,6 +597,7 @@ class QuickOpenPalette(Adw.Dialog):
         else:
             self._entry.set_placeholder_text("Go to file…")
             self._refresh()
+        self._refresh_models()          # model picker is Ask-mode only
         self._entry.grab_focus()
 
     def _run_ask(self) -> None:
@@ -528,14 +606,17 @@ class QuickOpenPalette(Adw.Dialog):
             return
         self._last_question = question
         self._clear()
-        self._results.append(self._thinking_row())
+        self._results.append(self._status_row())
         self._start_timer()
         self._ask_generation += 1
         generation = self._ask_generation
+        on_phase = lambda p, g=generation: GLib.idle_add(self._set_phase, g, p)
+        should_cancel = lambda g=generation: self._ask_generation != g
 
         def worker():
             try:
-                ans = self._ask_answer(question)
+                ans = self._ask_answer(question, on_phase=on_phase,
+                                       should_cancel=should_cancel)
             except Exception as exc:  # noqa: BLE001 — surface any failure to the UI
                 logger.debug("ask failed", exc_info=True)
                 from .ask import Answer
@@ -544,6 +625,22 @@ class QuickOpenPalette(Adw.Dialog):
 
         threading.Thread(target=worker, daemon=True).start()
 
+    def _duration_row(self, prefix: str, elapsed: float) -> Gtk.ListBoxRow:
+        """A dim '<prefix> X.X s' line closing off the answer (the live timer is
+        inline in the status row, so the total goes here, not the footer)."""
+        row = Gtk.ListBoxRow()
+        row.set_activatable(False)
+        row.set_selectable(False)
+        label = Gtk.Label(label=f"{prefix} {self._fmt_secs(elapsed)}")
+        label.set_xalign(0)
+        label.add_css_class("dim-label")
+        label.add_css_class("caption")
+        label.set_margin_top(4)
+        label.set_margin_bottom(6)
+        label.set_margin_start(8)
+        row.set_child(label)
+        return row
+
     def _show_answer(self, generation: int, ans) -> bool:
         if generation != self._ask_generation:
             return False  # superseded by a newer question / mode switch
@@ -551,7 +648,7 @@ class QuickOpenPalette(Adw.Dialog):
         self._clear()          # also stops the ticking timer + clears its label
         if ans.error:
             self._results.append(self._message_row(f"Error: {ans.error}"))
-            self._timer_label.set_text(self._fmt_secs(elapsed))
+            self._results.append(self._duration_row("Failed after", elapsed))
             return False
         self._answer_text = ans.text or "(empty answer)"
         self._results.append(self._answer_row(self._answer_text))
@@ -559,9 +656,9 @@ class QuickOpenPalette(Adw.Dialog):
             self._results.append(self._source_row(source))
         for warning in getattr(ans, "warnings", []):
             self._results.append(self._message_row(f"⚠ {warning}"))
-        # Leave the total time in the footer, and arm the copy button (hidden
-        # until the pointer hovers the results — up-front it distracts).
-        self._timer_label.set_text(self._fmt_secs(elapsed))
+        # The total time closes off the answer; arm the copy button (hidden until
+        # the pointer hovers the results — up-front it distracts).
+        self._results.append(self._duration_row("Answered in", elapsed))
         self._has_answer = True
         return False
 
@@ -670,14 +767,17 @@ class QuickOpenPalette(Adw.Dialog):
         question = self._pick_question
         paths = list(self._selected)
         self._clear()
-        self._results.append(self._thinking_row())
+        self._results.append(self._status_row())
         self._start_timer()
         self._ask_generation += 1
         generation = self._ask_generation
+        on_phase = lambda p, g=generation: GLib.idle_add(self._set_phase, g, p)
+        should_cancel = lambda g=generation: self._ask_generation != g
 
         def worker():
             try:
-                ans = self._ask_answer_selected(question, paths)
+                ans = self._ask_answer_selected(question, paths, on_phase=on_phase,
+                                                should_cancel=should_cancel)
             except Exception as exc:  # noqa: BLE001 — surface failure to the UI
                 logger.debug("ask (selected) failed", exc_info=True)
                 from .ask import Answer

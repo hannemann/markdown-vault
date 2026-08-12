@@ -97,6 +97,32 @@ class TestLogging(unittest.TestCase):
         self.assertTrue(lg.handlers)            # writes to its own file
 
 
+class _RaisingModel:
+    def create_chat_completion(self, **kw):
+        raise RuntimeError("decode aborted")
+
+
+class TestCancellation(unittest.TestCase):
+    def test_chat_returns_empty_when_cancelled(self):
+        chat = L.LlamaCppChat("/x", should_cancel=lambda: True,
+                              _model=_RaisingModel())
+        self.assertEqual(chat.chat("s", "u"), "")   # aborted → discarded quietly
+
+    def test_chat_reraises_a_real_error(self):
+        chat = L.LlamaCppChat("/x", should_cancel=lambda: False,
+                              _model=_RaisingModel())
+        with self.assertRaises(RuntimeError):
+            chat.chat("s", "u")
+
+    def test_abort_predicate_reads_the_holder(self):
+        L._ABORT_HOLDER["fn"] = lambda: True
+        try:
+            self.assertTrue(L._abort_predicate())
+        finally:
+            L._ABORT_HOLDER["fn"] = None
+        self.assertFalse(L._abort_predicate())      # no predicate → never aborts
+
+
 class TestModelCache(unittest.TestCase):
     def setUp(self):
         L._MODEL = None
