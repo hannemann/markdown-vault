@@ -120,6 +120,34 @@ ollama pull nomic-embed-text
 Point the app at it in Preferences → Search (URL + model). Fully local when the
 server runs on `localhost`; a remote server means embeddings are sent there.
 
+### Local answers (Ask, optional)
+
+The quick-open **Ask** mode answers from your notes with a local chat model,
+in-process via `llama-cpp-python` (no server) — installed by the same
+`make install-ai`. The GGUF model is a one-time download from Preferences →
+Search → Ask. The default engine is **Automatic**: it sets up the backend, a
+safe thread count and GPU offload when available, so only the model download
+needs a click. `make install-ai` fetches a **CPU** build by default — it works
+everywhere and needs no build tools.
+
+#### GPU acceleration (Vulkan) — optional, not officially supported
+
+GPU offload via Vulkan is **implemented but not officially supported** (best
+effort — it depends on your driver stack). If the build toolchain is present
+when you run `make install-ai`, it builds `llama-cpp-python` **with Vulkan
+automatically**; otherwise it installs the CPU build and tells you so. Install
+the toolchain first, then run the install (openSUSE Tumbleweed shown):
+
+```sh
+sudo zypper install vulkan-devel shaderc glslang-devel cmake gcc-c++
+make install-ai   # detects the toolchain and builds with Vulkan
+```
+
+Equivalents: Fedora `vulkan-headers vulkan-loader-devel glslang gcc-c++ cmake`;
+Debian/Ubuntu `libvulkan-dev glslc cmake g++`. Once a Vulkan build is installed,
+the **GPU layers** control appears in Preferences → Search → Ask; set it above 0
+(e.g. 999) to offload the model.
+
 ### Ubuntu 24.04: AppArmor profile
 
 Ubuntu 24.04 restricts unprivileged user namespaces

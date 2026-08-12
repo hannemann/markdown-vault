@@ -1,8 +1,11 @@
-# Optional AI dependencies (semantic search), installed into the venv by
-# `make install-ai`. Heavy, compiled wheels — kept opt-in so the base install
-# stays light and can't break on platforms without prebuilt wheels.
-# (llama-cpp-python for local answer generation will be added here once the
-# LLM feature lands; it needs the CPU wheel index, see docs.)
+# Optional AI dependencies (semantic search + local answer generation),
+# installed into the venv by `make install-ai`. Heavy, compiled wheels — kept
+# opt-in so the base install stays light and can't break on platforms without
+# prebuilt wheels.
 numpy==2.4.6
 onnxruntime==1.27.0
 tokenizers==0.23.1
+# llama-cpp-python (the in-process "local" Ask backend) is NOT pinned here — it
+# is installed by scripts/install-llama.sh, invoked from `make install-ai`, which
+# builds it with Vulkan when the toolchain is present and otherwise fetches the
+# prebuilt CPU wheel. Pinning it here would always pull the CPU wheel.

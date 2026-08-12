@@ -65,6 +65,7 @@ venv:
 venv-ai: venv
 	@echo "=> Adding optional AI dependencies ($(REQUIREMENTS_AI)) to the venv..."
 	@$(VENV)/bin/pip install --upgrade --disable-pip-version-check -r $(REQUIREMENTS_AI)
+	@sh scripts/install-llama.sh $(VENV)/bin/pip
 
 install: build venv
 	@echo "=> Installing locally..."
