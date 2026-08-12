@@ -35,6 +35,15 @@ class TestPreferencesModuleStructure(unittest.TestCase):
         self.assertIn("editor_wrap_text", source)
         self.assertIn("preview_zoom", source)
 
+    def test_dialog_has_local_llm_rows(self):
+        src = Path(__file__).resolve().parent.parent / "src" / "markdown_vault" / "preferences.py"
+        source = src.read_text(encoding="utf-8")
+        for token in ("ask_gguf_url", "ask_gguf_path", "ask_n_gpu_layers",
+                      "ask_n_threads", "_on_download_gguf", "ask_engine",
+                      "_update_ask_rows", "supports_gpu", "_ask_gguf_combo",
+                      "_refresh_gguf_models", "model_filename_from_url"):
+            self.assertIn(token, source)
+
     def test_dialog_persists_settings(self):
         src = Path(__file__).resolve().parent.parent / "src" / "markdown_vault" / "preferences.py"
         source = src.read_text(encoding="utf-8")

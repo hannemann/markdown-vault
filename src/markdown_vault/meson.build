@@ -21,6 +21,7 @@ py_sources = files(
    'history.py',
    'input_manager.py',
    'latex_mathml.py',
+   'llama_runtime.py',
    'logging_setup.py',
    'main.py',
   'markdown_help.py',

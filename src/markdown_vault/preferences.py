@@ -681,24 +681,107 @@ class PreferencesDialog(Adw.PreferencesDialog):
         page = Adw.PreferencesPage(title="Ask")
         group = Adw.PreferencesGroup(
             title="Ask (answers from your notes)",
-            description="The quick-open 'ask' mode answers from your notes via a "
-                        "local chat model. Backend: Ollama, or an OpenAI-compatible "
-                        "server like llama.cpp. Recommended: llama3.2 — fast and "
-                        "CPU-friendly; a strong model (e.g. Qwen3) answers far "
-                        "better where the hardware allows.")
+            description="The quick-open 'ask' mode answers from your notes with a "
+                        "local model. 'Automatic' sets everything up for you; only "
+                        "the model download needs a click. Choose 'Manual' to pick "
+                        "the backend and tune it yourself.")
         page.add(group)
 
-        self._ask_backends = ["ollama", "openai"]
+        self._ask_engines = ["auto", "manual", "off"]
+        self._ask_engine_row = Adw.ComboRow(
+            title="Answer engine",
+            model=Gtk.StringList.new(
+                ["Automatic — recommended", "Manual (advanced)", "Off"]))
+        e = self._settings.get("ask_engine", "auto")
+        self._ask_engine_row.set_selected(
+            self._ask_engines.index(e) if e in self._ask_engines else 0)
+        self._ask_engine_row.connect("notify::selected", self._on_ask_engine_changed)
+        group.add(self._ask_engine_row)
+
+        self._ask_backends = ["local", "ollama", "openai"]
         self._ask_backend_row = Adw.ComboRow(
             title="Backend",
             model=Gtk.StringList.new(
-                ["Ollama (/api/chat)", "OpenAI-compatible — llama.cpp (/v1)"]))
-        b = self._settings.get("ask_backend", "ollama")
+                ["Local — in-process, no server (recommended)",
+                 "Ollama (/api/chat)", "OpenAI-compatible — llama.cpp (/v1)"]))
+        b = self._settings.get("ask_backend", "local")
         self._ask_backend_row.set_selected(
             self._ask_backends.index(b) if b in self._ask_backends else 0)
         self._ask_backend_row.connect("notify::selected", self._on_ask_backend_changed)
         group.add(self._ask_backend_row)
 
+        # --- Local (in-process GGUF) rows ---------------------------------
+        # Model selector: pick among the GGUFs already in the models folder.
+        self._ask_gguf_paths = []
+        self._ask_gguf_updating = False
+        self._ask_gguf_combo = Adw.ComboRow(title="Model",
+                                            subtitle="Downloaded models")
+        self._ask_gguf_list = Gtk.StringList()
+        self._ask_gguf_combo.set_model(self._ask_gguf_list)
+        self._ask_gguf_combo.connect("notify::selected", self._on_ask_gguf_selected)
+        gguf_rescan = Gtk.Button(icon_name="view-refresh-symbolic",
+                                 valign=Gtk.Align.CENTER,
+                                 tooltip_text="Rescan the models folder")
+        gguf_rescan.add_css_class("flat")
+        gguf_rescan.connect("clicked", lambda *_: self._refresh_gguf_models())
+        self._ask_gguf_combo.add_suffix(gguf_rescan)
+        group.add(self._ask_gguf_combo)
+
+        gguf_btn = Gtk.Button(icon_name="folder-download-symbolic",
+                              valign=Gtk.Align.CENTER)
+        gguf_btn.add_css_class("flat")
+        gguf_btn.set_tooltip_text("Download the model")
+        gguf_btn.connect("clicked", self._on_download_gguf)
+        self._ask_gguf_dl_btn = gguf_btn
+        self._ask_gguf_url_row, self._ask_gguf_url_entry = self._entry_row(
+            "Model URL", "ask_gguf_url", trailing=gguf_btn)
+        group.add(self._ask_gguf_url_row)
+
+        self._ask_gguf_progress = Gtk.ProgressBar(
+            show_text=True, visible=False,
+            margin_start=12, margin_end=12, margin_bottom=6)
+        group.add(self._ask_gguf_progress)
+
+        self._ask_gguf_file_row = Adw.ActionRow(title="Model file")
+        gguf_pick = Gtk.Button(icon_name="document-open-symbolic",
+                               valign=Gtk.Align.CENTER,
+                               tooltip_text="Choose a .gguf file…")
+        gguf_pick.add_css_class("flat")
+        gguf_pick.connect("clicked", lambda *_: self._choose_gguf_file())
+        gguf_reset = Gtk.Button(icon_name="edit-clear-symbolic",
+                                valign=Gtk.Align.CENTER,
+                                tooltip_text="Reset to the default location")
+        gguf_reset.add_css_class("flat")
+        gguf_reset.connect("clicked", lambda *_: self._reset_gguf_path())
+        self._ask_gguf_file_row.add_suffix(gguf_pick)
+        self._ask_gguf_file_row.add_suffix(gguf_reset)
+        group.add(self._ask_gguf_file_row)
+
+        self._ask_gpu_row = Adw.SpinRow(
+            title="GPU layers",
+            subtitle="Model layers offloaded to the GPU. 0 = pure CPU; a high "
+                     "value (e.g. 999) offloads the whole model.",
+            adjustment=Gtk.Adjustment.new(
+                self._settings.get("ask_n_gpu_layers", 0), 0, 999, 1, 8, 0.0),
+            digits=0)
+        self._ask_gpu_row.connect("notify::value", self._on_ask_gpu_layers_changed)
+        group.add(self._ask_gpu_row)
+
+        self._ask_threads_row = Adw.SpinRow(
+            title="CPU threads",
+            subtitle="0 = half your physical cores, so the machine stays "
+                     "responsive while an answer is generated. More threads = "
+                     "faster answers but can slow the rest of the system during a "
+                     "search; raise it gradually.",
+            adjustment=Gtk.Adjustment.new(
+                self._settings.get("ask_n_threads", 0), 0, 128, 1, 4, 0.0),
+            digits=0)
+        self._ask_threads_row.connect("notify::value", self._on_ask_threads_changed)
+        group.add(self._ask_threads_row)
+        # Model (download) rows: needed by the local backend in auto and manual.
+        self._ask_model_rows = [self._ask_gguf_url_row, self._ask_gguf_file_row]
+
+        # --- Server (Ollama / OpenAI-compatible) rows ---------------------
         self._ask_url_row, self._ask_url_entry = self._entry_row(
             "Server URL", "ask_ollama_url")
         # Hint the saved backend's port immediately (not only on a later switch).
@@ -722,6 +805,7 @@ class PreferencesDialog(Adw.PreferencesDialog):
         ask_refresh_btn.connect("clicked", lambda *_: self._refresh_ask_models())
         self._ask_model_combo.add_suffix(ask_refresh_btn)
         group.add(self._ask_model_combo)
+        self._ask_server_rows = [self._ask_url_row, self._ask_model_combo]
 
         self._ask_reasoning_row = Adw.SwitchRow(
             title="Reasoning",
@@ -758,9 +842,9 @@ class PreferencesDialog(Adw.PreferencesDialog):
 
         self._ask_ctx_row = Adw.SpinRow(
             title="Context window",
-            subtitle="Tokens sent to Ollama. Its default (2048) truncates "
-                     "multi-note answers; higher fits more/longer notes but uses "
-                     "more memory. Not used by the llama.cpp backend.",
+            subtitle="Tokens of context. Used by the Local and Ollama backends "
+                     "(higher fits more/longer notes but uses more memory); the "
+                     "OpenAI-compatible server sizes its own context.",
             adjustment=Gtk.Adjustment.new(
                 self._settings.get("ask_num_ctx", 8192),
                 2048, 32768, 1024, 4096, 0.0),
@@ -769,9 +853,17 @@ class PreferencesDialog(Adw.PreferencesDialog):
         self._ask_ctx_row.connect("notify::value", self._on_ask_num_ctx_changed)
         group.add(self._ask_ctx_row)
 
-        group.add(self._nav_row(
+        self._ask_prompt_row = self._nav_row(
             "System prompt", "Grounding instructions sent to the model",
-            self._prompt_subpage))
+            self._prompt_subpage)
+        group.add(self._ask_prompt_row)
+        # Rows that only make sense in Manual mode (Automatic configures them).
+        self._ask_manual_rows = [self._ask_backend_row, self._ask_reasoning_row,
+                                 self._ask_hybrid_row, self._ask_topk_row,
+                                 self._ask_ctx_row, self._ask_prompt_row]
+        self._refresh_gguf_models()
+        self._refresh_gguf_status()
+        self._update_ask_rows()          # show only the rows the engine/backend use
         subpage = self._subpage("Ask", page)
         subpage.connect("shown", lambda *_: self.set_focus(None))  # see Embedding
         return subpage
@@ -837,9 +929,15 @@ class PreferencesDialog(Adw.PreferencesDialog):
     _ASK_BACKEND_URLS = {"ollama": "http://localhost:11434",
                          "openai": "http://localhost:8080"}
 
+    def _on_ask_engine_changed(self, row, _pspec) -> None:
+        self._settings["ask_engine"] = self._ask_engines[row.get_selected()]
+        self._persist()
+        self._update_ask_rows()
+
     def _on_ask_backend_changed(self, row, _pspec) -> None:
         backend = self._ask_backends[row.get_selected()]
         self._settings["ask_backend"] = backend
+        self._update_ask_rows()
         # Point the URL hint (and an empty/other-default value) at the new
         # backend's port, so switching to llama.cpp doesn't silently keep :11434.
         default_url = self._ASK_BACKEND_URLS.get(backend)
@@ -849,7 +947,152 @@ class PreferencesDialog(Adw.PreferencesDialog):
             if not cur or cur in self._ASK_BACKEND_URLS.values():
                 self._ask_url_entry.set_text(default_url)  # fires changed → saves
         self._persist()
-        self._refresh_ask_models()  # different endpoint per backend
+        if backend != "local":
+            self._refresh_ask_models()  # different endpoint per server backend
+
+    def _ask_effective_backend(self) -> str:
+        """The backend the current engine will actually use: Automatic is always
+        the in-process 'local' backend; Manual uses the chosen ask_backend."""
+        engine = self._settings.get("ask_engine") or config.default("ask_engine")
+        if engine == "auto":
+            return "local"
+        return self._settings.get("ask_backend") or config.default("ask_backend")
+
+    def _update_ask_rows(self) -> None:
+        """Show only the rows the current engine + backend actually use, so a
+        non-technical user in Automatic sees just the model download, and the GPU
+        row appears only when the installed build can offload."""
+        from . import llama_runtime
+        engine = self._settings.get("ask_engine") or config.default("ask_engine")
+        off = engine == "off"
+        manual = engine == "manual"
+        backend = self._ask_effective_backend()
+        local = (not off) and backend == "local"
+        for w in self._ask_model_rows:        # model download: auto + manual/local
+            w.set_visible(local)
+        # Model selector: only in Manual (Automatic auto-picks the newest model).
+        self._ask_gguf_combo.set_visible(manual and backend == "local")
+        self._ask_threads_row.set_visible(manual and backend == "local")
+        self._ask_gpu_row.set_visible(
+            manual and backend == "local" and llama_runtime.supports_gpu())
+        for w in self._ask_server_rows:       # server URL + model list: manual only
+            w.set_visible(manual and backend in ("ollama", "openai"))
+        for w in self._ask_manual_rows:       # advanced tuning: manual only
+            w.set_visible(manual)
+
+    # -- Local (in-process GGUF) model management --------------------------
+
+    def _gguf_path(self):
+        from pathlib import Path
+        resolved = config.resolve_model_path(self._settings)
+        return Path(resolved) if resolved else config.models_dir() / "model.gguf"
+
+    def _refresh_gguf_models(self) -> None:
+        """Rescan the models folder into the selector, preselecting the active
+        model. Guarded so rebuilding the list doesn't fire a spurious change."""
+        from pathlib import Path
+        self._ask_gguf_updating = True
+        self._ask_gguf_paths = [str(p) for p in config.list_models()]
+        self._ask_gguf_list.splice(0, self._ask_gguf_list.get_n_items(),
+                                   [Path(p).name for p in self._ask_gguf_paths])
+        current = config.resolve_model_path(self._settings)
+        if current in self._ask_gguf_paths:
+            self._ask_gguf_combo.set_selected(self._ask_gguf_paths.index(current))
+        self._ask_gguf_updating = False
+        n = len(self._ask_gguf_paths)
+        self._ask_gguf_combo.set_subtitle(
+            "No models downloaded yet" if not n
+            else f"{n} in the models folder")
+
+    def _on_ask_gguf_selected(self, combo, _pspec) -> None:
+        if self._ask_gguf_updating:
+            return
+        i = combo.get_selected()
+        if 0 <= i < len(self._ask_gguf_paths):
+            self._settings["ask_gguf_path"] = self._ask_gguf_paths[i]
+            self._persist()
+            self._refresh_gguf_status()
+
+    def _after_gguf_download(self, target) -> None:
+        """A finished, valid download becomes the selected model. A rejected one
+        (not a GGUF) is not selected — just rescan so it doesn't linger."""
+        from pathlib import Path
+        if Path(target).exists() and config.is_gguf(target):
+            self._settings["ask_gguf_path"] = str(target)
+            self._persist()
+        self._refresh_gguf_models()
+        self._refresh_gguf_status()
+
+    def _on_ask_gpu_layers_changed(self, _row, _pspec) -> None:
+        self._settings["ask_n_gpu_layers"] = int(
+            self._ask_gpu_row.get_adjustment().get_value())
+        self._persist()
+
+    def _on_ask_threads_changed(self, _row, _pspec) -> None:
+        self._settings["ask_n_threads"] = int(
+            self._ask_threads_row.get_adjustment().get_value())
+        self._persist()
+
+    def _on_download_gguf(self, button) -> None:
+        url = (self._ask_gguf_url_entry.get_text().strip()
+               or config.default("ask_gguf_url"))
+        if not url:
+            return
+        url = config.normalize_gguf_url(url)   # HF file page → raw-file link
+        # Save under the URL's own filename so several models coexist instead of
+        # overwriting one file; the finished download becomes the selection.
+        target = config.models_dir() / config.model_filename_from_url(url)
+        button.set_sensitive(False)
+        bar = self._ask_gguf_progress
+        bar.set_visible(True)
+        bar.set_fraction(0.0)
+        bar.set_text("Starting…")
+        gguf_check = lambda p: (None if config.is_gguf(p) else
+                                "That URL isn't a GGUF model file — use the "
+                                "download (\"resolve\") link, not the web page.")
+        threading.Thread(
+            target=self._download_worker,
+            args=(button, url, target, target.name, bar),
+            kwargs={"refresh": lambda t=target: self._after_gguf_download(t),
+                    "validate": gguf_check},
+            daemon=True).start()
+
+    def _choose_gguf_file(self) -> None:
+        dialog = Gtk.FileDialog(title="Select a GGUF model file")
+        cur = self._gguf_path()
+        try:
+            probe = cur.parent if cur.parent.exists() else None
+            if probe is not None:
+                dialog.set_initial_folder(Gio.File.new_for_path(str(probe)))
+        except Exception:  # noqa: BLE001
+            pass
+
+        def done(dlg, result):
+            try:
+                gfile = dlg.open_finish(result)
+            except GLib.Error:
+                return  # cancelled or failed
+            if gfile is not None and gfile.get_path():
+                self._settings["ask_gguf_path"] = gfile.get_path()
+                self._persist()
+                self._refresh_gguf_models()
+                self._refresh_gguf_status()
+
+        dialog.open(self.get_root(), None, done)
+
+    def _reset_gguf_path(self) -> None:
+        self._settings["ask_gguf_path"] = ""   # empty → auto-pick the newest
+        self._persist()
+        self._refresh_gguf_models()
+        self._refresh_gguf_status()
+
+    def _refresh_gguf_status(self) -> None:
+        p = self._gguf_path()
+        if p.exists():
+            mb = p.stat().st_size / 1024 / 1024
+            self._ask_gguf_file_row.set_subtitle(f"{p}  ·  {mb:.0f} MB")
+        else:
+            self._ask_gguf_file_row.set_subtitle(f"{p}  ·  not downloaded")
 
     def _refresh_ask_models(self) -> None:
         """Fetch the model list off the main thread — from Ollama's /api/tags or
@@ -1101,7 +1344,8 @@ class PreferencesDialog(Adw.PreferencesDialog):
             target=self._download_worker,
             args=(button, url, target, filename, bar), daemon=True).start()
 
-    def _download_worker(self, button, url, target, filename, bar) -> None:
+    def _download_worker(self, button, url, target, filename, bar,
+                         refresh=None, validate=None) -> None:
         import urllib.request
         try:
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -1121,15 +1365,21 @@ class PreferencesDialog(Adw.PreferencesDialog):
                         if done - last >= 1024 * 1024:  # throttle to ~1 MB
                             last = done
                             GLib.idle_add(self._download_progress, bar, done, total)
+            problem = validate(tmp) if validate is not None else None
+            if problem:                        # wrong content (e.g. an HTML page)
+                tmp.unlink(missing_ok=True)
+                GLib.idle_add(self._download_done, button, bar, False,
+                              problem, refresh)
+                return
             tmp.replace(target)
             mb = target.stat().st_size / 1024 / 1024
             GLib.idle_add(
                 self._download_done, button, bar, True,
-                f"Downloaded {filename} ({mb:.0f} MB) — restart to use")
+                f"Downloaded {filename} ({mb:.0f} MB) — restart to use", refresh)
         except Exception as exc:  # network/IO/permission — report, don't crash
-            logger.warning("ONNX download failed: %s", exc)
+            logger.warning("model download failed: %s", exc)
             GLib.idle_add(
-                self._download_done, button, bar, False, f"Failed: {exc}")
+                self._download_done, button, bar, False, f"Failed: {exc}", refresh)
 
     def _download_progress(self, bar, done, total) -> bool:
         mb = done / 1024 / 1024
@@ -1142,7 +1392,7 @@ class PreferencesDialog(Adw.PreferencesDialog):
             bar.set_text(f"{mb:.0f} MB")
         return False
 
-    def _download_done(self, button, bar, ok, msg) -> bool:
+    def _download_done(self, button, bar, ok, msg, refresh=None) -> bool:
         button.set_sensitive(True)
         if ok:
             bar.set_fraction(1.0)
@@ -1151,7 +1401,7 @@ class PreferencesDialog(Adw.PreferencesDialog):
             self.add_toast(Adw.Toast.new(msg))
         except Exception:
             logger.info("%s", msg)
-        self._refresh_onnx_status()  # a fetched file flips the indicator
+        (refresh or self._refresh_onnx_status)()  # a fetched file flips the state
         return False
 
     def _on_min_score_changed(self, _row, _pspec) -> None:

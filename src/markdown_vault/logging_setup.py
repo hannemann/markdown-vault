@@ -26,6 +26,7 @@ from gi.repository import GLib
 _STATE_DIR = os.path.join(os.path.expanduser("~"), ".local/state/markdown-vault")
 _LOG_FILE = os.path.join(_STATE_DIR, "markdown-vault.log")
 _STDERR_LOG_FILE = os.path.join(_STATE_DIR, "markdown-vault.stderr.log")
+_LLAMA_LOG_FILE = os.path.join(_STATE_DIR, "markdown-vault.llama.log")
 
 _FORMAT = "%(asctime)s %(name)s %(levelname)s %(message)s"
 
@@ -355,6 +356,33 @@ def _setup_glib_logging(level_str="warning"):
         _glib_handler_id.append((None, default_handler_id))
     except Exception:
         pass
+
+
+_llama_logger_ready = False
+
+
+def get_llama_logger():
+    """The ``markdown_vault.llama`` logger, writing to its own rotated file
+    (``markdown-vault.llama.log``) and kept out of the main logs — llama.cpp's
+    load output is verbose, so it gets a dedicated stream instead of drowning the
+    app log. Set up once on first use."""
+    global _llama_logger_ready
+    logger = logging.getLogger("markdown_vault.llama")
+    if not _llama_logger_ready:
+        _llama_logger_ready = True
+        logger.setLevel(logging.INFO)
+        logger.propagate = False           # dedicated file only, not the app log
+        try:
+            os.makedirs(_STATE_DIR, exist_ok=True)
+            handler = logging.handlers.RotatingFileHandler(
+                _LLAMA_LOG_FILE, maxBytes=1_000_000, backupCount=3,
+                encoding="utf-8")
+            handler.setFormatter(logging.Formatter(_FORMAT))
+            logger.addHandler(handler)
+        except OSError as exc:
+            logging.getLogger("markdown-vault").warning(
+                "Could not set up the llama log file: %s", exc)
+    return logger
 
 
 def set_third_party_loglevel(level_str: str) -> None:

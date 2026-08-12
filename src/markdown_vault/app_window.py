@@ -408,7 +408,9 @@ class MainWindow(Adw.ApplicationWindow):
             get_top_k=lambda: int(self._settings.get("ask_top_k")
                                   or config.default("ask_top_k")),
             can_ask=lambda: bool(self._settings.get("semantic_search_enabled"))
-            and self._semantic_index is not None,
+            and self._semantic_index is not None
+            and (self._settings.get("ask_engine") or config.default("ask_engine"))
+            != "off",
             scope=self._scope_callbacks(),
         )
         self._quick_open.connect("file-selected", self._on_search_result_selected)

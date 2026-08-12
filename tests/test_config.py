@@ -376,7 +376,79 @@ class TestWebkitEnv(_TempConfigMixin, unittest.TestCase):
 class TestDefaultAndMigration(unittest.TestCase):
     def test_default_returns_builtin(self):
         self.assertEqual(_cfg.default("ask_model"), "llama3.2")
-        self.assertEqual(_cfg.default("ask_backend"), "ollama")
+        self.assertEqual(_cfg.default("ask_backend"), "local")
+        self.assertEqual(_cfg.default("ask_engine"), "auto")
+
+    def test_default_gguf_path_is_under_state_dir(self):
+        self.assertTrue(_cfg.default_gguf_path().endswith("models/model.gguf"))
+
+    def test_model_filename_from_url(self):
+        self.assertEqual(
+            _cfg.model_filename_from_url("https://h/x/Foo-Q4_K_M.gguf"),
+            "Foo-Q4_K_M.gguf")
+        self.assertEqual(_cfg.model_filename_from_url("https://h/x/nope"),
+                         "model.gguf")
+
+    def test_resolve_model_prefers_explicit_existing_file(self):
+        import os
+        import tempfile
+        f = tempfile.NamedTemporaryFile(suffix=".gguf", delete=False)
+        f.write(b"GGUF\x00\x00\x00\x00")
+        f.close()
+        try:
+            self.assertEqual(
+                _cfg.resolve_model_path({"ask_gguf_path": f.name}), f.name)
+        finally:
+            os.unlink(f.name)
+
+    def test_is_gguf_checks_magic(self):
+        import os
+        import tempfile
+        good = tempfile.NamedTemporaryFile(suffix=".gguf", delete=False)
+        good.write(b"GGUF\x00\x00\x00\x00")
+        good.close()
+        bad = tempfile.NamedTemporaryFile(suffix=".gguf", delete=False)
+        bad.write(b"<!DOCTYPE html>")
+        bad.close()
+        try:
+            self.assertTrue(_cfg.is_gguf(good.name))
+            self.assertFalse(_cfg.is_gguf(bad.name))
+            self.assertFalse(_cfg.is_gguf("/no/such/file.gguf"))
+        finally:
+            os.unlink(good.name)
+            os.unlink(bad.name)
+
+    def test_normalize_gguf_url_blob_to_resolve(self):
+        blob = "https://huggingface.co/x/y/blob/main/m.gguf"
+        self.assertEqual(_cfg.normalize_gguf_url(blob),
+                         "https://huggingface.co/x/y/resolve/main/m.gguf")
+        keep = "https://huggingface.co/x/y/resolve/main/m.gguf"
+        self.assertEqual(_cfg.normalize_gguf_url(keep), keep)     # already raw
+
+    def test_list_models_skips_non_gguf(self):
+        import tempfile
+        from pathlib import Path
+        d = Path(tempfile.mkdtemp())
+        (d / "real.gguf").write_bytes(b"GGUF\x00\x00")
+        (d / "page.gguf").write_bytes(b"<html>")     # HTML masquerading as a model
+        orig = _cfg.models_dir
+        _cfg.models_dir = lambda: d
+        try:
+            self.assertEqual([p.name for p in _cfg.list_models()], ["real.gguf"])
+        finally:
+            _cfg.models_dir = orig
+
+    def test_resolve_model_falls_back_when_folder_empty(self):
+        orig = _cfg.list_models
+        _cfg.list_models = lambda: []
+        try:
+            self.assertEqual(_cfg.resolve_model_path({}), "")
+            # a stale explicit path is still named (so the reason can point at it)
+            self.assertEqual(
+                _cfg.resolve_model_path({"ask_gguf_path": "/gone.gguf"}),
+                "/gone.gguf")
+        finally:
+            _cfg.list_models = orig
 
     def test_default_unknown_key_is_empty(self):
         self.assertEqual(_cfg.default("no_such_key"), "")

@@ -356,5 +356,64 @@ class TestAnswer(unittest.TestCase):
         self.assertTrue(a.warnings)                        # invented + numeric
 
 
+class TestAnswerQuestionLocalBackend(unittest.TestCase):
+    """The 'local' (in-process) backend path in answer_question."""
+
+    def _sem(self):
+        return SimpleNamespace(
+            retrieve=lambda *a, **k: [(_chunk("/v/a.md", 1, "text"), 1.0)])
+
+    def test_unavailable_local_backend_returns_the_reason(self):
+        from markdown_vault import llama_runtime
+        orig = llama_runtime.availability
+        llama_runtime.availability = lambda p: "MODEL MISSING"
+        try:
+            a = ask.answer_question("q", self._sem(), {"ask_backend": "local"},
+                                    None, "English")
+        finally:
+            llama_runtime.availability = orig
+        self.assertEqual(a.text, "MODEL MISSING")   # no backend call, just the reason
+
+    def test_engine_off_generates_no_answer(self):
+        called = []
+        sem = SimpleNamespace(
+            retrieve=lambda *a, **k: called.append(1) or [(_chunk("/v/a.md", 1, "x"), 1.0)])
+        a = ask.answer_question("q", sem, {"ask_engine": "off"}, None, "English")
+        self.assertIn("turned off", a.text.lower())
+
+    def test_auto_engine_forces_local_backend(self):
+        # even with ask_backend=ollama, engine=auto must use the local backend
+        from markdown_vault import llama_runtime
+        orig_av, orig_cls = llama_runtime.availability, llama_runtime.LlamaCppChat
+        seen = {}
+        llama_runtime.availability = lambda p: None
+        llama_runtime.LlamaCppChat = lambda *a, **k: seen.update(k) or SimpleNamespace(
+            chat=lambda system, user: "auto answer [1]")
+        try:
+            a = ask.answer_question("q", self._sem(),
+                                    {"ask_engine": "auto", "ask_backend": "ollama"},
+                                    None, "English")
+        finally:
+            llama_runtime.availability = orig_av
+            llama_runtime.LlamaCppChat = orig_cls
+        self.assertIn("auto answer", a.text)
+        self.assertGreaterEqual(seen.get("n_threads", 0), 1)  # safe default applied
+
+    def test_available_local_backend_generates_via_llama(self):
+        from markdown_vault import llama_runtime
+        orig_av, orig_cls = llama_runtime.availability, llama_runtime.LlamaCppChat
+        llama_runtime.availability = lambda p: None
+        llama_runtime.LlamaCppChat = lambda *a, **k: SimpleNamespace(
+            chat=lambda system, user: "the answer [1]")
+        try:
+            a = ask.answer_question("q", self._sem(), {"ask_backend": "local"},
+                                    None, "English")
+        finally:
+            llama_runtime.availability = orig_av
+            llama_runtime.LlamaCppChat = orig_cls
+        self.assertIn("the answer", a.text)
+        self.assertEqual([s.n for s in a.sources], [1])
+
+
 if __name__ == "__main__":
     unittest.main()

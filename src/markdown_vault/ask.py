@@ -421,19 +421,49 @@ def answer_question(question: str, semantic_index, settings: dict, vaults,
             top_k = int(settings.get("ask_top_k") or config.default("ask_top_k"))
         hits = semantic_index.retrieve(question, top_k=top_k, vaults=vaults,
                                        hybrid=bool(settings.get("ask_hybrid")))
-    model = settings.get("ask_model") or config.default("ask_model")
-    url = settings.get("ask_ollama_url") or config.default("ask_ollama_url")
     # Only override thinking when the user turned reasoning OFF, so non-reasoning
     # models (and Ollama, which errors on an unknown "think") keep their default.
     think = False if not settings.get("ask_reasoning", True) else None
-    cls = OpenAIChat if settings.get("ask_backend") == "openai" else OllamaChat
-    kwargs = dict(model=model, url=url, think=think)
-    # Ollama: set the context window and cap excerpts to fit it. llama.cpp sizes
-    # its context server-side, so we set neither num_ctx nor a client budget.
-    char_budget = None
-    if cls is OllamaChat:
-        num_ctx = int(settings.get("ask_num_ctx") or config.default("ask_num_ctx"))
-        kwargs["num_ctx"] = num_ctx
+    num_ctx = int(settings.get("ask_num_ctx") or config.default("ask_num_ctx"))
+    # Answer engine: "auto" configures everything (always the in-process backend,
+    # GPU offload when the build supports it, a safe thread count); "manual" honours
+    # the advanced backend/threads/GPU settings; "off" produces no answers.
+    engine = settings.get("ask_engine") or config.default("ask_engine")
+    if engine == "off":
+        return Answer(text="Answers are turned off. Turn the answer engine on in "
+                           "Preferences → Search → Ask.")
+    backend = "local" if engine == "auto" else (
+        settings.get("ask_backend") or config.default("ask_backend"))
+    # Build the chat backend and decide whether we cap the context ourselves. We
+    # size the window for the in-process and Ollama backends (so the prompt fits
+    # instead of being silently truncated); the OpenAI-compatible server sizes
+    # its own context, so no client budget there.
+    if backend == "local":
+        from . import llama_runtime
+        gguf = config.resolve_model_path(settings)
+        unavailable = llama_runtime.availability(gguf)
+        if unavailable:                       # no binding or no model file yet
+            return Answer(text=unavailable)
+        if engine == "auto":
+            # Offload to the GPU only when the build can, else pure CPU.
+            n_gpu_layers = 999 if llama_runtime.supports_gpu() else 0
+        else:
+            n_gpu_layers = int(settings.get("ask_n_gpu_layers") or 0)
+        # 0 threads → the safe default (half the physical cores), in both modes.
+        n_threads = (int(settings.get("ask_n_threads") or 0)
+                     or llama_runtime.default_threads())
+        chat = llama_runtime.LlamaCppChat(
+            gguf, num_ctx=num_ctx, n_gpu_layers=n_gpu_layers, n_threads=n_threads)
+        char_budget = context_char_budget(num_ctx)
+    elif backend == "openai":
+        chat = OpenAIChat(model=settings.get("ask_model") or config.default("ask_model"),
+                          url=settings.get("ask_ollama_url") or config.default("ask_ollama_url"),
+                          think=think)
+        char_budget = None
+    else:  # ollama
+        chat = OllamaChat(model=settings.get("ask_model") or config.default("ask_model"),
+                          url=settings.get("ask_ollama_url") or config.default("ask_ollama_url"),
+                          think=think, num_ctx=num_ctx)
         char_budget = context_char_budget(num_ctx)
     # Apply the budget once here (not again in answer()): the log and the warning
     # both need the post-budget set, so fit, then hand the fitted hits down.
@@ -443,12 +473,11 @@ def answer_question(question: str, semantic_index, settings: dict, vaults,
         hits = fit_to_budget(hits, char_budget)
         budget_note = budget_warning(len(hits), retrieved)
     logger.info(
-        "ask %r -> %d/%d passages (context budget): %s",
-        question, len(hits), retrieved,
+        "ask %r -> %d/%d passages (%s, context budget): %s",
+        question, len(hits), retrieved, backend,
         [("/".join(c.path.rsplit("/", 2)[-2:]), round(s, 3)) for c, s in hits])
     if not hits:                              # budget fit nothing — don't call out
         return _no_context_answer()
-    chat = cls(**kwargs)
     return answer(question, hits, chat, language=language,
                   system_template=settings.get("ask_system_prompt") or None,
                   extra_warnings=budget_note)

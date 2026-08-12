@@ -288,12 +288,30 @@ _DEFAULT_SETTINGS = {
         "https://huggingface.co/Xenova/paraphrase-multilingual-MiniLM-L12-v2/"
         "resolve/main/tokenizer.json",
     "semantic_min_score": 0.35,
-    # Ask/answer (RAG): a local Ollama chat model writes answers grounded in the
-    # retrieved passages. Its own URL (default localhost) so it runs locally,
-    # independent of the embedder backend.
-    "ask_backend": "ollama",  # "ollama" (/api/chat) or "openai" (llama.cpp /v1)
+    # Answer engine — the top-level Ask control.
+    #   "auto"   — the app configures everything: in-process backend, GPU offload
+    #              when the build supports it, a safe thread count (recommended)
+    #   "manual" — honour the advanced ask_backend / thread / GPU settings below
+    #   "off"    — no answers are generated
+    "ask_engine": "auto",
+    # Ask/answer (RAG): the manual-mode chat backend.
+    #   "local"  — in-process GGUF via llama-cpp-python (no server)
+    #   "ollama" — a running Ollama server (/api/chat)
+    #   "openai" — an OpenAI-compatible server, e.g. llama.cpp (/v1)
+    "ask_backend": "local",
     "ask_ollama_url": "http://localhost:11434",
     "ask_model": "llama3.2",
+    # Local (in-process) GGUF model. The .gguf file is both the download target
+    # and the load source; empty → the app state dir default. The URL pre-fills
+    # the download button with a small llama3.2-3B instruct build.
+    "ask_gguf_path": "",
+    "ask_gguf_url":
+        "https://huggingface.co/bartowski/Llama-3.2-3B-Instruct-GGUF/"
+        "resolve/main/Llama-3.2-3B-Instruct-Q4_K_M.gguf",
+    # llama.cpp runtime knobs. 0 GPU layers = pure CPU (safe default, works on a
+    # laptop); raise to offload layers to a GPU. 0 threads = let llama.cpp pick.
+    "ask_n_gpu_layers": 0,
+    "ask_n_threads": 0,
     "ask_system_prompt": "",  # empty → the built-in default (ask.DEFAULT_SYSTEM_PROMPT)
     # Reasoning models (Qwen3, …) think before answering: accurate but slow. For
     # grounded note Q&A, disabling it is faster and better calibrated. Only sent
@@ -325,6 +343,66 @@ def default(key):
     of an empty value.
     """
     return _DEFAULT_SETTINGS.get(key, "")
+
+
+def models_dir() -> Path:
+    """Folder holding the downloaded GGUF models (one file per model)."""
+    return STATE_DIR / "models"
+
+
+def default_gguf_path() -> str:
+    """Legacy single-file location, kept as a fallback target."""
+    return str(models_dir() / "model.gguf")
+
+
+def is_gguf(path) -> bool:
+    """Whether *path* is really a GGUF model — it starts with the ``GGUF`` magic.
+    Guards against a saved HTML page (e.g. a HuggingFace *blob* URL fetched by
+    mistake) being offered as a model."""
+    try:
+        with open(path, "rb") as fh:
+            return fh.read(4) == b"GGUF"
+    except OSError:
+        return False
+
+
+def list_models() -> list:
+    """The **valid** GGUF files in :func:`models_dir`, newest first — files that
+    only carry a ``.gguf`` name but aren't GGUF are skipped."""
+    d = models_dir()
+    if not d.exists():
+        return []
+    files = [p for p in d.glob("*.gguf") if p.is_file() and is_gguf(p)]
+    return sorted(files, key=lambda p: p.stat().st_mtime, reverse=True)
+
+
+def resolve_model_path(settings: dict) -> str:
+    """The GGUF the local backend should load: the explicitly selected
+    ``ask_gguf_path`` if it still exists and is a real GGUF, else the most-recent
+    valid model in the folder, else ``""`` (nothing usable yet)."""
+    explicit = settings.get("ask_gguf_path")
+    if explicit and os.path.exists(explicit) and is_gguf(explicit):
+        return explicit
+    models = list_models()
+    if models:
+        return str(models[0])
+    return explicit or ""
+
+
+def model_filename_from_url(url: str) -> str:
+    """A GGUF filename derived from a download *url*, so several models keep
+    distinct names in the folder instead of overwriting one ``model.gguf``."""
+    from urllib.parse import urlparse
+    name = os.path.basename(urlparse(url).path)
+    return name if name.endswith(".gguf") else "model.gguf"
+
+
+def normalize_gguf_url(url: str) -> str:
+    """Fix the common HuggingFace mistake of pasting the file's *page* URL: a
+    ``…/blob/…`` link serves an HTML page, ``…/resolve/…`` serves the raw file."""
+    if "huggingface.co" in url and "/blob/" in url:
+        return url.replace("/blob/", "/resolve/", 1)
+    return url
 
 
 # Setting key → environment variable consumed by WebKitGTK at startup.
