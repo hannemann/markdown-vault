@@ -14,6 +14,40 @@ class TestTokenize(unittest.TestCase):
     def test_keeps_digits_drops_punctuation(self):
         self.assertEqual(L.tokenize("v1.2, foo!"), ["v1", "2", "foo"])
 
+    def test_falls_back_to_plain_when_lemmatizer_absent(self):
+        # base install / CI: no simplemma → plain lowercase, no collapsing
+        orig = L._HAVE_LEMMA
+        L._HAVE_LEMMA = False
+        try:
+            self.assertEqual(L.tokenize("Gesteinsplaneten Rocks"),
+                             ["gesteinsplaneten", "rocks"])
+        finally:
+            L._HAVE_LEMMA = orig
+
+
+@unittest.skipUnless(L._HAVE_LEMMA, "needs simplemma + stopwordsiso")
+class TestLemmatization(unittest.TestCase):
+    def test_inflected_query_matches_the_singular_in_the_doc(self):
+        # plural/declined query term collapses to the base form the note uses,
+        # so BM25 links them where plain tokenization could not
+        idx = L.BM25Index({
+            "rocky": "Die Erde ist ein Gesteinsplanet und auch Merkur "
+                     "gehört als Gesteinsplanet zum inneren Sonnensystem.",
+            "gas": "Jupiter ist ein Gasriese und ein Gasplanet ohne feste "
+                   "Oberfläche im äußeren Sonnensystem.",
+        })
+        self.assertEqual(
+            idx.search("liste der gesteinsplaneten im sonnensystem", 1),
+            ["rocky"])
+
+    def test_stopword_only_query_matches_nothing(self):
+        # German function words carry no lexical target and are dropped
+        self.assertEqual(L.tokenize("die und der von mit"), [])
+
+    def test_english_list_is_not_mislemmatized_to_german(self):
+        # per-text detection keeps English 'list' English (not German 'listen')
+        self.assertIn("list", L.tokenize("create a list of rocky planets"))
+
 
 class TestBM25(unittest.TestCase):
     def _idx(self):
