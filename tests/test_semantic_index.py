@@ -6,6 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from markdown_vault import semantic_index as SI
 from markdown_vault.semantic_index import SemanticIndexManager
 
 
@@ -562,6 +563,78 @@ class TestRetrieveAndNoteText(unittest.TestCase):
         txt = m._note_text(str(note), around="MIDMATCH")
         self.assertIn("HEADTOKEN", txt)  # head kept (no needless shift)
         self.assertIn("MIDMATCH", txt)
+
+
+class TestCategoryCompletion(unittest.TestCase):
+    """Pure trigger logic — no embedder/index needed (tag index is injected)."""
+
+    def _planets(self):
+        names = ["merkur", "venus", "erde", "mars",
+                 "jupiter", "saturn", "uranus", "neptun"]
+        rocky = {"merkur", "venus", "erde", "mars"}
+        paths = {n: f"/v/{n}.md" for n in names}
+        tag2 = {"planet": {paths[n] for n in names},
+                "gesteinsplanet": {paths[n] for n in rocky}}
+        path2 = {paths[n]: (["planet", "gesteinsplanet"] if n in rocky
+                            else ["planet", "gasplanet"]) for n in names}
+        return paths, tag2, path2
+
+    def _mgr(self, tag2, path2):
+        m = SemanticIndexManager(_StubEmbedder(), lambda: ["/v"],
+                                 tempfile.mkdtemp(), "t", min_score=0.3)
+        m._tag_index = lambda vaults: (tag2, path2)
+        return m
+
+    def test_frontmatter_tags_inline_and_block(self):
+        self.assertEqual(
+            SI._frontmatter_tags("---\ntags: [Planet, Gesteinsplanet]\n---\nx"),
+            ["planet", "gesteinsplanet"])
+        self.assertEqual(
+            SI._frontmatter_tags("---\ntags:\n  - planet\n  - moon\n---\n"),
+            ["planet", "moon"])
+        self.assertEqual(SI._frontmatter_tags("no front matter here"), [])
+
+    def test_named_category_completes_full_set(self):
+        paths, tag2, path2 = self._planets()
+        m = self._mgr(tag2, path2)
+        base = [paths[n] for n in
+                ("merkur", "neptun", "saturn", "erde", "uranus", "venus")]
+        out = m._maybe_complete_category("welcher planet ist am schwersten",
+                                         base, {}, {}, ["/v"])
+        got = {os.path.basename(p) for p, _, _ in out}
+        self.assertEqual(len(got), 8)
+        self.assertIn("jupiter.md", got)      # crowded-out answer recovered
+
+    def test_named_subcategory_beats_broader_tag(self):
+        paths, tag2, path2 = self._planets()
+        m = self._mgr(tag2, path2)
+        base = [paths[n] for n in ("merkur", "venus", "erde", "mars", "jupiter")]
+        out = m._maybe_complete_category("liste gesteinsplanet", base,
+                                         {}, {}, ["/v"])
+        got = {os.path.basename(p) for p, _, _ in out}
+        self.assertEqual(got, {"merkur.md", "venus.md", "erde.md", "mars.md"})
+
+    def test_unnamed_category_does_not_fire(self):
+        # a lookup that lands among planet notes but names no category tag
+        # (a Sun question) must not be hijacked into completing the planets
+        paths, tag2, path2 = self._planets()
+        m = self._mgr(tag2, path2)
+        base = [paths[n] for n in ("merkur", "venus", "erde", "mars", "jupiter")]
+        self.assertIsNone(m._maybe_complete_category(
+            "wie heiss ist die sonne", base, {}, {}, ["/v"]))
+
+    def test_focused_lookup_is_not_expanded(self):
+        # names the category (planet) AND a specific member (jupiter) → focused
+        paths, tag2, path2 = self._planets()
+        m = self._mgr(tag2, path2)
+        base = [paths[n] for n in ("jupiter", "saturn", "neptun", "mars", "erde")]
+        self.assertIsNone(m._maybe_complete_category(
+            "welcher planet ist schwerer als jupiter", base, {}, {}, ["/v"]))
+
+    def test_untagged_vault_falls_through(self):
+        m = self._mgr({}, {})
+        self.assertIsNone(m._maybe_complete_category(
+            "welcher planet ist am schwersten", ["/v/a.md"], {}, {}, ["/v"]))
 
 
 if __name__ == "__main__":

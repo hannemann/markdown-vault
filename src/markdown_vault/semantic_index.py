@@ -12,6 +12,7 @@ Queries run on the caller's thread (the search worker), embedding just the one
 query string.
 """
 
+import collections
 import hashlib
 import json
 import logging
@@ -106,6 +107,29 @@ class BackendUnavailable(Exception):
     """
 
 
+_FRONTMATTER_RE = re.compile(r"^---\s*\n(.*?)\n---", re.S)
+_TAGS_INLINE_RE = re.compile(r"^tags:\s*\[(.*?)\]", re.M)
+_TAGS_BLOCK_RE = re.compile(r"^tags:\s*\n((?:[ \t]*-[ \t]*\S.*\n?)+)", re.M)
+
+
+def _frontmatter_tags(text: str) -> list:
+    """Lower-cased frontmatter ``tags:`` of a note — inline ``[a, b]`` or a YAML
+    block list. Empty when there is no front matter or no tags."""
+    m = _FRONTMATTER_RE.search(text)
+    if not m:
+        return []
+    fm = m.group(1)
+    im = _TAGS_INLINE_RE.search(fm)
+    if im:
+        raw = im.group(1).split(",")
+    else:
+        bm = _TAGS_BLOCK_RE.search(fm)
+        if not bm:
+            return []
+        raw = [ln.strip().lstrip("-") for ln in bm.group(1).splitlines()]
+    return [t.strip().strip("\"'").lower() for t in raw if t.strip()]
+
+
 class SemanticIndexManager:
     """Owns the vault's semantic index: background build, per-file cache, and
     incremental updates."""
@@ -138,6 +162,10 @@ class SemanticIndexManager:
         # (files, mtimes) signature so it rebuilds only when notes change.
         self._lex_cache: dict = {}               # scope roots -> (signature, BM25)
         self._lex_lock = threading.Lock()        # built from the ask worker thread
+        # Frontmatter-tag index per scope (tag <-> note paths), cached by the
+        # same (files, mtimes) signature; drives category-completion in retrieve.
+        self._tag_cache: dict = {}               # scope roots -> (sig, tag2paths, path2tags)
+        self._tag_lock = threading.Lock()
         self._json_path = self._state_dir / "semantic-index.json"
         self._npy_path = self._state_dir / "semantic-index.npy"
         # Incremental-update queue: one worker drains a coalesced (path -> op)
@@ -536,24 +564,145 @@ class SemanticIndexManager:
             pool = max(pool, top_k * 5, 60)
             limit = max(top_k * 3, 30)
         notes = self._semantic_notes(query, pool, limit, vaults)
+        around_by_path = {os.path.abspath(p): (best.text if best is not None else "")
+                          for p, _, best in notes}
         if not hybrid:
-            return [(Chunk(path, 1, self._note_text(path, best.text)), score)
-                    for path, score, best in notes[:top_k]]
+            score_map = {os.path.abspath(p): s for p, s, _ in notes}
+            ranked = [(os.path.abspath(p), s, around_by_path.get(os.path.abspath(p), ""))
+                      for p, s, _ in notes[:top_k]]
+        else:
+            sem_paths = [os.path.abspath(p) for p, _, _ in notes]
+            lex_paths = self._lexical(vaults).search(query, limit)
+            score_map = lexical_search.rrf_scores([sem_paths, lex_paths])
+            fused = sorted(score_map, key=lambda p: -score_map[p])[:top_k]
+            ranked = [(p, score_map[p], around_by_path.get(p, "")) for p in fused]
+        # Category-completion: for a "which member of a category …" question,
+        # append every (bounded) category member the ranking crowded out, so the
+        # comparison has all candidates in context — without dropping the ranked
+        # notes (the answer to a nearby lookup stays; see _maybe_complete_category).
+        members = self._maybe_complete_category(
+            query, [p for p, _, _ in ranked], score_map, around_by_path, vaults)
+        if members is None:
+            final = ranked
+        else:
+            seen = {p for p, _, _ in ranked}
+            final = ranked + [m for m in members if m[0] not in seen]
+        # Carry the score so the source picker and the ask log keep a real
+        # ranking signal instead of a flat 0.00 on every hit.
+        return [(Chunk(path, 1, self._note_text(path, around)), round(score, 4))
+                for path, score, around in final]
 
-        sem_paths = [os.path.abspath(p) for p, _, _ in notes]
-        lex_paths = self._lexical(vaults).search(query, limit)
-        scores = lexical_search.rrf_scores([sem_paths, lex_paths])
-        fused = sorted(scores, key=lambda p: -scores[p])[:top_k]
-        best_by_path = {os.path.abspath(p): b for p, _, b in notes}
-        out = []
-        for path in fused:
-            best = best_by_path.get(path)
-            around = best.text if best is not None else ""
-            # Carry the fused score so the source picker and the ask log keep a
-            # real ranking signal instead of a flat 0.00 on every hit.
-            out.append((Chunk(path, 1, self._note_text(path, around)),
-                        round(scores[path], 4)))
-        return out
+    # Category-completion tuning. A dominant tag must cover a majority of the
+    # top hits (so the query genuinely landed inside one category, not a mixed
+    # lookup), the category must be bounded (a real set, not an everything-tag),
+    # and small enough to hand over as whole notes.
+    _CAT_MIN_MEMBERS = 3
+    _CAT_MAX_MEMBERS = 12
+    _CAT_CAP = 8
+
+    def _maybe_complete_category(self, query, base_paths, score_map,
+                                 around_by_path, vaults):
+        """The members of the category the query names — to be appended to the
+        ranking so a comparison sees every candidate — or ``None`` to leave the
+        ranking alone.
+
+        Fires when the query names a bounded frontmatter tag that is present in
+        the top hits *and* does not name a specific member (so it asks about the
+        category as a whole, "which planet is the heaviest?" — not "how heavy is
+        Jupiter?"). Then the deciding note that ranking crowded out (jupiter for
+        "heaviest") joins the context. Purely structural: the trigger is the
+        query naming a tag (matched through the lemmatizing tokenizer, so no
+        per-language superlative word list), and it engages only on tagged notes,
+        so untagged vaults fall through to the plain ranking."""
+        tag2paths, path2tags = self._tag_index(vaults)
+        if not tag2paths:
+            return None
+        cnt = collections.Counter(t for p in base_paths for t in path2tags.get(p, ()))
+
+        def bounded(t):
+            return self._CAT_MIN_MEMBERS <= len(tag2paths.get(t, ())) <= self._CAT_MAX_MEMBERS
+
+        # Fire only when the query itself NAMES the category (a bounded tag it
+        # mentions), never merely because a tag dominates the neighbourhood — so
+        # a question about the Sun that happens to land among planet notes is not
+        # hijacked into "complete the planets". Reuse the lemmatizing tokenizer so
+        # an inflected mention ("Planeten") still matches the tag ("planet").
+        # Match the tag against the query both raw (casing-robust: the German
+        # lemmatizer maps a capitalised "Planet" to "planet" but a lowercase
+        # "planet" to the verb "planen", so a raw pass is needed) and lemmatized
+        # (so an inflected mention "Planeten" still matches the tag "planet").
+        q_raw = set(re.findall(r"[^\W_]+", query.lower()))
+        q_lemmas = set(lexical_search.tokenize(query))
+
+        def named(t):
+            parts = t.lower().split()
+            if parts and all(p in q_raw for p in parts):
+                return True
+            tl = lexical_search.tokenize(t)
+            return bool(tl) and all(x in q_lemmas for x in tl)
+
+        cands = [t for t in cnt
+                 if named(t) and bounded(t) and cnt[t] >= self._CAT_MIN_MEMBERS]
+        if not cands:
+            return None
+        # most represented in the top hits, ties broken toward the more specific
+        # (smaller) category — so "Gesteinsplaneten" wins over the broader
+        # "planet" tag.
+        tag = max(cands, key=lambda t: (cnt[t], -len(tag2paths[t])))
+        members = tag2paths[tag]
+        if self._query_names_member(query, members):
+            return None                      # focused lookup on one member
+        ordered = sorted(members, key=lambda m: -score_map.get(m, 0.0))[:self._CAT_CAP]
+        return [(m, score_map.get(m, 0.0), around_by_path.get(m, "")) for m in ordered]
+
+    def _query_names_member(self, query, member_paths) -> bool:
+        """True if the query mentions a specific member by its note name — a
+        focused lookup, not a comparison over the category. Matches the note
+        stem (a language-invariant proper noun), whole-word."""
+        ql = query.lower()
+        for m in member_paths:
+            stem = os.path.splitext(os.path.basename(m))[0].lower()
+            for name in {stem, stem.replace("-", " "), stem.replace("_", " ")}:
+                if len(name) >= 3 and re.search(r"\b%s\b" % re.escape(name), ql):
+                    return True
+        return False
+
+    def _tag_index(self, vaults):
+        """``(tag -> {abspath}, abspath -> [tags])`` over the ``.md`` notes under
+        *vaults*, cached per scope by a (files, mtimes) signature like
+        :meth:`_lexical`."""
+        roots = tuple(sorted(os.path.abspath(v)
+                             for v in (vaults or self._get_vault_paths())))
+        files = []
+        for root in roots:
+            for dirpath, dirnames, filenames in os.walk(root):
+                dirnames[:] = [d for d in dirnames if not d.startswith(".")]
+                files += [os.path.join(dirpath, f)
+                          for f in filenames if f.endswith(".md")]
+        sig = tuple(sorted((f, int(os.path.getmtime(f)))
+                           for f in files if os.path.exists(f)))
+        with self._tag_lock:
+            cached = self._tag_cache.pop(roots, None)          # pop: re-insert = LRU
+            if cached is not None and cached[0] == sig:
+                self._tag_cache[roots] = cached
+                return cached[1], cached[2]
+            tag2paths: dict = collections.defaultdict(set)
+            path2tags: dict = {}
+            for f, _ in sig:
+                try:
+                    text = Path(f).read_text(encoding="utf-8", errors="replace")
+                except OSError:
+                    continue
+                ap = os.path.abspath(f)
+                tags = _frontmatter_tags(text)
+                path2tags[ap] = tags
+                for t in tags:
+                    tag2paths[t].add(ap)
+            entry = (sig, dict(tag2paths), path2tags)
+            self._tag_cache[roots] = entry
+            while len(self._tag_cache) > self._LEX_CACHE_MAX:
+                self._tag_cache.pop(next(iter(self._tag_cache)))
+            return entry[1], entry[2]
 
     def note_hits(self, paths):
         """``(passage, score)`` for an explicit list of note *paths* — whole
