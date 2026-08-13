@@ -68,6 +68,10 @@ _SYSTEM = (
     "general knowledge, never invent a name, number, date or fact. A made-up answer "
     "is worse than admitting the notes don't say.\n"
     "- Do not read metaphors or comparisons as facts.\n"
+    "- Attribute every value — a number, name, date or property — to the exact "
+    "entity and category the excerpt states it for. Never carry a value over from "
+    "a neighbouring item, or from a broader or narrower category (a whole vs. a "
+    "subgroup), to the thing that was asked.\n"
     "- Answer concisely, and write the answer in {language}."
 )
 
