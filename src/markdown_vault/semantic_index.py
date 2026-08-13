@@ -130,6 +130,25 @@ def _frontmatter_tags(text: str) -> list:
     return [t.strip().strip("\"'").lower() for t in raw if t.strip()]
 
 
+_TYPE_RE = re.compile(r"^type:\s*(.+?)\s*$", re.M)
+
+
+def _frontmatter_type(text: str) -> list:
+    """OKF-style single ``type:`` field (the note's entity class, e.g. ``video``
+    or ``concept``) — treated as one more category key. A scalar only; a list
+    form is ignored (``type`` is one value by the OKF spec)."""
+    m = _FRONTMATTER_RE.search(text)
+    if not m:
+        return []
+    tm = _TYPE_RE.search(m.group(1))
+    if not tm:
+        return []
+    v = tm.group(1).strip().strip("\"'").lower()
+    if not v or "," in v or v.startswith("["):
+        return []
+    return [v]
+
+
 _HASHTAG_RE = re.compile(r"(?:^|\s)#([A-Za-z0-9_/-]+)")
 _FENCE_RE = re.compile(r"```.*?```", re.S)
 _INLINE_CODE_RE = re.compile(r"`[^`]*`")
@@ -149,11 +168,12 @@ def _inline_hashtags(text: str) -> list:
 
 
 def _note_tags(text: str) -> list:
-    """All tag keys of a note — front matter ``tags:`` plus inline ``#tags`` —
-    normalised. A nested tag (``project/active``) also registers its top-level
-    segment (``project``), so a query naming the parent category still matches."""
+    """All category keys of a note — front matter ``tags:`` plus inline ``#tags``
+    plus the OKF ``type:`` field — normalised. A nested tag (``project/active``)
+    also registers its top-level segment (``project``), so a query naming the
+    parent category still matches."""
     keys: set = set()
-    for raw in _frontmatter_tags(text) + _inline_hashtags(text):
+    for raw in _frontmatter_tags(text) + _frontmatter_type(text) + _inline_hashtags(text):
         t = raw.strip().lower()
         if not t:
             continue

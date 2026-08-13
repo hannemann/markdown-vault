@@ -611,6 +611,14 @@ class TestCategoryCompletion(unittest.TestCase):
         self.assertEqual(SI._note_tags(txt),
                          ["planet", "projekt", "projekt/aktiv"])
 
+    def test_okf_type_field_is_a_category_key(self):
+        self.assertEqual(SI._frontmatter_type("---\ntype: Video\n---\nx"), ["video"])
+        self.assertEqual(SI._frontmatter_type("---\nother: 1\n---\nx"), [])
+        self.assertEqual(SI._frontmatter_type("---\ntype: [a, b]\n---\nx"), [])  # list ignored
+        # merged into the note's category keys alongside tags
+        txt = "---\ntype: video\ntags: [ai-coding]\n---\nbody"
+        self.assertEqual(SI._note_tags(txt), ["ai-coding", "video"])
+
     def test_named_category_completes_full_set(self):
         paths, tag2, path2 = self._planets()
         m = self._mgr(tag2, path2)
