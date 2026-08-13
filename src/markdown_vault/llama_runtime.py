@@ -14,6 +14,7 @@ The GGUF carries its own tokenizer and chat template, so
 
 import logging
 import os
+import re
 import threading
 
 logger = logging.getLogger(__name__)
@@ -355,6 +356,24 @@ def get_model(model_path: str, n_ctx: int, n_gpu_layers: int = 0,
         return _MODEL
 
 
+# A reasoning model (Qwen3, DeepSeek-R1, …) wraps its chain of thought in a
+# <think>…</think> block we never want in the grounded answer — strip it, and
+# hide an in-flight/partial block from the live stream so it doesn't flash.
+_THINK_RE = re.compile(r"<think>.*?</think>", re.S)
+_THINK_MARK = "<think>"
+
+
+def _visible_text(raw: str) -> str:
+    s = _THINK_RE.sub("", raw)
+    i = s.find(_THINK_MARK)
+    if i != -1:                       # an unclosed block is still streaming
+        return s[:i]
+    for k in range(len(_THINK_MARK) - 1, 0, -1):   # a partial "<think" tail
+        if s.endswith(_THINK_MARK[:k]):
+            return s[:-k]
+    return s
+
+
 class LlamaCppChat:
     """A :class:`ask.ChatBackend` over an in-process GGUF model.
 
@@ -370,10 +389,12 @@ class LlamaCppChat:
                  type_v: str = "f16", flash_attn: bool = False,
                  offload_kqv: bool = True, use_mmap: bool = True,
                  max_tokens: int = 1024, repeat_penalty: float = 1.3,
+                 think: bool | None = None,
                  on_phase=None, on_token=None, should_cancel=None,
                  _model=None) -> None:
         self.model_path = model_path
         self.num_ctx = num_ctx
+        self.think = think
         self.n_gpu_layers = n_gpu_layers
         self.n_threads = n_threads
         self.temperature = temperature
@@ -414,13 +435,21 @@ class LlamaCppChat:
         # the running decode (prompt processing included), not just its display.
         _install_abort(llama)
         _ABORT_HOLDER["fn"] = self._should_cancel
+        # Reasoning off → suppress a reasoning model's thinking. `/no_think` is a
+        # soft switch Qwen3 & co. honour in the turn, independent of whether the
+        # binding forwards chat-template kwargs; harmless for non-reasoning models.
+        if self.think is False:
+            user = f"{user}\n\n/no_think"
         # Stream: the first iteration blocks on the prompt (prefill = "reading",
         # where nothing is visible yet), then tokens flow. Each token is handed to
         # on_token so the UI can render the answer live — the growing text is the
         # progress, so no "writing" label is needed. A big prompt = a long
-        # "reading" phase, which is where the wait really goes.
+        # "reading" phase, which is where the wait really goes. A <think> block is
+        # hidden from the stream (and stripped from the result) so reasoning never
+        # shows in the grounded answer.
         self._phase("reading")
-        parts: list = []
+        raw: list = []
+        shown = 0
         try:
             stream = llama.create_chat_completion(
                 messages=[{"role": "system", "content": system},
@@ -432,14 +461,17 @@ class LlamaCppChat:
                     break              # closed / new question — stop generating
                 piece = ((chunk.get("choices") or [{}])[0].get("delta")
                          or {}).get("content")
-                if piece:
-                    parts.append(piece)
-                    if self._on_token is not None:
-                        self._on_token(piece)
+                if not piece:
+                    continue
+                raw.append(piece)
+                vis = _visible_text("".join(raw))
+                if self._on_token is not None and len(vis) > shown:
+                    self._on_token(vis[shown:])
+                shown = max(shown, len(vis))
         except Exception:          # noqa: BLE001
             if self._cancelled():
                 return ""          # intentionally aborted; the result is discarded
             raise
         finally:
             _ABORT_HOLDER["fn"] = None
-        return "".join(parts).strip()
+        return _THINK_RE.sub("", "".join(raw)).strip()

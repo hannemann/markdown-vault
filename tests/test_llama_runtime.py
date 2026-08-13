@@ -77,6 +77,24 @@ class TestChat(unittest.TestCase):
         self.assertIn("reading", phases)                # prefill phase
         self.assertNotIn("writing", phases)             # live text replaces it
 
+    def test_reasoning_off_appends_no_think_to_the_prompt(self):
+        stub = _StubModel("ok")
+        L.LlamaCppChat("/x", think=False, _model=stub).chat("SYS", "USER")
+        self.assertIn("/no_think", stub.calls[0][0][1]["content"])   # user turn
+
+    def test_reasoning_default_leaves_the_prompt_untouched(self):
+        stub = _StubModel("ok")
+        L.LlamaCppChat("/x", think=None, _model=stub).chat("s", "USER")
+        self.assertEqual(stub.calls[0][0][1]["content"], "USER")
+
+    def test_think_block_is_stripped_and_never_streamed(self):
+        tokens = []
+        out = L.LlamaCppChat(
+            "/x", _model=_StubModel("<think>secret reasoning</think>Final answer"),
+            on_token=tokens.append).chat("s", "u")
+        self.assertEqual(out, "Final answer")
+        self.assertEqual("".join(tokens), "Final answer")   # reasoning never shown
+
     def test_max_tokens_and_repeat_penalty_bound_the_generation(self):
         stub = _StubModel("x")
         L.LlamaCppChat("/x", max_tokens=256, repeat_penalty=1.4,

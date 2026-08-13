@@ -61,7 +61,7 @@ class QuickOpenPalette(Adw.Dialog):
         self._model_paths: list[str] = []
         self._model_updating = False
         self._phase_label = None        # the status row's label (loading/reading)
-        self._phase_key = "thinking"    # current status phase
+        self._phase_key = "initializing"  # current status phase
         self._stream_label = None       # live answer label while tokens stream in
         self._stream_text = ""          # accumulated streamed text
         self._pick_toggle = None        # "pick sources" toggle (footer)
@@ -426,10 +426,13 @@ class QuickOpenPalette(Adw.Dialog):
         return row
 
     #: Status phase → label shown in the running row (timer appended live).
-    #: 'reading' is the prefill (reading the prompt/notes — usually the longest
-    #: part), 'writing' the token generation; 'thinking' is a fallback (servers).
-    _PHASE_TEXT = {"loading": "Loading model…", "reading": "Reading your notes…",
-                   "writing": "Writing the answer…", "thinking": "Thinking…"}
+    #: 'initializing' is the placeholder while the worker spins up + retrieves,
+    #: before any backend phase fires; 'reading' is the prefill (reading the
+    #: prompt/notes — usually the longest part), 'writing' the token generation;
+    #: 'thinking' is a fallback (servers).
+    _PHASE_TEXT = {"initializing": "Initializing…", "loading": "Loading model…",
+                   "reading": "Reading your notes…", "writing": "Writing the answer…",
+                   "thinking": "Thinking…"}
 
     def _status_row(self) -> Gtk.ListBoxRow:
         """The running-status row with a spinner — its label reflects the current
@@ -541,7 +544,7 @@ class QuickOpenPalette(Adw.Dialog):
 
     def _start_timer(self) -> None:
         self._ask_started = time.monotonic()
-        self._phase_key = "thinking"
+        self._phase_key = "initializing"
         self._stop_ticking()
         self._render_phase()
         self._timer_id = GLib.timeout_add(100, self._tick)
