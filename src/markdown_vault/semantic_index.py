@@ -130,6 +130,39 @@ def _frontmatter_tags(text: str) -> list:
     return [t.strip().strip("\"'").lower() for t in raw if t.strip()]
 
 
+_HASHTAG_RE = re.compile(r"(?:^|\s)#([A-Za-z0-9_/-]+)")
+_FENCE_RE = re.compile(r"```.*?```", re.S)
+_INLINE_CODE_RE = re.compile(r"`[^`]*`")
+
+
+def _inline_hashtags(text: str) -> list:
+    """Obsidian-style ``#tag`` mentions in the note body — the common way casual
+    note-takers tag without YAML front matter. Front matter and code (fenced or
+    inline) are skipped; a heading (``## Foo`` — a space after ``#``) doesn't
+    match, nor a URL fragment (``page#section`` — no leading space), and a tag
+    must contain a letter so ``#2026`` / ``#1`` are ignored."""
+    m = _FRONTMATTER_RE.match(text)
+    body = text[m.end():] if m else text
+    body = _INLINE_CODE_RE.sub(" ", _FENCE_RE.sub(" ", body))
+    return [t for t in (h.group(1).lower() for h in _HASHTAG_RE.finditer(body))
+            if any(c.isalpha() for c in t)]
+
+
+def _note_tags(text: str) -> list:
+    """All tag keys of a note — front matter ``tags:`` plus inline ``#tags`` —
+    normalised. A nested tag (``project/active``) also registers its top-level
+    segment (``project``), so a query naming the parent category still matches."""
+    keys: set = set()
+    for raw in _frontmatter_tags(text) + _inline_hashtags(text):
+        t = raw.strip().lower()
+        if not t:
+            continue
+        keys.add(t)
+        if "/" in t:
+            keys.add(t.split("/", 1)[0])
+    return sorted(keys)
+
+
 class SemanticIndexManager:
     """Owns the vault's semantic index: background build, per-file cache, and
     incremental updates."""
@@ -694,7 +727,7 @@ class SemanticIndexManager:
                 except OSError:
                     continue
                 ap = os.path.abspath(f)
-                tags = _frontmatter_tags(text)
+                tags = _note_tags(text)
                 path2tags[ap] = tags
                 for t in tags:
                     tag2paths[t].add(ap)

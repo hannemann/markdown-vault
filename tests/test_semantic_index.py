@@ -594,6 +594,23 @@ class TestCategoryCompletion(unittest.TestCase):
             ["planet", "moon"])
         self.assertEqual(SI._frontmatter_tags("no front matter here"), [])
 
+    def test_inline_hashtags_harvested(self):
+        self.assertEqual(
+            SI._inline_hashtags("intro #planet and #gas-giant here"),
+            ["planet", "gas-giant"])
+
+    def test_hashtags_ignore_headings_code_urls_and_numbers(self):
+        txt = ("## Heading is not a tag\n"
+               "see http://x.io/p#frag not a tag\n"
+               "`#codetag` skipped\n"
+               "#2026 numeric dropped but #q4goal kept\n")
+        self.assertEqual(SI._inline_hashtags(txt), ["q4goal"])
+
+    def test_note_tags_merge_frontmatter_hashtags_and_nesting(self):
+        txt = "---\ntags: [Planet]\n---\nbody with #projekt/aktiv here"
+        self.assertEqual(SI._note_tags(txt),
+                         ["planet", "projekt", "projekt/aktiv"])
+
     def test_named_category_completes_full_set(self):
         paths, tag2, path2 = self._planets()
         m = self._mgr(tag2, path2)
