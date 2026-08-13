@@ -383,7 +383,6 @@ class TestDefaultAndMigration(unittest.TestCase):
         self.assertEqual(_cfg.default("ask_kv_type_k"), "f16")
         self.assertEqual(_cfg.default("ask_kv_type_v"), "f16")
         self.assertFalse(_cfg.default("ask_flash_attn"))
-        self.assertTrue(_cfg.default("ask_offload_kqv"))
         self.assertTrue(_cfg.default("ask_use_mmap"))
         self.assertEqual(_cfg.default("ask_max_tokens"), 1024)
 

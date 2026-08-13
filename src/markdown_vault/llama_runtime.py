@@ -14,7 +14,6 @@ The GGUF carries its own tokenizer and chat template, so
 
 import logging
 import os
-import re
 import threading
 
 logger = logging.getLogger(__name__)
@@ -235,14 +234,6 @@ def is_shared_memory_gpu() -> bool:
     return bool(vram and gtt and gtt > vram * 2)
 
 
-def flash_attn_risky() -> bool:
-    """Whether enabling flash attention is likely to be unstable: an AMD GPU
-    (Mesa/RADV) that shares memory with the CPU — i.e. the older GCN/Vega-class
-    APUs whose Vulkan flash-attention path has faulted the device and aborted the
-    process. Dedicated AMD GPUs are excluded; they generally handle it fine."""
-    return is_amd_gpu() and is_shared_memory_gpu()
-
-
 def recommended_gpu_layers(model_path: str) -> int | None:
     """'Layers that fit in VRAM' estimate for a *dedicated*-VRAM GPU:
     ``usable_VRAM ÷ per-layer weight size``. ``None`` when VRAM or the layer
@@ -313,10 +304,10 @@ def _llama_kwargs(key) -> dict:
     """The ``Llama(**kwargs)`` for a cache *key* — pure (no llama_cpp import), so
     the thread/flash/offload wiring is testable without loading a model. The
     *key* is ``(path, n_ctx, n_gpu_layers, n_threads, type_k, type_v, flash_attn,
-    offload_kqv, use_mmap)``; the KV-cache types are resolved to ggml constants
-    in :func:`_load`."""
+    offload_kqv, use_mmap, n_batch, n_ubatch)``; the KV-cache types are resolved
+    to ggml constants in :func:`_load`."""
     (path, n_ctx, n_gpu_layers, n_threads, _tk, _tv, flash_attn,
-     offload_kqv, use_mmap) = key
+     offload_kqv, use_mmap, n_batch, n_ubatch) = key
     # verbose=True so llama-cpp-python doesn't install its own suppressing log
     # callback — ours (see _install_llama_logging) then receives the load logs.
     kwargs = dict(model_path=path, n_ctx=n_ctx, n_gpu_layers=n_gpu_layers,
@@ -331,13 +322,21 @@ def _llama_kwargs(key) -> dict:
         # after the user lowered the thread count.
         kwargs["n_threads"] = n_threads
         kwargs["n_threads_batch"] = n_threads
+    # n_batch is the logical batch (tokens per decode); n_ubatch the physical
+    # micro-batch that sizes the prefill compute — the real speed lever. Each is
+    # sent only when set, so 0 keeps llama.cpp's own default.
+    if n_batch:
+        kwargs["n_batch"] = n_batch
+    if n_ubatch:
+        kwargs["n_ubatch"] = n_ubatch
     return kwargs
 
 
 def get_model(model_path: str, n_ctx: int, n_gpu_layers: int = 0,
               n_threads: int = 0, type_k: str = "f16", type_v: str = "f16",
               flash_attn: bool = False, offload_kqv: bool = True,
-              use_mmap: bool = True, on_load=None):
+              use_mmap: bool = True, n_batch: int = 0, n_ubatch: int = 0,
+              on_load=None):
     """The cached ``Llama`` for these parameters, loading (and evicting the
     previous one) only when the key changes. *on_load* is called right before an
     actual (cache-miss) load, so the UI can show a 'Loading model…' phase only
@@ -346,7 +345,7 @@ def get_model(model_path: str, n_ctx: int, n_gpu_layers: int = 0,
     _install_llama_logging()             # capture the load logs into the llama log
     key = (model_path, int(n_ctx), int(n_gpu_layers), int(n_threads),
            str(type_k), str(type_v), bool(flash_attn), bool(offload_kqv),
-           bool(use_mmap))
+           bool(use_mmap), int(n_batch), int(n_ubatch))
     with _LOCK:
         if _MODEL_KEY != key:
             if on_load is not None:
@@ -356,22 +355,25 @@ def get_model(model_path: str, n_ctx: int, n_gpu_layers: int = 0,
         return _MODEL
 
 
-# A reasoning model (Qwen3, DeepSeek-R1, …) wraps its chain of thought in a
-# <think>…</think> block we never want in the grounded answer — strip it, and
-# hide an in-flight/partial block from the live stream so it doesn't flash.
-_THINK_RE = re.compile(r"<think>.*?</think>", re.S)
-_THINK_MARK = "<think>"
+# A reasoning model puts its chain of thought before a </think> marker (the
+# opening <think> can come from the chat template, so we key on the close). The
+# grounded answer is whatever follows the final </think>; the rest is hidden from
+# the live stream and dropped from the result.
+_UNSET = object()
+_THINK_CLOSE = "</think>"
 
 
 def _visible_text(raw: str) -> str:
-    s = _THINK_RE.sub("", raw)
-    i = s.find(_THINK_MARK)
-    if i != -1:                       # an unclosed block is still streaming
-        return s[:i]
-    for k in range(len(_THINK_MARK) - 1, 0, -1):   # a partial "<think" tail
-        if s.endswith(_THINK_MARK[:k]):
-            return s[:-k]
-    return s
+    idx = raw.rfind(_THINK_CLOSE)
+    if idx != -1:
+        return raw[idx + len(_THINK_CLOSE):]
+    i = raw.find("<think>")           # an explicit block, still streaming → hide
+    if i != -1:
+        return raw[:i]
+    for k in range(len("<think>") - 1, 0, -1):   # a partial "<think" tail arriving
+        if raw.endswith("<think>"[:k]):
+            return raw[:-k]
+    return raw
 
 
 class LlamaCppChat:
@@ -388,6 +390,7 @@ class LlamaCppChat:
                  temperature: float = 0.2, type_k: str = "f16",
                  type_v: str = "f16", flash_attn: bool = False,
                  offload_kqv: bool = True, use_mmap: bool = True,
+                 n_batch: int = 0, n_ubatch: int = 0,
                  max_tokens: int = 1024, repeat_penalty: float = 1.3,
                  think: bool | None = None,
                  on_phase=None, on_token=None, should_cancel=None,
@@ -405,6 +408,8 @@ class LlamaCppChat:
         self.flash_attn = flash_attn
         self.offload_kqv = offload_kqv
         self.use_mmap = use_mmap
+        self.n_batch = n_batch
+        self.n_ubatch = n_ubatch
         self._on_phase = on_phase
         self._on_token = on_token
         self._should_cancel = should_cancel
@@ -426,8 +431,65 @@ class LlamaCppChat:
         return get_model(self.model_path, self.num_ctx, self.n_gpu_layers,
                          self.n_threads, type_k=self.type_k, type_v=self.type_v,
                          flash_attn=self.flash_attn, offload_kqv=self.offload_kqv,
-                         use_mmap=self.use_mmap,
+                         use_mmap=self.use_mmap, n_batch=self.n_batch,
+                         n_ubatch=self.n_ubatch,
                          on_load=lambda: self._phase("loading"))
+
+    def _reasoning_formatter(self, llama):
+        """A cached ``Jinja2ChatFormatter`` for models whose own chat template
+        understands the ``enable_thinking`` toggle (reasoning models), else None.
+
+        ``create_chat_completion`` can't forward template variables, so to steer a
+        reasoning model we render its template ourselves and feed the raw prompt to
+        ``create_completion`` — the same ``enable_thinking`` switch the llama.cpp
+        server exposes, done in-process. Non-reasoning models have no such variable
+        and stay on the proven ``create_chat_completion`` path untouched."""
+        cached = getattr(llama, "_mv_rformatter", _UNSET)
+        if cached is not _UNSET:
+            return cached
+        formatter = None
+        try:
+            template = (getattr(llama, "metadata", None) or {}).get(
+                "tokenizer.chat_template")
+            if template and "enable_thinking" in template:
+                from llama_cpp import llama_chat_format
+                eos = llama.detokenize([llama.token_eos()]).decode("utf-8", "replace")
+                bos = llama.detokenize([llama.token_bos()]).decode("utf-8", "replace")
+                formatter = llama_chat_format.Jinja2ChatFormatter(
+                    template=template, eos_token=eos, bos_token=bos,
+                    add_generation_prompt=True)
+        except Exception:          # noqa: BLE001 — any hiccup → plain path
+            logger.warning("could not build a reasoning chat formatter; the "
+                           "thinking toggle is unavailable for this model",
+                           exc_info=True)
+        llama._mv_rformatter = formatter
+        return formatter
+
+    def _stream_text(self, llama, system, user):
+        """Yield the answer's text pieces. For a reasoning model with an explicit
+        preference, render the template with ``enable_thinking`` and stream
+        ``create_completion``; otherwise stream ``create_chat_completion``."""
+        messages = [{"role": "system", "content": system},
+                    {"role": "user", "content": user}]
+        gen = dict(temperature=self.temperature, max_tokens=self.max_tokens,
+                   repeat_penalty=self.repeat_penalty, stream=True)
+        formatter = (self._reasoning_formatter(llama)
+                     if self.think is not None else None)
+        prompt = None
+        if formatter is not None:
+            try:
+                prompt = formatter(messages=messages,
+                                   enable_thinking=bool(self.think)).prompt
+            except Exception:      # noqa: BLE001 — render failure → plain path
+                logger.warning("chat template render failed; using "
+                               "create_chat_completion", exc_info=True)
+        if prompt is not None:
+            for chunk in llama.create_completion(prompt, **gen):
+                yield (chunk.get("choices") or [{}])[0].get("text") or ""
+        else:
+            for chunk in llama.create_chat_completion(messages=messages, **gen):
+                yield (((chunk.get("choices") or [{}])[0].get("delta")
+                        or {}).get("content") or "")
 
     def chat(self, system: str, user: str) -> str:
         llama = self._llama()          # may fire "loading" on a cache miss
@@ -435,11 +497,6 @@ class LlamaCppChat:
         # the running decode (prompt processing included), not just its display.
         _install_abort(llama)
         _ABORT_HOLDER["fn"] = self._should_cancel
-        # Reasoning off → suppress a reasoning model's thinking. `/no_think` is a
-        # soft switch Qwen3 & co. honour in the turn, independent of whether the
-        # binding forwards chat-template kwargs; harmless for non-reasoning models.
-        if self.think is False:
-            user = f"{user}\n\n/no_think"
         # Stream: the first iteration blocks on the prompt (prefill = "reading",
         # where nothing is visible yet), then tokens flow. Each token is handed to
         # on_token so the UI can render the answer live — the growing text is the
@@ -451,16 +508,9 @@ class LlamaCppChat:
         raw: list = []
         shown = 0
         try:
-            stream = llama.create_chat_completion(
-                messages=[{"role": "system", "content": system},
-                          {"role": "user", "content": user}],
-                temperature=self.temperature, max_tokens=self.max_tokens,
-                repeat_penalty=self.repeat_penalty, stream=True)
-            for chunk in stream:
+            for piece in self._stream_text(llama, system, user):
                 if self._cancelled():
                     break              # closed / new question — stop generating
-                piece = ((chunk.get("choices") or [{}])[0].get("delta")
-                         or {}).get("content")
                 if not piece:
                     continue
                 raw.append(piece)
@@ -474,4 +524,4 @@ class LlamaCppChat:
             raise
         finally:
             _ABORT_HOLDER["fn"] = None
-        return _THINK_RE.sub("", "".join(raw)).strip()
+        return _visible_text("".join(raw)).strip()

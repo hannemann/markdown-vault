@@ -29,6 +29,42 @@ class _StubModel:
         return gen()
 
 
+class _ReasoningModel:
+    """A reasoning model: its own chat template understands ``enable_thinking``,
+    so LlamaCppChat renders the prompt itself and streams ``create_completion``
+    (raw ``text`` chunks). The tiny template opens ``<think>`` when thinking is on
+    and closes it empty when off — exactly how a real reasoning template gates it.
+    """
+    metadata = {"tokenizer.chat_template":
+                "{% for m in messages %}<{{ m.role }}>{{ m.content }}"
+                "{% endfor %}<assistant>"
+                "{% if enable_thinking is defined and enable_thinking %}<think>"
+                "{% else %}<think></think>{% endif %}"}
+
+    def __init__(self, reply="ok"):
+        self.reply = reply
+        self.prompt = None
+        self.kwargs = None
+
+    def token_eos(self):
+        return 0
+
+    def token_bos(self):
+        return 1
+
+    def detokenize(self, tokens):
+        return b""
+
+    def create_completion(self, prompt, stream=False, **kwargs):
+        self.prompt = prompt
+        self.kwargs = kwargs
+
+        def gen():
+            for ch in self.reply:
+                yield {"choices": [{"text": ch}]}
+        return gen()
+
+
 class TestAvailability(unittest.TestCase):
     def setUp(self):
         self._orig = L.is_available
@@ -77,15 +113,39 @@ class TestChat(unittest.TestCase):
         self.assertIn("reading", phases)                # prefill phase
         self.assertNotIn("writing", phases)             # live text replaces it
 
-    def test_reasoning_off_appends_no_think_to_the_prompt(self):
-        stub = _StubModel("ok")
-        L.LlamaCppChat("/x", think=False, _model=stub).chat("SYS", "USER")
-        self.assertIn("/no_think", stub.calls[0][0][1]["content"])   # user turn
+    def test_reasoning_off_renders_enable_thinking_false(self):
+        # Reasoning off → the template renders an empty <think></think>, so the
+        # model never thinks; the raw prompt goes to create_completion.
+        stub = _ReasoningModel("ok")
+        L.LlamaCppChat("/x", think=False, _model=stub).chat("s", "u")
+        self.assertIn("<think></think>", stub.prompt)
 
-    def test_reasoning_default_leaves_the_prompt_untouched(self):
+    def test_reasoning_on_renders_enable_thinking_true(self):
+        # Reasoning on → the template opens <think>, so the model reasons.
+        stub = _ReasoningModel("ok")
+        L.LlamaCppChat("/x", think=True, _model=stub).chat("s", "u")
+        self.assertTrue(stub.prompt.endswith("<assistant><think>"))
+
+    def test_reasoning_answer_is_text_after_close_think(self):
+        # create_completion streams reasoning then the answer; only the text after
+        # the final </think> is the grounded answer.
+        stub = _ReasoningModel("weighing it up</think>Real answer")
+        out = L.LlamaCppChat("/x", think=True, _model=stub).chat("s", "u")
+        self.assertEqual(out, "Real answer")
+
+    def test_reasoning_default_uses_plain_chat_completion(self):
+        # think=None → no preference → the proven create_chat_completion path.
         stub = _StubModel("ok")
         L.LlamaCppChat("/x", think=None, _model=stub).chat("s", "USER")
+        self.assertTrue(stub.calls)
         self.assertEqual(stub.calls[0][0][1]["content"], "USER")
+
+    def test_non_reasoning_model_keeps_plain_chat_completion(self):
+        # A model without enable_thinking in its template is never routed through
+        # the formatter, even with a thinking preference set.
+        stub = _StubModel("ok")
+        L.LlamaCppChat("/x", think=False, _model=stub).chat("s", "u")
+        self.assertTrue(stub.calls)
 
     def test_think_block_is_stripped_and_never_streamed(self):
         tokens = []
@@ -173,21 +233,6 @@ class TestGpuRecommendation(unittest.TestCase):
     def test_is_amd_gpu_returns_bool(self):
         self.assertIsInstance(L.is_amd_gpu(), bool)
 
-    def test_flash_attn_risky_only_for_amd_shared_memory(self):
-        oa, ov, og = L.is_amd_gpu, L.vram_bytes, L.gtt_bytes
-        L.vram_bytes = lambda: 2 * 1024 ** 3
-        L.gtt_bytes = lambda: 14 * 1024 ** 3            # shared (gtt >> vram)
-        try:
-            L.is_amd_gpu = lambda: True
-            self.assertTrue(L.flash_attn_risky())       # AMD + shared iGPU
-            L.is_amd_gpu = lambda: False
-            self.assertFalse(L.flash_attn_risky())      # not AMD → no warning
-            L.is_amd_gpu = lambda: True
-            L.gtt_bytes = lambda: 1 * 1024 ** 3         # dedicated (gtt < vram)
-            self.assertFalse(L.flash_attn_risky())      # AMD but dedicated → fine
-        finally:
-            L.is_amd_gpu, L.vram_bytes, L.gtt_bytes = oa, ov, og
-
     def test_recommended_layers_estimate(self):
         import os
         import tempfile
@@ -274,8 +319,9 @@ class TestModelCache(unittest.TestCase):
         L._MODEL_KEY = None
 
     def _key(self, n_threads=0, tk="f16", tv="f16", flash=False, offload=True,
-             mmap=True):
-        return ("/m.gguf", 8192, 0, n_threads, tk, tv, flash, offload, mmap)
+             mmap=True, n_batch=0, n_ubatch=0):
+        return ("/m.gguf", 8192, 0, n_threads, tk, tv, flash, offload, mmap,
+                n_batch, n_ubatch)
 
     def test_thread_cap_applies_to_prefill_too(self):
         # n_threads alone caps only generation; the prompt-processing burst is
@@ -296,6 +342,23 @@ class TestModelCache(unittest.TestCase):
         self.assertFalse(kw["use_mmap"])
         # KV type isn't resolved here (needs the binding) — no type_k in kwargs.
         self.assertNotIn("type_k", kw)
+
+    def test_batch_and_ubatch_flow_independently(self):
+        kw = L._llama_kwargs(self._key(n_batch=2048, n_ubatch=1024))
+        self.assertEqual(kw["n_batch"], 2048)
+        self.assertEqual(kw["n_ubatch"], 1024)
+
+    def test_batch_alone_leaves_ubatch_default(self):
+        kw = L._llama_kwargs(self._key(n_batch=2048))
+        self.assertEqual(kw["n_batch"], 2048)
+        self.assertNotIn("n_ubatch", kw)          # 0 → llama.cpp default
+
+    def test_zero_batch_keeps_llama_default(self):
+        # 0 means "don't set it" → llama.cpp's own defaults (2048 / 512), never a
+        # literal batch of 0.
+        kw = L._llama_kwargs(self._key(n_batch=0, n_ubatch=0))
+        self.assertNotIn("n_batch", kw)
+        self.assertNotIn("n_ubatch", kw)
 
     def test_caches_and_reloads_only_on_key_change(self):
         loads = []

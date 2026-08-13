@@ -313,14 +313,18 @@ _DEFAULT_SETTINGS = {
     # cores (resolved at runtime).
     "ask_n_gpu_layers": 0,
     "ask_n_threads": 0,
+    # Prompt batch sizes. n_batch is the logical batch (max tokens per decode);
+    # n_ubatch the physical micro-batch actually processed at once — the real
+    # prefill-speed lever on the GPU. 0 = llama.cpp default (2048 / 512). Larger
+    # n_ubatch speeds up the prompt-reading phase; keep n_ubatch <= n_batch.
+    "ask_n_batch": 0,
+    "ask_n_ubatch": 0,
     # KV-cache precision, chosen separately for the K and V caches: "f16"
     # (default) or quantized "q8_0"/"q4_0". Quantizing K is free; quantizing V
-    # (type_v below f16) requires flash attention. offload_kqv keeps the KV cache
-    # on the GPU (off = in system RAM, freeing VRAM at some speed cost).
+    # (type_v below f16) requires flash attention.
     "ask_kv_type_k": "f16",
     "ask_kv_type_v": "f16",
     "ask_flash_attn": False,
-    "ask_offload_kqv": True,
     # Memory-map the model file (default). Off loads it fully into RAM — slower
     # first load, but no page-faults during the answer; needs enough free RAM.
     "ask_use_mmap": True,

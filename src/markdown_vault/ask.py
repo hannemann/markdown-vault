@@ -208,8 +208,10 @@ class OllamaChat:
     """Chat completion via a running Ollama server (``POST /api/chat``).
 
     No extra Python dependency; with a localhost URL nothing leaves the machine.
-    *think* toggles a reasoning model's thinking: leave ``None`` for the model's
-    default (safe for models that don't support it), or ``False`` to disable it.
+    *think* toggles a reasoning model's thinking via Ollama's ``think`` field:
+    ``None`` uses the model default, ``False`` disables it. Ollama keeps any
+    reasoning out of ``message.content`` (it goes to ``message.thinking``, which
+    we ignore); the field is harmless for models without a thinking mode.
     """
 
     #: Context window requested from Ollama.  Its default (num_ctx=2048) silently
@@ -237,7 +239,7 @@ class OllamaChat:
             "stream": False,
             "options": {"temperature": 0.2, "num_ctx": self.num_ctx},
         }
-        if self.think is not None:   # only send when overriding, else model default
+        if self.think is not None:   # Ollama's reasoning toggle; None = model default
             payload["think"] = self.think
         body = json.dumps(payload).encode()
         req = urllib.request.Request(
@@ -466,8 +468,9 @@ def answer_question(question: str, semantic_index, settings: dict, vaults,
             type_k=settings.get("ask_kv_type_k") or "f16",
             type_v=settings.get("ask_kv_type_v") or "f16",
             flash_attn=bool(settings.get("ask_flash_attn")),
-            offload_kqv=bool(settings.get("ask_offload_kqv", True)),
             use_mmap=bool(settings.get("ask_use_mmap", True)),
+            n_batch=int(settings.get("ask_n_batch") or 0),
+            n_ubatch=int(settings.get("ask_n_ubatch") or 0),
             max_tokens=int(settings.get("ask_max_tokens") or 1024), think=think,
             on_phase=on_phase, on_token=on_token, should_cancel=should_cancel)
         char_budget = context_char_budget(num_ctx)

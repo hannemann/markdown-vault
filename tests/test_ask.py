@@ -354,6 +354,18 @@ class TestOllamaChatPayload(unittest.TestCase):
         _out, body = self._capture(num_ctx=4096)
         self.assertEqual(body["options"]["num_ctx"], 4096)
 
+    def test_reasoning_off_sends_think_false(self):
+        _out, body = self._capture(think=False)
+        self.assertIs(body.get("think"), False)
+
+    def test_reasoning_default_omits_think(self):
+        _out, body = self._capture()                           # think=None → model default
+        self.assertNotIn("think", body)
+
+    def test_explicit_thinking_on_is_sent(self):
+        _out, body = self._capture(think=True)
+        self.assertIs(body.get("think"), True)
+
 
 class TestAnswer(unittest.TestCase):
     def test_no_hits_returns_grounded_fallback(self):
@@ -425,7 +437,7 @@ class TestAnswerQuestionLocalBackend(unittest.TestCase):
                 "q", self._sem(),
                 {"ask_engine": "auto", "ask_kv_type_k": "q8_0",
                  "ask_kv_type_v": "q4_0", "ask_flash_attn": True,
-                 "ask_offload_kqv": False, "ask_use_mmap": False},
+                 "ask_use_mmap": False},
                 None, "English")
         finally:
             llama_runtime.availability = orig_av
@@ -433,7 +445,6 @@ class TestAnswerQuestionLocalBackend(unittest.TestCase):
         self.assertEqual(seen.get("type_k"), "q8_0")
         self.assertEqual(seen.get("type_v"), "q4_0")
         self.assertTrue(seen.get("flash_attn"))
-        self.assertFalse(seen.get("offload_kqv"))
         self.assertFalse(seen.get("use_mmap"))
 
     def test_should_cancel_reaches_the_local_backend(self):

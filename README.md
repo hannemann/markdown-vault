@@ -139,12 +139,15 @@ automatically**; otherwise it installs the CPU build and tells you so. Install
 the toolchain first, then run the install (openSUSE Tumbleweed shown):
 
 ```sh
-sudo zypper install vulkan-devel shaderc glslang-devel cmake gcc-c++
+sudo zypper install vulkan-devel shaderc glslang-devel spirv-headers cmake gcc-c++
 make install-ai   # detects the toolchain and builds with Vulkan
 ```
 
-Equivalents: Fedora `vulkan-headers vulkan-loader-devel glslang gcc-c++ cmake`;
-Debian/Ubuntu `libvulkan-dev glslc cmake g++`. Once a Vulkan build is installed,
+`SPIRV-Headers` is required by llama.cpp's Vulkan backend and is a separate
+package from the Vulkan loader/headers — without it the build falls back to CPU.
+Equivalents: Fedora `vulkan-headers vulkan-loader-devel glslang spirv-headers-devel
+gcc-c++ cmake`; Debian/Ubuntu `libvulkan-dev glslc spirv-headers cmake g++`. Once a
+Vulkan build is installed,
 the **GPU layers** control appears in Preferences → Search → Ask; set it above 0
 (e.g. 999) to offload the model.
 
