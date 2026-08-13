@@ -309,6 +309,20 @@ class TestBudgetFill(unittest.TestCase):
         self.assertEqual(ans.warnings, [])                 # not duplicated as a banner
         self.assertIn("Search → Ask → Context window", ans.text)
 
+    def test_considered_holds_retrieved_but_uncited_notes(self):
+        hits = [(_chunk(f"/v/n{i}.md", 1, "x"), 1.0) for i in range(3)]
+        chat = SimpleNamespace(chat=lambda s, u: "Answer from [1].")
+        ans = ask.answer("q", hits, chat)
+        self.assertEqual([s.n for s in ans.sources], [1])          # cited
+        self.assertEqual([s.n for s in ans.considered], [2, 3])    # retrieved, uncited
+
+    def test_no_citation_leaves_considered_empty(self):
+        hits = [(_chunk(f"/v/n{i}.md", 1, "x"), 1.0) for i in range(2)]
+        chat = SimpleNamespace(chat=lambda s, u: "No cites here.")
+        ans = ask.answer("q", hits, chat)
+        self.assertEqual(len(ans.sources), 2)      # fallback shows all
+        self.assertEqual(ans.considered, [])       # nothing extra to dim
+
 
 class TestOllamaChatPayload(unittest.TestCase):
     """The Ollama request must raise num_ctx above the truncating default."""

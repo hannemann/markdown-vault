@@ -44,7 +44,8 @@ class Source:
 @dataclass
 class Answer:
     text: str
-    sources: list = field(default_factory=list)
+    sources: list = field(default_factory=list)      # the excerpts the answer cited
+    considered: list = field(default_factory=list)   # retrieved but not cited
     error: str | None = None
     warnings: list = field(default_factory=list)
 
@@ -398,7 +399,10 @@ def answer(question: str, hits, chat: ChatBackend, language: str = "English",
         logger.warning("ollama chat failed: %s", exc)
         return Answer(text="", sources=sources, error=str(exc))
     cleaned, cited, warnings = verify_citations(text, sources)
-    return Answer(text=cleaned, sources=cited, warnings=extra + warnings)
+    cited_ns = {s.n for s in cited}
+    considered = [s for s in sources if s.n not in cited_ns]
+    return Answer(text=cleaned, sources=cited, considered=considered,
+                  warnings=extra + warnings)
 
 
 def answer_question(question: str, semantic_index, settings: dict, vaults,

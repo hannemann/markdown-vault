@@ -479,13 +479,19 @@ class QuickOpenPalette(Adw.Dialog):
         row.set_child(content)
         return row
 
-    def _source_row(self, source) -> Gtk.ListBoxRow:
-        """A citation row; activating it opens the note at the passage line."""
+    def _source_row(self, source, considered: bool = False) -> Gtk.ListBoxRow:
+        """A source row; activating it opens the note at the passage line. A
+        *considered* row is a note that was retrieved (in the model's context)
+        but not cited — shown without the ``[n]`` marker and further dimmed, so
+        the full evidence set is visible without diluting the real citations."""
         row = Gtk.ListBoxRow()
         row._mv_open = (source.path, source.line)
+        # No line suffix: Ask retrieval is note-level (every passage anchors at
+        # line 1), so ":1" would be constant noise. The click still opens the
+        # note via _mv_open below.
+        prefix = "" if considered else f"[{source.n}]  "
         label = Gtk.Label(
-            label=f"[{source.n}]  "
-                  f"{path_utils.vault_relative_name(source.path)}:{source.line}")
+            label=f"{prefix}{path_utils.vault_relative_name(source.path)}")
         label.set_xalign(0)
         label.add_css_class("dim-label")
         label.add_css_class("mono")
@@ -493,6 +499,8 @@ class QuickOpenPalette(Adw.Dialog):
         label.set_margin_top(2)
         label.set_margin_bottom(2)
         label.set_margin_start(8)
+        if considered:
+            label.set_opacity(0.55)   # retrieved but not cited — secondary
         row.set_child(label)
         return row
 
@@ -690,6 +698,8 @@ class QuickOpenPalette(Adw.Dialog):
         self._results.append(self._answer_row(self._answer_text))
         for source in ans.sources:
             self._results.append(self._source_row(source))
+        for source in getattr(ans, "considered", []):
+            self._results.append(self._source_row(source, considered=True))
         for warning in getattr(ans, "warnings", []):
             self._results.append(self._message_row(f"⚠ {warning}"))
         # The total time closes off the answer; arm the copy button (hidden until
