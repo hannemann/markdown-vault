@@ -385,6 +385,7 @@ class TestDefaultAndMigration(unittest.TestCase):
         self.assertFalse(_cfg.default("ask_flash_attn"))
         self.assertTrue(_cfg.default("ask_offload_kqv"))
         self.assertTrue(_cfg.default("ask_use_mmap"))
+        self.assertEqual(_cfg.default("ask_max_tokens"), 1024)
 
     def test_default_gguf_path_is_under_state_dir(self):
         self.assertTrue(_cfg.default_gguf_path().endswith("models/model.gguf"))

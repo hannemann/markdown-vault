@@ -369,6 +369,7 @@ class LlamaCppChat:
                  temperature: float = 0.2, type_k: str = "f16",
                  type_v: str = "f16", flash_attn: bool = False,
                  offload_kqv: bool = True, use_mmap: bool = True,
+                 max_tokens: int = 1024, repeat_penalty: float = 1.3,
                  on_phase=None, on_token=None, should_cancel=None,
                  _model=None) -> None:
         self.model_path = model_path
@@ -376,6 +377,8 @@ class LlamaCppChat:
         self.n_gpu_layers = n_gpu_layers
         self.n_threads = n_threads
         self.temperature = temperature
+        self.max_tokens = max_tokens
+        self.repeat_penalty = repeat_penalty
         self.type_k = type_k
         self.type_v = type_v
         self.flash_attn = flash_attn
@@ -422,7 +425,8 @@ class LlamaCppChat:
             stream = llama.create_chat_completion(
                 messages=[{"role": "system", "content": system},
                           {"role": "user", "content": user}],
-                temperature=self.temperature, stream=True)
+                temperature=self.temperature, max_tokens=self.max_tokens,
+                repeat_penalty=self.repeat_penalty, stream=True)
             for chunk in stream:
                 if self._cancelled():
                     break              # closed / new question — stop generating

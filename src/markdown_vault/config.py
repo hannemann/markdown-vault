@@ -324,6 +324,9 @@ _DEFAULT_SETTINGS = {
     # Memory-map the model file (default). Off loads it fully into RAM — slower
     # first load, but no page-faults during the answer; needs enough free RAM.
     "ask_use_mmap": True,
+    # Hard cap on generated tokens, so a model that degenerates into a repetition
+    # loop still stops (it would otherwise run until the context is full).
+    "ask_max_tokens": 1024,
     "ask_system_prompt": "",  # empty → the built-in default (ask.DEFAULT_SYSTEM_PROMPT)
     # Reasoning models (Qwen3, …) think before answering: accurate but slow. For
     # grounded note Q&A, disabling it is faster and better calibrated. Only sent

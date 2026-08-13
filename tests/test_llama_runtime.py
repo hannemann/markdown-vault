@@ -15,8 +15,10 @@ class _StubModel:
         self.reply = reply
         self.calls = []
 
-    def create_chat_completion(self, messages, temperature, stream=False):
+    def create_chat_completion(self, messages, temperature, stream=False,
+                               **kwargs):
         self.calls.append((messages, temperature))
+        self.kwargs = kwargs
         if not stream:
             return {"choices": [{"message": {"content": self.reply}}]}
 
@@ -74,6 +76,13 @@ class TestChat(unittest.TestCase):
         self.assertEqual("".join(tokens), "hi there")   # streamed piece by piece
         self.assertIn("reading", phases)                # prefill phase
         self.assertNotIn("writing", phases)             # live text replaces it
+
+    def test_max_tokens_and_repeat_penalty_bound_the_generation(self):
+        stub = _StubModel("x")
+        L.LlamaCppChat("/x", max_tokens=256, repeat_penalty=1.4,
+                       _model=stub).chat("s", "u")
+        self.assertEqual(stub.kwargs["max_tokens"], 256)
+        self.assertEqual(stub.kwargs["repeat_penalty"], 1.4)
 
     def test_tolerates_empty_and_malformed_reply(self):
         self.assertEqual(L.LlamaCppChat("/x", _model=_StubModel("")).chat("s", "u"),

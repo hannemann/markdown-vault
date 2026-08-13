@@ -760,8 +760,24 @@ class PreferencesDialog(Adw.PreferencesDialog):
         self._ask_mmap_row.connect("notify::active", self._on_toggle_setting,
                                    "ask_use_mmap")
         group.add(self._ask_mmap_row)
+
+        self._ask_maxtok_row = Adw.SpinRow(
+            title="Max answer length",
+            subtitle="Hard cap on generated tokens. Bounds the answer and stops a "
+                     "model that gets stuck repeating itself (~1.5 words/token).",
+            adjustment=Gtk.Adjustment.new(
+                self._settings.get("ask_max_tokens", 1024), 128, 8192, 128, 512,
+                0.0),
+            digits=0)
+        self._ask_maxtok_row.connect("notify::value", self._on_ask_maxtok_changed)
+        group.add(self._ask_maxtok_row)
         self._refresh_kv_hint()
         return self._subpage("Model runtime", page)
+
+    def _on_ask_maxtok_changed(self, _row, _pspec) -> None:
+        self._settings["ask_max_tokens"] = int(
+            self._ask_maxtok_row.get_adjustment().get_value())
+        self._persist()
 
     def _kv_index(self, key: str) -> int:
         v = self._settings.get(key, "f16")

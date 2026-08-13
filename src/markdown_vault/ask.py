@@ -460,6 +460,7 @@ def answer_question(question: str, semantic_index, settings: dict, vaults,
             flash_attn=bool(settings.get("ask_flash_attn")),
             offload_kqv=bool(settings.get("ask_offload_kqv", True)),
             use_mmap=bool(settings.get("ask_use_mmap", True)),
+            max_tokens=int(settings.get("ask_max_tokens") or 1024),
             on_phase=on_phase, on_token=on_token, should_cancel=should_cancel)
         char_budget = context_char_budget(num_ctx)
     elif backend == "openai":
