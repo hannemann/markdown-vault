@@ -8,15 +8,18 @@ open and close notes, run searches and read back state as if clicking in the UI.
 
 D-Bus delivers method calls on the connection's thread-default context — the GTK
 main loop — so the handlers run on the UI thread and may touch widgets directly.
-The commands are non-destructive: open/close/search/select and read-back only, no
-create/rename/delete.
+The commands mutate no notes (no create/rename/delete), but they do drive the app:
+open/close tabs, run searches, and ask questions — Submit answers a question and
+AskAnswer reads the model's answer back.
 
 Exposure (accepted, dev-only): the interface is registered on the session bus, so
-while it is enabled any session peer can call it — and Search+SearchResults is a
-content oracle over the vault. This is tolerated because the flag is set only by
-the development launcher (scripts/app.sh), never by the shipped .desktop entry, so
-it does not exist during normal use. If it ever needs hardening, move it onto a
-private peer-to-peer socket (0600) in $XDG_RUNTIME_DIR instead of the session bus.
+while it is enabled any session peer can call it. That is more than a search
+oracle: Search+SearchResults probes what the notes contain, and QuickOpen+Submit+
+AskAnswer reads note content back out (the answer quotes the retrieved notes) while
+spending the machine's CPU/GPU on demand. This is tolerated because the flag is set
+only by the development launcher (scripts/app.sh), never by the shipped .desktop
+entry, so it does not exist during normal use. If it ever needs hardening, move it
+onto a private peer-to-peer socket (0600) in $XDG_RUNTIME_DIR instead of the bus.
 """
 
 import logging
