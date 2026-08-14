@@ -619,13 +619,16 @@ class SemanticIndexManager:
         notes = self._semantic_notes(query, pool, limit, vaults)
         around_by_path = {os.path.abspath(p): (best.text if best is not None else "")
                           for p, _, best in notes}
+        # Walk + stat the scope once and share it with BM25 and category
+        # completion, instead of each re-walking the whole vault per question.
+        scope = self._scope_signature(vaults)
         if not hybrid:
             score_map = {os.path.abspath(p): s for p, s, _ in notes}
             ranked = [(os.path.abspath(p), s, around_by_path.get(os.path.abspath(p), ""))
                       for p, s, _ in notes[:top_k]]
         else:
             sem_paths = [os.path.abspath(p) for p, _, _ in notes]
-            lex_paths = self._lexical(vaults).search(query, limit)
+            lex_paths = self._lexical(vaults, scope).search(query, limit)
             score_map = lexical_search.rrf_scores([sem_paths, lex_paths])
             fused = sorted(score_map, key=lambda p: -score_map[p])[:top_k]
             ranked = [(p, score_map[p], around_by_path.get(p, "")) for p in fused]
@@ -634,7 +637,8 @@ class SemanticIndexManager:
         # comparison has all candidates in context — without dropping the ranked
         # notes (the answer to a nearby lookup stays; see _maybe_complete_category).
         members = self._maybe_complete_category(
-            query, [p for p, _, _ in ranked], score_map, around_by_path, vaults)
+            query, [p for p, _, _ in ranked], score_map, around_by_path, vaults,
+            scope)
         if members is None:
             final = ranked
         else:
@@ -654,7 +658,7 @@ class SemanticIndexManager:
     _CAT_CAP = 8
 
     def _maybe_complete_category(self, query, base_paths, score_map,
-                                 around_by_path, vaults):
+                                 around_by_path, vaults, scope=None):
         """The members of the category the query names — to be appended to the
         ranking so a comparison sees every candidate — or ``None`` to leave the
         ranking alone.
@@ -667,7 +671,7 @@ class SemanticIndexManager:
         query naming a tag (matched through the lemmatizing tokenizer, so no
         per-language superlative word list), and it engages only on tagged notes,
         so untagged vaults fall through to the plain ranking."""
-        tag2paths, path2tags = self._tag_index(vaults)
+        tag2paths, path2tags = self._tag_index(vaults, scope)
         if not tag2paths:
             return None
         cnt = collections.Counter(t for p in base_paths for t in path2tags.get(p, ()))
@@ -720,10 +724,12 @@ class SemanticIndexManager:
                     return True
         return False
 
-    def _tag_index(self, vaults):
-        """``(tag -> {abspath}, abspath -> [tags])`` over the ``.md`` notes under
-        *vaults*, cached per scope by a (files, mtimes) signature like
-        :meth:`_lexical`."""
+    def _scope_signature(self, vaults):
+        """``(roots, sig)`` for a vault scope: the sorted absolute roots (the cache
+        key) and a sorted ``(path, mtime)`` signature of the ``.md`` notes under
+        them (a changed file set or mtime invalidates a cached index). Shared by
+        the tag and lexical scope caches — :meth:`retrieve` computes it once and
+        hands it to both, so the vault is walked and stat'd a single time."""
         roots = tuple(sorted(os.path.abspath(v)
                              for v in (vaults or self._get_vault_paths())))
         files = []
@@ -734,6 +740,14 @@ class SemanticIndexManager:
                           for f in filenames if f.endswith(".md")]
         sig = tuple(sorted((f, int(os.path.getmtime(f)))
                            for f in files if os.path.exists(f)))
+        return roots, sig
+
+    def _tag_index(self, vaults, scope=None):
+        """``(tag -> {abspath}, abspath -> [tags])`` over the ``.md`` notes under
+        *vaults*, cached per scope. *scope* is an optional pre-computed
+        ``(roots, sig)`` from :meth:`_scope_signature`, shared with :meth:`_lexical`
+        to avoid a second walk."""
+        roots, sig = scope or self._scope_signature(vaults)
         with self._tag_lock:
             cached = self._tag_cache.pop(roots, None)          # pop: re-insert = LRU
             if cached is not None and cached[0] == sig:
@@ -793,7 +807,7 @@ class SemanticIndexManager:
 
     _LEX_CACHE_MAX = 8   # scopes are few (all vaults + per-vault); cap anyway
 
-    def _lexical(self, vaults) -> "lexical_search.BM25Index":
+    def _lexical(self, vaults, scope=None) -> "lexical_search.BM25Index":
         """Lazily build (and cache) a BM25 index over the ``.md`` notes under
         *vaults* (or all managed vaults). One cache slot *per scope*, so
         alternating the vault scope swaps between kept indices instead of
@@ -801,17 +815,9 @@ class SemanticIndexManager:
         file set or an mtime changes. The cache is an LRU bounded to
         ``_LEX_CACHE_MAX`` slots — the "all vaults" slot necessarily overlaps the
         per-vault slots, and the bound keeps that duplication in check. Guarded by
-        a lock because retrieval runs on the ask worker thread."""
-        roots = tuple(sorted(os.path.abspath(v)
-                             for v in (vaults or self._get_vault_paths())))
-        files = []
-        for root in roots:
-            for dirpath, dirnames, filenames in os.walk(root):
-                dirnames[:] = [d for d in dirnames if not d.startswith(".")]
-                files += [os.path.join(dirpath, f)
-                          for f in filenames if f.endswith(".md")]
-        sig = tuple(sorted((f, int(os.path.getmtime(f)))
-                           for f in files if os.path.exists(f)))
+        a lock because retrieval runs on the ask worker thread. *scope* is an
+        optional pre-computed ``(roots, sig)`` shared with :meth:`_tag_index`."""
+        roots, sig = scope or self._scope_signature(vaults)
         with self._lex_lock:
             cache = self._lex_cache
             cached = cache.pop(roots, None)          # pop: re-insert = move to end

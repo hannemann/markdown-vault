@@ -661,11 +661,12 @@ class QuickOpenPalette(Adw.Dialog):
         row.set_child(label)
         return row
 
-    def _stream_delta(self, generation: int, piece: str) -> bool:
-        """Append a streamed token to a live answer row (created on the first
-        token, replacing the 'Reading…' status). The growing text is the
-        progress indicator — no 'writing' label needed. _show_answer replaces it
-        with the final Markdown render + citations when generation finishes."""
+    def _stream_delta(self, generation: int, text: str) -> bool:
+        """Show the streamed answer-so-far in a live row (created on the first
+        token, replacing the 'Reading…' status). *text* is the FULL visible text
+        each time — set, don't append — because it can shrink or shift its prefix
+        at a </think> boundary. _show_answer replaces the row with the final
+        Markdown render + citations when generation finishes."""
         if generation != self._ask_generation:
             return False  # superseded
         if self._stream_label is None:
@@ -681,8 +682,8 @@ class QuickOpenPalette(Adw.Dialog):
             row.set_selectable(False)
             row.set_child(self._stream_label)
             self._results.append(row)
-        self._stream_text += piece
-        self._stream_label.set_text(self._stream_text)
+        self._stream_text = text
+        self._stream_label.set_text(text)
         return False
 
     def _show_answer(self, generation: int, ans) -> bool:

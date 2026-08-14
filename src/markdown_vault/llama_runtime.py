@@ -36,6 +36,16 @@ _LOG_BUF: list = []
 _ABORT_HOLDER: dict = {"fn": None}
 _ABORT_CB = None
 
+# get_model hands every worker the same cached Llama; its C context is not
+# reentrant, so only one generation may run on it at a time.
+_CHAT_LOCK = threading.Lock()
+
+
+class ReasoningBudgetExhausted(Exception):
+    """A reasoning model spent its entire token budget inside an unclosed <think>
+    block (no </think> ever arrived), so there is no answer — only the raw chain
+    of thought, which must never be shown as the grounded answer."""
+
 
 def _abort_predicate(_user_data=None) -> bool:
     fn = _ABORT_HOLDER["fn"]
@@ -194,8 +204,11 @@ def vram_bytes() -> int | None:
 
 def is_amd_gpu() -> bool:
     """Whether an AMD GPU is present (PCI vendor ``0x1002``). Its Mesa/RADV Vulkan
-    driver has unstable flash-attention support — on older/APU parts it can fault
-    the device and abort the whole process — so the UI warns before enabling it."""
+    flash-attention path can be unstable on older/APU parts (device faults).
+
+    Intentionally retained though currently unused: a small, tested GPU probe kept
+    alongside :func:`is_shared_memory_gpu` and :func:`supports_gpu` for future
+    driver-specific decisions — not dead code awaiting removal (R52.5)."""
     import glob
     for f in glob.glob("/sys/class/drm/card*/device/vendor"):
         try:
@@ -391,7 +404,7 @@ class LlamaCppChat:
                  type_v: str = "f16", flash_attn: bool = False,
                  offload_kqv: bool = True, use_mmap: bool = True,
                  n_batch: int = 0, n_ubatch: int = 0,
-                 max_tokens: int = 1024, repeat_penalty: float = 1.3,
+                 max_tokens: int = 1024, repeat_penalty: float = 1.1,
                  think: bool | None = None,
                  on_phase=None, on_token=None, should_cancel=None,
                  _model=None) -> None:
@@ -466,9 +479,11 @@ class LlamaCppChat:
         return formatter
 
     def _stream_text(self, llama, system, user):
-        """Yield the answer's text pieces. For a reasoning model with an explicit
-        preference, render the template with ``enable_thinking`` and stream
-        ``create_completion``; otherwise stream ``create_chat_completion``."""
+        """Yield the answer's text pieces, recording ``choices[0].finish_reason``
+        of the final chunk in ``self._finish_reason`` ('length' when the model hit
+        max_tokens). For a reasoning model with an explicit preference, render the
+        template with ``enable_thinking`` and stream ``create_completion``;
+        otherwise stream ``create_chat_completion``."""
         messages = [{"role": "system", "content": system},
                     {"role": "user", "content": user}]
         gen = dict(temperature=self.temperature, max_tokens=self.max_tokens,
@@ -485,43 +500,89 @@ class LlamaCppChat:
                                "create_chat_completion", exc_info=True)
         if prompt is not None:
             for chunk in llama.create_completion(prompt, **gen):
-                yield (chunk.get("choices") or [{}])[0].get("text") or ""
+                ch = (chunk.get("choices") or [{}])[0]
+                self._finish_reason = ch.get("finish_reason") or self._finish_reason
+                yield ch.get("text") or ""
         else:
             for chunk in llama.create_chat_completion(messages=messages, **gen):
-                yield (((chunk.get("choices") or [{}])[0].get("delta")
-                        or {}).get("content") or "")
+                ch = (chunk.get("choices") or [{}])[0]
+                self._finish_reason = ch.get("finish_reason") or self._finish_reason
+                yield (ch.get("delta") or {}).get("content") or ""
 
     def chat(self, system: str, user: str) -> str:
-        llama = self._llama()          # may fire "loading" on a cache miss
-        # Arm the abort callback so closing the palette / asking again interrupts
-        # the running decode (prompt processing included), not just its display.
-        _install_abort(llama)
-        _ABORT_HOLDER["fn"] = self._should_cancel
-        # Stream: the first iteration blocks on the prompt (prefill = "reading",
-        # where nothing is visible yet), then tokens flow. Each token is handed to
-        # on_token so the UI can render the answer live — the growing text is the
-        # progress, so no "writing" label is needed. A big prompt = a long
-        # "reading" phase, which is where the wait really goes. A <think> block is
-        # hidden from the stream (and stripped from the result) so reasoning never
-        # shows in the grounded answer.
-        self._phase("reading")
-        raw: list = []
-        shown = 0
-        try:
-            for piece in self._stream_text(llama, system, user):
+        # Hold the lock for the whole decode so two in-flight questions never share
+        # the one cached Llama context. A superseded worker's should_cancel already
+        # reads True, so its abort callback breaks it out (prefill included) and it
+        # releases the lock promptly — the next worker then acquires it.
+        with _CHAT_LOCK:
+            if self._cancelled():          # superseded while we waited for the lock
+                return ""
+            llama = self._llama()          # may fire "loading" on a cache miss
+            # Arm the abort callback INSIDE the lock, so the single global slot is
+            # never clobbered by another worker: closing the palette / asking again
+            # interrupts the running decode, prompt processing included.
+            _install_abort(llama)
+            _ABORT_HOLDER["fn"] = self._should_cancel
+            # A template that prefills an OPEN <think> at the generation prompt
+            # streams the chain of thought with no opening tag in the output, so
+            # _visible_text can't spot it. Suppress the live stream until the first
+            # </think> so the user never watches the private reasoning (including
+            # values it is mid-way through rejecting). Key on the TEMPLATE, not on
+            # `think`: DeepSeek-R1 distills mention <think> but have no
+            # enable_thinking switch — that's the leaking set, and it fires on the
+            # production path (think=None). Qwen3-style templates gate thinking with
+            # enable_thinking, emit their own opening tag (already handled), and
+            # render an empty <think></think> when reasoning is off (which must NOT
+            # be hidden), so exclude them; the think=True clause still covers
+            # explicitly opening one via the formatter.
+            template = (getattr(llama, "metadata", None) or {}).get(
+                "tokenizer.chat_template") or ""
+            hide_until_close = (
+                ("<think>" in template and "enable_thinking" not in template)
+                or (self.think is True
+                    and self._reasoning_formatter(llama) is not None))
+            # Stream: the first iteration blocks on the prompt (prefill = "reading",
+            # nothing visible yet), then tokens flow. on_token gets the FULL visible
+            # answer whenever it changes and the consumer REPLACES its label — the
+            # visible text can shrink or shift its prefix when a </think> boundary is
+            # crossed, which a character delta would splice into garbage. A <think>
+            # block is hidden from the stream and stripped from the result.
+            self._phase("reading")
+            raw: list = []
+            last = ""
+            self._finish_reason = None
+            try:
+                for piece in self._stream_text(llama, system, user):
+                    if self._cancelled():
+                        break              # closed / new question — stop generating
+                    if not piece:
+                        continue
+                    raw.append(piece)
+                    joined = "".join(raw)
+                    if hide_until_close and _THINK_CLOSE not in joined:
+                        continue           # still inside the prefilled think block
+                    vis = _visible_text(joined)
+                    if vis != last and self._on_token is not None:
+                        self._on_token(vis)
+                        last = vis
+            except Exception:          # noqa: BLE001
                 if self._cancelled():
-                    break              # closed / new question — stop generating
-                if not piece:
-                    continue
-                raw.append(piece)
-                vis = _visible_text("".join(raw))
-                if self._on_token is not None and len(vis) > shown:
-                    self._on_token(vis[shown:])
-                shown = max(shown, len(vis))
-        except Exception:          # noqa: BLE001
-            if self._cancelled():
-                return ""          # intentionally aborted; the result is discarded
-            raise
-        finally:
-            _ABORT_HOLDER["fn"] = None
-        return _visible_text("".join(raw)).strip()
+                    return ""          # intentionally aborted; the result is discarded
+                raise
+            finally:
+                _ABORT_HOLDER["fn"] = None
+        if self._cancelled():
+            return ""
+        full = "".join(raw)
+        visible = _visible_text(full).strip()
+        # Ran out of tokens (finish_reason 'length') with no usable answer — the
+        # only text is an unfinished chain of thought. Two shapes, both covered: a
+        # PREFILLED <think> leaves the raw reasoning as the full text (non-empty, so
+        # key on the missing close tag), while a SELF-tagged <think> (Qwen3) leaves
+        # _visible_text empty (its open block is hidden). finish_reason is the exact
+        # stop signal, so a short but complete answer is never misread. Signal
+        # exhaustion rather than shipping reasoning or an empty answer.
+        if self._finish_reason == "length" and (
+                (hide_until_close and _THINK_CLOSE not in full) or not visible):
+            raise ReasoningBudgetExhausted
+        return visible

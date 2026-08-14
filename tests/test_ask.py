@@ -323,6 +323,22 @@ class TestBudgetFill(unittest.TestCase):
         self.assertEqual(len(ans.sources), 2)      # fallback shows all
         self.assertEqual(ans.considered, [])       # nothing extra to dim
 
+    def test_reasoning_budget_exhaustion_is_reported(self):
+        # A reasoning model that never closes its <think> yields an explanatory
+        # message, not its raw chain of thought — and the notes stay visible.
+        from markdown_vault import llama_runtime
+
+        def _raise(_s, _u):
+            raise llama_runtime.ReasoningBudgetExhausted
+
+        hits = [(_chunk(f"/v/n{i}.md", 1, "x"), 1.0) for i in range(2)]
+        ans = ask.answer("q", hits, SimpleNamespace(chat=_raise),
+                         extra_warnings=["only 1 of 2 notes fitted"])
+        self.assertIn("Max answer length", ans.text)
+        self.assertEqual(ans.sources, [])                        # no cited answer
+        self.assertEqual([s.n for s in ans.considered], [1, 2])  # notes still shown
+        self.assertEqual(ans.warnings, ["only 1 of 2 notes fitted"])  # R56.1: kept
+
 
 class TestOllamaChatPayload(unittest.TestCase):
     """The Ollama request must raise num_ctx above the truncating default."""
@@ -425,7 +441,7 @@ class TestAnswerQuestionLocalBackend(unittest.TestCase):
             llama_runtime.LlamaCppChat = orig_cls
         self.assertEqual(phases, ["loading", "thinking"])
 
-    def test_kv_settings_reach_the_local_backend(self):
+    def _capture_local_kwargs(self, settings):
         from markdown_vault import llama_runtime
         orig_av, orig_cls = llama_runtime.availability, llama_runtime.LlamaCppChat
         seen = {}
@@ -433,19 +449,45 @@ class TestAnswerQuestionLocalBackend(unittest.TestCase):
         llama_runtime.LlamaCppChat = lambda *a, **k: seen.update(k) or SimpleNamespace(
             chat=lambda s, u: "x [1]")
         try:
-            ask.answer_question(
-                "q", self._sem(),
-                {"ask_engine": "auto", "ask_kv_type_k": "q8_0",
-                 "ask_kv_type_v": "q4_0", "ask_flash_attn": True,
-                 "ask_use_mmap": False},
-                None, "English")
+            ask.answer_question("q", self._sem(), settings, None, "English")
         finally:
             llama_runtime.availability = orig_av
             llama_runtime.LlamaCppChat = orig_cls
+        return seen
+
+    def test_manual_kv_settings_reach_the_local_backend(self):
+        seen = self._capture_local_kwargs(
+            {"ask_engine": "manual", "ask_backend": "local",
+             "ask_kv_type_k": "q8_0", "ask_kv_type_v": "q4_0",
+             "ask_flash_attn": True, "ask_use_mmap": False,
+             "ask_n_batch": 2048, "ask_n_ubatch": 1024,
+             "ask_max_tokens": 256, "ask_num_ctx": 4096})
         self.assertEqual(seen.get("type_k"), "q8_0")
         self.assertEqual(seen.get("type_v"), "q4_0")
         self.assertTrue(seen.get("flash_attn"))
         self.assertFalse(seen.get("use_mmap"))
+        self.assertEqual(seen.get("n_batch"), 2048)
+        self.assertEqual(seen.get("n_ubatch"), 1024)
+        self.assertEqual(seen.get("max_tokens"), 256)
+        self.assertEqual(seen.get("num_ctx"), 4096)
+
+    def test_auto_ignores_manual_runtime_knobs(self):
+        # Automatic uses safe llama.cpp defaults regardless of the hidden Manual
+        # knobs, so a leftover quantized-V-without-flash can't break loading and a
+        # leftover max_tokens=128 / num_ctx=2048 can't silently degrade answers.
+        seen = self._capture_local_kwargs(
+            {"ask_engine": "auto", "ask_kv_type_k": "q8_0",
+             "ask_kv_type_v": "q4_0", "ask_flash_attn": True,
+             "ask_use_mmap": False, "ask_n_batch": 2048, "ask_n_ubatch": 1024,
+             "ask_max_tokens": 128, "ask_num_ctx": 2048})
+        self.assertEqual(seen.get("type_k"), "f16")
+        self.assertEqual(seen.get("type_v"), "f16")
+        self.assertFalse(seen.get("flash_attn"))
+        self.assertTrue(seen.get("use_mmap"))
+        self.assertEqual(seen.get("n_batch"), 0)
+        self.assertEqual(seen.get("n_ubatch"), 0)
+        self.assertEqual(seen.get("max_tokens"), 1024)   # config default, not 128
+        self.assertEqual(seen.get("num_ctx"), 8192)      # config default, not 2048
 
     def test_should_cancel_reaches_the_local_backend(self):
         from markdown_vault import llama_runtime

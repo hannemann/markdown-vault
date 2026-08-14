@@ -582,7 +582,7 @@ class TestCategoryCompletion(unittest.TestCase):
     def _mgr(self, tag2, path2):
         m = SemanticIndexManager(_StubEmbedder(), lambda: ["/v"],
                                  tempfile.mkdtemp(), "t", min_score=0.3)
-        m._tag_index = lambda vaults: (tag2, path2)
+        m._tag_index = lambda vaults, scope=None: (tag2, path2)
         return m
 
     def test_frontmatter_tags_inline_and_block(self):

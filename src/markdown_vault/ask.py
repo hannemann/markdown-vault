@@ -395,8 +395,18 @@ def answer(question: str, hits, chat: ChatBackend, language: str = "English",
         if not hits:
             return _no_context_answer()
     system, user, sources = build_messages(question, hits, language, system_template)
+    from . import llama_runtime
     try:
         text = chat.chat(system, user)
+    except llama_runtime.ReasoningBudgetExhausted:
+        # The model spent its whole budget thinking; its raw chain of thought must
+        # not be shipped as the answer. Explain, and keep the retrieved notes
+        # visible (dimmed) so the user can still read them directly.
+        return Answer(
+            text="The model used its entire answer budget thinking and never "
+                 "produced an answer. Raise “Max answer length”, or turn "
+                 "Reasoning off.",
+            considered=sources, warnings=extra)
     except (OSError, ValueError) as exc:  # URLError is an OSError subclass
         logger.warning("ollama chat failed: %s", exc)
         return Answer(text="", sources=sources, error=str(exc))
@@ -456,22 +466,35 @@ def answer_question(question: str, semantic_index, settings: dict, vaults,
         if unavailable:                       # no binding or no model file yet
             return Answer(text=unavailable)
         if engine == "auto":
-            # Offload to the GPU only when the build can, else pure CPU.
+            # Automatic owns the whole runtime: GPU offload when the build can,
+            # else pure CPU, and llama.cpp's own KV / flash / batch defaults. It
+            # must NOT inherit any hidden Manual-page knob — a leftover (V=q4_0
+            # with flash off that won't load, max_tokens=128 that truncates, or
+            # num_ctx at its 2048 minimum that shrinks the context) would break or
+            # silently degrade every answer with no visible control.
             n_gpu_layers = 999 if llama_runtime.supports_gpu() else 0
+            type_k = type_v = "f16"
+            flash_attn = False
+            n_batch = n_ubatch = 0
+            use_mmap = True
+            num_ctx = int(config.default("ask_num_ctx"))
+            max_tokens = int(config.default("ask_max_tokens"))
         else:
             n_gpu_layers = int(settings.get("ask_n_gpu_layers") or 0)
+            type_k = settings.get("ask_kv_type_k") or "f16"
+            type_v = settings.get("ask_kv_type_v") or "f16"
+            flash_attn = bool(settings.get("ask_flash_attn"))
+            n_batch = int(settings.get("ask_n_batch") or 0)
+            n_ubatch = int(settings.get("ask_n_ubatch") or 0)
+            use_mmap = bool(settings.get("ask_use_mmap", True))
+            max_tokens = int(settings.get("ask_max_tokens") or 1024)
         # 0 threads → the safe default (half the physical cores), in both modes.
         n_threads = (int(settings.get("ask_n_threads") or 0)
                      or llama_runtime.default_threads())
         chat = llama_runtime.LlamaCppChat(
             gguf, num_ctx=num_ctx, n_gpu_layers=n_gpu_layers, n_threads=n_threads,
-            type_k=settings.get("ask_kv_type_k") or "f16",
-            type_v=settings.get("ask_kv_type_v") or "f16",
-            flash_attn=bool(settings.get("ask_flash_attn")),
-            use_mmap=bool(settings.get("ask_use_mmap", True)),
-            n_batch=int(settings.get("ask_n_batch") or 0),
-            n_ubatch=int(settings.get("ask_n_ubatch") or 0),
-            max_tokens=int(settings.get("ask_max_tokens") or 1024), think=think,
+            type_k=type_k, type_v=type_v, flash_attn=flash_attn, use_mmap=use_mmap,
+            n_batch=n_batch, n_ubatch=n_ubatch, max_tokens=max_tokens, think=think,
             on_phase=on_phase, on_token=on_token, should_cancel=should_cancel)
         char_budget = context_char_budget(num_ctx)
     elif backend == "openai":

@@ -65,6 +65,47 @@ class _ReasoningModel:
         return gen()
 
 
+class _PrefillThinkModel:
+    """A DeepSeek-R1-distill-style model: its chat template prefills an open
+    ``<think>`` and has no ``enable_thinking`` switch, so generation starts inside
+    a think block with no opening tag in the output. Uses create_chat_completion
+    (the think=None production path)."""
+    metadata = {"tokenizer.chat_template":
+                "{% for m in messages %}<{{ m.role }}>{{ m.content }}"
+                "{% endfor %}<assistant><think>\n"}
+
+    def __init__(self, reply="reasoning</think>Answer", finish_reason="length"):
+        self.reply = reply
+        self.finish_reason = finish_reason
+
+    def create_chat_completion(self, messages, temperature, stream=False, **kwargs):
+        def gen():
+            for ch in self.reply:
+                yield {"choices": [{"delta": {"content": ch}}]}
+            yield {"choices": [{"delta": {}, "finish_reason": self.finish_reason}]}
+        return gen()
+
+
+class _SelfThinkModel:
+    """A Qwen3-style reasoning model: its template has an ``enable_thinking`` switch
+    (so hide_until_close is false), and the model emits its OWN ``<think>`` opening
+    tag in the output. Uses create_chat_completion (the think=None production
+    path)."""
+    metadata = {"tokenizer.chat_template":
+                "chat template with an enable_thinking switch and <think>"}
+
+    def __init__(self, reply="<think>still weighing", finish_reason="length"):
+        self.reply = reply
+        self.finish_reason = finish_reason
+
+    def create_chat_completion(self, messages, temperature, stream=False, **kwargs):
+        def gen():
+            for ch in self.reply:
+                yield {"choices": [{"delta": {"content": ch}}]}
+            yield {"choices": [{"delta": {}, "finish_reason": self.finish_reason}]}
+        return gen()
+
+
 class TestAvailability(unittest.TestCase):
     def setUp(self):
         self._orig = L.is_available
@@ -109,7 +150,7 @@ class TestChat(unittest.TestCase):
         chat = L.LlamaCppChat("/x", _model=_StubModel("hi there"),
                               on_phase=phases.append, on_token=tokens.append)
         self.assertEqual(chat.chat("s", "u"), "hi there")
-        self.assertEqual("".join(tokens), "hi there")   # streamed piece by piece
+        self.assertEqual(tokens[-1], "hi there")        # full visible text each step
         self.assertIn("reading", phases)                # prefill phase
         self.assertNotIn("writing", phases)             # live text replaces it
 
@@ -121,8 +162,9 @@ class TestChat(unittest.TestCase):
         self.assertIn("<think></think>", stub.prompt)
 
     def test_reasoning_on_renders_enable_thinking_true(self):
-        # Reasoning on → the template opens <think>, so the model reasons.
-        stub = _ReasoningModel("ok")
+        # Reasoning on → the template opens <think>, so the model reasons. The
+        # reply closes the block so it isn't flagged as budget-exhausted.
+        stub = _ReasoningModel("r</think>ok")
         L.LlamaCppChat("/x", think=True, _model=stub).chat("s", "u")
         self.assertTrue(stub.prompt.endswith("<assistant><think>"))
 
@@ -132,6 +174,107 @@ class TestChat(unittest.TestCase):
         stub = _ReasoningModel("weighing it up</think>Real answer")
         out = L.LlamaCppChat("/x", think=True, _model=stub).chat("s", "u")
         self.assertEqual(out, "Real answer")
+
+    def test_on_token_carries_full_visible_text_not_a_broken_delta(self):
+        # A preamble before a <think> block used to splice the live stream into
+        # "Sure. s red." (a char-delta over a shrinking string). on_token must
+        # carry the FULL visible text each time so the consumer can replace it.
+        tokens = []
+        out = L.LlamaCppChat(
+            "/x", _model=_StubModel("Sure. <think>hmm</think>Mars is red."),
+            on_token=tokens.append).chat("s", "u")
+        self.assertEqual(out, "Mars is red.")
+        self.assertEqual(tokens[-1], "Mars is red.")   # final streamed == answer
+
+    def test_on_token_hides_reasoning_for_prefilled_think(self):
+        # A template that prefills <think> emits reasoning with no opening tag; the
+        # live stream must stay suppressed until </think>, so the chain of thought
+        # is never shown — only the answer after it.
+        tokens = []
+        out = L.LlamaCppChat(
+            "/x", think=True,
+            _model=_ReasoningModel("weighing it up</think>Real answer"),
+            on_token=tokens.append).chat("s", "u")
+        self.assertEqual(out, "Real answer")
+        self.assertEqual(tokens[-1], "Real answer")
+        self.assertNotIn("weighing", "".join(tokens))   # reasoning never streamed
+
+    def test_on_token_hides_reasoning_on_production_path(self):
+        # The real leak: a prefilled-<think>, no-enable_thinking template on the
+        # app's reasoning-on path (think=None) — the stream must stay suppressed
+        # until </think>, keyed on the template, not on think.
+        tokens = []
+        out = L.LlamaCppChat(
+            "/x", _model=_PrefillThinkModel("weighing 4 vs 95</think>95 moons."),
+            on_token=tokens.append).chat("s", "u")
+        self.assertEqual(out, "95 moons.")
+        self.assertEqual(tokens[-1], "95 moons.")
+        self.assertNotIn("weighing", "".join(tokens))   # reasoning never streamed
+
+    def test_reasoning_that_never_closes_raises_budget_exhausted(self):
+        # A prefilled-<think> model that hits max_tokens still inside the block
+        # (no </think>, finish_reason='length') must signal exhaustion, not hand
+        # back its raw reasoning.
+        model = _PrefillThinkModel("The note says 4 moons but I should reconsider",
+                                   finish_reason="length")
+        with self.assertRaises(L.ReasoningBudgetExhausted):
+            L.LlamaCppChat("/x", _model=model).chat("s", "u")
+
+    def test_no_close_tag_but_finished_is_not_exhaustion(self):
+        # False-positive guard (R56.2): a template with a literal <think> but a
+        # model that finishes normally (finish_reason='stop') with no </think> is a
+        # good answer, not exhaustion — return it, don't raise.
+        model = _PrefillThinkModel("Jupiter has 95 moons.", finish_reason="stop")
+        out = L.LlamaCppChat("/x", _model=model).chat("s", "u")
+        self.assertEqual(out, "Jupiter has 95 moons.")
+
+    def test_self_emitted_think_that_runs_out_raises_budget_exhausted(self):
+        # R57.1: a Qwen3-style model emits its own <think> and hits max_tokens
+        # before closing it. hide_until_close is false, but _visible_text is empty
+        # and finish_reason='length' → exhaustion, not "(empty answer)".
+        model = _SelfThinkModel("<think>still weighing 4 vs 95",
+                                finish_reason="length")
+        with self.assertRaises(L.ReasoningBudgetExhausted):
+            L.LlamaCppChat("/x", _model=model).chat("s", "u")
+
+    def test_self_emitted_think_with_answer_is_not_exhaustion(self):
+        # A truncated but present answer after the model's own </think> is still an
+        # answer (partial), not exhaustion.
+        model = _SelfThinkModel("<think>reasoning</think>Answer",
+                                finish_reason="length")
+        out = L.LlamaCppChat("/x", _model=model).chat("s", "u")
+        self.assertEqual(out, "Answer")
+
+    def test_chat_serializes_generations_on_the_shared_context(self):
+        # R52.2: two in-flight questions must not drive the one cached Llama
+        # context at once. _CHAT_LOCK serializes chat(), so peak concurrency is 1.
+        import threading
+        import time
+        state = {"n": 0, "max": 0}
+        guard = threading.Lock()
+
+        class _SlowModel:
+            def create_chat_completion(self, messages, temperature,
+                                       stream=False, **kw):
+                def gen():
+                    with guard:
+                        state["n"] += 1
+                        state["max"] = max(state["max"], state["n"])
+                    time.sleep(0.03)
+                    yield {"choices": [{"delta": {"content": "x"}}]}
+                    with guard:
+                        state["n"] -= 1
+                return gen()
+
+        model = _SlowModel()
+        threads = [threading.Thread(
+            target=lambda: L.LlamaCppChat("/x", _model=model).chat("s", "u"))
+            for _ in range(3)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        self.assertEqual(state["max"], 1)
 
     def test_reasoning_default_uses_plain_chat_completion(self):
         # think=None → no preference → the proven create_chat_completion path.
@@ -153,7 +296,8 @@ class TestChat(unittest.TestCase):
             "/x", _model=_StubModel("<think>secret reasoning</think>Final answer"),
             on_token=tokens.append).chat("s", "u")
         self.assertEqual(out, "Final answer")
-        self.assertEqual("".join(tokens), "Final answer")   # reasoning never shown
+        self.assertEqual(tokens[-1], "Final answer")        # final streamed == answer
+        self.assertNotIn("secret", "".join(tokens))         # reasoning never shown
 
     def test_max_tokens_and_repeat_penalty_bound_the_generation(self):
         stub = _StubModel("x")

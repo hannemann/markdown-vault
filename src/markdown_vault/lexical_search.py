@@ -34,18 +34,11 @@ except Exception:                       # base install / CI — plain tokenizer
     _HAVE_LEMMA = False
 
 # Candidate content languages for detection; simplemma and stopwordsiso both
-# support all of these. Narrow or extend at runtime via :func:`set_languages`.
+# support all of these.
 _LANGS: tuple[str, ...] = ("en", "de", "fr", "es", "it", "pt", "nl")
 # Below this detection confidence we don't trust the language, so we skip
 # lemmatization rather than risk mangling out-of-scope text.
 _MIN_CONFIDENCE = 0.5
-
-
-def set_languages(langs) -> None:
-    """Restrict the candidate languages used for detection/lemmatization."""
-    global _LANGS
-    _LANGS = tuple(langs)
-    _stopwords.cache_clear()
 
 
 @functools.lru_cache(maxsize=None)
