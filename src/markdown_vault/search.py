@@ -276,6 +276,7 @@ class SearchBar(Gtk.Box):
         if not query or not vault_paths:
             self._stop_spinner()
             self._busy = False
+            self._last_results = []   # nothing to show → don't keep the old set around
             return False
 
         self._generation += 1
