@@ -20,7 +20,11 @@ logger = logging.getLogger(__name__)
 # In-memory cache for vaults loaded from vaults.yaml.
 _vaults_cache: list[dict[str, str]] | None = None
 
-CONFIG_DIR = Path.home() / ".config" / "markdown-vault"
+# MDV_CONFIG_DIR overrides the config location (isolated runs / E2E tests point it
+# at a throwaway dir); default is the XDG config path.
+CONFIG_DIR = Path(
+    os.environ.get("MDV_CONFIG_DIR") or (Path.home() / ".config" / "markdown-vault")
+)
 CONFIG_FILE = CONFIG_DIR / "vaults.yaml"
 
 STATE_DIR = Path(

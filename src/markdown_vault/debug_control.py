@@ -53,6 +53,13 @@ _XML = f"""
     <method name="DumpState">
       <arg type="s" name="json" direction="out"/>
     </method>
+    <method name="SearchResults">
+      <arg type="as" name="paths" direction="out"/>
+    </method>
+    <method name="WaitIdle">
+      <arg type="i" name="timeout_ms" direction="in"/>
+      <arg type="b" name="settled" direction="out"/>
+    </method>
   </interface>
 </node>
 """
@@ -113,6 +120,10 @@ class DebugControl:
             return GLib.Variant("(as)", (win.debug_list_tabs(),))
         if method == "DumpState":
             return GLib.Variant("(s)", (win.debug_state(),))
+        if method == "SearchResults":
+            return GLib.Variant("(as)", (win.debug_search_results(),))
+        if method == "WaitIdle":
+            return GLib.Variant("(b)", (win.debug_wait_idle(params.unpack()[0]),))
         raise ValueError(f"unknown method {method}")
 
 

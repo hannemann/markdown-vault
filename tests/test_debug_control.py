@@ -25,6 +25,8 @@ class _FakeWin:
     def debug_active_file(self): return "/v/a.md"
     def debug_list_tabs(self): return ["/v/a.md", "/v/b.md"]
     def debug_state(self): return '{"x": 1}'
+    def debug_search_results(self): return ["/v/hit.md"]
+    def debug_wait_idle(self, t): self.calls.append(("wait", t)); return True
 
 
 class TestDispatch(unittest.TestCase):
@@ -58,6 +60,15 @@ class TestDispatch(unittest.TestCase):
 
     def test_dump_state(self):
         self.assertEqual(self._dispatch("DumpState").unpack(), ('{"x": 1}',))
+
+    def test_search_results(self):
+        self.assertEqual(self._dispatch("SearchResults").unpack(), (["/v/hit.md"],))
+
+    def test_wait_idle_forwards_timeout(self):
+        params = GLib.Variant("(i)", (1234,))
+        out = debug_control.DebugControl._dispatch(self.win, "WaitIdle", params)
+        self.assertEqual(out.unpack(), (True,))
+        self.assertIn(("wait", 1234), self.win.calls)
 
     def test_unknown_method_raises(self):
         with self.assertRaises(ValueError):

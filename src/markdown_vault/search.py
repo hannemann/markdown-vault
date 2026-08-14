@@ -64,6 +64,7 @@ class SearchBar(Gtk.Box):
 
         self._generation = 0          # newest search id; older results discarded
         self._debounce_id = None      # pending debounce timeout
+        self._busy = False            # a search is running (for WaitIdle/E2E)
 
         # --- Input row ---
         input_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
@@ -166,9 +167,22 @@ class SearchBar(Gtk.Box):
         self._entry.grab_focus()
 
     def run_query(self, text: str) -> None:
-        """Run a search programmatically (debug/automation): setting the entry text
-        drives the live search exactly as typing would."""
+        """Run a search programmatically (debug/automation). Unlike typing, this
+        fires the search *immediately* — the SearchEntry's own input delay and the
+        debounce would otherwise leave a WaitIdle racing an unstarted search."""
         self._entry.set_text(text or "")
+        if self._debounce_id is not None:
+            GLib.source_remove(self._debounce_id)
+            self._debounce_id = None
+        self._run_search()
+
+    def is_idle(self) -> bool:
+        """True when no search is pending or in flight — the WaitIdle predicate."""
+        return self._debounce_id is None and not self._busy
+
+    def result_paths(self) -> list:
+        """Paths of the last completed result set (for debug/automation)."""
+        return [fr.path for fr in self._last_results]
 
     @staticmethod
     def _build_help_popover() -> Gtk.Popover:
@@ -261,10 +275,12 @@ class SearchBar(Gtk.Box):
         vault_paths = self._scope_vaults()
         if not query or not vault_paths:
             self._stop_spinner()
+            self._busy = False
             return False
 
         self._generation += 1
         generation = self._generation
+        self._busy = True
         self._spinner.set_visible(True)
         self._spinner.start()
         threading.Thread(
@@ -336,6 +352,7 @@ class SearchBar(Gtk.Box):
         if generation != self._generation:
             return False  # superseded by a newer search
         self._stop_spinner()
+        self._busy = False
         self._last_results = file_results
         self._render_results()
         return False

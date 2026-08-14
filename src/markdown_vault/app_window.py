@@ -2352,6 +2352,35 @@ class MainWindow(Adw.ApplicationWindow):
             "hide_deprecated": self.hide_deprecated(),
         })
 
+    def debug_search_results(self) -> list:
+        """Paths of the current global-search result set."""
+        return self._search_bar.result_paths()
+
+    def _debug_quiescent(self) -> bool:
+        return self._search_bar.is_idle() and not getattr(self, "_sem_busy", False)
+
+    def debug_wait_idle(self, timeout_ms: int = 5000) -> bool:
+        """Spin a nested main loop until async work settles (search idle, semantic
+        index not busy) or *timeout_ms* elapses; returns whether it settled. The
+        nested loop lets a background search's result — marshalled back via
+        idle_add — land before returning, so a test can then assert on it."""
+        if self._debug_quiescent():
+            return True
+        loop = GLib.MainLoop()
+        settled = {"ok": False}
+
+        def poll():
+            if self._debug_quiescent():
+                settled["ok"] = True
+                loop.quit()
+                return False
+            return True
+
+        GLib.timeout_add(25, poll)
+        GLib.timeout_add(max(1, int(timeout_ms)), lambda: (loop.quit(), False)[1])
+        loop.run()
+        return settled["ok"] or self._debug_quiescent()
+
     def _toggle_search(self) -> None:
         visible = self._search_bar.get_visible()
         self._search_bar.set_visible(not visible)

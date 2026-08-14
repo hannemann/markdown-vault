@@ -1,5 +1,5 @@
 SHELL := /bin/bash
-.PHONY: download-wheels build-flatpak bundle install-flatpak run-flatpak test-flatpak clean clean-build clean-cache build venv venv-ai install install-ai uninstall clean-local run test
+.PHONY: download-wheels build-flatpak bundle install-flatpak run-flatpak test-flatpak clean clean-build clean-cache build venv venv-ai install install-ai uninstall clean-local run test test-e2e
 
 WHEEL_DIR := src/share/markdown-vault
 WHEELS_DIR := $(WHEEL_DIR)/wheels
@@ -105,6 +105,22 @@ test:
 	@echo "=> Running tests..."
 	@PY=$$([ -x "$(VENV)/bin/python" ] && echo "$(VENV)/bin/python" || echo "$(PYTHON)"); \
 	PYTHONPATH=$(PYTHONPATH_DIR) "$$PY" -m unittest discover -s tests -v
+
+# Full-app E2E smoke tests: spawn the app on an ISOLATED session bus
+# (dbus-run-session — so the developer's running instance is not activated
+# instead) and drive it over the D-Bus debug interface. Headless via xvfb-run
+# when present, else the current display, else skipped. Kept out of `test`.
+test-e2e:
+	@echo "=> Running E2E smoke tests (isolated bus)..."
+	@PY=$$([ -x "$(VENV)/bin/python" ] && echo "$(VENV)/bin/python" || echo "$(PYTHON)"); \
+	if command -v xvfb-run >/dev/null 2>&1; then \
+	  PYTHONPATH=$(PYTHONPATH_DIR) xvfb-run -a dbus-run-session -- "$$PY" -m unittest discover -s tests-e2e -v; \
+	elif [ -n "$$DISPLAY" ] || [ -n "$$WAYLAND_DISPLAY" ]; then \
+	  echo "   (no xvfb-run; using the current display)"; \
+	  PYTHONPATH=$(PYTHONPATH_DIR) dbus-run-session -- "$$PY" -m unittest discover -s tests-e2e -v; \
+	else \
+	  echo "   SKIP: need xvfb-run or a display"; \
+	fi
 
 clean-build:
 	@echo "=> Removing build directory..."
