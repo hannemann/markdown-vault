@@ -165,6 +165,11 @@ class SearchBar(Gtk.Box):
         self.set_visible(True)
         self._entry.grab_focus()
 
+    def run_query(self, text: str) -> None:
+        """Run a search programmatically (debug/automation): setting the entry text
+        drives the live search exactly as typing would."""
+        self._entry.set_text(text or "")
+
     @staticmethod
     def _build_help_popover() -> Gtk.Popover:
         """A small cheat-sheet explaining the query operators and filters."""

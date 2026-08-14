@@ -2288,6 +2288,70 @@ class MainWindow(Adw.ApplicationWindow):
                 tab.editor.file_path, tab.editor.get_text(),
             )
 
+    # ── Debug/automation control ───────────────────────────────────
+    #
+    # The command surface behind the dev-only D-Bus debug interface
+    # (`debug_control`, gated by MDV_DEBUG_CONTROL). Each runs on the GTK main
+    # thread and mirrors the corresponding user action, so driving them is
+    # indistinguishable from clicking. Non-destructive only: open/close/search/
+    # select and read-back — no create/rename/delete.
+
+    def _debug_confined(self, path: str) -> bool:
+        """True only when *path* lies inside a configured vault root — the debug
+        interface must not reach arbitrary files."""
+        real = os.path.realpath(path)
+        for root in self._vault_tree.get_vault_paths():
+            root = os.path.realpath(root)
+            if real == root or real.startswith(root + os.sep):
+                return True
+        return False
+
+    def debug_open_file(self, path: str) -> bool:
+        if not self._debug_confined(path):
+            return False
+        self._on_file_selected_from_tree(None, path)
+        return True
+
+    def debug_close_tab(self, path: str) -> bool:
+        if path not in self._tab_bar.get_all_paths():
+            return False
+        self._do_close_paths([path])
+        return True
+
+    def debug_search(self, query: str) -> bool:
+        if not self._search_bar.get_visible():
+            self._search_bar.set_visible(True)
+            self._search_toggle.set_active(True)
+        self._search_bar.run_query(query or "")
+        self._search_bar.focus()
+        return True
+
+    def debug_quick_open(self, query: str) -> bool:
+        self._quick_open.open(self)
+        self._quick_open.run_query(query or "")
+        return True
+
+    def debug_select_in_tree(self, path: str) -> bool:
+        if not self._debug_confined(path):
+            return False
+        self._vault_tree.focus_file(path)
+        return True
+
+    def debug_active_file(self) -> str:
+        return self._tab_bar.get_current_path() or ""
+
+    def debug_list_tabs(self) -> list:
+        return self._tab_bar.get_all_paths()
+
+    def debug_state(self) -> str:
+        import json
+        return json.dumps({
+            "active_file": self._tab_bar.get_current_path() or "",
+            "tabs": self._tab_bar.get_all_paths(),
+            "active_vault": self._active_vault,
+            "hide_deprecated": self.hide_deprecated(),
+        })
+
     def _toggle_search(self) -> None:
         visible = self._search_bar.get_visible()
         self._search_bar.set_visible(not visible)

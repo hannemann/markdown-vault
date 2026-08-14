@@ -10,6 +10,7 @@ py_sources = files(
   'graph_view.py',
   'config.py',
   'content_changes.py',
+  'debug_control.py',
   'dialogs.py',
   'editor.py',
   'event_router.py',

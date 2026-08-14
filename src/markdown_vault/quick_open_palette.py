@@ -270,6 +270,11 @@ class QuickOpenPalette(Adw.Dialog):
         self.present(parent)
         self._entry.grab_focus()
 
+    def run_query(self, text: str) -> None:
+        """Set the query programmatically (debug/automation): drives the live
+        filename filter as typing would. Call after :meth:`open`."""
+        self._entry.set_text(text or "")
+
     def _on_closed(self) -> None:
         """Invalidate any in-flight answer so it is both dropped and aborted."""
         self._ask_generation += 1

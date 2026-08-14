@@ -56,6 +56,7 @@ class MarkdownVaultApp(Adw.Application):
             flags=Gio.ApplicationFlags.FLAGS_NONE,
         )
         self._window: MainWindow | None = None
+        self._debug_control = None
         self.connect("activate", self._on_activate)
         self.connect("shutdown", lambda *_: logger.info("shutdown signal received"))
         self._setup_accels()
@@ -92,6 +93,24 @@ class MarkdownVaultApp(Adw.Application):
         self.set_accels_for_action("win.view-split", ["<Control>2"])
         self.set_accels_for_action("win.view-render", ["<Control>3"])
         self.set_accels_for_action("win.view-graph", ["<Control>4"])
+
+    def do_dbus_register(self, connection, object_path: str) -> bool:
+        """Chain up (GTK exports actions/menus here), then register the dev-only
+        debug interface when MDV_DEBUG_CONTROL is set."""
+        ok = Adw.Application.do_dbus_register(self, connection, object_path)
+        try:
+            from . import debug_control
+            self._debug_control = debug_control.maybe_register(
+                self, connection, object_path)
+        except Exception:
+            logger.warning("failed to register debug control interface", exc_info=True)
+        return ok
+
+    def do_dbus_unregister(self, connection, object_path: str) -> None:
+        if self._debug_control is not None:
+            self._debug_control.unregister()
+            self._debug_control = None
+        Adw.Application.do_dbus_unregister(self, connection, object_path)
 
     def _on_activate(self, app: "MarkdownVaultApp") -> None:
         """Present the main window when the application is activated."""

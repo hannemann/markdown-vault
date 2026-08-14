@@ -30,7 +30,9 @@ start() {
     # Detached, no blocking. /dev/null only guards against the caller's pipes
     # being inherited; the app redirects fd 1 / fd 2 to its rotated log files
     # itself on headless launches.
-    setsid "$BIN" >/dev/null 2>&1 </dev/null &
+    # Dev launch: expose the D-Bus debug/automation interface (debug_control.py)
+    # so searches, file open/close and state reads can be driven over the bus.
+    MDV_DEBUG_CONTROL=1 setsid "$BIN" >/dev/null 2>&1 </dev/null &
     sleep 2
     if pgrep -f "$PATTERN" >/dev/null; then
         echo "started"
