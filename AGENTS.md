@@ -187,6 +187,24 @@ Hard rules:
 - NEVER use `killall python3` — that also kills firewalld and other system
   Python processes.
 
+## Dependencies
+
+- NEVER install packages directly — no `pip install`, no editing the venv by hand.
+- To add a dependency you MAY (always) add it to `requirements.txt` (base) or
+  `requirements-ai.txt` (the heavy/compiled AI stack, kept opt-in), pin the
+  version, then pull it in with `make install` / `make install-ai`. That is the
+  ONLY allowed way to add a dependency.
+- After adding or changing a dependency in `requirements.txt`, regenerate the
+  version-controlled Flatpak hash lock: `make lock-wheels`, review the diff, and
+  commit the updated `requirements.lock`. Skipping this aborts `make build-flatpak`
+  at the hash-verification gate (the download no longer matches the committed lock).
+- Before a feature that added or changed a dependency is considered done, VERIFY
+  the installer from a clean state: `make uninstall && make install` (and
+  `make uninstall && make install-ai` when AI/optional deps are involved). A clean
+  reinstall catches installer breakage — a missing transitive dep, a broken
+  install script — that an incremental `make install` hides (this is how the
+  llama-cpp-python `diskcache` gap surfaced).
+
 ## Test driven development
 
 Always write failing tests first, then implement the fix. Run tests to verify they fail, then implement the minimal code to make them pass. Never commit code without corresponding tests.
