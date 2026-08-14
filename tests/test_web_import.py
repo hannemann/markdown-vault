@@ -199,6 +199,12 @@ class TestComplexity(unittest.TestCase):
         self.assertTrue(wi._is_complex_table(
             self._t("<table><caption>C</caption><tr><td>x</td></tr></table>")))
 
+    def test_image_in_cell_is_not_complex(self):
+        # R76.1: the renderer shows an image in a pipe cell, so an image alone
+        # does not force HTML — it stays a pipe table.
+        self.assertFalse(wi._is_complex_table(
+            self._t('<table><tr><td><img src="x.png"></td></tr></table>')))
+
 
 @unittest.skipUnless(_has_table_deps(), "web-import table deps not installed")
 class TestTableToMarkdown(unittest.TestCase):
@@ -209,6 +215,15 @@ class TestTableToMarkdown(unittest.TestCase):
         self.assertIn("---", md)
         self.assertNotIn("<table", md)
 
+    def test_image_kept_as_pipe_not_html(self):
+        # R76.1: a simple table with an image stays a pipe table, image markdown
+        # preserved (not reduced to alt text, not escalated to an HTML blob).
+        md = wi._html_to_markdown(
+            '<table><tr><th>Flag</th></tr>'
+            '<tr><td><img src="https://ex.com/de.png" alt="DE"></td></tr></table>')
+        self.assertIn("![DE](https://ex.com/de.png)", md)
+        self.assertNotIn("<table", md)
+
     def test_complex_kept_as_sanitised_html(self):
         md = wi._html_to_markdown(
             '<table><tr><td colspan="2" class="x" onclick="e()">y</td></tr></table>')
@@ -216,6 +231,16 @@ class TestTableToMarkdown(unittest.TestCase):
         self.assertIn('colspan="2"', md)
         self.assertNotIn("class=", md)         # sanitised away
         self.assertNotIn("onclick", md)
+
+    def test_complex_table_unwraps_presentational_spans(self):
+        # A kept table from any page must not leak <span> noise into the note.
+        md = wi._html_to_markdown(
+            '<table><tr><td colspan="2"><span class="hl">Cell</span> '
+            '<span>text</span></td></tr></table>')
+        self.assertIn("<table", md)
+        self.assertNotIn("<span", md)
+        self.assertIn("Cell", md)
+        self.assertIn("text", md)
 
 
 @unittest.skipUnless(_has_table_deps(), "web-import table deps not installed")
@@ -243,6 +268,213 @@ class TestPlaceholders(unittest.TestCase):
         out = wi._restore_placeholders("just prose", ["| A |\n| --- |\n| 1 |"])
         self.assertIn("## Tables", out)
         self.assertIn("| A |", out)
+
+
+@unittest.skipUnless(_has_table_deps(), "web-import table deps not installed")
+class TestImageNormalize(unittest.TestCase):
+    """Ansatz C: clean up <img> in place so Trafilatura emits sound URLs."""
+
+    def _img(self, html):
+        from lxml import html as LH
+        return LH.fromstring(html)
+
+    def test_tracking_pixel_by_dimension(self):
+        for dim in ('width="1"', 'height="1"', 'width="0"', 'height="0"'):
+            self.assertTrue(wi._is_tracking_pixel(self._img(f'<img src="p.gif" {dim}>')),
+                            dim)
+
+    def test_real_image_is_not_tracking(self):
+        self.assertFalse(wi._is_tracking_pixel(self._img('<img src="p.png" width="640">')))
+        self.assertFalse(wi._is_tracking_pixel(self._img('<img src="p.png">')))
+
+    def test_pick_src_prefers_src_then_lazy(self):
+        base = "https://ex.com/a/b.html"
+        self.assertEqual(wi._pick_img_src(self._img('<img src="x.png">'), base),
+                         "https://ex.com/a/x.png")
+        self.assertEqual(wi._pick_img_src(self._img('<img data-src="y.png">'), base),
+                         "https://ex.com/a/y.png")
+
+    def test_pick_src_protocol_relative_and_srcset(self):
+        base = "https://ex.com/a/"
+        self.assertEqual(wi._pick_img_src(self._img('<img src="//cdn.io/z.png">'), base),
+                         "https://cdn.io/z.png")
+        el = self._img('<img srcset="s.png 480w, big.png 1024w">')
+        self.assertEqual(wi._pick_img_src(el, base), "https://ex.com/a/big.png")
+
+    def test_pick_src_none_when_empty(self):
+        self.assertIsNone(wi._pick_img_src(self._img('<img alt="x">'), "https://ex.com/"))
+
+    def test_pick_src_scheme_allowlist(self):
+        # R75.1: only http/https and data:image survive normalisation.
+        base = "https://ex.com/"
+        self.assertIsNone(wi._pick_img_src(self._img('<img src="javascript:alert(1)">'), base))
+        self.assertIsNone(wi._pick_img_src(self._img('<img src="data:text/html,<b>">'), base))
+        self.assertEqual(
+            wi._pick_img_src(self._img('<img src="data:image/png;base64,AAA">'), base),
+            "data:image/png;base64,AAA")
+
+    def test_normalize_strips_attrs_and_drops_noise(self):
+        html = ('<div><img src="/a/pic.png" alt="Cat" class="lazy" width="640">'
+                '<img src="beacon.gif" width="1" height="1">'
+                '<img alt="broken"></div>')
+        out = wi._normalize_images(html, "https://ex.com/post.html")
+        node = self._img(out)
+        imgs = node.xpath("//img")
+        self.assertEqual(len(imgs), 1)                       # pixel + srcless gone
+        self.assertEqual(imgs[0].get("src"), "https://ex.com/a/pic.png")
+        self.assertEqual(imgs[0].get("alt"), "Cat")
+        self.assertIsNone(imgs[0].get("class"))              # attrs stripped
+
+    def test_clean_content_unwraps_spans_keeps_text(self):
+        # Trafilatura leaks syntax-highlight <span>s into code blocks; unwrapping
+        # them before extraction keeps the text but removes the tag noise.
+        html = ('<pre><span class="k">![</span><span>Image</span>'
+                '<span class="s">](Icon.png)</span></pre>')
+        out = wi._clean_content_html(html, "https://ex.com/")
+        self.assertNotIn("<span", out)
+        self.assertIn("![Image](Icon.png)", out.replace("</pre>", "").replace("<pre>", ""))
+
+    def test_clean_content_still_normalizes_images(self):
+        out = wi._clean_content_html('<p><img src="/x.png" width="1" height="1">'
+                                     '<img src="/y.png" alt="Y"></p>',
+                                     "https://ex.com/")
+        imgs = self._img(out).xpath("//img")
+        self.assertEqual(len(imgs), 1)                       # tracking pixel gone
+        self.assertEqual(imgs[0].get("src"), "https://ex.com/y.png")
+
+
+class TestLocalizeImages(unittest.TestCase):
+    """Optional download into attachments/<note>/: rewrite to relative, dedup,
+    keep the remote URL when a fetch fails."""
+
+    def setUp(self):
+        import tempfile
+        self._tmp = tempfile.mkdtemp()
+        self.addCleanup(lambda: __import__("shutil").rmtree(self._tmp, ignore_errors=True))
+
+    def _fetch_ok(self, url, timeout=20):
+        return (b"\x89PNG\r\n\x1a\nDATA", "image/png")
+
+    def test_downloads_and_rewrites_relative(self):
+        from pathlib import Path
+        md = "text\n\n![Cat](https://ex.com/a/cat.png)\n"
+        dest = Path(self._tmp) / "attachments" / "note"
+        out = wi._localize_images(md, dest, "attachments/note", fetch=self._fetch_ok)
+        self.assertIn("![Cat](attachments/note/cat.png)", out)
+        self.assertTrue((dest / "cat.png").exists())
+
+    def test_dedup_same_url_downloads_once(self):
+        from pathlib import Path
+        calls = []
+
+        def fetch(url, timeout=20):
+            calls.append(url)
+            return (b"DATA", "image/png")
+
+        md = "![a](https://ex.com/x.png) and ![b](https://ex.com/x.png)"
+        dest = Path(self._tmp) / "att"
+        out = wi._localize_images(md, dest, "att", fetch=fetch)
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(out.count("att/x.png"), 2)
+
+    def test_failed_fetch_keeps_remote_url(self):
+        from pathlib import Path
+        md = "![x](https://ex.com/gone.png)"
+        out = wi._localize_images(md, Path(self._tmp) / "att", "att",
+                                  fetch=lambda url, timeout=20: None)
+        self.assertIn("https://ex.com/gone.png", out)
+
+    def test_non_http_left_untouched(self):
+        from pathlib import Path
+        md = "![x](attachments/old/y.png) ![d](data:image/png;base64,AAA)"
+        out = wi._localize_images(md, Path(self._tmp) / "att", "att", fetch=self._fetch_ok)
+        self.assertEqual(out, md)
+
+    def test_image_count_is_bounded(self):
+        # R74.2: a hostile page cannot make the importer download without limit.
+        import unittest.mock as mock
+        from pathlib import Path
+        md = "".join(f"![{i}](https://ex.com/{i}.png)" for i in range(5))
+        calls = []
+
+        def fetch(url, timeout=20):
+            calls.append(url)
+            return (b"D", "image/png")
+
+        with mock.patch.object(wi, "_MAX_IMAGES", 2):
+            out = wi._localize_images(md, Path(self._tmp) / "att", "att", fetch=fetch)
+        self.assertEqual(len(calls), 2)                 # only 2 fetched
+        self.assertIn("https://ex.com/4.png", out)      # the rest keep remote URLs
+
+    def test_total_bytes_is_bounded(self):
+        import unittest.mock as mock
+        from pathlib import Path
+        md = "".join(f"![{i}](https://ex.com/{i}.png)" for i in range(5))
+        with mock.patch.object(wi, "_MAX_IMAGE_TOTAL", 3):
+            out = wi._localize_images(md, Path(self._tmp) / "att", "att",
+                                      fetch=lambda url, timeout=20: (b"XXXX", "image/png"))
+        # first over-budget image already exceeds the cap; the rest stay remote
+        self.assertIn("https://ex.com/4.png", out)
+
+
+class TestSsrfGuard(unittest.TestCase):
+    """R74.2: image URLs come from the page, so the fetch must refuse non-public
+    hosts (localhost/LAN/cloud-metadata)."""
+
+    def test_blocks_private_and_metadata_addresses(self):
+        for addr in ("127.0.0.1", "10.0.0.5", "192.168.1.1", "169.254.169.254",
+                     "::1", "0.0.0.0", "not-an-ip"):
+            self.assertTrue(wi._addr_blocked(addr), addr)
+
+    def test_allows_public_addresses(self):
+        for addr in ("8.8.8.8", "1.1.1.1", "2606:4700:4700::1111"):
+            self.assertFalse(wi._addr_blocked(addr), addr)
+
+    def _img_redirect(self, newurl):
+        import email.message
+        import urllib.request
+        guard = wi._ImageRedirectGuard()
+        req = urllib.request.Request("https://ex.com/a.png")
+        return guard.redirect_request(req, None, 302, "Found",
+                                      email.message.Message(), newurl)
+
+    def test_image_redirect_to_private_host_refused(self):
+        # R74.2 core: a redirect must not smuggle the fetch to a private host.
+        import urllib.error
+        for bad in ("http://127.0.0.1:8080/admin",
+                    "http://169.254.169.254/latest/meta-data/",
+                    "ftp://ex.com/x"):
+            with self.assertRaises(urllib.error.HTTPError):
+                self._img_redirect(bad)
+
+    def test_image_redirect_to_public_host_allowed(self):
+        self.assertIsNotNone(self._img_redirect("http://8.8.8.8/x.png"))
+
+
+@unittest.skipUnless(_has_table_deps() and wi.availability() is None,
+                     "web-import extraction deps not installed")
+class TestExtractImagesInTables(unittest.TestCase):
+    """R74.1: an <img> inside a table must go through image normalisation too."""
+
+    def _page(self, table):
+        return (f"<html><body><article><h1>T</h1><p>{'lorem ipsum ' * 20}</p>"
+                f"{table}</article></body></html>")
+
+    def test_table_image_becomes_absolute_pixel_dropped(self):
+        html = self._page(
+            '<table><tr><th>Flag</th></tr>'
+            '<tr><td><img src="/img/de.png" alt="DE">'
+            '<img src="beacon.gif" width="1" height="1"></td></tr></table>')
+        md = wi.extract(html, "https://ex.com/page.html").markdown
+        self.assertIn("https://ex.com/img/de.png", md)   # relative -> absolute
+        self.assertNotIn("beacon.gif", md)               # tracking pixel gone
+
+    def test_complex_table_keeps_normalised_image(self):
+        html = self._page(
+            '<table><tr><td colspan="2"><img src="/x.png" alt="X"></td></tr></table>')
+        md = wi.extract(html, "https://ex.com/page.html").markdown
+        self.assertIn("<table", md)                      # kept as HTML (colspan)
+        self.assertIn("https://ex.com/x.png", md)        # image survived, absolute
 
 
 if __name__ == "__main__":

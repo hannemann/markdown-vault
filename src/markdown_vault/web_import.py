@@ -16,8 +16,10 @@ CLI (once ``trafilatura`` is installed in the venv):
 
 import argparse
 import datetime
+import ipaddress
 import logging
 import re
+import socket
 import sys
 import urllib.error
 import urllib.request
@@ -25,7 +27,7 @@ import urllib.request
 import yaml
 from dataclasses import dataclass
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 
 logger = logging.getLogger(__name__)
 
@@ -126,9 +128,13 @@ def _assemble(url: str | None, markdown: str, meta: dict,
 
 # HTML kept for a table that can't be a markdown pipe table. Structure + safe
 # inline formatting only; everything else (script/style/class/id/on*/…) is dropped.
+# No "span"/"div": presentational wrappers carry no table meaning and only leak
+# markup noise into a kept table; nh3 unwraps them, preserving their text.
+# "img" is kept so a normalised image inside a complex table survives (its src has
+# already been resolved to absolute and every other attribute stripped upstream).
 _TABLE_TAGS = {"table", "thead", "tbody", "tfoot", "tr", "td", "th", "caption",
                "colgroup", "col", "b", "strong", "i", "em", "code", "a", "br",
-               "sup", "sub", "span", "u", "s", "abbr"}
+               "sup", "sub", "u", "s", "abbr", "img"}
 _BLOCK_TAGS = ["ul", "ol", "table", "p", "pre", "blockquote", "div", "dl",
                "h1", "h2", "h3", "h4", "h5", "h6"]
 
@@ -160,6 +166,7 @@ def _sanitize_table_html(html: str) -> str:
         html, tags=_TABLE_TAGS,
         attributes={"a": {"href"}, "td": {"colspan", "rowspan"},
                     "th": {"colspan", "rowspan", "scope"},
+                    "img": {"src", "alt"},
                     "col": {"span"}, "colgroup": {"span"}}).strip()
 
 
@@ -172,7 +179,11 @@ def _html_to_markdown(content_html: str) -> str:
                 return "\n\n" + _sanitize_table_html(str(el)) + "\n\n"
             return super().convert_table(el, text, parent_tags)
 
-    return _Converter(heading_style="ATX", bullets="-").convert(content_html).strip()
+    # keep_inline_images_in: markdownify otherwise reduces an <img> in a table cell
+    # to its alt text; the app's renderer (markdown.extensions.tables) renders
+    # ``| ![alt](url) |`` as an image, so keep the image markdown in the pipe cell.
+    return _Converter(heading_style="ATX", bullets="-",
+                      keep_inline_images_in=["td", "th"]).convert(content_html).strip()
 
 
 # ── Table placeholder swap: keep every real table at its exact position ─────
@@ -235,12 +246,104 @@ def _restore_placeholders(markdown: str, tables: list) -> str:
     return re.sub(r"\n{3,}", "\n\n", markdown).strip()
 
 
+# ── Images (Strategy C: normalise <img> in place) ──────────────────
+#
+# Trafilatura's own image handling is unreliable — it drops most images and, on
+# some markup (Wikipedia), emits a mangled ``![<span>…]`` src. So before handing
+# the HTML over we clean every ``<img>`` down to a bare ``src``/``alt``, resolving
+# the URL to absolute and dropping tracking pixels; whatever Trafilatura then keeps
+# as content comes out as a sound ``![alt](https://…)``. Recall stays bounded by
+# Trafilatura's content model — this fixes correctness, not completeness.
+
+_SRC_ATTRS = ("src", "data-src", "data-original", "data-lazy-src")
+_PIXEL_STYLE = re.compile(r"\b(?:width|height)\s*:\s*[01]px", re.I)
+
+
+def _is_tracking_pixel(el) -> bool:
+    """A 1x1 (or 0-sized) image is a beacon, not content."""
+    for attr in ("width", "height"):
+        v = (el.get(attr) or "").strip()
+        if v[:1].isdigit() and int(re.match(r"\d+", v).group()) <= 1:
+            return True
+    return bool(_PIXEL_STYLE.search(el.get("style") or ""))
+
+
+def _pick_img_src(el, base_url: str | None) -> str | None:
+    """The best source URL for *el*, resolved to absolute against *base_url*.
+    Prefers a plain ``src``, then common lazy-load attributes, then the largest
+    ``srcset`` candidate. Returns ``None`` when nothing usable is present."""
+    chosen = next((el.get(a).strip() for a in _SRC_ATTRS if (el.get(a) or "").strip()), "")
+    if not chosen:
+        srcset = (el.get("srcset") or el.get("data-srcset") or "").strip()
+        best_w = -1
+        for cand in srcset.split(","):
+            parts = cand.split()
+            if not parts:
+                continue
+            w = int(parts[1][:-1]) if len(parts) > 1 and parts[1].endswith("w") \
+                and parts[1][:-1].isdigit() else 0
+            if w >= best_w:
+                best_w, chosen = w, parts[0]
+    if not chosen:
+        return None
+    resolved = urljoin(base_url, chosen) if base_url else chosen
+    # Scheme allowlist — every other URL in this module is scheme-checked; keep
+    # this one consistent. javascript:/other schemes are dropped; data: only for
+    # images (not, say, data:text/html).
+    if urlparse(resolved).scheme.lower() in ("http", "https") \
+            or resolved.lower().startswith("data:image/"):
+        return resolved
+    return None
+
+
+def _normalize_images(html: str, base_url: str | None) -> str:
+    """Reduce every ``<img>`` to a bare absolute ``src`` + ``alt``, dropping
+    tracking pixels and sourceless images. Returns the modified HTML."""
+    from lxml import html as LH
+    tree = LH.fromstring(html)
+    _normalize_images_tree(tree, base_url)
+    return LH.tostring(tree, encoding="unicode")
+
+
+def _normalize_images_tree(tree, base_url: str | None) -> None:
+    for el in list(tree.iter("img")):
+        if _is_tracking_pixel(el):
+            el.drop_tree()
+            continue
+        src = _pick_img_src(el, base_url)
+        if not src:
+            el.drop_tree()
+            continue
+        alt = el.get("alt") or ""
+        for attr in list(el.attrib):
+            del el.attrib[attr]
+        el.set("src", src)
+        el.set("alt", alt)
+
+
+def _clean_content_html(html: str, base_url: str | None) -> str:
+    """Pre-extraction DOM cleanup in a single parse: unwrap presentational
+    ``<span>`` (Trafilatura otherwise leaks syntax-highlight spans into code
+    blocks as raw ``<span>`` noise) keeping their text, then normalise images."""
+    from lxml import html as LH
+    tree = LH.fromstring(html)
+    for sp in list(tree.iter("span")):
+        sp.drop_tag()          # unwrap: keep the text, drop the presentational tag
+    _normalize_images_tree(tree, base_url)
+    return LH.tostring(tree, encoding="unicode")
+
+
 def extract(html: str, url: str | None = None) -> ImportResult:
     """Extract *html* as a Markdown note: Trafilatura for the prose, with every real
     table kept at its exact position via the placeholder swap and converted
-    faithfully (simple -> pipe, complex -> sanitised HTML)."""
+    faithfully (simple -> pipe, complex -> sanitised HTML), and every ``<img>``
+    normalised to a clean absolute URL first (tracking pixels dropped)."""
     import trafilatura
-    modified, tables = _inject_placeholders(html)
+    # Clean the whole tree FIRST — unwrap spans and normalise every <img> to a
+    # clean absolute src (tracking pixels dropped) — so images inside tables are
+    # normalised too, before _inject_placeholders converts those tables.
+    cleaned = _clean_content_html(html, url)
+    modified, tables = _inject_placeholders(cleaned)
     prose = trafilatura.extract(
         modified, url=url, output_format="markdown", include_tables=False,
         include_links=True, include_images=True, include_formatting=True) or ""
@@ -289,10 +392,148 @@ def slug(text: str, max_len: int = 60) -> str:
     return text[:max_len].strip("-") or "imported-page"
 
 
+# ── Optional local image download ──────────────────────────────────
+
+_IMG_MD = re.compile(r"!\[([^\]]*)\]\(<?(https?://[^)>\s]+)>?\)")
+_MAX_IMAGES = 100                       # per note, bounds a hostile page's fan-out
+_MAX_IMAGE_TOTAL = 100 * 1024 * 1024    # total bytes downloaded per note
+_IMG_EXTS = (".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp", ".ico", ".avif")
+_CTYPE_EXT = {"image/png": ".png", "image/jpeg": ".jpg", "image/gif": ".gif",
+              "image/webp": ".webp", "image/svg+xml": ".svg", "image/bmp": ".bmp",
+              "image/x-icon": ".ico", "image/avif": ".avif"}
+_FNAME_SANITISE = re.compile(r"[^a-z0-9._-]+")
+
+
+def _addr_blocked(addr: str) -> bool:
+    """Whether an IP string is a non-public (private/loopback/link-local/reserved)
+    address we must not fetch — the link-local range covers cloud metadata
+    endpoints (169.254.169.254)."""
+    try:
+        ip = ipaddress.ip_address(addr.split("%")[0])
+    except ValueError:
+        return True
+    return (ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved
+            or ip.is_multicast or ip.is_unspecified)
+
+
+def _host_is_public(host: str) -> bool:
+    """Resolve *host* and refuse if any resolved address is non-public. Guards the
+    image download (URLs come from the page, not the user) against blind SSRF to
+    localhost/LAN/metadata endpoints."""
+    try:
+        infos = socket.getaddrinfo(host, None)
+    except (socket.gaierror, UnicodeError):
+        return False
+    return bool(infos) and not any(_addr_blocked(i[4][0]) for i in infos)
+
+
+class _ImageRedirectGuard(_HttpRedirectGuard):
+    """Redirect guard for image fetches: the inherited scheme check plus a
+    public-address check on the redirect target. Image URLs come from the page,
+    so a 302 to ``127.0.0.1`` or the metadata endpoint must be refused too. The
+    page fetch keeps the plain guard so a user-typed intranet URL still works.
+    (DNS rebinding between resolve and connect remains an accepted residual.)"""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        new = super().redirect_request(req, fp, code, msg, headers, newurl)
+        if new is not None and not _host_is_public(urlparse(new.full_url).hostname or ""):
+            raise urllib.error.HTTPError(newurl, code,
+                                         "refusing a redirect to a non-public host",
+                                         headers, fp)
+        return new
+
+
+def _fetch_image(url: str, timeout: int = 20):
+    """Download *url* as ``(bytes, content_type)``; ``None`` on any error, a
+    non-image response, or a non-public host. Same http(s)-only, size-capped,
+    redirect-guarded fetch as the page itself, plus an SSRF address guard on the
+    initial URL and every redirect target."""
+    host = urlparse(url).hostname or ""
+    if not _host_is_public(host):
+        logger.warning("web_import: refusing image from non-public host %r", host)
+        return None
+    try:
+        opener = urllib.request.build_opener(_ImageRedirectGuard())
+        req = urllib.request.Request(url, headers={"User-Agent": "markdown-vault"})
+        with opener.open(req, timeout=timeout) as resp:
+            ctype = resp.headers.get_content_type()
+            if not ctype.startswith("image/"):
+                return None
+            raw = resp.read(_MAX_BYTES + 1)
+            if len(raw) > _MAX_BYTES:
+                return None
+        return raw, ctype
+    except (urllib.error.URLError, ValueError, OSError) as exc:
+        logger.warning("web_import: image download failed for %s: %s", url, exc)
+        return None
+
+
+def _image_filename(url: str, content_type: str, taken: set) -> str:
+    """A safe, unique local filename for an image *url*, keeping its extension
+    (or deriving one from *content_type*)."""
+    name = _FNAME_SANITISE.sub("-", urlparse(url).path.rsplit("/", 1)[-1].lower()).strip("-.")
+    stem, dot, ext = name.rpartition(".")
+    if dot and f".{ext}" in _IMG_EXTS:
+        stem, ext = stem, f".{ext}"
+    else:
+        stem, ext = name, _CTYPE_EXT.get(content_type, ".img")
+    stem = stem or "image"
+    candidate = f"{stem}{ext}"
+    n = 2
+    while candidate in taken:
+        candidate = f"{stem}-{n}{ext}"
+        n += 1
+    taken.add(candidate)
+    return candidate
+
+
+def _localize_images(markdown: str, dest_dir: Path, rel_prefix: str,
+                     fetch=_fetch_image) -> str:
+    """Download each remote image referenced in *markdown* into *dest_dir* and
+    rewrite its link to ``rel_prefix/<file>``. Each URL is fetched once (dedup);
+    a failed download leaves the original remote URL in place so nothing is lost.
+    Non-http(s) links (already-local, ``data:``) are untouched. Bounded by
+    ``_MAX_IMAGES`` and ``_MAX_IMAGE_TOTAL`` so a hostile page cannot make the
+    importer download without limit; images past a limit keep their remote URL."""
+    mapping: dict[str, str | None] = {}
+    taken: set = set()
+    dest_dir = Path(dest_dir)
+    total = 0
+    for _alt, url in _IMG_MD.findall(markdown):
+        if url in mapping:
+            continue
+        if len(taken) >= _MAX_IMAGES or total >= _MAX_IMAGE_TOTAL:
+            logger.warning("web_import: image limit reached, keeping remote URL %s", url)
+            mapping[url] = None
+            continue
+        got = fetch(url)
+        if not got:
+            mapping[url] = None
+            continue
+        data, ctype = got
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        fname = _image_filename(url, ctype, taken)
+        (dest_dir / fname).write_bytes(data)
+        total += len(data)
+        mapping[url] = f"{rel_prefix}/{fname}"
+
+    def repl(m):
+        rel = mapping.get(m.group(2))
+        return f"![{m.group(1)}]({rel})" if rel else m.group(0)
+
+    return _IMG_MD.sub(repl, markdown)
+
+
 def save_to_vault(result: ImportResult, vault_dir: str | Path,
-                  today: datetime.date | None = None) -> Path:
+                  today: datetime.date | None = None,
+                  download_images: bool = False) -> Path:
     """Write the assembled note into *vault_dir* as ``<slug>.md`` (never
-    overwriting: a numeric suffix is added on collision). Returns the path."""
+    overwriting: a numeric suffix is added on collision). Returns the path.
+
+    When *download_images* is set, remote images are downloaded into
+    ``attachments/<slug>/`` beside the note and rewritten to relative links, so
+    the note and its images can be removed together."""
+    import dataclasses
     vault_dir = Path(vault_dir)
     vault_dir.mkdir(parents=True, exist_ok=True)
     stem = slug(result.title)
@@ -301,6 +542,11 @@ def save_to_vault(result: ImportResult, vault_dir: str | Path,
     while target.exists():
         target = vault_dir / f"{stem}-{n}.md"
         n += 1
+    stem = target.stem
+    if download_images:
+        localized = _localize_images(result.markdown, vault_dir / "attachments" / stem,
+                                     f"attachments/{stem}")
+        result = dataclasses.replace(result, markdown=localized)
     target.write_text(to_note(result, today=today), encoding="utf-8")
     return target
 
@@ -314,6 +560,8 @@ def main(argv=None) -> int:
     parser.add_argument("--vault", help="vault directory to write the note into")
     parser.add_argument("--print", dest="to_stdout", action="store_true",
                         help="print the note instead of writing a file")
+    parser.add_argument("--download-images", action="store_true",
+                        help="download images into attachments/<note>/ beside the note")
     args = parser.parse_args(argv)
 
     unavailable = availability()
@@ -332,7 +580,7 @@ def main(argv=None) -> int:
     if args.to_stdout or not args.vault:
         print(to_note(result))
     else:
-        path = save_to_vault(result, args.vault)
+        path = save_to_vault(result, args.vault, download_images=args.download_images)
         print(f"Wrote {path}")
     return 0
 
