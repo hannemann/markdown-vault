@@ -32,17 +32,20 @@ class ImportDialog(Adw.Dialog):
 
     Signals:
         note-imported(str): path of the newly written note.
+        import-failed(str): error message, when the import fails after the dialog
+            was already dismissed (there is no banner left to show it in).
     """
 
     __gsignals__ = {
         "note-imported": (GObject.SignalFlags.RUN_LAST, None, (str,)),
+        "import-failed": (GObject.SignalFlags.RUN_LAST, None, (str,)),
     }
 
     def __init__(self, target_dir: str):
         super().__init__()
         self._target_dir = target_dir
         self._busy = False
-        self._cancelled = False
+        self._closed = False
         self.set_title("Import")
         self.set_content_width(480)
         self.connect("closed", self._on_closed)
@@ -175,18 +178,22 @@ class ImportDialog(Adw.Dialog):
         GLib.idle_add(self._on_success, str(path))
 
     def _on_success(self, path: str) -> bool:
-        if not self._cancelled:
-            self.emit("note-imported", path)
+        # Dismissing the dialog only backgrounds the import — the note is still
+        # opened and revealed when it finishes, whether or not the dialog is open.
+        self.emit("note-imported", path)
+        if not self._closed:
             self.close()
         return False
 
     def _on_error(self, message: str) -> bool:
-        if not self._cancelled:
+        if self._closed:
+            self.emit("import-failed", message)   # no banner left → toast it
+        else:
             self._set_busy(False)
             self._show_error(message)
         return False
 
     def _on_closed(self, _dialog) -> None:
-        # Closing while a fetch is in flight cancels it: the worker can't be
-        # interrupted, but its result is ignored once the dialog is gone.
-        self._cancelled = True
+        # The dialog was dismissed; the worker can't be interrupted, so it runs to
+        # completion in the background and its result is delivered via the signals.
+        self._closed = True

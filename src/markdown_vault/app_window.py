@@ -1599,9 +1599,12 @@ class MainWindow(Adw.ApplicationWindow):
             self._toast("Semantic search: backend reachable again")
         return False
 
-    def _toast(self, text: str) -> None:
+    def _toast(self, text: str, timeout: int | None = None) -> None:
         try:
-            self._toast_overlay.add_toast(Adw.Toast.new(text))
+            toast = Adw.Toast.new(text)
+            if timeout is not None:
+                toast.set_timeout(timeout)   # 0 = stays until dismissed
+            self._toast_overlay.add_toast(toast)
         except Exception:
             logger.debug("toast failed", exc_info=True)
 
@@ -1830,6 +1833,7 @@ class MainWindow(Adw.ApplicationWindow):
         from .dialog_import import ImportDialog
         dialog = ImportDialog(target_dir)
         dialog.connect("note-imported", self._on_note_imported)
+        dialog.connect("import-failed", self._on_import_failed)
         dialog.present(self)
 
     def _on_note_imported(self, _dialog, path: str) -> None:
@@ -1837,6 +1841,11 @@ class MainWindow(Adw.ApplicationWindow):
         self._vault_tree.refresh()
         self._open_file(path)
         self._vault_tree.focus_file(path)
+
+    def _on_import_failed(self, _dialog, message: str) -> None:
+        """A backgrounded import failed after its dialog was dismissed — toast it.
+        Error toasts stay until dismissed (timeout 0) rather than auto-hiding."""
+        self._toast(f"Import failed: {message}", timeout=0)
 
     def _show_error(self, heading: str, body: str) -> None:
         """Show an error dialog with the given message."""
