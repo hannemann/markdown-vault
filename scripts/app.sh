@@ -30,8 +30,13 @@ start() {
     # Detached, no blocking. /dev/null only guards against the caller's pipes
     # being inherited; the app redirects fd 1 / fd 2 to its rotated log files
     # itself on headless launches.
-    # Dev launch: expose the D-Bus debug/automation interface (debug_control.py)
-    # so searches, file open/close and state reads can be driven over the bus.
+    # Dev launch only: expose the D-Bus debug/automation interface
+    # (debug_control.py) so searches, file open/close and state reads can be driven
+    # over the bus. This script is the DEVELOPMENT launcher; the shipped .desktop
+    # entry never sets this, so the interface does not exist in normal use.
+    # While enabled it lives on the session bus and any session peer can call it
+    # (Search+SearchResults is a content oracle over the vault) — acceptable for a
+    # deliberate dev session; do not enable it on the .desktop launch.
     MDV_DEBUG_CONTROL=1 setsid "$BIN" >/dev/null 2>&1 </dev/null &
     sleep 2
     if pgrep -f "$PATTERN" >/dev/null; then

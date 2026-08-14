@@ -22,6 +22,29 @@ from gi.repository import Gtk, Adw, GObject, Gdk, GLib, Gio
 from . import config
 from . import dialogs
 
+
+class _HttpsOnlyRedirect:
+    """A urllib redirect handler that refuses to leave HTTPS. A model URL that
+    redirects to http/ftp would deliver an unauthenticated file straight into a
+    native parser (llama.cpp's GGUF loader, ONNX Runtime's protobuf) — a
+    memory-safety surface, not a mere parse error. Instantiated lazily so the
+    urllib import stays local to the download path."""
+
+    def __new__(cls):
+        import urllib.request
+        import urllib.error
+        from urllib.parse import urlparse
+
+        class _Handler(urllib.request.HTTPRedirectHandler):
+            def redirect_request(self, req, fp, code, msg, headers, newurl):
+                if urlparse(newurl).scheme != "https":
+                    raise urllib.error.HTTPError(
+                        newurl, code, "refusing a non-HTTPS redirect", headers, fp)
+                return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+        return _Handler()
+
+
 _VIEW_MODES = {"edit": "Edit", "render": "Render", "split": "Split"}
 _LOGLEVELS = {"debug": "Debug", "info": "Info", "warning": "Warning", "error": "Error"}
 _GLIB_LOGLEVELS = {
@@ -476,6 +499,18 @@ class PreferencesDialog(Adw.PreferencesDialog):
 
     _LABEL_WIDTH = 140  # fixed title column so all fields start at the same x
 
+    def _caption_row(self, text):
+        """A non-interactive row holding a dimmed, wrapping caption — used to note
+        a privacy implication next to the control it applies to."""
+        row = Adw.PreferencesRow(activatable=False, can_focus=False)
+        label = Gtk.Label(label=text, xalign=0.0, wrap=True,
+                          margin_start=12, margin_end=12,
+                          margin_top=4, margin_bottom=8)
+        label.add_css_class("dim-label")
+        label.add_css_class("caption")
+        row.set_child(label)
+        return row
+
     def _entry_row(self, title, key, trailing=None):
         """A list row whose value field is a plain ``Gtk.Entry``, so the default
         shows as an always-visible placeholder (like an HTML ``<input
@@ -925,6 +960,11 @@ class PreferencesDialog(Adw.PreferencesDialog):
         if saved_url:
             self._ask_url_entry.set_placeholder_text(f"{saved_url} (default)")
         group.add(self._ask_url_row)
+        # Privacy: unlike the in-process backend ("nothing leaves your machine"),
+        # a server backend ships note content out — say so where the leak is.
+        group.add(self._caption_row(
+            "A non-local server receives the full text of every retrieved note "
+            "with each question."))
 
         # The model list is fetched from the server; a refresh icon sits in the
         # row next to the selected model, and the subtitle carries the status
@@ -1531,12 +1571,19 @@ class PreferencesDialog(Adw.PreferencesDialog):
     def _download_worker(self, button, url, target, filename, bar,
                          refresh=None, validate=None) -> None:
         import urllib.request
+        from urllib.parse import urlparse
         try:
+            if urlparse(url).scheme != "https":
+                GLib.idle_add(self._download_done, button, bar, False,
+                              "Refusing a non-HTTPS download URL.", refresh)
+                return
             target.parent.mkdir(parents=True, exist_ok=True)
             req = urllib.request.Request(
                 url, headers={"User-Agent": "markdown-vault"})
             tmp = target.with_name(target.name + ".part")
-            with urllib.request.urlopen(req, timeout=30) as resp:
+            # Custom opener: refuse a redirect that downgrades off HTTPS.
+            opener = urllib.request.build_opener(_HttpsOnlyRedirect())
+            with opener.open(req, timeout=30) as resp:
                 total = int(resp.headers.get("Content-Length") or 0)
                 done = last = 0
                 with open(tmp, "wb") as fh:

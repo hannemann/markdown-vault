@@ -67,5 +67,40 @@ class TestPreferencesModuleStructure(unittest.TestCase):
             self.assertIn(f'self._settings.get("{key}"', source)
 
 
+class TestHttpsOnlyRedirect(unittest.TestCase):
+    """The download redirect guard must refuse leaving HTTPS (S3). Pure, no net."""
+
+    def _redirect_to(self, newurl):
+        import email.message
+        import urllib.request
+        from markdown_vault.preferences import _HttpsOnlyRedirect
+        handler = _HttpsOnlyRedirect()
+        req = urllib.request.Request("https://example.com/model.gguf")
+        return handler.redirect_request(
+            req, None, 302, "Found", email.message.Message(), newurl)
+
+    def test_allows_https_to_https(self):
+        out = self._redirect_to("https://cdn.example.com/model.gguf")
+        self.assertIsNotNone(out)              # a follow-on Request is built
+
+    def test_refuses_downgrade_to_http(self):
+        import urllib.error
+        with self.assertRaises(urllib.error.HTTPError):
+            self._redirect_to("http://evil.example.com/model.gguf")
+
+    def test_refuses_ftp(self):
+        import urllib.error
+        with self.assertRaises(urllib.error.HTTPError):
+            self._redirect_to("ftp://evil.example.com/model.gguf")
+
+    def test_worker_wires_the_guard(self):
+        # Pin the integration point: swapping opener.open back to the bare
+        # urllib.request.urlopen would silently drop the redirect protection.
+        src = Path(__file__).resolve().parent.parent / "src" / "markdown_vault" / "preferences.py"
+        source = src.read_text(encoding="utf-8")
+        self.assertIn("build_opener(_HttpsOnlyRedirect())", source)
+        self.assertIn('urlparse(url).scheme != "https"', source)
+
+
 if __name__ == "__main__":
     unittest.main()
