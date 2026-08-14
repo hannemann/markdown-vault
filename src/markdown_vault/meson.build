@@ -55,6 +55,7 @@ py_sources = files(
    'vault_monitor.py',
   'vault_scope.py',
   'vault_tree.py',
+  'web_import.py',
   'wikilink_autofix.py',
 )
 
