@@ -35,6 +35,13 @@ logger = logging.getLogger(__name__)
 FILE_ICON = "text-x-generic-symbolic"
 FOLDER_ICON = "folder-symbolic"
 
+# OKF reserved files: a folder's overview (index.md) and its update log (log.md)
+# get their own icon, and index.md sorts to the top of its folder.
+RESERVED_ICONS = {
+    "index.md": "emblem-documents-symbolic",
+    "log.md": "document-open-recent-symbolic",
+}
+
 # Fallback emoji shown for a vault root that has no configured icon.
 DEFAULT_VAULT_ICON = "🗄️"
 
@@ -58,15 +65,24 @@ class VaultNode(GObject.Object):
         self.name = name
         self.path = path
         self.is_dir = is_dir
-        self.icon = FOLDER_ICON if is_dir else FILE_ICON
+        self.icon = (FOLDER_ICON if is_dir
+                     else RESERVED_ICONS.get(name.lower(), FILE_ICON))
         # Directories get a child store; files stay None.
         self.children: Gio.ListStore | None = (
             Gio.ListStore(item_type=VaultNode) if is_dir else None
         )
 
 
+def _reserved_rank(node: VaultNode) -> int:
+    """0 for a folder's ``index.md`` (leads the folder), 1 for everything else."""
+    return 0 if not node.is_dir and node.name.lower() == "index.md" else 1
+
+
 def _node_cmp(a: VaultNode, b: VaultNode) -> int:
-    """Directories first, then case-insensitive alphabetical by name."""
+    """``index.md`` first, then directories, then case-insensitive alphabetical."""
+    ra, rb = _reserved_rank(a), _reserved_rank(b)
+    if ra != rb:
+        return -1 if ra < rb else 1
     if a.is_dir and not b.is_dir:
         return -1
     if not a.is_dir and b.is_dir:
