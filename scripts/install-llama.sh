@@ -63,7 +63,13 @@ install_vulkan() {
     # build lacks GPU offload, so a correct Vulkan build isn't needlessly recompiled.
     PY="$(dirname "$PIP")/python"
     force=""
-    if ! "$PY" -c "import llama_cpp, sys; sys.exit(0 if llama_cpp.llama_supports_gpu_offload() else 1)" 2>/dev/null; then
+    # Only force a --no-deps rebuild when llama-cpp-python is ALREADY importable
+    # (its runtime deps are already present) but its current build lacks GPU
+    # offload. On a fresh venv it is not installed at all, and --no-deps there
+    # would skip runtime deps like diskcache and leave the import broken — so let
+    # the normal install pull deps in that case.
+    if "$PY" -c "import llama_cpp" 2>/dev/null && \
+       ! "$PY" -c "import llama_cpp, sys; sys.exit(0 if llama_cpp.llama_supports_gpu_offload() else 1)" 2>/dev/null; then
         force="--force-reinstall --no-deps"
     fi
     # Cap build parallelism: a full -j build is itself an all-core burst.
