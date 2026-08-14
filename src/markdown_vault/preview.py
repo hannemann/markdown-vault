@@ -502,6 +502,8 @@ class Preview(Gtk.ScrolledWindow):
         "link-clicked-new-tab": (GObject.SignalFlags.RUN_LAST, None, (str,)),
         "link-not-found": (GObject.SignalFlags.RUN_LAST, None, (str,)),
         "checkbox-toggled": (GObject.SignalFlags.RUN_LAST, None, (int, bool)),
+        # Right-click "Download Image" on a remote image → (image URL).
+        "image-download-requested": (GObject.SignalFlags.RUN_LAST, None, (str,)),
         # Emitted when the in-preview search match count becomes available.
         "search-info-changed": (GObject.SignalFlags.RUN_LAST, None, ()),
     }
@@ -712,6 +714,16 @@ class Preview(Gtk.ScrolledWindow):
                                    lambda: self._copy_to_clipboard(uri)))
                 return False
             # A link that resolves to nothing internal — show no menu.
+            return True
+
+        if hit_test_result.context_is_image():
+            uri = hit_test_result.get_image_uri()
+            if uri and uri.startswith(("http://", "https://")):
+                context_menu.append(
+                    self._ctx_item("download-image", "Download Image",
+                                   lambda: self.emit("image-download-requested", uri)))
+                return False
+            # A local (already downloaded) or data: image — nothing to offer.
             return True
 
         if hit_test_result.context_is_selection():

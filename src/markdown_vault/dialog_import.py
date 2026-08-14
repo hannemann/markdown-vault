@@ -22,7 +22,7 @@ gi.require_version("Adw", "1")
 
 from gi.repository import Gtk, Adw, GObject, GLib
 
-from . import web_import
+from . import path_utils, web_import
 
 logger = logging.getLogger(__name__)
 
@@ -103,7 +103,7 @@ class ImportDialog(Adw.Dialog):
         group.add(self._name_row)
 
         self._dl_row = Adw.SwitchRow(title="Download images",
-                                     subtitle="Save images into attachments/<note>/")
+                                     subtitle="Save images into the vault's attachments folder")
         group.add(self._dl_row)
         box.append(group)
 
@@ -168,9 +168,12 @@ class ImportDialog(Adw.Dialog):
             result = web_import.import_url(url)
             if not result.markdown.strip():
                 raise ValueError("Nothing extractable on that page.")
+            # Attachments go under the vault root (…/attachments/<note-path>/),
+            # even when importing into a subfolder.
+            vault_root = path_utils.find_vault_for_dir(self._target_dir)
             path = web_import.save_to_vault(result, self._target_dir,
                                             download_images=download,
-                                            name=name or None)
+                                            name=name or None, vault_root=vault_root)
         except Exception as exc:  # surface any failure to the user, never crash
             logger.warning("Web import failed for %s: %s", url, exc, exc_info=True)
             GLib.idle_add(self._on_error, str(exc))

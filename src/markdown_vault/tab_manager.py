@@ -116,6 +116,10 @@ class TabOrchestrator:
         """Forward preview ``checkbox-toggled`` signal to MainWindow callback."""
         self._cb_call("on_preview_checkbox_toggled", _widget, line, checked)
 
+    def _on_preview_image_download(self, _widget, uri: str) -> None:
+        """Forward preview ``image-download-requested`` to MainWindow callback."""
+        self._cb_call("on_preview_image_download", _widget, uri)
+
     def _on_editor_text_changed(self, editor) -> None:
         """Forward editor ``text-changed`` signal to MainWindow callback."""
         self._cb_call("on_editor_text_changed", editor)
@@ -166,6 +170,7 @@ class TabOrchestrator:
         preview.connect("link-clicked-new-tab", self._on_preview_link_new_tab)
         preview.connect("link-not-found", self._on_preview_link_not_found)
         preview.connect("checkbox-toggled", self._on_preview_checkbox_toggled)
+        preview.connect("image-download-requested", self._on_preview_image_download)
 
         editor.open_file(file_path)
 

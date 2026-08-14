@@ -351,6 +351,7 @@ class MainWindow(Adw.ApplicationWindow):
                 "on_preview_link_new_tab": self._on_preview_link_new_tab,
                 "on_preview_link_not_found": self._on_preview_link_not_found,
                 "on_preview_checkbox_toggled": self._on_preview_checkbox_toggled,
+                "on_preview_image_download": self._on_preview_image_download,
                 "on_editor_text_changed": self._on_editor_text_changed,
                 "on_editor_modified": self._on_editor_modified,
                 "apply_view_mode": self._view_mode_manager.apply_view_mode,
@@ -1798,11 +1799,62 @@ class MainWindow(Adw.ApplicationWindow):
 
         # Schedule preview refresh if visible.
         if tab.preview.get_visible():
-            self._schedule_preview_refresh()
+            self._refresh_preview()
 
         # Update sidebar if visible.
         if self._sidebar.get_visible():
             self._sidebar.update_text_only(tab.editor.file_path, tab.editor.get_text())
+
+    def _on_preview_image_download(self, preview, uri: str) -> None:
+        """Right-click "Download Image": fetch a remote image into the note's
+        ``attachments/<note-name>/`` and rewrite its source links to the local
+        path. Runs on a worker thread so the UI never blocks."""
+        tab = next((t for t in self._tab_bar._tabs.values() if t.preview is preview), None)
+        if not tab or not tab.editor.file_path:
+            return
+        file_path = tab.editor.file_path
+        stem = Path(file_path).stem
+        note_dir = Path(file_path).parent
+        # Attachments mirror the note's location under the vault's attachments/
+        # tree (…/attachments/<subfolder>/<note>/), linked relative to the note.
+        vault_root = path_utils.find_vault_for_dir(str(note_dir)) or str(note_dir)
+        from . import web_import
+        dest_dir, rel_prefix = web_import.attachment_target(vault_root, note_dir, stem)
+        self._toast("Downloading image…")
+
+        def worker():
+            try:
+                rel = web_import.save_one_image(uri, dest_dir, rel_prefix)
+            except Exception as exc:   # never let a worker crash the app
+                logger.warning("Image download failed for %s: %s", uri, exc, exc_info=True)
+                GLib.idle_add(self._on_image_downloaded, tab, uri, None, str(exc))
+                return
+            GLib.idle_add(self._on_image_downloaded, tab, uri, rel, None)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _on_image_downloaded(self, tab, uri: str, rel, error) -> bool:
+        """Back on the main thread: rewrite the source (if the tab still exists)
+        and report via a toast. Error toasts stay until dismissed."""
+        if rel is None:
+            self._toast(f"Image download failed{': ' + error if error else ''}", timeout=0)
+            return False
+        if tab not in self._tab_bar._tabs.values():
+            return False               # tab closed mid-download; file is on disk
+        from . import web_import
+        current = tab.editor.get_text()
+        new_text = web_import.rewrite_image_url(current, uri, rel)
+        if new_text != current:
+            buffer = tab.editor._buffer
+            buffer.begin_user_action()
+            buffer.set_text(new_text)
+            buffer.end_user_action()
+            if tab.preview.get_visible():
+                self._refresh_preview()
+            if self._sidebar.get_visible():
+                self._sidebar.update_text_only(tab.editor.file_path, tab.editor.get_text())
+        self._toast("Image downloaded")
+        return False
 
     def _on_preview_link_not_found(self, _preview, path_str: str) -> None:
         """Show a dialog when a wikilink cannot be resolved."""

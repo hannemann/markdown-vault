@@ -18,6 +18,7 @@ import argparse
 import datetime
 import ipaddress
 import logging
+import os
 import re
 import socket
 import sys
@@ -316,7 +317,7 @@ def _normalize_images_tree(tree, base_url: str | None) -> None:
         if not src:
             el.drop_tree()
             continue
-        alt = el.get("alt") or ""
+        alt = el.get("alt") or el.get("title") or ""
         for attr in list(el.attrib):
             del el.attrib[attr]
         el.set("src", src)
@@ -335,6 +336,20 @@ def _clean_content_html(html: str, base_url: str | None) -> str:
     return LH.tostring(tree, encoding="unicode")
 
 
+def _label_unlabeled_images(markdown: str) -> str:
+    """Give every image with an empty alt a stable ``image-N`` label. A remote
+    image the preview's CSP blocks renders only its alt text, so without this
+    there is nothing visible to see or right-click."""
+    n = 0
+
+    def repl(_m):
+        nonlocal n
+        n += 1
+        return f"![image-{n}]("
+
+    return re.sub(r"!\[\]\(", repl, markdown)
+
+
 def extract(html: str, url: str | None = None) -> ImportResult:
     """Extract *html* as a Markdown note: Trafilatura for the prose, with every real
     table kept at its exact position via the placeholder swap and converted
@@ -349,7 +364,7 @@ def extract(html: str, url: str | None = None) -> ImportResult:
     prose = trafilatura.extract(
         modified, url=url, output_format="markdown", include_tables=False,
         include_links=True, include_images=True, include_formatting=True) or ""
-    md = _restore_placeholders(prose, tables)
+    md = _label_unlabeled_images(_restore_placeholders(prose, tables))
     return _assemble(url, md, _metadata(html, url))
 
 
@@ -574,16 +589,64 @@ def _localize_images(markdown: str, dest_dir: Path, rel_prefix: str,
     return _IMG_HTML.sub(html_repl, _IMG_MD.sub(md_repl, markdown))
 
 
+def save_one_image(url: str, dest_dir: Path, rel_prefix: str,
+                   fetch=_fetch_image) -> str | None:
+    """Download a single image *url* into *dest_dir*; return its local
+    ``rel_prefix/<file>`` path, or ``None`` if the download failed. Used by the
+    right-click "Download Image" action; the caller rewrites the source with
+    :func:`rewrite_image_url` once this succeeds."""
+    got = fetch(url)
+    if not got:
+        return None
+    data, ctype = got
+    dest_dir = Path(dest_dir)
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    fname = _image_filename(url, ctype, set())
+    (dest_dir / fname).write_bytes(data)
+    return f"{rel_prefix}/{fname}"
+
+
+def rewrite_image_url(text: str, url: str, rel: str) -> str:
+    """Point every markdown ``![](url)`` and HTML ``<img src="url">`` reference to
+    *url* (also its ``&amp;`` entity form) at the local *rel* path. Pure — run it
+    on the current buffer text so a concurrent edit is not clobbered."""
+    def md_repl(m):
+        return f"![{m.group(1)}]({rel})" if m.group(2) == url else m.group(0)
+
+    def html_repl(m):
+        return f"{m.group(1)}{rel}{m.group(3)}" if html_unescape(m.group(2)) == url \
+            else m.group(0)
+
+    return _IMG_HTML.sub(html_repl, _IMG_MD.sub(md_repl, text))
+
+
+def attachment_target(vault_root: str | Path, note_dir: str | Path, stem: str):
+    """Where a note's downloaded images live, and how to link them.
+
+    Attachments mirror the note's location under one ``<vault>/attachments/`` tree
+    (so two same-named notes in different folders don't collide), and the returned
+    link prefix is relative to the note so it resolves in the preview wherever the
+    note sits: a note in ``sub/`` gets ``../attachments/sub/<note>/``. Returns
+    ``(attachments_dir: Path, link_prefix: str)``."""
+    vault_root, note_dir = Path(vault_root), Path(note_dir)
+    rel_dir = os.path.relpath(note_dir, vault_root)
+    attach = Path(os.path.normpath(vault_root / "attachments" / rel_dir / stem))
+    link_prefix = Path(os.path.relpath(attach, note_dir)).as_posix()
+    return attach, link_prefix
+
+
 def save_to_vault(result: ImportResult, vault_dir: str | Path,
                   today: datetime.date | None = None,
-                  download_images: bool = False, name: str | None = None) -> Path:
+                  download_images: bool = False, name: str | None = None,
+                  vault_root: str | Path | None = None) -> Path:
     """Write the assembled note into *vault_dir* as ``<slug>.md`` (never
     overwriting: a numeric suffix is added on collision). Returns the path.
 
     *name* overrides the filename stem (slugged); a blank one falls back to the
     page title. When *download_images* is set, remote images are downloaded into
-    ``attachments/<slug>/`` beside the note and rewritten to relative links, so
-    the note and its images can be removed together."""
+    ``<vault_root>/attachments/<note-path>/`` (see :func:`attachment_target`) and
+    rewritten to relative links, so the note and its images can be removed
+    together. *vault_root* defaults to *vault_dir* (attachments beside the note)."""
     import dataclasses
     vault_dir = Path(vault_dir)
     vault_dir.mkdir(parents=True, exist_ok=True)
@@ -595,8 +658,8 @@ def save_to_vault(result: ImportResult, vault_dir: str | Path,
         n += 1
     stem = target.stem
     if download_images:
-        localized = _localize_images(result.markdown, vault_dir / "attachments" / stem,
-                                     f"attachments/{stem}")
+        attach_dir, rel_prefix = attachment_target(vault_root or vault_dir, vault_dir, stem)
+        localized = _localize_images(result.markdown, attach_dir, rel_prefix)
         result = dataclasses.replace(result, markdown=localized)
     target.write_text(to_note(result, today=today), encoding="utf-8")
     return target

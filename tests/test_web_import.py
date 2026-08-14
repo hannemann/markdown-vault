@@ -334,6 +334,22 @@ class TestImageNormalize(unittest.TestCase):
         self.assertNotIn("<span", out)
         self.assertIn("![Image](Icon.png)", out.replace("</pre>", "").replace("<pre>", ""))
 
+    def test_title_used_as_alt_fallback(self):
+        out = wi._normalize_images('<img src="/a.png" title="A Cat">', "https://ex.com/")
+        self.assertEqual(self._img(out).xpath("//img")[0].get("alt"), "A Cat")
+
+    def test_alt_preferred_over_title(self):
+        out = wi._normalize_images('<img src="/a.png" alt="Real" title="T">',
+                                   "https://ex.com/")
+        self.assertEqual(self._img(out).xpath("//img")[0].get("alt"), "Real")
+
+    def test_labels_empty_alt_images_sequentially(self):
+        md = "![](a.png) text ![keep](b.png) ![](c.png)"
+        out = wi._label_unlabeled_images(md)
+        self.assertIn("![image-1](a.png)", out)
+        self.assertIn("![keep](b.png)", out)       # a real alt is left alone
+        self.assertIn("![image-2](c.png)", out)
+
     def test_clean_content_still_normalizes_images(self):
         out = wi._clean_content_html('<p><img src="/x.png" width="1" height="1">'
                                      '<img src="/y.png" alt="Y"></p>',
@@ -476,6 +492,66 @@ class TestLocalizeImages(unittest.TestCase):
                             sleep=slept.append)
         # a gap before each fetch except the first → 2 for 3 images
         self.assertEqual(slept, [wi._THROTTLE_SECONDS, wi._THROTTLE_SECONDS])
+
+
+class TestAttachmentTarget(unittest.TestCase):
+    """Attachments mirror the note's location under one <vault>/attachments/ tree,
+    linked relative to the note."""
+
+    def test_note_at_vault_root(self):
+        attach, rel = wi.attachment_target("/v", "/v", "note")
+        self.assertEqual(str(attach), "/v/attachments/note")
+        self.assertEqual(rel, "attachments/note")
+
+    def test_note_in_subdir(self):
+        attach, rel = wi.attachment_target("/v", "/v/sub", "note")
+        self.assertEqual(str(attach), "/v/attachments/sub/note")
+        self.assertEqual(rel, "../attachments/sub/note")
+
+    def test_note_nested_deeper(self):
+        attach, rel = wi.attachment_target("/v", "/v/a/b", "note")
+        self.assertEqual(str(attach), "/v/attachments/a/b/note")
+        self.assertEqual(rel, "../../attachments/a/b/note")
+
+
+class TestSingleImage(unittest.TestCase):
+    """Right-click download of one image: fetch it, then rewrite just its refs."""
+
+    def setUp(self):
+        import tempfile
+        self._tmp = tempfile.mkdtemp()
+        self.addCleanup(lambda: __import__("shutil").rmtree(self._tmp, ignore_errors=True))
+
+    def _ok(self, url, timeout=20):
+        return (b"\x89PNG DATA", "image/png")
+
+    def test_save_one_image_returns_relative_path(self):
+        from pathlib import Path
+        dest = Path(self._tmp) / "attachments" / "note"
+        rel = wi.save_one_image("https://ex.com/a.png", dest, "attachments/note",
+                                fetch=self._ok)
+        self.assertEqual(rel, "attachments/note/a.png")
+        self.assertTrue((dest / "a.png").exists())
+
+    def test_save_one_image_none_on_failure(self):
+        from pathlib import Path
+        rel = wi.save_one_image("https://ex.com/a.png", Path(self._tmp) / "att", "att",
+                                fetch=lambda url, timeout=20: None)
+        self.assertIsNone(rel)
+
+    def test_rewrite_touches_only_the_target_url(self):
+        text = ('![a](https://ex.com/a.png) ![b](https://ex.com/b.png) '
+                '<img src="https://ex.com/a.png">')
+        out = wi.rewrite_image_url(text, "https://ex.com/a.png", "attachments/note/a.png")
+        self.assertIn("![a](attachments/note/a.png)", out)
+        self.assertIn('src="attachments/note/a.png"', out)
+        self.assertIn("![b](https://ex.com/b.png)", out)      # untouched
+
+    def test_rewrite_matches_html_entity_form(self):
+        # WebKit hands us the resolved '&' URL; the source may have '&amp;'.
+        text = '<img src="https://ex.com/a.png?x=1&amp;y=2">'
+        out = wi.rewrite_image_url(text, "https://ex.com/a.png?x=1&y=2", "att/a.png")
+        self.assertIn('src="att/a.png"', out)
 
 
 class TestSaveToVault(unittest.TestCase):
