@@ -326,12 +326,62 @@ def _normalize_images_tree(tree, base_url: str | None) -> None:
         el.set("alt", alt)
 
 
+# Strip a MathML TeX annotation's outer style wrapper ({\displaystyle …}) so the
+# emitted formula is plain LaTeX; the greedy body + anchored close keeps nested
+# braces intact.
+_MATH_STYLE_WRAPPER = re.compile(r"^\{\\(?:display|text|script)style\s*(.*)\}$", re.S)
+
+
+def _convert_math_tree(tree) -> None:
+    """Replace each ``<math>`` element with its TeX source as ``$…$`` (inline) or
+    ``$$…$$`` (``display="block"``), inlined into the surrounding text. MathML with
+    an ``application/x-tex`` annotation or an ``alttext`` is the standard MathJax /
+    KaTeX / MediaWiki form; Trafilatura otherwise drops the math entirely. Must run
+    before spans are unwrapped so the text lands in the prose, and a ``<math>``
+    without TeX is left alone. The app renders the ``$…$`` via ``latex_mathml``."""
+    for math in list(tree.iter("math")):
+        tex = None
+        for node in math.iter():
+            if (isinstance(node.tag, str) and node.tag.split("}")[-1] == "annotation"
+                    and node.get("encoding") == "application/x-tex"):
+                tex = node.text
+                break
+        if not tex:
+            tex = math.get("alttext")
+        if not tex or not tex.strip():
+            continue
+        tex = tex.strip()
+        wrapper = _MATH_STYLE_WRAPPER.match(tex)
+        if wrapper:
+            tex = wrapper.group(1).strip()
+        repl = f"$${tex}$$" if math.get("display") == "block" else f"${tex}$"
+        parent = math.getparent()
+        if parent is None:
+            continue
+        prev = math.getprevious()
+        tail = math.tail or ""
+        if prev is not None:
+            prev.tail = (prev.tail or "") + repl + tail
+        else:
+            parent.text = (parent.text or "") + repl + tail
+        parent.remove(math)
+
+
 def _clean_content_html(html: str, base_url: str | None) -> str:
-    """Pre-extraction DOM cleanup in a single parse: unwrap presentational
-    ``<span>`` (Trafilatura otherwise leaks syntax-highlight spans into code
-    blocks as raw ``<span>`` noise) keeping their text, then normalise images."""
+    """Pre-extraction DOM cleanup in a single parse: convert ``<math>`` to ``$…$``
+    LaTeX (before spans are unwrapped, so the text lands in the prose), unwrap
+    presentational ``<span>`` (Trafilatura otherwise leaks syntax-highlight spans
+    into code blocks as raw ``<span>`` noise) keeping their text, then normalise
+    images."""
     from lxml import html as LH
     tree = LH.fromstring(html)
+    _convert_math_tree(tree)
+    # Drop no-op colspan/rowspan="1": they change nothing but make _is_complex_table
+    # keep the table as HTML, where cell content (e.g. $…$ math) doesn't render.
+    for cell in tree.iter("td", "th"):
+        for attr in ("colspan", "rowspan"):
+            if cell.get(attr) == "1":
+                del cell.attrib[attr]
     for sp in list(tree.iter("span")):
         sp.drop_tag()          # unwrap: keep the text, drop the presentational tag
     _normalize_images_tree(tree, base_url)

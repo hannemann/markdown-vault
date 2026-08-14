@@ -207,6 +207,59 @@ class TestComplexity(unittest.TestCase):
 
 
 @unittest.skipUnless(_has_table_deps(), "web-import table deps not installed")
+class TestMath(unittest.TestCase):
+    """MathML -> $…$ / $$…$$ so formulas survive extraction and render via LaTeX."""
+
+    def _convert(self, html):
+        from lxml import html as LH
+        tree = LH.fromstring(html)
+        wi._convert_math_tree(tree)
+        return LH.tostring(tree, encoding="unicode")
+
+    def test_inline_from_annotation(self):
+        out = self._convert(
+            '<p>x <math><semantics>'
+            '<annotation encoding="application/x-tex">a^2+b^2</annotation>'
+            '</semantics></math> y</p>')
+        self.assertIn("$a^2+b^2$", out)
+        self.assertNotIn("<math", out)
+
+    def test_block_math(self):
+        out = self._convert('<p><math display="block" alttext="c^2=a^2+b^2"></math></p>')
+        self.assertIn("$$c^2=a^2+b^2$$", out)
+
+    def test_alttext_fallback(self):
+        self.assertIn("$E=mc^2$", self._convert('<p><math alttext="E=mc^2"></math></p>'))
+
+    def test_displaystyle_wrapper_stripped(self):
+        out = self._convert(r'<p><math alttext="{\displaystyle a+b}"></math></p>')
+        self.assertIn("$a+b$", out)
+        self.assertNotIn("displaystyle", out)
+
+    def test_math_without_tex_is_left_alone(self):
+        out = self._convert('<p><math><mi>x</mi></math></p>')
+        self.assertNotIn("$", out)      # nothing to convert → no spurious markers
+
+    def test_math_in_table_cell_is_converted(self):
+        # Math is converted before tables are extracted, so cell math becomes
+        # $…$ (which then renders once the table is a pipe table).
+        out = wi._clean_content_html(
+            '<table><tr><td><math alttext="a^2"></math></td></tr></table>',
+            "https://ex.com/")
+        self.assertIn("$a^2$", out)
+
+    def test_noop_colrowspan_stripped(self):
+        # colspan/rowspan="1" are no-ops but make _is_complex_table keep the table
+        # as HTML instead of a pipe table — strip them; keep real spans.
+        out = wi._clean_content_html(
+            '<table><tr><td colspan="1" rowspan="1">x</td>'
+            '<td colspan="2">y</td></tr></table>', "https://ex.com/")
+        self.assertNotIn('colspan="1"', out)
+        self.assertNotIn('rowspan="1"', out)
+        self.assertIn('colspan="2"', out)
+
+
+@unittest.skipUnless(_has_table_deps(), "web-import table deps not installed")
 class TestTableToMarkdown(unittest.TestCase):
     def test_simple_becomes_pipe(self):
         md = wi._html_to_markdown(
@@ -621,6 +674,18 @@ class TestExtractImagesInTables(unittest.TestCase):
         md = wi.extract(html, "https://ex.com/page.html").markdown
         self.assertIn("<table", md)                      # kept as HTML (colspan)
         self.assertIn("https://ex.com/x.png", md)        # image survived, absolute
+
+    def test_math_survives_extraction_unescaped(self):
+        # R82.1: the TeX is injected as tree text and passes through Trafilatura's
+        # markdown emitter — assert backslashes/underscores are NOT escaped end to
+        # end, which is the whole point of the feature.
+        html = self._page(
+            '<p>a <math><annotation encoding="application/x-tex">\\frac{a}{b}</annotation>'
+            '</math> b <math><annotation encoding="application/x-tex">x_1 + y_2</annotation>'
+            '</math> c.</p>')
+        md = wi.extract(html, "https://ex.com/").markdown
+        self.assertIn(r"$\frac{a}{b}$", md)
+        self.assertIn("$x_1 + y_2$", md)
 
 
 class TestFetchImageRetry(unittest.TestCase):
