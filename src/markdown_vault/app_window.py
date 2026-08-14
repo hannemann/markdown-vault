@@ -180,6 +180,7 @@ class MainWindow(Adw.ApplicationWindow):
         self._vault_tree.connect("vault-added", self._on_vault_added)
         self._vault_tree.connect("new-file-requested", self._on_new_file_requested)
         self._vault_tree.connect("new-folder-requested", self._on_new_folder_requested)
+        self._vault_tree.connect("import-requested", self._on_import_requested)
         self._vault_tree.connect("delete-requested", self._on_delete_requested)
         self._vault_tree.connect("close-file-requested", self._on_close_file_requested)
         self._vault_tree.connect("file-renamed", self._on_file_renamed)
@@ -1822,6 +1823,20 @@ class MainWindow(Adw.ApplicationWindow):
     def _on_new_folder_requested(self, _tree, parent_dir: str) -> None:
         """Handle 'New Folder' from the vault tree context menu."""
         self._file_manager.prompt_new_folder(self, parent_dir)
+
+    def _on_import_requested(self, _tree, target_dir: str) -> None:
+        """Handle 'Import…' from the vault tree context menu — fetch a URL as a
+        note into *target_dir*, then open it and reveal it in the tree."""
+        from .dialog_import import ImportDialog
+        dialog = ImportDialog(target_dir)
+        dialog.connect("note-imported", self._on_note_imported)
+        dialog.present(self)
+
+    def _on_note_imported(self, _dialog, path: str) -> None:
+        """A web import finished — refresh the tree, open the note, reveal it."""
+        self._vault_tree.refresh()
+        self._open_file(path)
+        self._vault_tree.focus_file(path)
 
     def _show_error(self, heading: str, body: str) -> None:
         """Show an error dialog with the given message."""

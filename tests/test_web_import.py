@@ -417,6 +417,35 @@ class TestLocalizeImages(unittest.TestCase):
         self.assertIn("https://ex.com/4.png", out)
 
 
+class TestSaveToVault(unittest.TestCase):
+    def setUp(self):
+        import tempfile
+        self._tmp = tempfile.mkdtemp()
+        self.addCleanup(lambda: __import__("shutil").rmtree(self._tmp, ignore_errors=True))
+
+    def _result(self, title="Some Long Page Title"):
+        return wi.ImportResult(url="https://x.io/p", title=title, markdown="# Body")
+
+    def test_default_name_from_title(self):
+        p = wi.save_to_vault(self._result(), self._tmp)
+        self.assertEqual(p.name, "some-long-page-title.md")
+
+    def test_optional_name_overrides_title(self):
+        p = wi.save_to_vault(self._result(), self._tmp, name="My Custom Name")
+        self.assertEqual(p.name, "my-custom-name.md")
+
+    def test_blank_name_falls_back_to_title(self):
+        p = wi.save_to_vault(self._result(), self._tmp, name="   ")
+        self.assertEqual(p.name, "some-long-page-title.md")
+
+    def test_collision_gets_numeric_suffix(self):
+        self._result()
+        p1 = wi.save_to_vault(self._result(), self._tmp, name="dup")
+        p2 = wi.save_to_vault(self._result(), self._tmp, name="dup")
+        self.assertEqual(p1.name, "dup.md")
+        self.assertEqual(p2.name, "dup-2.md")
+
+
 class TestSsrfGuard(unittest.TestCase):
     """R74.2: image URLs come from the page, so the fetch must refuse non-public
     hosts (localhost/LAN/cloud-metadata)."""

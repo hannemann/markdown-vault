@@ -124,6 +124,8 @@ class VaultTree(Gtk.Box):
         "vault-removed": (GObject.SignalFlags.RUN_LAST, None, (str,)),
         "new-file-requested": (GObject.SignalFlags.RUN_LAST, None, (str,)),
         "new-folder-requested": (GObject.SignalFlags.RUN_LAST, None, (str,)),
+        # Import a note from a URL into the given directory (vault root or folder).
+        "import-requested": (GObject.SignalFlags.RUN_LAST, None, (str,)),
         "delete-requested": (GObject.SignalFlags.RUN_LAST, None, (str,)),
         "close-file-requested": (GObject.SignalFlags.RUN_LAST, None, (str,)),
         "file-renamed": (GObject.SignalFlags.RUN_LAST, None, (str, str)),
@@ -799,6 +801,7 @@ class VaultTree(Gtk.Box):
         if parent_dir:
             menu.append("New File", "ctx.new-file")
             menu.append("New Folder", "ctx.new-folder")
+            menu.append("Import…", "ctx.import")
 
         is_vault_root = (
             self._context_is_dir
@@ -824,6 +827,10 @@ class VaultTree(Gtk.Box):
 
             action = Gio.SimpleAction.new("new-folder", None)
             action.connect("activate", lambda *_: self.emit("new-folder-requested", parent_dir))
+            action_group.add_action(action)
+
+            action = Gio.SimpleAction.new("import", None)
+            action.connect("activate", lambda *_: self.emit("import-requested", parent_dir))
             action_group.add_action(action)
 
         if self._context_path and not is_vault_root:

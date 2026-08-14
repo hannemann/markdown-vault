@@ -11,6 +11,7 @@ py_sources = files(
   'config.py',
   'content_changes.py',
   'debug_control.py',
+  'dialog_import.py',
   'dialogs.py',
   'editor.py',
   'event_router.py',

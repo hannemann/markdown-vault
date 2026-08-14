@@ -526,17 +526,18 @@ def _localize_images(markdown: str, dest_dir: Path, rel_prefix: str,
 
 def save_to_vault(result: ImportResult, vault_dir: str | Path,
                   today: datetime.date | None = None,
-                  download_images: bool = False) -> Path:
+                  download_images: bool = False, name: str | None = None) -> Path:
     """Write the assembled note into *vault_dir* as ``<slug>.md`` (never
     overwriting: a numeric suffix is added on collision). Returns the path.
 
-    When *download_images* is set, remote images are downloaded into
+    *name* overrides the filename stem (slugged); a blank one falls back to the
+    page title. When *download_images* is set, remote images are downloaded into
     ``attachments/<slug>/`` beside the note and rewritten to relative links, so
     the note and its images can be removed together."""
     import dataclasses
     vault_dir = Path(vault_dir)
     vault_dir.mkdir(parents=True, exist_ok=True)
-    stem = slug(result.title)
+    stem = slug(name) if name and name.strip() else slug(result.title)
     target = vault_dir / f"{stem}.md"
     n = 2
     while target.exists():
