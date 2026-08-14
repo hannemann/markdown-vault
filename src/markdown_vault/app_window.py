@@ -1163,6 +1163,7 @@ class MainWindow(Adw.ApplicationWindow):
         if vault and vault != self._active_vault:
             self._active_vault = vault
             self._vault_tree.set_active_vault(vault)
+        self._dump_debug(["tabs"])   # keep the tabs dump current on open/switch
 
     def _on_editor_modified(self, editor: Editor, dirty: bool) -> None:
         """Update the italic indicator on the tab for *dirty*."""
@@ -1186,6 +1187,7 @@ class MainWindow(Adw.ApplicationWindow):
         if not self._tab_bar.has_tabs():
             self._sidebar.update_for_file(None)
             self._vault_tree.set_open_file(None)
+        self._dump_debug(["tabs"])   # keep the tabs dump current on close
 
     def _on_tab_close_requested(self, paths_to_close, on_confirm=None) -> None:
         """Handle tab close request with dirty-check (R4.2).
