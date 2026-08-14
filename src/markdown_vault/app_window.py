@@ -186,6 +186,12 @@ class MainWindow(Adw.ApplicationWindow):
         self._vault_tree.connect("vault-renamed", self._on_vault_renamed)
         self._vault_tree.connect("vault-removed", self._on_vault_removed)
         self._vault_tree.connect("focus-current-file", self._on_focus_current_file_clicked)
+        self._vault_tree.connect("hide-deprecated-changed",
+                                 self._on_hide_deprecated_changed)
+        # Restore the shared "hide deprecated" state (tree filter is applied; the
+        # searches read the setting at query time).
+        self._vault_tree.set_hide_deprecated(
+            self._settings.get("hide_deprecated", False))
 
         self._vault_monitor = vault_monitor.VaultMonitor()
         self._vault_tree.vault_monitor = self._vault_monitor
@@ -403,6 +409,8 @@ class MainWindow(Adw.ApplicationWindow):
                 self._semantic_index.query_files(q) if self._semantic_index else []
             ),
             scope=self._scope_callbacks(),
+            hide_deprecated=self.hide_deprecated,
+            set_hide_deprecated=self.set_hide_deprecated,
         )
         self._search_bar.connect("file-selected", self._on_search_result_selected)
 
@@ -427,6 +435,8 @@ class MainWindow(Adw.ApplicationWindow):
             and (self._settings.get("ask_engine") or config.default("ask_engine"))
             != "off",
             scope=self._scope_callbacks(),
+            hide_deprecated=self.hide_deprecated,
+            set_hide_deprecated=self.set_hide_deprecated,
         )
         self._quick_open.connect("file-selected", self._on_search_result_selected)
         # Restore the last Ask question so the palette reopens pre-filled.
@@ -1659,6 +1669,32 @@ class MainWindow(Adw.ApplicationWindow):
             self._semantic_rename(old_path, new_path)
         else:
             self._semantic_update(new_path)  # moved in from outside
+
+    def _on_hide_deprecated_changed(self, _tree, active: bool) -> None:
+        """Persist the shared 'hide deprecated' toggle and re-filter any open
+        search results so the tree and the search surfaces stay consistent."""
+        self._settings["hide_deprecated"] = bool(active)
+        config.save_settings(self._settings)
+        self._refresh_search_deprecated_filter()
+
+    def hide_deprecated(self) -> bool:
+        """The shared 'hide deprecated' state, read by the search surfaces."""
+        return bool(self._settings.get("hide_deprecated", False))
+
+    def set_hide_deprecated(self, active: bool) -> None:
+        """Set the shared 'hide deprecated' state from anywhere (e.g. a search's
+        off button, reachable even behind the quick-open modal), keeping the tree
+        toggle, the setting and the search surfaces in sync."""
+        active = bool(active)
+        self._settings["hide_deprecated"] = active
+        config.save_settings(self._settings)
+        self._vault_tree.set_hide_deprecated(active)   # tree toggle + filter, no signal
+        self._refresh_search_deprecated_filter()
+
+    def _refresh_search_deprecated_filter(self) -> None:
+        """Re-apply the deprecated filter to any open search results, so search and
+        tree stay consistent when the shared toggle changes."""
+        self._search_bar.refresh_deprecated()
 
     def _make_quick_open_engine(self):
         """Build a fresh quick-open engine over the current vaults.

@@ -112,6 +112,9 @@ class VaultTree(Gtk.Box):
         "close-file-requested": (GObject.SignalFlags.RUN_LAST, None, (str,)),
         "file-renamed": (GObject.SignalFlags.RUN_LAST, None, (str, str)),
         "focus-current-file": (GObject.SignalFlags.RUN_LAST, None, ()),
+        # The user toggled "hide deprecated" — the window persists it and applies
+        # the same filter to the search surfaces.
+        "hide-deprecated-changed": (GObject.SignalFlags.RUN_LAST, None, (bool,)),
     }
 
     def __init__(self) -> None:
@@ -149,6 +152,13 @@ class VaultTree(Gtk.Box):
         title.set_hexpand(True)
         header.append(title)
 
+        self._hide_dep_btn = Gtk.ToggleButton(icon_name="view-conceal-symbolic")
+        self._hide_dep_btn.add_css_class("flat")
+        self._hide_dep_btn.add_css_class("circular")
+        self._hide_dep_btn.set_tooltip_text("Hide deprecated notes")
+        self._hide_dep_btn.connect("toggled", self._on_hide_deprecated_toggled)
+        header.append(self._hide_dep_btn)
+
         focus_btn = Gtk.Button(icon_name="find-location-symbolic")
         focus_btn.add_css_class("flat")
         focus_btn.add_css_class("circular")
@@ -173,7 +183,13 @@ class VaultTree(Gtk.Box):
             False,   # autoexpand
             self._create_child_model,
         )
-        self._selection = Gtk.SingleSelection(model=self._tree_model)
+        # "Hide deprecated" filter sits between the tree model and the selection —
+        # a view layer, so toggling it never touches expansion state.
+        self._hide_deprecated = False
+        self._dep_filter = Gtk.CustomFilter.new(self._filter_visible)
+        self._filtered_model = Gtk.FilterListModel.new(self._tree_model,
+                                                       self._dep_filter)
+        self._selection = Gtk.SingleSelection(model=self._filtered_model)
         self._selection.set_autoselect(False)
         self._selection.set_can_unselect(True)
 
@@ -361,11 +377,40 @@ class VaultTree(Gtk.Box):
         self._lifecycle_cache.pop(path, None)
         node = self._node_by_path.get(path)
         label = self._labels_by_node.get(node) if node is not None else None
-        if label is None:
-            return
-        row_box = label.get_parent()
-        if row_box is not None:
-            self._apply_lifecycle(node, label, row_box)
+        if label is not None:
+            row_box = label.get_parent()
+            if row_box is not None:
+                self._apply_lifecycle(node, label, row_box)
+        if self._hide_deprecated:
+            # the note may have (un)become deprecated — re-evaluate the filter so
+            # it appears/disappears from the hidden set too.
+            self._dep_filter.changed(Gtk.FilterChange.DIFFERENT)
+
+    def _filter_visible(self, row) -> bool:
+        """Filter predicate for the "hide deprecated" toggle: with it on, hide
+        deprecated leaf notes. Directories and vault roots are never hidden."""
+        if not self._hide_deprecated:
+            return True
+        node = row.get_item()
+        if node is None or node.is_dir or not node.name.lower().endswith(".md"):
+            return True
+        status, _stale = self._lifecycle(node.path)
+        return status != "deprecated"
+
+    def _on_hide_deprecated_toggled(self, button: Gtk.ToggleButton) -> None:
+        self._hide_deprecated = button.get_active()
+        self._dep_filter.changed(Gtk.FilterChange.DIFFERENT)
+        self.emit("hide-deprecated-changed", self._hide_deprecated)
+
+    def set_hide_deprecated(self, active: bool) -> None:
+        """Apply the shared 'hide deprecated' state (restored from settings) —
+        updates the toggle and filter WITHOUT re-emitting the change signal."""
+        active = bool(active)
+        self._hide_deprecated = active
+        self._hide_dep_btn.handler_block_by_func(self._on_hide_deprecated_toggled)
+        self._hide_dep_btn.set_active(active)
+        self._hide_dep_btn.handler_unblock_by_func(self._on_hide_deprecated_toggled)
+        self._dep_filter.changed(Gtk.FilterChange.DIFFERENT)
 
     def _on_factory_bind(self, _factory, list_item) -> None:
         row = list_item.get_item()          # GtkTreeListRow

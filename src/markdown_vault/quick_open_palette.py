@@ -17,7 +17,7 @@ gi.require_version("Adw", "1")
 
 from gi.repository import Gtk, Adw, GObject, GLib, Gdk
 
-from . import markdown_widgets, path_utils
+from . import markdown_widgets, path_utils, frontmatter
 from .quick_open import fuzzy_match
 
 logger = logging.getLogger(__name__)
@@ -41,10 +41,15 @@ class QuickOpenPalette(Adw.Dialog):
                  scope=None, can_ask=None, ask_candidates=None,
                  ask_answer_selected=None, get_top_k=None,
                  list_ask_models=None, set_ask_model=None,
-                 current_ask_model=None) -> None:
+                 current_ask_model=None, hide_deprecated=None,
+                 set_hide_deprecated=None) -> None:
         super().__init__()
         self._make_engine = make_engine
         self._semantic_query = semantic_query  # callable(query) -> list, off-thread
+        self._hide_deprecated = hide_deprecated  # callable() -> bool, shared state
+        self._set_hide_deprecated = set_hide_deprecated  # callable(bool), sets it
+        self._raw_file_results: list = [] # unfiltered filename hits (for re-render)
+        self._raw_sem_results: list = []  # unfiltered semantic hits (for re-render)
         self._ask_answer = ask_answer          # callable(question) -> ask.Answer
         self._can_ask = can_ask                # () -> bool: is Ask usable right now?
         # "Pick your own sources": candidates() -> [(path, score)], and
@@ -128,6 +133,43 @@ class QuickOpenPalette(Adw.Dialog):
 
         box.append(Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL))
 
+        # Upfront "deprecated hidden" bar with its OWN Show/Hide toggle — the
+        # shared tree toggle is unreachable behind this modal, so the dialog needs
+        # a reachable control. Show/Hide only re-renders the cached hits; a fresh
+        # (semantic) query needs a re-search, which the user triggers themselves.
+        # Always-visible top bar: the persistent "hide deprecated" toggle plus the
+        # vault-scope filter (moved here from the footer). No hint text — the
+        # toggle's pressed state is the indicator.
+        self._dep_bar = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        self._dep_bar.add_css_class("search-deprecated-bar")
+        self._dep_bar.append(Gtk.Box(hexpand=True))   # right-align the filters
+        self._scope_dropdown = None
+        if self._scope:
+            from .vault_scope import VaultScope
+            self._scope_dropdown = VaultScope(
+                self._scope["get_vaults_named"], self._scope["get_active"],
+                self._scope["get_scope"], self._scope["set_scope"],
+                on_change=self._on_scope_changed)
+            self._dep_bar.append(self._scope_dropdown)
+        # Pick-sources toggle (Ask) — between the vault filter and the deprecated
+        # toggle (moved up here from the footer).
+        self._pick_toggle = None
+        if self._ask_candidates is not None:
+            self._pick_toggle = Gtk.ToggleButton()
+            self._pick_toggle.set_icon_name("view-list-symbolic")
+            self._pick_toggle.set_tooltip_text(
+                "Pick sources — choose which notes to answer from")
+            self._pick_toggle.connect("toggled", self._on_pick_toggled)
+            self._dep_bar.append(self._pick_toggle)
+        self._dep_toggle = Gtk.ToggleButton(icon_name="view-conceal-symbolic")
+        self._dep_toggle.set_tooltip_text("Hide deprecated notes")
+        if self._hide_deprecated is not None:
+            self._dep_toggle.set_active(self._hide_deprecated())
+        self._dep_toggle.connect("toggled", self._on_dep_toggled)
+        self._dep_bar.append(self._dep_toggle)
+        box.append(self._dep_bar)
+        self.connect("map", lambda *_: self._sync_dep_toggle())
+
         self._results = Gtk.ListBox()
         self._results.set_selection_mode(Gtk.SelectionMode.SINGLE)
         self._results.add_css_class("quick-open-results")
@@ -192,21 +234,6 @@ class QuickOpenPalette(Adw.Dialog):
             self._model_dropdown.set_visible(False)
             self._model_dropdown.connect("notify::selected", self._on_model_selected)
             footer.append(self._model_dropdown)
-        self._scope_dropdown = None
-        if self._scope:
-            from .vault_scope import VaultScope
-            self._scope_dropdown = VaultScope(
-                self._scope["get_vaults_named"], self._scope["get_active"],
-                self._scope["get_scope"], self._scope["set_scope"],
-                on_change=self._on_scope_changed)
-            footer.append(self._scope_dropdown)
-        if ask_candidates is not None:
-            self._pick_toggle = Gtk.ToggleButton()
-            self._pick_toggle.set_icon_name("view-list-symbolic")
-            self._pick_toggle.set_tooltip_text(
-                "Pick sources — choose which notes to answer from")
-            self._pick_toggle.connect("toggled", self._on_pick_toggled)
-            footer.append(self._pick_toggle)
         if ask_answer is not None:
             self._ask_toggle = Gtk.ToggleButton()
             self._ask_toggle.set_icon_name("dialog-question-symbolic")
@@ -315,22 +342,51 @@ class QuickOpenPalette(Adw.Dialog):
         if self._ask_mode:
             return  # the entry holds a question; answering runs on Enter
         query = self._entry.get_text().strip()
-        self._clear()
         self._sem_generation += 1  # discard any in-flight semantic query
         if self._engine is None:
+            self._raw_file_results = []
+            self._raw_sem_results = []
+            self._render_all()
             return
-        results = self._scope_filter(
+        self._raw_file_results = self._scope_filter(
             self._engine.search(query, limit=self.MAX_RESULTS))
-        self._shown_paths = {r.path for r in results}
-        if results:
-            for r in results:
-                self._results.append(self._build_row(r))
-            first = self._results.get_row_at_index(0)
-            if first is not None:
-                self._results.select_row(first)
-        else:
-            self._results.append(self._message_row("No files"))
+        self._raw_sem_results = []
+        self._render_all()
         self._request_semantic(query)
+
+    def _render_all(self) -> None:
+        """Rebuild the list from the cached filename + semantic hits, hiding
+        deprecated notes when the shared toggle is on. Toggling re-renders from
+        here — no re-query, so a fresh (semantic) pass needs a new search."""
+        self._clear()
+        hide = self._hide_deprecated is not None and self._hide_deprecated()
+        self._shown_paths = set()
+        for r in self._raw_file_results + self._raw_sem_results:
+            if hide and frontmatter.status_of(r.path) == "deprecated":
+                continue
+            self._shown_paths.add(r.path)
+            self._results.append(self._build_row(r))
+        if self._results.get_row_at_index(0) is None:
+            self._results.append(self._message_row("No files"))
+        first = self._results.get_row_at_index(0)
+        if first is not None and getattr(first, "_mv_open", None) is not None:
+            self._results.select_row(first)
+
+    def _on_dep_toggled(self, btn) -> None:
+        """The persistent toggle drives the shared 'hide deprecated' state; the
+        file/semantic view re-renders (Ask applies it on the next question)."""
+        if self._set_hide_deprecated is not None:
+            self._set_hide_deprecated(btn.get_active())
+        if not self._ask_mode:
+            self._render_all()
+
+    def _sync_dep_toggle(self) -> None:
+        """Reflect the shared state on the toggle (e.g. changed from the tree while
+        the dialog was closed) without re-firing the handler."""
+        active = self._hide_deprecated is not None and self._hide_deprecated()
+        self._dep_toggle.handler_block_by_func(self._on_dep_toggled)
+        self._dep_toggle.set_active(active)
+        self._dep_toggle.handler_unblock_by_func(self._on_dep_toggled)
 
     def _request_semantic(self, query: str) -> None:
         """Fetch semantic matches off the main thread (the embed may be slow)."""
@@ -349,24 +405,15 @@ class QuickOpenPalette(Adw.Dialog):
         threading.Thread(target=worker, daemon=True).start()
 
     def _append_semantic(self, generation: int, results) -> bool:
-        """Append semantic-only hits once they arrive (if still current)."""
+        """Cache the semantic-only hits once they arrive (if still current) and
+        re-render with the current filter."""
         if generation != self._sem_generation:
             return False  # superseded by newer input
-        fresh = self._scope_filter(
-            [r for r in results if r.path not in self._shown_paths])
-        if not fresh:
-            return False
-        # Drop the "No files" placeholder if that's all there is.
-        first = self._results.get_row_at_index(0)
-        if first is not None and getattr(first, "_mv_open", None) is None:
-            self._results.remove(first)
-        for r in fresh:
-            self._shown_paths.add(r.path)
-            self._results.append(self._build_row(r))
-        if self._results.get_selected_row() is None:
-            row = self._first_row()
-            if row is not None:
-                self._results.select_row(row)
+        file_paths = {r.path for r in self._raw_file_results}
+        self._raw_sem_results = self._scope_filter(
+            [r for r in results if r.path not in file_paths])
+        if self._raw_sem_results:
+            self._render_all()
         return False
 
     # ------------------------------------------------------------------

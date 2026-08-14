@@ -5,6 +5,7 @@ predate this and are left untouched.
 """
 
 import datetime
+import os
 import re
 
 import yaml
@@ -53,6 +54,31 @@ def is_stale(meta: dict, today: datetime.date | None = None) -> bool:
         except (ValueError, TypeError):
             return False
     return (today or datetime.date.today()) >= raw
+
+
+_STATUS_CACHE: dict[str, tuple] = {}
+
+
+def status_of(path: str) -> str:
+    """Cached lifecycle status of a note *file* (keyed by mtime): reads only the
+    file head. ``'stable'`` if unreadable. Shared by the vault tree and the search
+    surfaces so a note is read once for the "hide deprecated" filter."""
+    try:
+        mtime = os.path.getmtime(path)
+    except OSError:
+        return "stable"
+    cached = _STATUS_CACHE.get(path)
+    if cached is not None and cached[0] == mtime:
+        return cached[1]
+    head = ""
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace") as fh:
+            head = fh.read(8192)
+    except OSError:
+        pass
+    result = status(parse(head))
+    _STATUS_CACHE[path] = (mtime, result)
+    return result
 
 
 def title(meta: dict) -> str:

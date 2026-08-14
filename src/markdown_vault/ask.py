@@ -431,7 +431,7 @@ def answer_question(question: str, semantic_index, settings: dict, vaults,
     to override (e.g. an eval sweep).  *note_paths*, when given, skips retrieval
     and uses exactly those notes as context (the user picked them).
     """
-    from . import config  # local import keeps ask import-light for tests
+    from . import config, frontmatter  # local import keeps ask import-light
     if semantic_index is None:
         return Answer(text="Semantic search is not active — without an index I "
                            "can't search your notes.")
@@ -442,6 +442,24 @@ def answer_question(question: str, semantic_index, settings: dict, vaults,
             top_k = int(settings.get("ask_top_k") or config.default("ask_top_k"))
         hits = semantic_index.retrieve(question, top_k=top_k, vaults=vaults,
                                        hybrid=bool(settings.get("ask_hybrid")))
+        if settings.get("hide_deprecated"):
+            # The shared "hide deprecated" filter applies to RAG retrieval too —
+            # drop deprecated notes from the context. An explicit user filter, not
+            # the automatic down-ranking we deliberately avoid.
+            kept = [(c, s) for c, s in hits
+                    if frontmatter.status_of(c.path) != "deprecated"]
+            if hits and not kept:
+                # Graceful fallback: everything that matched is deprecated. Rather
+                # than a bare "nothing found", say so and offer the excluded notes
+                # (dimmed) — turning the filter off is how to actually use them.
+                excluded = [Source(n=i, path=c.path, line=c.line, text=c.text)
+                            for i, (c, _s) in enumerate(hits, start=1)]
+                return Answer(
+                    text="Only deprecated notes match your question — they're "
+                         "excluded by the “hide deprecated” filter. Turn it off to "
+                         "use them.",
+                    considered=excluded)
+            hits = kept
     # Only override thinking when the user turned reasoning OFF, so non-reasoning
     # models (and Ollama, which errors on an unknown "think") keep their default.
     think = False if not settings.get("ask_reasoning", True) else None

@@ -416,6 +416,21 @@ class TestAnswerQuestionLocalBackend(unittest.TestCase):
             llama_runtime.availability = orig
         self.assertEqual(a.text, "MODEL MISSING")   # no backend call, just the reason
 
+    def test_hide_deprecated_all_deprecated_gives_graceful_message(self):
+        # Graceful fallback: when every retrieved note is deprecated and the filter
+        # is on, explain it (and offer the excluded notes) instead of "nothing".
+        from markdown_vault import frontmatter
+        orig = frontmatter.status_of
+        frontmatter.status_of = lambda p: "deprecated"
+        try:
+            a = ask.answer_question("q", self._sem(), {"hide_deprecated": True},
+                                    None, "English")
+        finally:
+            frontmatter.status_of = orig
+        self.assertIn("deprecated", a.text.lower())
+        self.assertIn("Turn it off", a.text)
+        self.assertEqual([s.n for s in a.considered], [1])   # excluded note offered
+
     def test_local_backend_fires_load_and_think_phases(self):
         from markdown_vault import llama_runtime
         orig_av, orig_cls = llama_runtime.availability, llama_runtime.LlamaCppChat

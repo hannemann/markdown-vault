@@ -48,9 +48,9 @@ class TestSemanticAppend(unittest.TestCase):
     def test_already_shown_not_duplicated(self):
         p = self._palette()
         p._sem_generation = 5
-        p._shown_paths = {"/v/note.md"}  # already a fuzzy hit
+        p._raw_file_results = [_sem("/v/note.md")]  # already a filename hit
         p._append_semantic(5, [_sem("/v/note.md")])
-        self.assertEqual(self._row_count(p), 0)
+        self.assertEqual(p._raw_sem_results, [])    # deduped against the file hit
 
     def test_request_semantic_skips_short_queries(self):
         calls = []

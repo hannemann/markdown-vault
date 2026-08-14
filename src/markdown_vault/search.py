@@ -27,7 +27,7 @@ gi.require_version("Adw", "1")
 
 from gi.repository import Gtk, GObject, GLib, Gdk
 
-from . import path_utils, search_backend
+from . import path_utils, search_backend, frontmatter
 
 logger = logging.getLogger(__name__)
 
@@ -50,11 +50,15 @@ class SearchBar(Gtk.Box):
     _DEBOUNCE_MS = 150
 
     def __init__(self, get_vault_paths=None, semantic_query=None,
-                 scope=None) -> None:
+                 scope=None, hide_deprecated=None,
+                 set_hide_deprecated=None) -> None:
         super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=0)
         self._get_vault_paths = get_vault_paths
         self._semantic_query = semantic_query  # callable(query) -> list[FileResult]
         self._scope = scope  # shared vault-scope callbacks (see _scope_callbacks)
+        self._hide_deprecated = hide_deprecated  # callable() -> bool, shared state
+        self._set_hide_deprecated = set_hide_deprecated  # callable(bool), sets it
+        self._last_results: list = []     # last completed set, for re-render
         self.set_visible(False)
         self.set_vexpand(True)
 
@@ -106,6 +110,15 @@ class SearchBar(Gtk.Box):
                 self._scope["get_scope"], self._scope["set_scope"],
                 on_change=self._run_search)
             input_box.append(self._scope_dropdown)
+
+        # Persistent "hide deprecated" toggle, on the left next to the vault-scope
+        # filter — mirrors and drives the shared state.
+        self._dep_toggle = Gtk.ToggleButton(icon_name="view-conceal-symbolic")
+        self._dep_toggle.set_tooltip_text("Hide deprecated notes")
+        if self._hide_deprecated is not None:
+            self._dep_toggle.set_active(self._hide_deprecated())
+        self._dep_toggle.connect("toggled", self._on_dep_toggled)
+        input_box.append(self._dep_toggle)
 
         self._spinner = Gtk.Spinner()
         self._spinner.set_visible(False)
@@ -318,17 +331,41 @@ class SearchBar(Gtk.Box):
         if generation != self._generation:
             return False  # superseded by a newer search
         self._stop_spinner()
+        self._last_results = file_results
+        self._reveal_deprecated = False       # a fresh result set starts hidden
+        self._render_results()
+        return False
+
+    def _render_results(self) -> None:
+        """Render (or re-render) the last completed result set, hiding deprecated
+        notes when the shared toggle is on."""
         self._clear_results()
-        if not file_results:
-            self._results.append(self._message_row("No results found"))
-            return False
-        for fr in file_results:
+        hide = self._hide_deprecated is not None and self._hide_deprecated()
+        for fr in self._last_results:
+            if hide and frontmatter.status_of(fr.path) == "deprecated":
+                continue
             self._results.append(self._build_file_header(fr))
             for match in fr.matches:
                 self._results.append(self._build_match_row(match))
             if fr.total_matches > len(fr.matches):
                 self._results.append(self._more_row(fr))
-        return False
+        if self._results.get_row_at_index(0) is None:
+            self._results.append(self._message_row("No results found"))
+
+    def _on_dep_toggled(self, btn) -> None:
+        """The persistent toggle drives the shared 'hide deprecated' state."""
+        if self._set_hide_deprecated is not None:
+            self._set_hide_deprecated(btn.get_active())
+
+    def refresh_deprecated(self) -> None:
+        """Sync the toggle to the shared state and re-render — called when the
+        state changes here or elsewhere so search and tree stay consistent."""
+        active = self._hide_deprecated is not None and self._hide_deprecated()
+        self._dep_toggle.handler_block_by_func(self._on_dep_toggled)
+        self._dep_toggle.set_active(active)
+        self._dep_toggle.handler_unblock_by_func(self._on_dep_toggled)
+        if self._last_results:
+            self._render_results()
 
     # ------------------------------------------------------------------
     # Result rows

@@ -254,6 +254,9 @@ def set_vault_icon(path: str, icon: str | None, mono: bool = False) -> list[dict
 _DEFAULT_SETTINGS = {
     "autosave_interval": 30,
     "default_view_mode": "edit",
+    # OKF lifecycle: hide deprecated notes from the vault tree AND the search
+    # surfaces (with a visible "N hidden" notice). One shared, persisted toggle.
+    "hide_deprecated": False,
     "editor_font_size": 14,
     "editor_tab_width": 4,
     "editor_wrap_text": True,
