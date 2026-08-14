@@ -1,419 +1,159 @@
-"""Tests for latex_mathml — LaTeX-to-MathML converter."""
+"""Tests for the LaTeX->MathML wrapper (latex2mathml) and the arithmatex glue.
+
+The conversion itself is latex2mathml's job; these tests cover our thin wrapper
+(display mode, empty input, graceful fallback) and the MathMLPostprocessor that
+turns pymdownx.arithmatex's <script type="math/tex"> tags into <math> elements.
+"""
 
 import unittest
-from unittest.mock import patch
+from unittest import mock
 
-from markdown_vault.latex_mathml import (
-    tokenize,
-    Token,
-    TokenType,
-    parse,
-    ASTNode,
-    NodeType,
-    latex_to_mathml,
-    MathMLPostprocessor,
-)
+from markdown_vault.latex_mathml import latex_to_mathml, MathMLPostprocessor
 
 
-# ---------------------------------------------------------------------------
-# Tokenizer tests
-# ---------------------------------------------------------------------------
+class TestLatexToMathml(unittest.TestCase):
+    def test_returns_math_element(self):
+        self.assertIn("<math", latex_to_mathml("E = mc^2"))
 
-class TestTokenizer(unittest.TestCase):
-    """Verify the LaTeX tokenizer produces correct token streams."""
+    def test_inline_display_attribute(self):
+        out = latex_to_mathml("x", inline=True)
+        self.assertIn('display="inline"', out)
+        self.assertNotIn('display="block"', out)
 
-    def test_simple_variables(self):
-        tokens = tokenize("E = mc^2")
-        types = [t.type for t in tokens]
-        self.assertEqual(types, [
-            TokenType.VARIABLE,
-            TokenType.SPACE,
-            TokenType.OPERATOR,
-            TokenType.SPACE,
-            TokenType.VARIABLE,
-            TokenType.VARIABLE,
-            TokenType.SUPERSCRIPT,
-            TokenType.NUMBER,
-        ])
+    def test_block_display_attribute(self):
+        self.assertIn('display="block"', latex_to_mathml("x", inline=False))
 
-    def test_group_braces(self):
-        tokens = tokenize("\\frac{a}{b}")
-        types = [t.type for t in tokens]
-        self.assertIn(TokenType.COMMAND, types)
-        self.assertIn(TokenType.GROUP_OPEN, types)
+    def test_library_is_wired(self):
+        # Sanity that the library actually converts (structure, not exact markup).
+        self.assertIn("<mfrac>", latex_to_mathml("\\frac{a}{b}"))
+        self.assertIn("<msqrt>", latex_to_mathml("\\sqrt{2}"))
 
-    def test_subscript(self):
-        tokens = tokenize("x_{1}")
-        types = [t.type for t in tokens]
-        self.assertIn(TokenType.SUBSCRIPT, types)
-        self.assertIn(TokenType.GROUP_OPEN, types)
+    def test_empty_input_is_valid_empty_math(self):
+        out = latex_to_mathml("", inline=True)
+        self.assertIn("<math", out)
+        self.assertIn("</math>", out)
 
-    def test_command_recognition(self):
-        tokens = tokenize("\\sum \\frac \\sqrt \\pi")
-        commands = [t.value for t in tokens if t.type == TokenType.COMMAND]
-        symbols = [t.value for t in tokens if t.type == TokenType.SYMBOL]
-        self.assertEqual(commands, ["sum", "frac", "sqrt"])
-        self.assertEqual(symbols, ["\\pi"])
+    def test_malformed_input_does_not_raise(self):
+        # Whatever the library does with a broken formula, we return valid <math>.
+        self.assertIn("<math", latex_to_mathml("\\frac{a}{", inline=True))
 
-    def test_empty_input(self):
-        tokens = tokenize("")
-        self.assertEqual(tokens, [])
+    def test_output_is_well_formed_xml(self):
+        # The \text{} input contains raw <, >, & (now harvested from arbitrary web
+        # pages' MathML annotations); our wrapper must escape them so the OUTPUT we
+        # inject into the preview stays well-formed XML.
+        from lxml import etree
+        for tex in (r"\text{a < b & c}", r"\text{<b>x</b>}", r"\text{R&D; and AT&T;}",
+                    r"\frac{a}{b}", "E = mc^2"):
+            etree.fromstring(latex_to_mathml(tex, inline=True))   # raises if bad
 
-    def test_special_operators(self):
-        tokens = tokenize("\\cdot \\times \\leq \\geq")
-        values = [(t.type, t.value) for t in tokens]
-        self.assertIn((TokenType.SYMBOL, "\\cdot"), values)
-        self.assertIn((TokenType.SYMBOL, "\\times"), values)
-        self.assertIn((TokenType.SYMBOL, "\\leq"), values)
-        self.assertIn((TokenType.SYMBOL, "\\geq"), values)
+    def test_text_special_chars_are_escaped(self):
+        out = latex_to_mathml(r"\text{a < b & c}", inline=True)
+        self.assertIn("&lt;", out)
+        self.assertIn("&amp;", out)
 
-    def test_backslash_infinity(self):
-        tokens = tokenize("\\infty")
-        self.assertEqual(len(tokens), 1)
-        self.assertEqual(tokens[0].type, TokenType.SYMBOL)
-        self.assertEqual(tokens[0].value, "\\infty")
+    def test_smuggled_tag_is_neutralised(self):
+        out = latex_to_mathml(r"\text{<b>x</b>}", inline=True)
+        self.assertNotIn("<b>", out)          # not kept as real markup
+        self.assertIn("&lt;b&gt;", out)
 
-    def test_alignment_ampersand(self):
-        tokens = tokenize("a &= b")
-        types = [t.type for t in tokens]
-        self.assertIn(TokenType.ALIGN, types)
+    def test_numeric_entities_are_preserved(self):
+        # latex2mathml uses &#x…; for spacing — those must not be double-escaped.
+        out = latex_to_mathml(r"a \quad b", inline=True)
+        self.assertNotIn("&amp;#x", out)
 
-    def test_line_break(self):
-        tokens = tokenize("a \\\\ b")
-        types = [t.type for t in tokens]
-        self.assertIn(TokenType.LINE_BREAK, types)
+    def test_converter_error_falls_back_to_escaped_text(self):
+        # A converter exception must degrade to the source as escaped text inside
+        # valid MathML — one bad formula can't break the whole preview.
+        with mock.patch("markdown_vault.latex_mathml.convert",
+                        side_effect=ValueError("boom")):
+            out = latex_to_mathml("x < y & z", inline=False)
+        self.assertIn("<math", out)
+        self.assertIn('display="block"', out)
+        self.assertIn("<mtext>", out)
+        self.assertIn("&lt;", out)          # escaped, not raw
+        self.assertIn("&amp;", out)
 
-
-# ---------------------------------------------------------------------------
-# Parser tests
-# ---------------------------------------------------------------------------
-
-class TestParser(unittest.TestCase):
-    """Verify the parser builds correct ASTs from token streams."""
-
-    def test_simple_expression(self):
-        node = parse("E = mc^2")
-        self.assertEqual(node.type, NodeType.ROOT)
-        self.assertTrue(len(node.children) > 0)
-
-    def test_fraction(self):
-        node = parse("\\frac{a}{b}")
-        # Should find a FRAC node somewhere
-        frac_nodes = _find_nodes(node, NodeType.FRAC)
-        self.assertEqual(len(frac_nodes), 1)
-        frac = frac_nodes[0]
-        self.assertIsNotNone(frac.children[0])  # numerator
-        self.assertIsNotNone(frac.children[1])  # denominator
-
-    def test_sum_with_limits(self):
-        node = parse("\\sum_{i=1}^{n}")
-        sum_nodes = _find_nodes(node, NodeType.SUM)
-        self.assertEqual(len(sum_nodes), 1)
-
-    def test_integral(self):
-        node = parse("\\int_{-\\infty}^{\\infty}")
-        int_nodes = _find_nodes(node, NodeType.INTEGRAL)
-        self.assertEqual(len(int_nodes), 1)
-
-    def test_sqrt(self):
-        node = parse("\\sqrt{\\pi}")
-        sqrt_nodes = _find_nodes(node, NodeType.SQRT)
-        self.assertEqual(len(sqrt_nodes), 1)
-
-    def test_sqrt_with_optional(self):
-        node = parse("\\sqrt[n]{x}")
-        sqrt_n_nodes = _find_nodes(node, NodeType.SQRT_N)
-        self.assertEqual(len(sqrt_n_nodes), 1)
-
-    def test_bold(self):
-        node = parse("\\mathbf{E}")
-        bold_nodes = _find_nodes(node, NodeType.BOLD)
-        self.assertEqual(len(bold_nodes), 1)
-
-    def test_aligned_environment(self):
-        latex = "\\begin{aligned} a &= b \\\\ c &= d \\end{aligned}"
-        node = parse(latex)
-        aligned_nodes = _find_nodes(node, NodeType.ALIGNED)
-        self.assertEqual(len(aligned_nodes), 1)
-
-    def test_greek_letter_pi(self):
-        node = parse("\\pi")
-        symbol_nodes = _find_nodes(node, NodeType.SYMBOL)
-        self.assertTrue(any(n.value == "\\pi" for n in symbol_nodes))
-
-    def test_partial_derivative(self):
-        node = parse("\\partial")
-        symbol_nodes = _find_nodes(node, NodeType.SYMBOL)
-        self.assertTrue(any(n.value == "\\partial" for n in symbol_nodes))
-
-
-# ---------------------------------------------------------------------------
-# MathML rendering tests
-# ---------------------------------------------------------------------------
-
-class TestMathMLRendering(unittest.TestCase):
-    """Verify LaTeX→MathML conversion produces valid MathML."""
-
-    def test_simple_inline(self):
-        result = latex_to_mathml("E = mc^2", inline=True)
-        self.assertIn("<math", result)
-        self.assertIn(">", result)
-        self.assertIn("<mi>E</mi>", result)
-        self.assertIn("<mi>m</mi>", result)
-        self.assertIn("<mi>c</mi>", result)
-        self.assertNotIn('display="block"', result)
-
-    def test_simple_block(self):
-        result = latex_to_mathml("E = mc^2", inline=False)
-        self.assertIn('display="block"', result)
-
-    def test_fraction(self):
-        result = latex_to_mathml("\\frac{a}{b}", inline=True)
-        self.assertIn("<mfrac>", result)
-        self.assertIn("<mi>a</mi>", result)
-        self.assertIn("<mi>b</mi>", result)
-
-    def test_sum(self):
-        result = latex_to_mathml("\\sum_{i=1}^{n}", inline=True)
-        self.assertIn("<msubsup>", result)
-
-    def test_integral(self):
-        result = latex_to_mathml("\\int_{-\\infty}^{\\infty}", inline=True)
-        self.assertIn("<msubsup>", result)
-        self.assertIn("\u222B", result)  # ∫ character
-
-    def test_sqrt(self):
-        result = latex_to_mathml("\\sqrt{\\pi}", inline=True)
-        self.assertIn("<msqrt>", result)
-
-    def test_sqrt_nth_root(self):
-        result = latex_to_mathml("\\sqrt[n]{x}", inline=True)
-        self.assertIn("<mroot>", result)
-        self.assertNotIn("]", result)
-
-    def test_bold(self):
-        result = latex_to_mathml("\\mathbf{E}", inline=True)
-        self.assertIn('mathvariant="bold"', result)
-
-    def test_pi_symbol(self):
-        result = latex_to_mathml("\\pi", inline=True)
-        self.assertIn("\u03C0", result)  # π character
-
-    def test_infinity_symbol(self):
-        result = latex_to_mathml("\\infty", inline=True)
-        self.assertIn("\u221E", result)  # ∞ character
-
-    def test_aligned(self):
-        latex = "\\begin{aligned} a &= b \\\\ c &= d \\end{aligned}"
-        result = latex_to_mathml(latex, inline=False)
-        self.assertIn("<mtable", result)
-        self.assertIn("<mtr>", result)
-        self.assertIn("<mtd>", result)
-
-    def test_partial(self):
-        result = latex_to_mathml("\\partial", inline=True)
-        self.assertIn("\u2202", result)  # ∂ character
-
-    def test_empty_input(self):
-        result = latex_to_mathml("", inline=True)
-        self.assertIn("<math", result)
-
-    def test_display_block_attribute(self):
-        result = latex_to_mathml("x", inline=False)
-        self.assertIn('display="block"', result)
-        self.assertIn('displaystyle="true"', result)
-
-    def test_display_inline_no_attribute(self):
-        result = latex_to_mathml("x", inline=True)
-        self.assertNotIn('display="block"', result)
-
-    def test_nested_frac_in_sqrt(self):
-        result = latex_to_mathml("\\sqrt{\\frac{a}{b}}", inline=True)
-        self.assertIn("<msqrt>", result)
-        self.assertIn("<mfrac>", result)
-
-    def test_xml_escaping_less_than(self):
-        result = latex_to_mathml("a < b", inline=True)
-        self.assertIn("<", result)
-        self.assertNotIn("<mo><</mo>", result)
-
-    def test_xml_escaping_greater_than(self):
-        result = latex_to_mathml("a > b", inline=True)
-        self.assertIn(">", result)
-        self.assertNotIn("<mo>></mo>", result)
-
-    def test_xml_escaping_ampersand(self):
-        result = latex_to_mathml("a & b", inline=True)
-        self.assertIn("&", result)
-        self.assertNotIn("<mtext>&</mtext>", result)
-
-    def test_xml_escaping_in_text(self):
-        result = latex_to_mathml("\\text{a & b <tag>}", inline=True)
-        self.assertIn("&", result)
-        self.assertIn("<", result)
-        self.assertIn(">", result)
-
-    def test_xml_escaping_in_variable(self):
-        result = latex_to_mathml("x < y", inline=True)
-        self.assertIn("<", result)
-
-    def test_single_token_fraction(self):
-        # Single-character args (braced form is standard LaTeX; single-char without braces works for digits)
-        result = latex_to_mathml("\\frac{1}{2}", inline=True)
-        self.assertIn("<mfrac>", result)
-        self.assertIn("<mn>1</mn>", result)
-        self.assertIn("<mn>2</mn>", result)
-
-    def test_single_token_sqrt(self):
-        result = latex_to_mathml("\\sqrt{2}", inline=True)
-        self.assertIn("<msqrt>", result)
-        self.assertIn("<mn>2</mn>", result)
-
-    def test_single_token_binom(self):
-        result = latex_to_mathml("\\binom{3}{4}", inline=True)
-        self.assertIn("<mfrac linethickness=\"0\">", result)
-        self.assertIn("<mn>3</mn>", result)
-        self.assertIn("<mn>4</mn>", result)
-        self.assertIn("<mo>(</mo>", result)
-        self.assertIn("<mo>)</mo>", result)
-
-    def test_single_token_sqrt_n(self):
-        result = latex_to_mathml("\\sqrt[3]{x}", inline=True)
-        self.assertIn("<mroot>", result)
-        self.assertIn("<mn>3</mn>", result)
-        self.assertIn("<mi>x</mi>", result)
-
-
-# ---------------------------------------------------------------------------
-# Postprocessor tests
-# ---------------------------------------------------------------------------
 
 class TestMathMLPostprocessor(unittest.TestCase):
-    """Verify the HTML postprocessor replaces <script> tags with <math>."""
+    """The postprocessor replaces arithmatex <script> tags with <math>."""
 
     def setUp(self):
         self.pp = MathMLPostprocessor()
 
     def test_replaces_block_script(self):
-        html = '<p><script type="math/tex">E = mc^2</script></p>'
-        result = self.pp.run(html)
+        result = self.pp.run('<p><script type="math/tex">E = mc^2</script></p>')
         self.assertIn("<math", result)
         self.assertNotIn("<script", result)
 
     def test_replaces_inline_script(self):
-        html = '<p><script type="math/tex; mode=inline">E = mc^2</script></p>'
-        result = self.pp.run(html)
+        result = self.pp.run(
+            '<p><script type="math/tex; mode=inline">E = mc^2</script></p>')
         self.assertIn("<math", result)
         self.assertNotIn("<script", result)
 
     def test_block_script_gets_display_block(self):
-        html = '<script type="math/tex">x^2</script>'
-        result = self.pp.run(html)
-        self.assertIn('display="block"', result)
+        self.assertIn('display="block"',
+                      self.pp.run('<script type="math/tex">x^2</script>'))
 
     def test_inline_script_no_display_block(self):
-        html = '<script type="math/tex; mode=inline">x^2</script>'
-        result = self.pp.run(html)
-        self.assertNotIn('display="block"', result)
+        self.assertNotIn(
+            'display="block"',
+            self.pp.run('<script type="math/tex; mode=inline">x^2</script>'))
 
     def test_no_script_tags_unchanged(self):
         html = "<p>Hello world</p>"
-        result = self.pp.run(html)
-        self.assertEqual(result, html)
+        self.assertEqual(self.pp.run(html), html)
 
     def test_multiple_scripts(self):
-        html = (
-            '<script type="math/tex">a</script>'
-            '<script type="math/tex; mode=inline">b</script>'
-            '<script type="math/tex">c</script>'
-        )
+        html = ('<script type="math/tex">a</script>'
+                '<script type="math/tex; mode=inline">b</script>'
+                '<script type="math/tex">c</script>')
         result = self.pp.run(html)
         self.assertNotIn("<script", result)
         self.assertEqual(result.count("<math"), 3)
 
     def test_script_with_fraction(self):
-        html = '<script type="math/tex">\\frac{a}{b}</script>'
-        result = self.pp.run(html)
-        self.assertIn("<mfrac>", result)
+        self.assertIn("<mfrac>",
+                      self.pp.run('<script type="math/tex">\\frac{a}{b}</script>'))
 
-    def test_removes_arithmatex_wrapper(self):
-        html = (
-            '<div class="arithmatex">\n'
-            '<div class="MathJax_Preview">\n'
-            '\\sum_{i=1}^{n} i = \\frac{n(n+1)}{2}\n'
-            '</div>\n'
-            '<script type="math/tex; mode=display">\n'
-            '\\sum_{i=1}^{n} i = \\frac{n(n+1)}{2}\n'
-            '</script>\n'
-            '</div>'
-        )
+    def test_removes_arithmatex_block_wrapper(self):
+        html = ('<div class="arithmatex">\n'
+                '<div class="MathJax_Preview">\n\\frac{a}{b}\n</div>\n'
+                '<script type="math/tex; mode=display">\n\\frac{a}{b}\n</script>\n'
+                '</div>')
         result = self.pp.run(html)
         self.assertIn("<math", result)
         self.assertNotIn("MathJax_Preview", result)
         self.assertNotIn("<script", result)
         self.assertNotIn("arithmatex", result)
 
-    def test_removes_arithmatex_wrapper_inline(self):
-        html = (
-            '<p>Die Formel <span class="arithmatex">'
-            '<script type="math/tex; mode=inline">E = mc^2</script>'
-            '</span> ist berühmt.</p>'
-        )
+    def test_removes_arithmatex_inline_wrapper(self):
+        html = ('<p>Die Formel <span class="arithmatex">'
+                '<script type="math/tex; mode=inline">E = mc^2</script>'
+                '</span> ist berühmt.</p>')
         result = self.pp.run(html)
         self.assertIn("<math", result)
         self.assertNotIn("<script", result)
         self.assertIn("ist berühmt", result)
 
 
-# ---------------------------------------------------------------------------
-# Integration: full Markdown → HTML with math
-# ---------------------------------------------------------------------------
-
 class TestMathIntegration(unittest.TestCase):
-    """Test math rendering through the full Markdown pipeline."""
+    """Math rendering through the full Markdown pipeline."""
+
+    def _render(self, text):
+        import markdown
+        from markdown_vault.preview import MARKDOWN_EXTENSIONS, EXTENSION_CONFIGS
+        html = markdown.markdown(text, extensions=MARKDOWN_EXTENSIONS,
+                                 extension_configs=EXTENSION_CONFIGS)
+        return MathMLPostprocessor().run(html)
 
     def test_inline_math_in_markdown(self):
-        import markdown
-        from markdown_vault.preview import MARKDOWN_EXTENSIONS, EXTENSION_CONFIGS
-        text = "Die Formel $E = mc^2$ ist berühmt."
-        result = markdown.markdown(
-            text,
-            extensions=MARKDOWN_EXTENSIONS,
-            extension_configs=EXTENSION_CONFIGS,
-        )
-        self.assertIn("script", result)
-        pp = MathMLPostprocessor()
-        result = pp.run(result)
-        self.assertIn("<math", result)
+        self.assertIn("<math", self._render("Die Formel $E = mc^2$ ist berühmt."))
 
     def test_block_math_in_markdown(self):
-        import markdown
-        from markdown_vault.preview import MARKDOWN_EXTENSIONS, EXTENSION_CONFIGS
-        text = "$$\n\\sum_{i=1}^{n} i = \\frac{n(n+1)}{2}\n$$"
-        result = markdown.markdown(
-            text,
-            extensions=MARKDOWN_EXTENSIONS,
-            extension_configs=EXTENSION_CONFIGS,
-        )
-        pp = MathMLPostprocessor()
-        result = pp.run(result)
-        self.assertIn("<math", result)
-        self.assertIn("<mfrac>", result)
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-def _find_nodes(node: ASTNode, node_type: NodeType) -> list:
-    """Recursively find all nodes of a given type in the AST."""
-    found = []
-    if node.type == node_type:
-        found.append(node)
-    for child in node.children:
-        if isinstance(child, ASTNode):
-            found.extend(_find_nodes(child, node_type))
-    return found
+        out = self._render("$$\n\\sum_{i=1}^{n} i = \\frac{n(n+1)}{2}\n$$")
+        self.assertIn("<math", out)
+        self.assertIn("<mfrac>", out)
 
 
 if __name__ == "__main__":

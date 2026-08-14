@@ -6,6 +6,9 @@ Markdown==3.10.2
 PyYAML==6.0.3
 pymdown-extensions==11.0.1
 Pygments==2.20.0
+# Math rendering: LaTeX -> MathML (pure Python, offline, no JS/CDN); WebKit
+# renders the MathML natively.
+latex2mathml==3.77.0
 # Web import: main-content extraction (HTML -> markdown), no browser. Pulls lxml
 # (a compiled wheel), so the base install is no longer pure-Python.
 trafilatura==2.2.0
