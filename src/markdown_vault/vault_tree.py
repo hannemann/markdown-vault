@@ -144,9 +144,6 @@ class VaultTree(Gtk.Box):
         self._open_file_path: str | None = None
         self._vault_icons: dict[str, str] = {}  # vault path -> emoji
         self._vault_mono: dict[str, bool] = {}  # vault path -> monochrome flag
-        # path -> (mtime, (status, is_stale)); lifecycle badges read lazily per
-        # visible row and cached so scrolling doesn't re-read the file.
-        self._lifecycle_cache: dict[str, tuple] = {}
 
         # path -> VaultNode for O(1) lookups; label widget bookkeeping so the
         # active-vault highlight and drop-target highlight can be refreshed
@@ -316,28 +313,6 @@ class VaultTree(Gtk.Box):
         drop.connect("drop", self._on_drop, list_item)
         expander.add_controller(drop)
 
-    def _lifecycle(self, path: str) -> tuple[str, bool]:
-        """``(status, is_stale)`` for a note from its frontmatter, cached by mtime.
-        Only the file head is read (the block sits at the top), and the cache keeps
-        scrolling from re-reading it."""
-        try:
-            mtime = os.path.getmtime(path)
-        except OSError:
-            return ("stable", False)
-        cached = self._lifecycle_cache.get(path)
-        if cached is not None and cached[0] == mtime:
-            return cached[1]
-        head = ""
-        try:
-            with open(path, "r", encoding="utf-8", errors="replace") as fh:
-                head = fh.read(8192)
-        except OSError:
-            pass
-        meta = frontmatter.parse(head)
-        info = (frontmatter.status(meta), frontmatter.is_stale(meta))
-        self._lifecycle_cache[path] = (mtime, info)
-        return info
-
     @staticmethod
     def _lifecycle_badge(status: str, stale: bool):
         """A trailing pill box for a non-``stable`` lifecycle, or ``None``."""
@@ -376,7 +351,7 @@ class VaultTree(Gtk.Box):
             child = nxt
         if node.is_dir or not node.name.lower().endswith(".md"):
             return
-        status, stale = self._lifecycle(node.path)
+        status, stale = frontmatter.lifecycle_of(node.path)
         if status == "deprecated":
             label.add_css_class("tree-deprecated")
         elif status == "draft":
@@ -390,7 +365,7 @@ class VaultTree(Gtk.Box):
         in place — called on save so an edited status shows without a re-bind and
         without collapsing the tree. A no-op if the row isn't currently bound
         (off-screen); it re-reads on its next bind anyway."""
-        self._lifecycle_cache.pop(path, None)
+        frontmatter.invalidate(path)
         node = self._node_by_path.get(path)
         label = self._labels_by_node.get(node) if node is not None else None
         if label is not None:
@@ -410,7 +385,7 @@ class VaultTree(Gtk.Box):
         node = row.get_item()
         if node is None or node.is_dir or not node.name.lower().endswith(".md"):
             return True
-        status, _stale = self._lifecycle(node.path)
+        status, _stale = frontmatter.lifecycle_of(node.path)
         return status != "deprecated"
 
     def _on_hide_deprecated_toggled(self, button: Gtk.ToggleButton) -> None:

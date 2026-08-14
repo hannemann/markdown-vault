@@ -40,45 +40,73 @@ def status(meta: dict) -> str:
     return s if s in STATUSES else "stable"
 
 
-def is_stale(meta: dict, today: datetime.date | None = None) -> bool:
-    """Whether the note is stale: its ``stale_after`` date (``YYYY-MM-DD``) is
-    today or in the past. Missing or unparseable → not stale."""
+def _stale_after(meta: dict) -> datetime.date | None:
+    """The ``stale_after`` date (``YYYY-MM-DD``) as a ``date``, or ``None`` if
+    absent/unparseable. ``datetime`` is tested before ``date`` because the former
+    subclasses the latter."""
     raw = meta.get("stale_after")
     if raw is None:
-        return False
+        return None
     if isinstance(raw, datetime.datetime):
-        raw = raw.date()
-    if not isinstance(raw, datetime.date):
-        try:
-            raw = datetime.date.fromisoformat(str(raw).strip())
-        except (ValueError, TypeError):
-            return False
-    return (today or datetime.date.today()) >= raw
+        return raw.date()
+    if isinstance(raw, datetime.date):
+        return raw
+    try:
+        return datetime.date.fromisoformat(str(raw).strip())
+    except (ValueError, TypeError):
+        return None
 
 
-_STATUS_CACHE: dict[str, tuple] = {}
+def is_stale(meta: dict, today: datetime.date | None = None) -> bool:
+    """Whether the note is stale: its ``stale_after`` date is today or in the
+    past. Missing or unparseable → not stale."""
+    date = _stale_after(meta)
+    return date is not None and (today or datetime.date.today()) >= date
 
 
-def status_of(path: str) -> str:
-    """Cached lifecycle status of a note *file* (keyed by mtime): reads only the
-    file head. ``'stable'`` if unreadable. Shared by the vault tree and the search
-    surfaces so a note is read once for the "hide deprecated" filter."""
+# path -> (mtime, status, stale_after_date_or_None). The date is cached (it only
+# changes when the file does); staleness is recomputed against *today* on every
+# call, so a note crossing its stale_after date is picked up without a re-read.
+_LIFECYCLE_CACHE: dict[str, tuple] = {}
+
+
+def lifecycle_of(path: str, today: datetime.date | None = None) -> tuple:
+    """``(status, stale)`` for a note *file*, reading only the file head and
+    caching the parse by mtime. ``('stable', False)`` if unreadable. The single
+    reader shared by the vault tree and the search surfaces, so a note is read
+    once for the "hide deprecated" filter and the lifecycle badges."""
     try:
         mtime = os.path.getmtime(path)
     except OSError:
-        return "stable"
-    cached = _STATUS_CACHE.get(path)
-    if cached is not None and cached[0] == mtime:
-        return cached[1]
-    head = ""
-    try:
-        with open(path, "r", encoding="utf-8", errors="replace") as fh:
-            head = fh.read(8192)
-    except OSError:
-        pass
-    result = status(parse(head))
-    _STATUS_CACHE[path] = (mtime, result)
-    return result
+        return ("stable", False)
+    cached = _LIFECYCLE_CACHE.get(path)
+    if cached is None or cached[0] != mtime:
+        head = ""
+        try:
+            with open(path, "r", encoding="utf-8", errors="replace") as fh:
+                head = fh.read(8192)
+        except OSError:
+            pass
+        meta = parse(head)
+        cached = (mtime, status(meta), _stale_after(meta))
+        _LIFECYCLE_CACHE[path] = cached
+    _mtime, st, date = cached
+    stale = date is not None and (today or datetime.date.today()) >= date
+    return (st, stale)
+
+
+def status_of(path: str) -> str:
+    """Cached lifecycle status of a note *file* — see :func:`lifecycle_of`."""
+    return lifecycle_of(path)[0]
+
+
+def invalidate(path: str | None = None) -> None:
+    """Drop the cached lifecycle for *path* (or the whole cache when ``None``), so
+    the next read re-parses. Call after a note's frontmatter may have changed."""
+    if path is None:
+        _LIFECYCLE_CACHE.clear()
+    else:
+        _LIFECYCLE_CACHE.pop(path, None)
 
 
 def _stem(path: str) -> str:

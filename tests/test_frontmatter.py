@@ -70,6 +70,43 @@ class TestTitleDescription(unittest.TestCase):
         self.assertEqual(fm.description({"description": None}), "")
 
 
+class TestLifecycleOf(unittest.TestCase):
+    def setUp(self):
+        self._dir = tempfile.mkdtemp()
+        fm.invalidate()          # start from a clean cache
+
+    def _write(self, name, text):
+        path = os.path.join(self._dir, name)
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(text)
+        return path
+
+    def test_status_and_stale(self):
+        path = self._write(
+            "a.md", "---\nstatus: deprecated\nstale_after: 2020-01-01\n---\nx")
+        self.assertEqual(fm.lifecycle_of(path, today=datetime.date(2026, 1, 1)),
+                         ("deprecated", True))
+
+    def test_not_yet_stale(self):
+        path = self._write("b.md", "---\nstale_after: 2099-01-01\n---\nx")
+        self.assertEqual(fm.lifecycle_of(path, today=datetime.date(2026, 1, 1)),
+                         ("stable", False))
+
+    def test_staleness_recomputed_against_today_despite_cache(self):
+        # Same file (same mtime → cache hit), but crossing the date flips stale.
+        path = self._write("c.md", "---\nstale_after: 2026-06-15\n---\nx")
+        self.assertFalse(fm.lifecycle_of(path, today=datetime.date(2026, 6, 14))[1])
+        self.assertTrue(fm.lifecycle_of(path, today=datetime.date(2026, 6, 15))[1])
+
+    def test_status_of_delegates(self):
+        path = self._write("d.md", "---\nstatus: draft\n---\nx")
+        self.assertEqual(fm.status_of(path), "draft")
+
+    def test_unreadable(self):
+        self.assertEqual(fm.lifecycle_of(os.path.join(self._dir, "no.md")),
+                         ("stable", False))
+
+
 class TestTipOf(unittest.TestCase):
     def setUp(self):
         self._dir = tempfile.mkdtemp()
