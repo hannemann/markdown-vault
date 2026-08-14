@@ -1,6 +1,8 @@
 """Tests for the shared OKF frontmatter helpers."""
 
 import datetime
+import os
+import tempfile
 import unittest
 
 from markdown_vault import frontmatter as fm
@@ -66,6 +68,58 @@ class TestTitleDescription(unittest.TestCase):
     def test_absent_is_empty(self):
         self.assertEqual(fm.title({}), "")
         self.assertEqual(fm.description({"description": None}), "")
+
+
+class TestTipOf(unittest.TestCase):
+    def setUp(self):
+        self._dir = tempfile.mkdtemp()
+
+    def _write(self, name, text):
+        path = os.path.join(self._dir, name)
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(text)
+        return path
+
+    def test_frontmatter_title_and_description(self):
+        path = self._write(
+            "erde.md",
+            "---\ntitle: Die Erde\ndescription: Der dritte Planet.\n---\nbody text")
+        self.assertEqual(fm.tip_of(path), ("Die Erde", "Der dritte Planet."))
+
+    def test_falls_back_to_stem_and_body_preview(self):
+        path = self._write("mars.md", "The red planet is cold and dusty.")
+        title, desc = fm.tip_of(path)
+        self.assertEqual(title, "mars")
+        self.assertEqual(desc, "The red planet is cold and dusty.")
+
+    def test_title_present_description_from_body(self):
+        path = self._write(
+            "venus.md", "---\ntitle: Venus\n---\nSecond planet from the sun.")
+        self.assertEqual(fm.tip_of(path), ("Venus", "Second planet from the sun."))
+
+    def test_body_preview_is_cut_and_whitespace_collapsed(self):
+        body = "word   \n\n  spaced\ttext " + "x" * 400
+        path = self._write("long.md", body)
+        _title, desc = fm.tip_of(path, preview_chars=200)
+        self.assertEqual(len(desc), 200)
+        self.assertTrue(desc.startswith("word spaced text "))
+        self.assertNotIn("\n", desc)
+        self.assertNotIn("  ", desc)
+
+    def test_body_preview_strips_markdown(self):
+        path = self._write(
+            "venus.md",
+            "# Venus\n\nVenus ist der zweite Planet von der [[sonne]] und der "
+            "**Erde** [ähnlich](https://x). Siehe [[erde|die Erde]].")
+        _title, desc = fm.tip_of(path)
+        self.assertEqual(
+            desc,
+            "Venus Venus ist der zweite Planet von der sonne und der Erde "
+            "ähnlich. Siehe die Erde.")
+
+    def test_unreadable_path(self):
+        path = os.path.join(self._dir, "missing.md")
+        self.assertEqual(fm.tip_of(path), ("missing", ""))
 
 
 if __name__ == "__main__":

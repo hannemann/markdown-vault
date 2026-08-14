@@ -81,6 +81,52 @@ def status_of(path: str) -> str:
     return result
 
 
+def _stem(path: str) -> str:
+    base = path.replace("\\", "/").rsplit("/", 1)[-1]
+    return base[:-3] if base.endswith(".md") else base
+
+
+_WIKILINK_RE = re.compile(r"\[\[([^\]]+)\]\]")
+_MDLINK_RE = re.compile(r"!?\[([^\]]*)\]\([^)]*\)")
+
+
+def _strip_markdown(text: str) -> str:
+    """Reduce Markdown to plain text for a one-line preview: drop heading/quote/
+    list markers and emphasis, keep the visible text of links. Not a full parser
+    — just enough that a body preview reads cleanly in a tooltip."""
+    text = re.sub(r"`+", "", text)                                   # code marks
+    text = _WIKILINK_RE.sub(lambda m: m.group(1).split("|")[-1], text)  # [[a|b]]→b
+    text = _MDLINK_RE.sub(r"\1", text)                               # [t](u)→t
+    text = re.sub(r"^\s{0,3}#{1,6}\s+", "", text, flags=re.M)        # headings
+    text = re.sub(r"^\s{0,3}>+\s?", "", text, flags=re.M)            # blockquotes
+    text = re.sub(r"^\s{0,3}(?:[-*+]|\d+\.)\s+", "", text, flags=re.M)  # list marks
+    text = re.sub(r"[*_~]{1,3}", "", text)                           # emphasis
+    return text
+
+
+def tip_of(path: str, preview_chars: int = 200) -> tuple:
+    """``(title, description)`` for a graph-node hover tooltip, reading only the
+    file head. Frontmatter ``title``/``description`` win; otherwise the title
+    falls back to the filename stem and the description to the first
+    ``preview_chars`` characters of the body (whitespace collapsed). Unreadable
+    → ``(stem, '')``."""
+    head = ""
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace") as fh:
+            head = fh.read(8192)
+    except OSError:
+        return (_stem(path), "")
+    meta = parse(head)
+    t = title(meta) or _stem(path)
+    d = description(meta)
+    if not d:
+        m = _FRONTMATTER_RE.match(head)
+        body = head[m.end():] if m else head
+        body = _strip_markdown(body)
+        d = re.sub(r"\s+", " ", body).strip()[:preview_chars].strip()
+    return (t, d)
+
+
 def title(meta: dict) -> str:
     """Frontmatter ``title`` (display name), or ``''`` if absent."""
     value = meta.get("title")
