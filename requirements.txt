@@ -9,3 +9,7 @@ Pygments==2.20.0
 # Web import: main-content extraction (HTML -> markdown), no browser. Pulls lxml
 # (a compiled wheel), so the base install is no longer pure-Python.
 trafilatura==2.2.0
+# Web import tables: markdownify converts a table to a pipe table; nh3 sanitises
+# the HTML kept for a table too complex for pipe (col/rowspan, block cells, …).
+markdownify==1.2.3
+nh3==0.3.6
