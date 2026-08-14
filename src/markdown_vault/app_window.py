@@ -306,6 +306,15 @@ class MainWindow(Adw.ApplicationWindow):
         self._vault_monitor.connect("external-file-moved", self._on_semantic_moved)
         self._vault_monitor.connect(
             "external-content-changed", lambda _vp, fp: self._semantic_update(fp))
+        # Keep lifecycle badges in sync when a note's frontmatter changes on disk
+        # (another editor, git pull, the second-brain autocommit sync). An atomic
+        # write (temp file + rename, what many editors and tools do) surfaces as a
+        # create/move rather than a content-change, so cover all three; the trailing
+        # *_a absorbs the moved signal's extra old-path arg.
+        for _sig in ("external-content-changed", "external-file-created",
+                     "external-file-moved"):
+            self._vault_monitor.connect(
+                _sig, lambda _vp, fp, *_a: self._vault_tree.refresh_lifecycle(fp))
 
         # View mode manager.
         self._view_mode_manager = ViewModeManager(
@@ -2439,6 +2448,7 @@ class MainWindow(Adw.ApplicationWindow):
             self._tab_bar.hide_error_banner(tab.file_path)
             self._clear_external_conflict(tab)
             self._semantic_update(tab.editor.file_path)
+            self._vault_tree.refresh_lifecycle(tab.editor.file_path)
             if broken:
                 dialogs.show_broken_wikilinks(self, [b.display for b in broken])
         else:
@@ -2558,6 +2568,7 @@ class MainWindow(Adw.ApplicationWindow):
         ok = tab.editor.save()
         if ok:
             self._semantic_update(tab.editor.file_path)
+            self._vault_tree.refresh_lifecycle(tab.editor.file_path)
         return ok
 
     def _autosave_on_failed(self, file_path: str, msg: str) -> None:

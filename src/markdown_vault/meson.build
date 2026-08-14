@@ -17,6 +17,7 @@ py_sources = files(
   'file_ops.py',
   'find_bar.py',
   'file_manager.py',
+  'frontmatter.py',
   'git_integration.py',
    'history.py',
    'input_manager.py',
