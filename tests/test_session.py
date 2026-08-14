@@ -1,6 +1,7 @@
 """Tests for markdown_vault.session — session persistence."""
 
 import json
+import os
 import shutil
 import tempfile
 import unittest
@@ -263,6 +264,106 @@ class TestLegacyMigration(_TempSessionMixin, unittest.TestCase):
         vs = loaded["vault_sessions"][str(vault_dir)]
         self.assertEqual(len(vs["tabs"]), 1)
         self.assertEqual(vs["active_tab"], str(note))
+
+
+class TestSanitize(unittest.TestCase):
+    """_sanitize drops exactly the malformed entries that crash restore, keeps
+    the rest, and repairs dangling references."""
+
+    def _data(self, tabs, active=None, mru=None, nav=None):
+        return {"vault_sessions": {"/v": {"tabs": tabs, "active_tab": active,
+                                          "mru": mru or []}},
+                "nav_history": nav or {"history": [], "pos": -1}}
+
+    def _tabs(self, d):
+        return [t["path"] for t in d["vault_sessions"]["/v"]["tabs"]]
+
+    def test_keeps_valid_canonical_md(self):
+        d = self._data([{"path": "/vault/a.md"}, {"path": "/vault/sub/b.md"}])
+        _ses._sanitize(d)
+        self.assertEqual(self._tabs(d), ["/vault/a.md", "/vault/sub/b.md"])
+
+    def test_drops_dotdot_dot_and_relative(self):
+        d = self._data([{"path": "/vault/../other/a.md"}, {"path": "/vault/./b.md"},
+                        {"path": "relative/c.md"}, {"path": "/vault/keep.md"}])
+        _ses._sanitize(d)
+        self.assertEqual(self._tabs(d), ["/vault/keep.md"])
+
+    def test_drops_directory_and_non_md(self):
+        vdir = tempfile.mkdtemp()
+        os.mkdir(os.path.join(vdir, "dir.md"))          # a directory ending in .md
+        try:
+            d = self._data([{"path": os.path.join(vdir, "dir.md")},
+                            {"path": vdir},              # vault dir, no .md
+                            {"path": "/vault/real.md"}])
+            _ses._sanitize(d)
+            self.assertEqual(self._tabs(d), ["/vault/real.md"])
+        finally:
+            shutil.rmtree(vdir, ignore_errors=True)
+
+    def test_drops_non_dict_and_missing_path(self):
+        d = self._data(["notadict", {"nopath": 1}, {"path": None}, {"path": "/v/ok.md"}])
+        _ses._sanitize(d)
+        self.assertEqual(self._tabs(d), ["/v/ok.md"])
+
+    def test_active_tab_reset_to_survivor(self):
+        d = self._data([{"path": "/v/keep.md"}], active="/v/./bad.md")
+        _ses._sanitize(d)
+        self.assertEqual(d["vault_sessions"]["/v"]["active_tab"], "/v/keep.md")
+
+    def test_active_tab_none_when_all_dropped(self):
+        d = self._data([{"path": "/v/./bad.md"}], active="/v/./bad.md")
+        _ses._sanitize(d)
+        self.assertIsNone(d["vault_sessions"]["/v"]["active_tab"])
+
+    def test_mru_filtered_to_survivors(self):
+        d = self._data([{"path": "/v/a.md"}], mru=["/v/a.md", "/v/../x.md", "/v/gone.md"])
+        _ses._sanitize(d)
+        self.assertEqual(d["vault_sessions"]["/v"]["mru"], ["/v/a.md"])
+
+    def test_nav_history_filtered_and_pos_clamped(self):
+        d = self._data([], nav={"history": ["/v/a.md", "/v/../b.md", "/v/c.md"], "pos": 2})
+        _ses._sanitize(d)
+        self.assertEqual(d["nav_history"]["history"], ["/v/a.md", "/v/c.md"])
+        self.assertEqual(d["nav_history"]["pos"], 1)
+
+    def test_non_dict_containers_reset(self):
+        d = {"vault_sessions": "garbage"}
+        _ses._sanitize(d)
+        self.assertEqual(d["vault_sessions"], {})
+        d = {"vault_sessions": {"/v": "notadict", "/w": {"tabs": [{"path": "/w/a.md"}]}}}
+        _ses._sanitize(d)
+        self.assertNotIn("/v", d["vault_sessions"])
+        self.assertIn("/w", d["vault_sessions"])
+
+
+class TestLoadSanitizes(_TempSessionMixin, unittest.TestCase):
+    def test_bad_tab_is_dropped_on_load(self):
+        _ses.SESSION_FILE.write_text(json.dumps({
+            "vault_sessions": {"/v": {
+                "tabs": [{"path": "/v/../poison/Business"}, {"path": "/v/good.md"}],
+                "active_tab": "/v/../poison/Business", "mru": []}}}), encoding="utf-8")
+        data = _ses.load_session()
+        vs = data["vault_sessions"]["/v"]
+        self.assertEqual([t["path"] for t in vs["tabs"]], ["/v/good.md"])
+        self.assertEqual(vs["active_tab"], "/v/good.md")
+
+
+class TestPruneHardened(unittest.TestCase):
+    def test_prune_drops_directory_that_exists(self):
+        vdir = tempfile.mkdtemp()
+        try:
+            note = os.path.join(vdir, "n.md")
+            open(note, "w").close()
+            pruned = _ses.prune_vault_session(
+                {"tabs": [{"path": vdir}, {"path": os.path.join(vdir, "x/./n.md")},
+                          {"path": note}],
+                 "active_tab": vdir, "mru": [vdir, note]})
+            self.assertEqual([t["path"] for t in pruned["tabs"]], [note])
+            self.assertIsNone(pruned["active_tab"])
+            self.assertEqual(pruned["mru"], [note])
+        finally:
+            shutil.rmtree(vdir, ignore_errors=True)
 
 
 if __name__ == "__main__":

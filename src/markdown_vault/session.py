@@ -12,6 +12,7 @@ that switching vaults can save and restore tab groups.
 
 import json
 import logging
+import os
 from pathlib import Path
 
 from . import config
@@ -19,6 +20,60 @@ from . import config
 logger = logging.getLogger(__name__)
 
 SESSION_FILE = config.CONFIG_DIR / "session.json"
+
+
+def _is_canonical_note_path(p) -> bool:
+    """A well-formed persisted note path: a non-empty absolute string that is
+    canonical (``os.path.normpath`` is a no-op — no ``.``/``..``/duplicate
+    separators), ends in ``.md``, and is not a directory. This rejects exactly
+    the entries that crash session restore: a ``..`` path breaks ``relative_to``
+    and a directory breaks ``with_suffix`` deep in the backlink index. Existence
+    is deliberately *not* required, so a note on a momentarily-missing vault keeps
+    its tab (a missing file only fails to open, harmlessly) rather than being
+    dropped from the session."""
+    return (isinstance(p, str) and bool(p)
+            and os.path.isabs(p)
+            and os.path.normpath(p) == p
+            and p.endswith(".md")
+            and not os.path.isdir(p))
+
+
+def _sanitize(data: dict) -> dict:
+    """Drop malformed persisted state at load so a corrupt or stale session can't
+    crash the restore (or resurrect broken tabs). Invalid tabs / MRU / history
+    entries are removed individually; everything valid is kept. Mutates *data*."""
+    dropped = 0
+    vaults = data.get("vault_sessions")
+    if not isinstance(vaults, dict):
+        data["vault_sessions"] = {}
+        vaults = {}
+    for vault in list(vaults):
+        sess = vaults[vault]
+        if not isinstance(sess, dict):
+            del vaults[vault]
+            dropped += 1
+            continue
+        tabs = sess.get("tabs") if isinstance(sess.get("tabs"), list) else []
+        good = [t for t in tabs
+                if isinstance(t, dict) and _is_canonical_note_path(t.get("path"))]
+        dropped += len(tabs) - len(good)
+        sess["tabs"] = good
+        valid = {t["path"] for t in good}
+        if isinstance(sess.get("mru"), list):
+            sess["mru"] = [p for p in sess["mru"] if p in valid]
+        if sess.get("active_tab") not in valid:
+            sess["active_tab"] = good[-1]["path"] if good else None
+    nav = data.get("nav_history")
+    if isinstance(nav, dict) and isinstance(nav.get("history"), list):
+        hist = [h for h in nav["history"] if _is_canonical_note_path(h)]
+        dropped += len(nav["history"]) - len(hist)
+        nav["history"] = hist
+        pos = nav.get("pos", -1)
+        nav["pos"] = pos if isinstance(pos, int) and -1 <= pos < len(hist) else len(hist) - 1
+    if dropped:
+        logger.warning("Session: dropped %d invalid entr%s on load",
+                       dropped, "y" if dropped == 1 else "ies")
+    return data
 
 
 def save_session(
@@ -89,26 +144,27 @@ def load_session() -> dict:
     data.setdefault("ask_last_question", "")
     # Migration: old sessions had top-level "tabs" + "active_tab".
     _migrate_legacy_session(data)
+    # Drop malformed/crash-causing entries before any consumer touches them.
+    _sanitize(data)
     return data
 
 
 def prune_vault_session(vault_session: dict) -> dict:
-    """Remove tabs whose files no longer exist on disk.
-
-    Returns a new dict with only existing files.  *active_tab* is cleared
-    if the referenced file is missing.
+    """Restore-time pruning: keep only tabs that are well-formed note paths *and*
+    still exist on disk. Uses :func:`_is_canonical_note_path` (so a directory or a
+    ``.``/``..`` path is rejected, not just a missing file — plain ``exists()``
+    passes for a directory), then requires the file to be present. *active_tab* is
+    cleared and *mru* filtered to survivors.
     """
-    tabs = [
-        t for t in vault_session.get("tabs", [])
-        if t.get("path") and Path(t["path"]).exists()
-    ]
+    def usable(p):
+        return _is_canonical_note_path(p) and os.path.isfile(p)
+
+    tabs = [t for t in vault_session.get("tabs", [])
+            if isinstance(t, dict) and usable(t.get("path"))]
     active_tab = vault_session.get("active_tab")
-    if active_tab and Path(active_tab).exists():
-        pass  # keep it
-    else:
+    if not usable(active_tab):
         active_tab = None
-    # Preserve MRU entries that still point to existing files.
-    mru = [fp for fp in vault_session.get("mru", []) if fp and Path(fp).exists()]
+    mru = [fp for fp in vault_session.get("mru", []) if usable(fp)]
     return {"tabs": tabs, "active_tab": active_tab, "mru": mru}
 
 
