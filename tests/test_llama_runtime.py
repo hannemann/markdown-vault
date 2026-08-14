@@ -154,6 +154,7 @@ class TestChat(unittest.TestCase):
         self.assertIn("reading", phases)                # prefill phase
         self.assertNotIn("writing", phases)             # live text replaces it
 
+    @unittest.skipUnless(L.is_available(), "needs llama_cpp (make install-ai)")
     def test_reasoning_off_renders_enable_thinking_false(self):
         # Reasoning off → the template renders an empty <think></think>, so the
         # model never thinks; the raw prompt goes to create_completion.
@@ -161,6 +162,7 @@ class TestChat(unittest.TestCase):
         L.LlamaCppChat("/x", think=False, _model=stub).chat("s", "u")
         self.assertIn("<think></think>", stub.prompt)
 
+    @unittest.skipUnless(L.is_available(), "needs llama_cpp (make install-ai)")
     def test_reasoning_on_renders_enable_thinking_true(self):
         # Reasoning on → the template opens <think>, so the model reasons. The
         # reply closes the block so it isn't flagged as budget-exhausted.
@@ -168,6 +170,7 @@ class TestChat(unittest.TestCase):
         L.LlamaCppChat("/x", think=True, _model=stub).chat("s", "u")
         self.assertTrue(stub.prompt.endswith("<assistant><think>"))
 
+    @unittest.skipUnless(L.is_available(), "needs llama_cpp (make install-ai)")
     def test_reasoning_answer_is_text_after_close_think(self):
         # create_completion streams reasoning then the answer; only the text after
         # the final </think> is the grounded answer.
@@ -186,6 +189,7 @@ class TestChat(unittest.TestCase):
         self.assertEqual(out, "Mars is red.")
         self.assertEqual(tokens[-1], "Mars is red.")   # final streamed == answer
 
+    @unittest.skipUnless(L.is_available(), "needs llama_cpp (make install-ai)")
     def test_on_token_hides_reasoning_for_prefilled_think(self):
         # A template that prefills <think> emits reasoning with no opening tag; the
         # live stream must stay suppressed until </think>, so the chain of thought

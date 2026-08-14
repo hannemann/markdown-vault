@@ -471,7 +471,9 @@ class LlamaCppChat:
                 formatter = llama_chat_format.Jinja2ChatFormatter(
                     template=template, eos_token=eos, bos_token=bos,
                     add_generation_prompt=True)
-        except Exception:          # noqa: BLE001 — any hiccup → plain path
+        except ImportError:        # llama_cpp not installed — expected on base
+            logger.debug("llama_cpp not installed; reasoning toggle unavailable")
+        except Exception:          # noqa: BLE001 — any other hiccup → plain path
             logger.warning("could not build a reasoning chat formatter; the "
                            "thinking toggle is unavailable for this model",
                            exc_info=True)
