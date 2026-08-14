@@ -21,6 +21,8 @@ class _FakeWin:
     def debug_close_tab(self, p): self.calls.append(("close", p)); return False
     def debug_search(self, q): self.calls.append(("search", q)); return True
     def debug_quick_open(self, q): self.calls.append(("qopen", q)); return True
+    def debug_submit(self): self.calls.append(("submit",)); return True
+    def debug_ask_answer(self): return "## Saturn\nRings."
     def debug_select_in_tree(self, p): self.calls.append(("select", p)); return True
     def debug_active_file(self): return "/v/a.md"
     def debug_list_tabs(self): return ["/v/a.md", "/v/b.md"]
@@ -50,6 +52,13 @@ class TestDispatch(unittest.TestCase):
         self.assertEqual(self._dispatch("QuickOpen", "erde").unpack(), (True,))
         self.assertIn(("search", "jupiter"), self.win.calls)
         self.assertIn(("qopen", "erde"), self.win.calls)
+
+    def test_submit(self):
+        self.assertEqual(self._dispatch("Submit").unpack(), (True,))
+        self.assertIn(("submit",), self.win.calls)
+
+    def test_ask_answer(self):
+        self.assertEqual(self._dispatch("AskAnswer").unpack(), ("## Saturn\nRings.",))
 
     def test_active_file(self):
         self.assertEqual(self._dispatch("ActiveFile").unpack(), ("/v/a.md",))

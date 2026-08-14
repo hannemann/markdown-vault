@@ -2331,6 +2331,15 @@ class MainWindow(Adw.ApplicationWindow):
         self._quick_open.run_query(query or "")
         return True
 
+    def debug_submit(self) -> bool:
+        """Press Enter in the quick-open palette (answer a question / open a hit)."""
+        self._quick_open.submit()
+        return True
+
+    def debug_ask_answer(self) -> str:
+        """The current quick-open Ask answer (raw Markdown), streaming; '' if none."""
+        return self._quick_open.ask_answer_text()
+
     def debug_select_in_tree(self, path: str) -> bool:
         if not self._debug_confined(path):
             return False

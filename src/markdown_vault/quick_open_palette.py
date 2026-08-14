@@ -271,9 +271,19 @@ class QuickOpenPalette(Adw.Dialog):
         self._entry.grab_focus()
 
     def run_query(self, text: str) -> None:
-        """Set the query programmatically (debug/automation): drives the live
-        filename filter as typing would. Call after :meth:`open`."""
+        """Set the query programmatically (debug/automation): types into the entry.
+        Submitting (Enter) is a separate step — see :meth:`submit`."""
         self._entry.set_text(text or "")
+
+    def submit(self) -> None:
+        """Activate the palette as pressing Enter would: in Ask mode this answers
+        the question, in filename mode it opens the selected/first result."""
+        self._on_entry_activate(self._entry)
+
+    def ask_answer_text(self) -> str:
+        """The current Ask answer's raw Markdown (debug/automation); grows while the
+        answer streams, ``''`` until the first token. Poll until it stops changing."""
+        return self._answer_text or ""
 
     def _on_closed(self) -> None:
         """Invalidate any in-flight answer so it is both dropped and aborted."""
