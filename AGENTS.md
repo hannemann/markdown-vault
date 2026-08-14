@@ -241,6 +241,14 @@ opening files in editor, toggling sidebar etc.) ask the user.
 
 ## Conventions
 
+- **Build a generalist, not edge-case workarounds**: solutions must be general and
+  principled. Do NOT hardcode site- or language-specific values (e.g. class names
+  like `navileiste`/`klappleiste`, per-site heuristics, magic strings for one page)
+  to patch a single failing input — that is exactly what this project does not want.
+  This applies especially to the web import, which must work across arbitrary sites,
+  not be tuned so one page (e.g. Wikipedia) is perfect while it breaks others. If a
+  general approach isn't achievable, surface the limitation and discuss it instead of
+  burying a narrow workaround in the code.
 - All strings in the code or tests are english (comments etc.)
 - Follow PEP 8, max line length 100.
 - Use `snake_case` for functions/variables, `PascalCase` for classes.
@@ -256,6 +264,10 @@ opening files in editor, toggling sidebar etc.) ask the user.
 - **Error handling**: Never use bare `except Exception: pass` — always log the exception at a minimum. Use `logging.warning()` or `logging.error()` with exc_info=True so errors are visible and debuggable.
 - **Logging**: Every module MUST use the standard `logging` module. Add `import logging` and `logger = logging.getLogger(__name__)` at the top of each file. Use `logger.debug()`/`logger.info()`/`logger.warning()`/`logger.error()` — NEVER use `print()` or any other ad-hoc output for diagnostics. Every `except` block must log at minimum with `exc_info=True`. Log level is configurable via `settings.loglevel` (debug/info/warning/error), effective after restart.
 - **Temp files**: NEVER use the system `/tmp` directory. Use the local `./tmp/` directory instead. The system `/tmp` is shared, unpredictable, and cleaned up by the OS. Local `./tmp/` is project-scoped and ignored by `.gitignore`, so it stays fully under your control.
+- **Answer questions before changing code**: when the user asks a question, answer
+  it first. Do NOT proactively start editing code, running fixes, or "improving"
+  things in place of — or before — giving the answer. Investigate and explain, then
+  make changes only when the user actually asks for them.
 - **NEVER commit without explicit user request**: NEVER run `git commit` unless the user explicitly asks for it. Not after editing files, not after testing, not ever. The user will say "commit" when ready.
 
 ## MRU Tab Switcher (Ctrl+Tab / Ctrl+Shift+Tab)
