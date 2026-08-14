@@ -203,11 +203,14 @@ Hard rules:
   commit the updated `requirements.lock`. Skipping this aborts `make build-flatpak`
   at the hash-verification gate (the download no longer matches the committed lock).
 - Before a feature that added or changed a dependency is considered done, VERIFY
-  the installer from a clean state: `make uninstall && make install` (and
-  `make uninstall && make install-ai` when AI/optional deps are involved). A clean
-  reinstall catches installer breakage — a missing transitive dep, a broken
-  install script — that an incremental `make install` hides (this is how the
-  llama-cpp-python `diskcache` gap surfaced).
+  **both** installation types from a clean state — `make uninstall && make install`
+  (base) **and** `make uninstall && make install-ai` (with the optional AI stack) —
+  regardless of which requirements file changed. A clean reinstall catches installer
+  breakage — a missing transitive dep, a broken install script — that an incremental
+  `make install` hides (this is how the llama-cpp-python `diskcache` gap surfaced).
+  And run the suite in the **base-only** state too: it MUST stay green, with tests
+  that need the optional stack `skipUnless`-guarded (e.g. `llama_runtime.is_available()`)
+  so they skip rather than error — a base install must never produce a red suite.
 
 ## Test driven development
 
