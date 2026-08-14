@@ -130,6 +130,11 @@ class TestValidateDrop(unittest.TestCase):
     def test_drop_on_same_parent(self):
         self.assertIsNotNone(validate_drop("/vault/file.md", "/vault", True))
 
+    def test_drop_into_attachments_rejected(self):
+        self.assertIsNotNone(validate_drop("/vault/note.md", "/vault/attachments", True))
+        self.assertIsNotNone(
+            validate_drop("/vault/note.md", "/vault/attachments/sub/note", True))
+
     def test_dest_exists_rejected(self):
         self._dest.touch()
         self.assertIsNotNone(validate_drop(str(self._source), str(self._target_dir), True))

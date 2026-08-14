@@ -2,6 +2,7 @@ py_sources = files(
   '__init__.py',
   '__main__.py',
   'app_window.py',
+  'attachments.py',
   'autosave.py',
   'backlink_index.py',
   'banners.py',

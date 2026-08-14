@@ -311,6 +311,12 @@ class MainWindow(Adw.ApplicationWindow):
         self._vault_monitor.connect(
             "external-file-deleted", lambda _vp, fp: self._semantic_remove(fp))
         self._vault_monitor.connect("external-file-moved", self._on_semantic_moved)
+        # Keep a note's downloaded images in sync as the note is deleted/renamed/
+        # moved. Driven from the monitor so in-app and external changes are handled
+        # by one path (an in-app delete also fires external-file-deleted).
+        self._vault_monitor.connect(
+            "external-file-deleted", lambda vp, fp: self._on_attachments_deleted(vp, fp))
+        self._vault_monitor.connect("external-file-moved", self._on_attachments_moved)
         self._vault_monitor.connect(
             "external-content-changed", lambda _vp, fp: self._semantic_update(fp))
         # Keep lifecycle badges in sync when a note's frontmatter changes on disk
@@ -354,6 +360,7 @@ class MainWindow(Adw.ApplicationWindow):
                 "on_preview_image_download": self._on_preview_image_download,
                 "on_editor_text_changed": self._on_editor_text_changed,
                 "on_editor_modified": self._on_editor_modified,
+                "on_editor_attachment_added": self._on_editor_attachment_added,
                 "apply_view_mode": self._view_mode_manager.apply_view_mode,
                 "sync_view_toggle": self._view_mode_manager.sync_view_toggle,
                 "refresh_preview": self._view_mode_manager.refresh_preview,
@@ -686,6 +693,7 @@ class MainWindow(Adw.ApplicationWindow):
         action_section = Gio.Menu()
         action_section.append("Add Vault", "win.add-vault")
         action_section.append("New File", "win.new-file")
+        action_section.append("Insert Image…", "win.insert-image")
         action_section.append("Toggle Sidebar", "win.toggle-sidebar")
         action_section.append("Zen Mode", "win.toggle-zen")
         action_section.append("Total Zen", "win.toggle-zen-total")
@@ -771,6 +779,14 @@ class MainWindow(Adw.ApplicationWindow):
 
         action = Gio.SimpleAction.new("new-file", None)
         action.connect("activate", lambda *_: self._on_new_file())
+        self.add_action(action)
+
+        action = Gio.SimpleAction.new("insert-image", None)
+        action.connect("activate", lambda *_: self._on_insert_image())
+        self.add_action(action)
+
+        action = Gio.SimpleAction.new("paste-image", None)
+        action.connect("activate", lambda *_: self._on_paste_image())
         self.add_action(action)
 
         action = Gio.SimpleAction.new("toggle-sidebar", None)
@@ -1677,6 +1693,77 @@ class MainWindow(Adw.ApplicationWindow):
         else:
             self._semantic_update(new_path)  # moved in from outside
 
+    # ── Attachment lifecycle (driven from the file monitor) ─────────────
+    def _vault_root_for(self, path: str) -> str:
+        return path_utils.find_vault_for_dir(str(Path(path).parent)) or str(Path(path).parent)
+
+    @staticmethod
+    def _is_attachment_path(path) -> bool:
+        """A note never lives inside an ``attachments/`` tree, so an event on such a
+        path is our own side effect (e.g. an image dir we just moved), not a note."""
+        from . import attachments
+        return attachments.is_internal(path)
+
+    def _on_attachments_deleted(self, _vault_path, path: str) -> None:
+        """A note or folder was deleted — drop its images. Called from both the
+        in-app delete and the external monitor path; idempotent so overlap is safe."""
+        if self._is_attachment_path(path):
+            return
+        from . import attachments
+        logger.debug("attachments: remove for deleted %s", path)
+        try:
+            attachments.remove(self._vault_root_for(path), path)
+        except OSError as exc:
+            logger.warning("attachments: remove failed for %s: %s", path, exc, exc_info=True)
+
+    def _on_attachments_moved(self, _vault_path, new_path, old_path=None) -> None:
+        """External rename/move (monitor path). In-app renames are handled from
+        the tree's file-renamed signal instead (the monitor skips them)."""
+        if old_path and not self._is_attachment_path(new_path):
+            self._sync_attachments_move(old_path, new_path)
+
+    def _sync_attachments_move(self, old_path, new_path) -> None:
+        """Move a renamed/moved note-or-folder's images to the mirrored location
+        and relink each affected note (editor buffer if open, else on disk).
+        Idempotent, so calling it from both the in-app and monitor paths is safe."""
+        from . import attachments
+        old_vault = self._vault_root_for(old_path)
+        new_vault = self._vault_root_for(new_path)
+        logger.debug("attachments: sync move %s -> %s", old_path, new_path)
+        try:
+            attachments.move(old_vault, old_path, new_vault, new_path)
+        except OSError as exc:
+            logger.warning("attachments: move failed %s -> %s: %s",
+                           old_path, new_path, exc, exc_info=True)
+        if os.path.isdir(new_path):
+            pairs = [(str(Path(old_path) / c.relative_to(new_path)), str(c))
+                     for c in sorted(Path(new_path).rglob("*.md"))]
+        else:
+            pairs = [(old_path, new_path)]
+        for old_note, new_note in pairs:
+            self._relink_note(old_vault, old_note, new_vault, new_note)
+
+    def _relink_note(self, old_vault, old_note, new_vault, new_note) -> None:
+        from . import attachments
+        old_prefix = attachments.link_prefix(old_vault, old_note)
+        new_prefix = attachments.link_prefix(new_vault, new_note)
+        if old_prefix == new_prefix:
+            return
+        tab = next((t for t in self._tab_bar._tabs.values()
+                    if t.editor.file_path in (new_note, old_note)), None)
+        if tab is None:
+            attachments.relink_file(new_note, old_prefix, new_prefix)
+            return
+        current = tab.editor.get_text()
+        relinked = attachments.relink(current, old_prefix, new_prefix)
+        if relinked != current:
+            buffer = tab.editor._buffer
+            buffer.begin_user_action()
+            buffer.set_text(relinked)
+            buffer.end_user_action()
+            if tab.preview.get_visible():
+                self._refresh_preview()
+
     def _on_hide_deprecated_changed(self, _tree, active: bool) -> None:
         """Persist the shared 'hide deprecated' toggle and re-filter any open
         search results so the tree and the search surfaces stay consistent."""
@@ -1888,6 +1975,56 @@ class MainWindow(Adw.ApplicationWindow):
         dialog.connect("import-failed", self._on_import_failed)
         dialog.present(self)
 
+    def _on_editor_attachment_added(self, _editor) -> None:
+        """An image was saved into the attachments tree (paste/drop/insert) — the
+        monitor ignores non-.md files, so refresh the tree to show it."""
+        self._vault_tree.refresh()
+
+    def _on_paste_image(self) -> None:
+        """Paste Image (context menu) — same as Ctrl+V; the built-in Paste greys
+        out for a non-text clipboard, so this provides a working image paste."""
+        tab = self._tab_bar.get_current_tab()
+        if tab is None or not tab.editor.file_path:
+            self._toast("Open and save a note first, then insert an image.")
+            return
+        if not tab.editor.paste_image_from_clipboard():
+            self._toast("No image in the clipboard.")
+
+    def _on_insert_image(self) -> None:
+        """Insert Image… — pick a local image and copy it into the note's
+        attachments dir (never make the user touch that tree by hand)."""
+        tab = self._tab_bar.get_current_tab()
+        if tab is None or not tab.editor.file_path:
+            self._toast("Open and save a note first, then insert an image.")
+            return
+        dialog = Gtk.FileDialog(title="Insert Image")
+        img_filter = Gtk.FileFilter()
+        img_filter.set_name("Images")
+        for mime in ("image/png", "image/jpeg", "image/gif", "image/webp",
+                     "image/svg+xml", "image/bmp"):
+            img_filter.add_mime_type(mime)
+        filters = Gio.ListStore.new(Gtk.FileFilter)
+        filters.append(img_filter)
+        dialog.set_filters(filters)
+        dialog.open(self, None, self._on_insert_image_chosen)
+
+    def _on_insert_image_chosen(self, dialog, result) -> None:
+        try:
+            gfile = dialog.open_finish(result)
+        except GLib.Error:
+            return                          # cancelled or failed
+        tab = self._tab_bar.get_current_tab()
+        path = gfile.get_path() if gfile else None
+        if not path or tab is None:
+            return
+        try:
+            data = Path(path).read_bytes()
+        except OSError as exc:
+            logger.warning("insert image: %s", exc, exc_info=True)
+            self._toast("Could not read the image file.", timeout=0)
+            return
+        tab.editor.insert_image(data, Path(path).name)
+
     def _on_note_imported(self, _dialog, path: str) -> None:
         """A web import finished — refresh the tree, open the note, reveal it."""
         self._vault_tree.refresh()
@@ -1958,6 +2095,10 @@ class MainWindow(Adw.ApplicationWindow):
                 self.mru.rename(tab_path, new_tab_path)
 
         self._refresh_sidebar_backlinks()
+
+        # Move the note's images to the mirrored location + relink (in-app path;
+        # the monitor skips in-app renames, so this is the one that fires here).
+        self._sync_attachments_move(old_path, new_path)
 
     def _on_vault_renamed(
         self, _tree, vault_path: str, old_name: str, new_name: str,

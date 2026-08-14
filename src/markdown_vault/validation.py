@@ -104,6 +104,11 @@ def validate_drop(
     if not target_is_dir:
         return "Cannot drop onto a file."
 
+    # The attachments tree is app-managed — notes must not be moved into it.
+    from . import attachments
+    if attachments.is_internal(target_dir):
+        return "Cannot move items into the attachments folder."
+
     # Cannot drop onto self.
     if source_path == target_dir:
         return "Cannot move a directory into itself."

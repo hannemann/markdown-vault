@@ -62,6 +62,7 @@ Markdown Vault — a GNOME desktop app for editing and previewing Markdown files
 - **Git integration**: status indicators in file tree, diff view, commit from app.
 - **Tags/backlinks**: wikilink-style `[[page]]` parsing and backlink discovery.
 - **Wikilink autofix**: opt-in pre-save handling of `[[wikilinks]]` (all off by default) — normalize whitespace, redirect a broken link when exactly one vault file matches the basename (moved/renamed/casing), inform after a manual save about links that stay unresolved, and mark broken links live in the editor (gutter warning triangle + red underline). Runs on manual and close saves, never on autosave. Logic in `wikilink_autofix.py`.
+- **Managed image attachments** (`attachments.py`): a note's downloaded/inserted images live under one per-vault tree mirroring the note tree — `<vault>/attachments/<note-relative-path>/<note-stem>/` — and are kept in sync with the note. Added by web import (opt-in download), paste (Ctrl+V / "Paste Image"), drag-drop onto the editor, or "Insert Image…" (hamburger + editor context menu); never by hand-copying into the tree. Deleting a note/folder removes its attachments; renaming/moving moves them and relinks the note (in the editor buffer if open, else on disk) — driven from both the in-app tree handlers and the file monitor (external), idempotent. The attachments tree shows dimmed in the sidebar with an "internal" pill, is not a drop target and blocks new-file/folder/import; its images are visible but not openable/draggable. Hand-typed image links are classified live: a broken target gets a gutter warning + red underline, a local image outside the tree gets a gutter hint + hover tooltip and adopts into the tree on a gutter double-click.
 - **Keybindings**: GNOME-style defaults, vim/emacs modes optional.
 - **Markdown + images**: `![alt](path)` with relative and absolute path resolution.
 - **Preferences dialog**: `Adw.PreferencesDialog` for autosave interval, default view mode, editor font size/tab width/wrap, preview zoom, and wikilink autofix (normalize / auto-fix moved links / warn on save / mark broken links).
@@ -112,6 +113,9 @@ src/
     wikilink_autofix.py       — pre-save wikilink autofix + broken-link detection (pure logic + WikilinkResolver glue)
     backlink_index.py         — O(1) backlink lookup, built on startup
     file_index.py             — O(1) wikilink resolution (single index shared across previews)
+    attachments.py            — managed image attachments: <vault>/attachments/<note-path>/ layout
+                                (attachment_target/store_image), move/remove on rename/delete + relink,
+                                is_internal guard, classify/adopt for hand-typed links
     config.py                 — vaults.yaml reader/writer + settings
     session.py                — session persistence (JSON)
     preferences.py            — Adw.PreferencesDialog

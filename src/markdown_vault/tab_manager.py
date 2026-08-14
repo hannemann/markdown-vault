@@ -128,6 +128,10 @@ class TabOrchestrator:
         """Forward editor ``modified-changed`` signal to MainWindow callback."""
         self._cb_call("on_editor_modified", editor, dirty)
 
+    def _on_editor_attachment_added(self, editor) -> None:
+        """Forward editor ``attachment-added`` signal to MainWindow callback."""
+        self._cb_call("on_editor_attachment_added", editor)
+
     # ── tab creation ───────────────────────────────────────────────
 
     def open_tab(
@@ -219,6 +223,7 @@ class TabOrchestrator:
         wrapper.append(split)
 
         editor.connect("text-changed", self._on_editor_text_changed)
+        editor.connect("attachment-added", self._on_editor_attachment_added)
 
         self._content_stack.add_named(wrapper, file_path)
 

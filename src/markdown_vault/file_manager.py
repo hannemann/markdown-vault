@@ -171,7 +171,15 @@ class FileManager:
             self._show_error("Delete Failed", err)
             return
 
-        # 2. Only on success: close tabs, remove from MRU/history, refresh tree
+        # 2. Only on success: drop the note/folder's downloaded images, then
+        #    close tabs, remove from MRU/history, refresh tree.
+        from . import attachments, path_utils
+        vault = path_utils.find_vault_for_dir(str(Path(path).parent)) or str(Path(path).parent)
+        try:
+            attachments.remove(vault, path)
+        except OSError as exc:
+            logger.warning("attachments: remove failed for %s: %s", path, exc, exc_info=True)
+
         self._close_tabs_for_path(path, is_dir)
         self._cleanup_mru(path, is_dir)
         self._cleanup_nav_history(path, is_dir)

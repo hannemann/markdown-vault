@@ -494,26 +494,6 @@ class TestLocalizeImages(unittest.TestCase):
         self.assertEqual(slept, [wi._THROTTLE_SECONDS, wi._THROTTLE_SECONDS])
 
 
-class TestAttachmentTarget(unittest.TestCase):
-    """Attachments mirror the note's location under one <vault>/attachments/ tree,
-    linked relative to the note."""
-
-    def test_note_at_vault_root(self):
-        attach, rel = wi.attachment_target("/v", "/v", "note")
-        self.assertEqual(str(attach), "/v/attachments/note")
-        self.assertEqual(rel, "attachments/note")
-
-    def test_note_in_subdir(self):
-        attach, rel = wi.attachment_target("/v", "/v/sub", "note")
-        self.assertEqual(str(attach), "/v/attachments/sub/note")
-        self.assertEqual(rel, "../attachments/sub/note")
-
-    def test_note_nested_deeper(self):
-        attach, rel = wi.attachment_target("/v", "/v/a/b", "note")
-        self.assertEqual(str(attach), "/v/attachments/a/b/note")
-        self.assertEqual(rel, "../../attachments/a/b/note")
-
-
 class TestSingleImage(unittest.TestCase):
     """Right-click download of one image: fetch it, then rewrite just its refs."""
 

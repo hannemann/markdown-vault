@@ -13,12 +13,19 @@ import gi
 gi.require_version("Gtk", "4.0")
 gi.require_version("GtkSource", "5")
 
-from gi.repository import Gtk, GtkSource, GObject, GLib, Adw, Gdk, Pango
+from gi.repository import Gtk, GtkSource, GObject, GLib, Gio, Adw, Gdk, Pango
 
 logger = logging.getLogger(__name__)
 
 # Source-mark category / text-tag name for broken wikilinks.
 _BROKEN_CATEGORY = "broken-wikilink"
+# Image-link gutter categories: a broken target, and a local image outside the
+# attachments tree that can be adopted (double-click) into it.
+_IMG_BROKEN_CATEGORY = "broken-image"
+_IMG_ADOPT_CATEGORY = "adoptable-image"
+
+_IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp",
+                   ".ico", ".avif"}
 
 
 class Editor(Gtk.ScrolledWindow):
@@ -33,6 +40,8 @@ class Editor(Gtk.ScrolledWindow):
         "file-changed": (GObject.SignalFlags.RUN_LAST, None, (str,)),
         "modified-changed": (GObject.SignalFlags.RUN_LAST, None, (bool,)),
         "text-changed": (GObject.SignalFlags.RUN_LAST, None, ()),
+        # An image was saved into the note's attachments dir — refresh the tree.
+        "attachment-added": (GObject.SignalFlags.RUN_LAST, None, ()),
         # Emitted when the in-editor search match count becomes available.
         "search-info-changed": (GObject.SignalFlags.RUN_LAST, None, ()),
     }
@@ -104,10 +113,99 @@ class Editor(Gtk.ScrolledWindow):
         self._apply_font_size()
 
         self._setup_broken_link_markers()
+        self._setup_image_link_markers()
 
         self.update_color_scheme()
 
         self.set_child(self._view)
+
+        self._setup_image_input()
+
+    # ------------------------------------------------------------------
+    # Image input — paste / drag-drop an image into the note
+    # ------------------------------------------------------------------
+
+    def _setup_image_input(self) -> None:
+        """Accept an image via Ctrl+V (clipboard) or a file/texture drop, saving it
+        into the note's attachments dir and inserting a link — so the user never
+        has to touch the app-managed attachments tree."""
+        key = Gtk.EventControllerKey()
+        key.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
+        key.connect("key-pressed", self._on_key_pressed_for_paste)
+        self._view.add_controller(key)
+
+        drop = Gtk.DropTarget.new(GObject.TYPE_NONE, Gdk.DragAction.COPY)
+        drop.set_gtypes([Gdk.Texture, Gdk.FileList])
+        drop.connect("drop", self._on_image_drop)
+        self._view.add_controller(drop)
+
+        # Right-click menu: a working image paste (the built-in "Paste" greys out
+        # when the clipboard holds an image, not text) plus the file picker.
+        extra = Gio.Menu()
+        extra.append("Paste Image", "win.paste-image")
+        extra.append("Insert Image…", "win.insert-image")
+        self._view.set_extra_menu(extra)
+
+    def _on_key_pressed_for_paste(self, _ctrl, keyval, _keycode, state):
+        if keyval in (Gdk.KEY_v, Gdk.KEY_V) and state & Gdk.ModifierType.CONTROL_MASK:
+            if self.paste_image_from_clipboard():
+                return True     # consume: we handled the image, not a text paste
+        return False            # anything else falls through to the normal paste
+
+    def paste_image_from_clipboard(self) -> bool:
+        """Paste an image from the clipboard into the note if one is present.
+        Returns ``True`` if an image was found and handled (async)."""
+        clipboard = self._view.get_clipboard()
+        if clipboard.get_formats().contain_gtype(Gdk.Texture):
+            clipboard.read_texture_async(None, self._on_clipboard_texture)
+            return True
+        return False
+
+    def _on_clipboard_texture(self, clipboard, result) -> None:
+        try:
+            texture = clipboard.read_texture_finish(result)
+        except GLib.Error as exc:
+            logger.warning("paste image: %s", exc)
+            return
+        if texture is not None:
+            self.insert_image(texture.save_to_png_bytes().get_data(), "pasted.png")
+
+    def _on_image_drop(self, _target, value, _x, _y) -> bool:
+        if isinstance(value, Gdk.Texture):
+            self.insert_image(value.save_to_png_bytes().get_data(), "dropped.png")
+            return True
+        if isinstance(value, Gdk.FileList):
+            for gfile in value.get_files():
+                path = gfile.get_path()
+                if path and Path(path).suffix.lower() in _IMAGE_SUFFIXES:
+                    try:
+                        data = Path(path).read_bytes()
+                    except OSError as exc:
+                        logger.warning("drop image: %s", exc)
+                        continue
+                    self.insert_image(data, Path(path).name)
+                    return True
+        return False
+
+    def insert_image(self, data: bytes, name: str) -> None:
+        """Save *data* into this note's attachments dir and insert a link at the
+        cursor. A no-op (with a warning) if the note has never been saved."""
+        if not self._file_path:
+            logger.warning("insert_image: note has no path yet; save it first")
+            return
+        from . import attachments, path_utils
+        note_dir = str(Path(self._file_path).parent)
+        vault = path_utils.find_vault_for_dir(note_dir) or note_dir
+        try:
+            link = attachments.store_image(vault, self._file_path, data, name)
+        except OSError as exc:
+            logger.warning("insert_image: could not store %s: %s", name, exc, exc_info=True)
+            return
+        alt = Path(name).stem or "image"
+        self._buffer.insert_at_cursor(f"![{alt}]({link})")
+        # The image is a non-.md file, so the vault monitor won't see it — ask the
+        # window to refresh the tree so the new attachment shows up.
+        self.emit("attachment-added")
 
     def _setup_broken_link_markers(self) -> None:
         """Configure gutter warning marks + red underline for broken links."""
@@ -124,6 +222,120 @@ class Editor(Gtk.ScrolledWindow):
             underline=Pango.Underline.LOW,
             underline_rgba=underline_color,
         )
+
+    def _setup_image_link_markers(self) -> None:
+        """Gutter marks for image links: a warning for a broken target (red
+        underline too), and an info hint for a local image outside the attachments
+        tree that a double-click adopts into it."""
+        self._adopt_sources: dict[int, str] = {}   # line -> external file to adopt
+        self._img_ranges: list[tuple[int, int, str]] = []   # (start, end, tooltip)
+        warn = GtkSource.MarkAttributes()
+        warn.set_icon_name("dialog-warning-symbolic")
+        self._view.set_mark_attributes(_IMG_BROKEN_CATEGORY, warn, 11)
+        hint = GtkSource.MarkAttributes()
+        hint.set_icon_name("dialog-information-symbolic")
+        self._view.set_mark_attributes(_IMG_ADOPT_CATEGORY, hint, 9)
+        color = Gdk.RGBA()
+        color.parse("rgb(255,64,64)")
+        self._img_broken_tag = self._buffer.create_tag(
+            _IMG_BROKEN_CATEGORY, underline=Pango.Underline.LOW, underline_rgba=color)
+        self._view.connect("line-mark-activated", self._on_line_mark_activated)
+        # Gutter-mark tooltips are unreliable in GtkSourceView 5, so show the hint
+        # as a text-hover tooltip over the link span instead.
+        self._view.set_has_tooltip(True)
+        self._view.connect("query-tooltip", self._on_image_link_tooltip)
+
+    _BROKEN_TOOLTIP = "Broken image link — the file does not exist"
+    _ADOPT_TOOLTIP = ("Not in the attachments folder — double-click the gutter icon "
+                      "to adopt it for auto-management")
+
+    def _on_image_link_tooltip(self, view, x, y, _keyboard, tooltip) -> bool:
+        bx, by = view.window_to_buffer_coords(Gtk.TextWindowType.WIDGET, x, y)
+        over, it = view.get_iter_at_location(bx, by)
+        if not over:
+            return False
+        offset = it.get_offset()
+        for start, end, text in self._img_ranges:
+            if start <= offset < end:
+                tooltip.set_text(text)
+                return True
+        return False
+
+    def _refresh_image_marks(self) -> bool:
+        """Reclassify the note's image links and repaint the gutter marks."""
+        if not self._file_path:
+            self._set_image_link_marks([])
+            return False
+        from . import attachments, path_utils
+        note_dir = str(Path(self._file_path).parent)
+        vault = path_utils.find_vault_for_dir(note_dir) or note_dir
+        self._set_image_link_marks(
+            attachments.classify_image_links(self.get_text(), note_dir, vault))
+        return False
+
+    def _set_image_link_marks(self, marks) -> None:
+        start, end = self._buffer.get_bounds()
+        self._buffer.remove_source_marks(start, end, _IMG_BROKEN_CATEGORY)
+        self._buffer.remove_source_marks(start, end, _IMG_ADOPT_CATEGORY)
+        self._buffer.remove_tag(self._img_broken_tag, start, end)
+        self._adopt_sources = {}
+        self._img_ranges = []
+        seen: set[tuple[str, int]] = set()
+        for offset_start, offset_end, line, kind, source in marks:
+            si = self._buffer.get_iter_at_offset(offset_start)
+            if kind == "broken":
+                ei = self._buffer.get_iter_at_offset(offset_end)
+                self._buffer.apply_tag(self._img_broken_tag, si, ei)
+                category = _IMG_BROKEN_CATEGORY
+                self._img_ranges.append((offset_start, offset_end, self._BROKEN_TOOLTIP))
+            else:
+                self._adopt_sources[line] = source
+                category = _IMG_ADOPT_CATEGORY
+                self._img_ranges.append((offset_start, offset_end, self._ADOPT_TOOLTIP))
+            # One gutter mark per line (its icon only renders at column 0).
+            if (category, line) not in seen:
+                seen.add((category, line))
+                line_start = si.copy()
+                line_start.set_line_offset(0)
+                self._buffer.create_source_mark(None, category, line_start)
+
+    def _on_line_mark_activated(self, _view, it, _button, _state, n_press) -> None:
+        if n_press >= 2 and it.get_line() in self._adopt_sources:
+            self._adopt_image_on_line(it.get_line())
+
+    def _adopt_image_on_line(self, line: int) -> None:
+        """Copy the external image referenced on *line* into the attachments tree
+        and repoint the link at it."""
+        source = self._adopt_sources.get(line)
+        if not source or not self._file_path:
+            return
+        try:
+            data = Path(source).read_bytes()
+        except OSError as exc:
+            logger.warning("adopt image: cannot read %s: %s", source, exc)
+            return
+        from . import attachments, path_utils
+        note_dir = str(Path(self._file_path).parent)
+        vault = path_utils.find_vault_for_dir(note_dir) or note_dir
+        try:
+            link = attachments.store_image(vault, self._file_path, data, Path(source).name)
+        except OSError as exc:
+            logger.warning("adopt image: cannot store %s: %s", source, exc, exc_info=True)
+            return
+        ok, line_start = self._buffer.get_iter_at_line(line)
+        if not ok:
+            return
+        line_end = line_start.copy()
+        line_end.forward_to_line_end()
+        line_text = self._buffer.get_text(line_start, line_end, False)
+        new_line = attachments.retarget_image(line_text, note_dir, source, link)
+        if new_line != line_text:
+            self._buffer.begin_user_action()
+            self._buffer.delete(line_start, line_end)
+            self._buffer.insert(line_start, new_line)
+            self._buffer.end_user_action()
+        self.emit("attachment-added")   # new file in attachments → refresh tree
+        self._refresh_image_marks()
 
     # ------------------------------------------------------------------
     # Properties
@@ -168,6 +380,7 @@ class Editor(Gtk.ScrolledWindow):
         self._buffer.end_irreversible_action()
         self._buffer.set_modified(False)
         self.emit("file-changed", path)
+        self._refresh_image_marks()
 
     def get_text(self) -> str:
         """Return the full buffer content as a string."""
@@ -456,6 +669,7 @@ class Editor(Gtk.ScrolledWindow):
     def _emit_text_changed(self) -> bool:
         self._debounce_id = None
         self.emit("text-changed")
+        self._refresh_image_marks()
         return False
 
     # ------------------------------------------------------------------

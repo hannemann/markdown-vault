@@ -25,6 +25,7 @@ gi.require_version("Pango", "1.0")
 
 from gi.repository import Gtk, Adw, GLib, GObject, Pango, Gio, Gdk
 
+from . import attachments
 from . import validation
 from . import dialogs
 from . import config
@@ -362,6 +363,25 @@ class VaultTree(Gtk.Box):
         if badge is not None:
             row_box.append(badge)
 
+    def _apply_internal(self, node: "VaultNode", label: Gtk.Label,
+                        row_box: Gtk.Box) -> None:
+        """Mark the app-managed attachments tree: dim the row and give a directory
+        an ``internal`` pill, so it reads as off-limits (it is also not a drop
+        target — see ``validation.validate_drop``)."""
+        if not attachments.is_internal(node.path):
+            return
+        label.add_css_class("tree-internal")
+        # The pill marks only the attachments root, not every dimmed subdirectory.
+        if node.is_dir and Path(node.path).name == "attachments":
+            box = Gtk.Box(spacing=4)
+            box.set_valign(Gtk.Align.CENTER)
+            box.add_css_class("tree-badges")
+            pill = Gtk.Label(label="internal")
+            pill.add_css_class("tree-badge")
+            pill.add_css_class("tree-badge-internal")
+            box.append(pill)
+            row_box.append(box)
+
     def refresh_lifecycle(self, path: str) -> None:
         """Re-read a note's frontmatter and update just its row's lifecycle badge
         in place — called on save so an edited status shows without a re-bind and
@@ -485,6 +505,7 @@ class VaultTree(Gtk.Box):
         # dimmed, and a trailing pill names the state. 'stable' (the default) is
         # unmarked. Read lazily per visible row and cached.
         self._apply_lifecycle(node, label, row_box)
+        self._apply_internal(node, label, row_box)
 
         # Vault roots get a full-width background bar (section-header look); the
         # trailing space is reserved for a future kebab menu.
@@ -680,7 +701,9 @@ class VaultTree(Gtk.Box):
                 continue
             if entry.is_dir():
                 self._populate_directory(entry, node.children)
-            elif entry.suffix.lower() == ".md":
+            elif entry.suffix.lower() == ".md" or attachments.is_internal(entry):
+                # Non-.md files stay hidden everywhere except the attachments tree,
+                # where images are shown (dimmed) so they are visible, not lost.
                 child = VaultNode(entry.name, str(entry), False)
                 _insert_sorted(node.children, child)
                 self._register(child)
@@ -703,6 +726,8 @@ class VaultTree(Gtk.Box):
             # runs alongside the open.
             row.set_expanded(not row.get_expanded())
             return
+        if not node.name.lower().endswith(".md"):
+            return          # attachments images are view-only, not openable notes
         self.emit("file-selected", node.path)
 
     def _on_double_press(self, gesture, n_press: int, x: float, y: float) -> None:
@@ -798,7 +823,8 @@ class VaultTree(Gtk.Box):
 
         menu = Gio.Menu()
 
-        if parent_dir:
+        # The attachments tree is app-managed: no manual create/import into it.
+        if parent_dir and not attachments.is_internal(parent_dir):
             menu.append("New File", "ctx.new-file")
             menu.append("New Folder", "ctx.new-folder")
             menu.append("Import…", "ctx.import")
@@ -1097,21 +1123,25 @@ class VaultTree(Gtk.Box):
         if row is None:
             return None
         node = row.get_item()
-        if self._is_vault_root(node):
-            return None  # don't drag vault roots
+        if self._is_vault_root(node) or attachments.is_internal(node.path):
+            return None  # don't drag vault roots or app-managed attachments
         return Gdk.ContentProvider.new_for_value(node.path)
 
     def _on_drop_motion(self, _target, _x, _y, list_item):
         row = list_item.get_item()
         new_path = None
+        internal = False
         if row is not None:
             node = row.get_item()
             if node.is_dir:
-                new_path = node.path
+                if attachments.is_internal(node.path):
+                    internal = True     # app-managed: no highlight, no drop
+                else:
+                    new_path = node.path
         if new_path != self._drop_hover_path:
             self._drop_hover_path = new_path
             self._refresh_drop_highlight()
-        return Gdk.DragAction.MOVE
+        return Gdk.DragAction(0) if internal else Gdk.DragAction.MOVE
 
     def _on_drop_leave(self, _target, list_item):
         if self._drop_hover_path is not None:

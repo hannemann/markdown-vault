@@ -30,6 +30,8 @@ import yaml
 from dataclasses import dataclass
 from html import unescape as html_unescape
 from pathlib import Path
+
+from .attachments import attachment_target  # re-exported: layout lives in attachments
 from urllib.parse import urljoin, urlparse
 
 logger = logging.getLogger(__name__)
@@ -618,21 +620,6 @@ def rewrite_image_url(text: str, url: str, rel: str) -> str:
             else m.group(0)
 
     return _IMG_HTML.sub(html_repl, _IMG_MD.sub(md_repl, text))
-
-
-def attachment_target(vault_root: str | Path, note_dir: str | Path, stem: str):
-    """Where a note's downloaded images live, and how to link them.
-
-    Attachments mirror the note's location under one ``<vault>/attachments/`` tree
-    (so two same-named notes in different folders don't collide), and the returned
-    link prefix is relative to the note so it resolves in the preview wherever the
-    note sits: a note in ``sub/`` gets ``../attachments/sub/<note>/``. Returns
-    ``(attachments_dir: Path, link_prefix: str)``."""
-    vault_root, note_dir = Path(vault_root), Path(note_dir)
-    rel_dir = os.path.relpath(note_dir, vault_root)
-    attach = Path(os.path.normpath(vault_root / "attachments" / rel_dir / stem))
-    link_prefix = Path(os.path.relpath(attach, note_dir)).as_posix()
-    return attach, link_prefix
 
 
 def save_to_vault(result: ImportResult, vault_dir: str | Path,
