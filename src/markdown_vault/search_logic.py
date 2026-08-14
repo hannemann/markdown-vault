@@ -13,6 +13,17 @@ from .path_utils import HEADING_RE
 logger = logging.getLogger(__name__)
 
 
+def deprecated_hidden_message(count: int, empty: bool) -> str:
+    """Notice shown when the "hide deprecated" filter removed matches from a result
+    list, so the user isn't left with a bare "nothing found". *empty* means the
+    filter left nothing else to show; *count* is how many notes it hid."""
+    if empty:
+        return ("All matches are deprecated — hidden by the “hide deprecated” "
+                "filter. Turn it off to show them.")
+    noun = "note" if count == 1 else "notes"
+    return f"{count} deprecated {noun} hidden by the filter."
+
+
 def search_vaults(
     query: str,
     vault_paths: list[str],

@@ -4,7 +4,22 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from markdown_vault.search_logic import search_vaults
+from markdown_vault.search_logic import search_vaults, deprecated_hidden_message
+
+
+class TestDeprecatedHiddenMessage(unittest.TestCase):
+    def test_empty_explains_all_hidden(self):
+        msg = deprecated_hidden_message(3, empty=True)
+        self.assertIn("deprecated", msg.lower())
+        self.assertIn("turn it off", msg.lower())
+
+    def test_non_empty_counts_singular(self):
+        self.assertEqual(deprecated_hidden_message(1, empty=False),
+                         "1 deprecated note hidden by the filter.")
+
+    def test_non_empty_counts_plural(self):
+        self.assertEqual(deprecated_hidden_message(4, empty=False),
+                         "4 deprecated notes hidden by the filter.")
 
 
 class TestSearchVaults(unittest.TestCase):

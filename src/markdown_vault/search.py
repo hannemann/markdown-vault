@@ -27,7 +27,7 @@ gi.require_version("Adw", "1")
 
 from gi.repository import Gtk, GObject, GLib, Gdk
 
-from . import path_utils, search_backend, frontmatter
+from . import path_utils, search_backend, frontmatter, search_logic
 
 logger = logging.getLogger(__name__)
 
@@ -332,24 +332,30 @@ class SearchBar(Gtk.Box):
             return False  # superseded by a newer search
         self._stop_spinner()
         self._last_results = file_results
-        self._reveal_deprecated = False       # a fresh result set starts hidden
         self._render_results()
         return False
 
     def _render_results(self) -> None:
         """Render (or re-render) the last completed result set, hiding deprecated
-        notes when the shared toggle is on."""
+        notes when the shared toggle is on. When the filter hides matches, say so
+        instead of leaving the user with a bare "No results found"."""
         self._clear_results()
         hide = self._hide_deprecated is not None and self._hide_deprecated()
+        hidden = 0
         for fr in self._last_results:
             if hide and frontmatter.status_of(fr.path) == "deprecated":
+                hidden += 1
                 continue
             self._results.append(self._build_file_header(fr))
             for match in fr.matches:
                 self._results.append(self._build_match_row(match))
             if fr.total_matches > len(fr.matches):
                 self._results.append(self._more_row(fr))
-        if self._results.get_row_at_index(0) is None:
+        empty = self._results.get_row_at_index(0) is None
+        if hidden:
+            self._results.append(self._message_row(
+                search_logic.deprecated_hidden_message(hidden, empty)))
+        elif empty:
             self._results.append(self._message_row("No results found"))
 
     def _on_dep_toggled(self, btn) -> None:

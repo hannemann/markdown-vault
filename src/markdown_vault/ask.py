@@ -361,6 +361,17 @@ def budget_warning(kept: int, retrieved: int) -> list:
             f"window; the {dropped} least-relevant did not. {tail}"]
 
 
+def deprecated_dropped_warning(dropped: int) -> list:
+    """The user-facing note when the "hide deprecated" filter removed some (but not
+    all) retrieved notes from the answer's context, so the exclusion is visible
+    instead of silent (Answer.warnings renders it)."""
+    if dropped <= 0:
+        return []
+    noun = "note" if dropped == 1 else "notes"
+    return [f"{dropped} deprecated {noun} matched but were excluded by the "
+            "“hide deprecated” filter. Turn it off to include them."]
+
+
 def _no_context_answer() -> Answer:
     """The reply when the budget fits no note at all — there is nothing to ground
     on, so we don't spend a backend round-trip on an empty "(no excerpts)" prompt
@@ -435,6 +446,7 @@ def answer_question(question: str, semantic_index, settings: dict, vaults,
     if semantic_index is None:
         return Answer(text="Semantic search is not active — without an index I "
                            "can't search your notes.")
+    dep_note: list = []
     if note_paths:
         hits = semantic_index.note_hits(note_paths)
     else:
@@ -459,6 +471,9 @@ def answer_question(question: str, semantic_index, settings: dict, vaults,
                          "excluded by the “hide deprecated” filter. Turn it off to "
                          "use them.",
                     considered=excluded)
+            # Partial drop: some notes were excluded — say so instead of silently
+            # answering from a thinner context.
+            dep_note = deprecated_dropped_warning(len(hits) - len(kept))
             hits = kept
     # Only override thinking when the user turned reasoning OFF, so non-reasoning
     # models (and Ollama, which errors on an unknown "think") keep their default.
@@ -542,4 +557,4 @@ def answer_question(question: str, semantic_index, settings: dict, vaults,
         on_phase("thinking")                  # local fires its own load/think phases
     return answer(question, hits, chat, language=language,
                   system_template=settings.get("ask_system_prompt") or None,
-                  extra_warnings=budget_note)
+                  extra_warnings=dep_note + budget_note)

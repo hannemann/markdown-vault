@@ -431,6 +431,35 @@ class TestAnswerQuestionLocalBackend(unittest.TestCase):
         self.assertIn("Turn it off", a.text)
         self.assertEqual([s.n for s in a.considered], [1])   # excluded note offered
 
+    def test_deprecated_dropped_warning_counts(self):
+        self.assertEqual(ask.deprecated_dropped_warning(0), [])
+        self.assertIn("1 deprecated note ", ask.deprecated_dropped_warning(1)[0])
+        self.assertIn("2 deprecated notes ", ask.deprecated_dropped_warning(2)[0])
+
+    def test_hide_deprecated_partial_drop_warns(self):
+        # Some (not all) hits are deprecated: answer from the rest, but say the
+        # filter excluded the others instead of thinning the context silently.
+        from markdown_vault import frontmatter, llama_runtime
+        sem = SimpleNamespace(retrieve=lambda *a, **k: [
+            (_chunk("/v/keep.md", 1, "keep"), 1.0),
+            (_chunk("/v/dep.md", 1, "dep"), 0.9)])
+        orig_status = frontmatter.status_of
+        orig_av, orig_cls = llama_runtime.availability, llama_runtime.LlamaCppChat
+        frontmatter.status_of = lambda p: "deprecated" if p == "/v/dep.md" else "stable"
+        llama_runtime.availability = lambda p: None
+        llama_runtime.LlamaCppChat = lambda *a, **k: SimpleNamespace(
+            chat=lambda s, u: "answer [1]")
+        try:
+            a = ask.answer_question(
+                "q", sem, {"hide_deprecated": True, "ask_engine": "auto"},
+                None, "English")
+        finally:
+            frontmatter.status_of = orig_status
+            llama_runtime.availability = orig_av
+            llama_runtime.LlamaCppChat = orig_cls
+        self.assertTrue(any("deprecated" in w.lower() and "excluded" in w.lower()
+                            for w in a.warnings))
+
     def test_local_backend_fires_load_and_think_phases(self):
         from markdown_vault import llama_runtime
         orig_av, orig_cls = llama_runtime.availability, llama_runtime.LlamaCppChat

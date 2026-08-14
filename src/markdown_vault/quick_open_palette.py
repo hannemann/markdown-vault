@@ -17,7 +17,7 @@ gi.require_version("Adw", "1")
 
 from gi.repository import Gtk, Adw, GObject, GLib, Gdk
 
-from . import markdown_widgets, path_utils, frontmatter
+from . import markdown_widgets, path_utils, frontmatter, search_logic
 from .quick_open import fuzzy_match
 
 logger = logging.getLogger(__name__)
@@ -133,13 +133,10 @@ class QuickOpenPalette(Adw.Dialog):
 
         box.append(Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL))
 
-        # Upfront "deprecated hidden" bar with its OWN Show/Hide toggle — the
-        # shared tree toggle is unreachable behind this modal, so the dialog needs
-        # a reachable control. Show/Hide only re-renders the cached hits; a fresh
-        # (semantic) query needs a re-search, which the user triggers themselves.
         # Always-visible top bar: the persistent "hide deprecated" toggle plus the
-        # vault-scope filter (moved here from the footer). No hint text — the
-        # toggle's pressed state is the indicator.
+        # vault-scope filter (moved here from the footer). The shared tree toggle is
+        # unreachable behind this modal, so the dialog carries its own. When the
+        # filter hides hits, _render_all shows a count so the user knows why.
         self._dep_bar = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         self._dep_bar.add_css_class("search-deprecated-bar")
         self._dep_bar.append(Gtk.Box(hexpand=True))   # right-align the filters
@@ -357,16 +354,24 @@ class QuickOpenPalette(Adw.Dialog):
     def _render_all(self) -> None:
         """Rebuild the list from the cached filename + semantic hits, hiding
         deprecated notes when the shared toggle is on. Toggling re-renders from
-        here — no re-query, so a fresh (semantic) pass needs a new search."""
+        here — no re-query, so a fresh (semantic) pass needs a new search. When the
+        filter hides hits, show a count so the user isn't left with a bare "No
+        files"."""
         self._clear()
         hide = self._hide_deprecated is not None and self._hide_deprecated()
         self._shown_paths = set()
+        hidden: set = set()
         for r in self._raw_file_results + self._raw_sem_results:
             if hide and frontmatter.status_of(r.path) == "deprecated":
+                hidden.add(r.path)
                 continue
             self._shown_paths.add(r.path)
             self._results.append(self._build_row(r))
-        if self._results.get_row_at_index(0) is None:
+        empty = self._results.get_row_at_index(0) is None
+        if hidden:
+            self._results.append(self._message_row(
+                search_logic.deprecated_hidden_message(len(hidden), empty)))
+        elif empty:
             self._results.append(self._message_row("No files"))
         first = self._results.get_row_at_index(0)
         if first is not None and getattr(first, "_mv_open", None) is not None:
