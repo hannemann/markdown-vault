@@ -2368,7 +2368,9 @@ class MainWindow(Adw.ApplicationWindow):
         return self._search_bar.result_paths()
 
     def _debug_quiescent(self) -> bool:
-        return self._search_bar.is_idle() and not getattr(self, "_sem_busy", False)
+        return (self._search_bar.is_idle()
+                and not getattr(self, "_sem_busy", False)
+                and self._quick_open.is_idle())
 
     def debug_wait_idle(self, timeout_ms: int = 5000) -> bool:
         """Spin a nested main loop until async work settles (search idle, semantic

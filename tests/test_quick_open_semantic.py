@@ -278,5 +278,73 @@ class TestFooterModelPicker(unittest.TestCase):
         self.assertEqual(p._chosen.get("path"), "/b")
 
 
+class TestAskAnswerAccessor(unittest.TestCase):
+    """ask_answer_text() must track the stream and reset — not hand back a stale
+    answer to a poll-until-stable client (R66.1)."""
+
+    def _palette(self):
+        return QuickOpenPalette(make_engine=lambda: None, semantic_query=lambda q: [])
+
+    def test_grows_while_streaming(self):
+        p = self._palette()
+        p._ask_generation = 1
+        self.assertEqual(p.ask_answer_text(), "")
+        p._stream_delta(1, "Saturn")
+        self.assertEqual(p.ask_answer_text(), "Saturn")
+        p._stream_delta(1, "Saturn hat Ringe")   # full text each time, set not append
+        self.assertEqual(p.ask_answer_text(), "Saturn hat Ringe")
+
+    def test_clear_resets_so_no_stale_answer(self):
+        p = self._palette()
+        p._ask_generation = 1
+        p._stream_delta(1, "alte Antwort")
+        p._clear()
+        self.assertEqual(p.ask_answer_text(), "")   # a new question starts empty
+
+    def _ask_palette(self):
+        from types import SimpleNamespace
+        ans = SimpleNamespace(text="Saturn", error=None, sources=[])
+        p = QuickOpenPalette(make_engine=lambda: None, semantic_query=lambda q: [],
+                             ask_answer=lambda q, **k: ans)
+        p._ask_mode = True
+        p._entry.set_text("Was ist Saturn?")
+        return p, ans
+
+    def test_is_idle_false_from_submit_until_answer(self):
+        # Drives the real path: _run_ask marks busy, _show_answer clears it — so it
+        # stays busy through generation, not just prefill (the old timer bug).
+        p, ans = self._ask_palette()
+        self.assertTrue(p.is_idle())
+        p._run_ask()
+        self.assertFalse(p.is_idle())               # busy while the worker runs
+        p._show_answer(p._ask_generation, ans)      # completion callback lands
+        self.assertTrue(p.is_idle())
+
+    def test_close_clears_busy(self):
+        p, _ = self._ask_palette()
+        p._run_ask()
+        self.assertFalse(p.is_idle())
+        p._on_closed()                              # abandoning the answer
+        self.assertTrue(p.is_idle())
+
+    def test_leaving_ask_mode_clears_busy(self):
+        # R69.1: bumping the generation to abandon an answer must clear busy too.
+        from types import SimpleNamespace
+        p, _ = self._ask_palette()
+        p._engine = None
+        p._run_ask()
+        self.assertFalse(p.is_idle())
+        p._on_ask_toggled(SimpleNamespace(get_active=lambda: False))
+        self.assertTrue(p.is_idle())
+
+    def test_pick_sources_clears_busy(self):
+        p, _ = self._ask_palette()
+        p._ask_candidates = lambda q: []            # enable the pick-sources path
+        p._run_ask()
+        self.assertFalse(p.is_idle())
+        p._show_candidates()
+        self.assertTrue(p.is_idle())
+
+
 if __name__ == "__main__":
     unittest.main()

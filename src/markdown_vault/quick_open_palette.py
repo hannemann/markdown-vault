@@ -81,6 +81,7 @@ class QuickOpenPalette(Adw.Dialog):
         self._sem_generation = 0        # invalidates in-flight semantic queries
         self._ask_mode = False
         self._ask_generation = 0        # invalidates in-flight answers
+        self._ask_busy = False          # an answer worker is running (WaitIdle)
         self._last_question = ""        # kept so reopening shows it beside the answer
         self._answer_text = ""          # raw Markdown source, copied on Ctrl+C
         self._has_answer = False        # gates the sticky copy button
@@ -285,9 +286,16 @@ class QuickOpenPalette(Adw.Dialog):
         answer streams, ``''`` until the first token. Poll until it stops changing."""
         return self._answer_text or ""
 
+    def is_idle(self) -> bool:
+        """False from Submit until the answer worker finishes (or the palette
+        closes). The Ask half of WaitIdle's quiescence check, so a
+        Submit()→WaitIdle()→AskAnswer() sequence waits for the *whole* answer —
+        not just prefill (the elapsed timer stops at the first streamed token)."""
+        return not self._ask_busy
+
     def _on_closed(self) -> None:
         """Invalidate any in-flight answer so it is both dropped and aborted."""
-        self._ask_generation += 1
+        self._abandon_answer()
         self._stop_ticking()
 
     def refresh_scope(self) -> None:
@@ -586,6 +594,7 @@ class QuickOpenPalette(Adw.Dialog):
         self._selected = []
         self._stream_label = None
         self._stream_text = ""
+        self._answer_text = ""   # reset with the stream, so a stale answer can't linger
         if self._answer_btn is not None:
             self._answer_btn.set_visible(False)
 
@@ -674,7 +683,7 @@ class QuickOpenPalette(Adw.Dialog):
         self._ask_mode = btn.get_active()
         if not self._suppress_toggle:
             self._mode_locked = True  # remember the user's explicit choice
-        self._ask_generation += 1  # cancel any in-flight answer
+        self._abandon_answer()  # cancel any in-flight answer
         self._clear()
         if self._ask_mode:
             self._entry.set_placeholder_text("Ask a question and press Enter…")
@@ -685,6 +694,14 @@ class QuickOpenPalette(Adw.Dialog):
         self._refresh_models()          # model picker is Ask-mode only
         self._entry.grab_focus()
 
+    def _abandon_answer(self) -> None:
+        """Discard any in-flight answer: bump the generation (so a late worker's
+        _show_answer fails the supersede check) *and* clear the busy flag, in one
+        place. Every abandon and every restart goes through here, so "generation
+        bumped" and "no answer in flight" can never drift apart again."""
+        self._ask_generation += 1
+        self._ask_busy = False
+
     def _run_ask(self) -> None:
         question = self._entry.get_text().strip()
         if not question or self._ask_answer is None:
@@ -693,7 +710,8 @@ class QuickOpenPalette(Adw.Dialog):
         self._clear()
         self._results.append(self._status_row())
         self._start_timer()
-        self._ask_generation += 1
+        self._abandon_answer()         # cancel any previous answer, then...
+        self._ask_busy = True          # ...mark this one busy (until _show_answer)
         generation = self._ask_generation
         on_phase = lambda p, g=generation: GLib.idle_add(self._set_phase, g, p)
         on_token = lambda t, g=generation: GLib.idle_add(self._stream_delta, g, t)
@@ -750,12 +768,14 @@ class QuickOpenPalette(Adw.Dialog):
             row.set_child(self._stream_label)
             self._results.append(row)
         self._stream_text = text
+        self._answer_text = text   # keep the accessor current while streaming
         self._stream_label.set_text(text)
         return False
 
     def _show_answer(self, generation: int, ans) -> bool:
         if generation != self._ask_generation:
             return False  # superseded by a newer question / mode switch
+        self._ask_busy = False     # this answer (success or error) is done
         elapsed = time.monotonic() - self._ask_started
         self._clear()          # also stops the ticking timer + clears its label
         if ans.error:
@@ -793,7 +813,7 @@ class QuickOpenPalette(Adw.Dialog):
         self._last_question = question
         self._clear()
         self._results.append(self._message_row("Finding candidates…"))
-        self._ask_generation += 1
+        self._abandon_answer()   # a candidate search supersedes any in-flight answer
         generation = self._ask_generation
 
         def worker():
@@ -883,7 +903,8 @@ class QuickOpenPalette(Adw.Dialog):
         self._clear()
         self._results.append(self._status_row())
         self._start_timer()
-        self._ask_generation += 1
+        self._abandon_answer()         # cancel any previous answer, then...
+        self._ask_busy = True          # ...mark this one busy (until _show_answer)
         generation = self._ask_generation
         on_phase = lambda p, g=generation: GLib.idle_add(self._set_phase, g, p)
         on_token = lambda t, g=generation: GLib.idle_add(self._stream_delta, g, t)
