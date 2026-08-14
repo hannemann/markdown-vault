@@ -1,5 +1,5 @@
 SHELL := /bin/bash
-.PHONY: download-wheels build-flatpak bundle install-flatpak run-flatpak test-flatpak clean clean-build clean-cache build venv venv-ai install install-ai uninstall clean-local run test test-e2e
+.PHONY: _fetch-wheels lock-wheels download-wheels build-flatpak bundle install-flatpak run-flatpak test-flatpak clean clean-build clean-cache build venv venv-ai install install-ai uninstall clean-local run test test-e2e
 
 WHEEL_DIR := src/share/markdown-vault
 WHEELS_DIR := $(WHEEL_DIR)/wheels
@@ -15,8 +15,9 @@ PYTHON := $(shell python3 -c 'import gi' 2>/dev/null && echo python3 || echo /us
 VENV := $(HOME)/.local/share/markdown-vault/venv
 REQUIREMENTS := requirements.txt
 REQUIREMENTS_AI := requirements-ai.txt
+LOCK := requirements.lock
 
-download-wheels:
+_fetch-wheels:
 	@echo "=> Downloading Python wheels (base + AI) for the Flatpak runtime (py3.13)..."
 	@rm -rf $(WHEELS_DIR)
 	@mkdir -p $(WHEELS_DIR)
@@ -27,6 +28,30 @@ download-wheels:
 		--platform manylinux_2_28_x86_64 \
 		-r requirements.txt -r requirements-ai.txt
 	@echo "=> $$(ls -1 $(WHEELS_DIR)/*.whl | wc -l) wheels in $(WHEELS_DIR)"
+
+# Regenerate the VERSION-CONTROLLED lock. Run deliberately when deps change, then
+# review the diff and commit requirements.lock — that committed file is the trust
+# anchor an upstream change has to get past in review.
+lock-wheels: _fetch-wheels
+	@scripts/gen-wheel-lock.sh $(WHEELS_DIR) > $(LOCK)
+	@echo "=> $(LOCK) updated ($$(wc -l < $(LOCK)) entries) — review the diff and commit it"
+
+# Fetch wheels and VERIFY them against the committed lock: a changed upstream
+# artifact fails the build (a reviewable diff) instead of being re-hashed
+# silently. The install then uses the committed lock, copied in for the manifest.
+download-wheels: _fetch-wheels
+	@test -f $(LOCK) || { echo "!! no $(LOCK) — run 'make lock-wheels' and commit it first"; exit 1; }
+	@scripts/gen-wheel-lock.sh $(WHEELS_DIR) > $(WHEELS_DIR)/.lock.actual
+	@if ! diff -u $(LOCK) $(WHEELS_DIR)/.lock.actual; then \
+		echo "!! downloaded wheels do not match $(LOCK) — either a dependency in"; \
+		echo "   requirements*.txt changed (lock is behind) or an upstream artifact"; \
+		echo "   was substituted. Review the diff above; if intended, run"; \
+		echo "   'make lock-wheels' and commit the updated $(LOCK)."; \
+		rm -f $(WHEELS_DIR)/.lock.actual; exit 1; \
+	fi
+	@rm -f $(WHEELS_DIR)/.lock.actual
+	@cp $(LOCK) $(WHEELS_DIR)/requirements.lock
+	@echo "=> wheels verified against committed $(LOCK)"
 
 build-flatpak: download-wheels
 	@echo "=> Cleaning previous build..."

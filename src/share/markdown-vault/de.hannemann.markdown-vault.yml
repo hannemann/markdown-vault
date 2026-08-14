@@ -16,20 +16,21 @@ modules:
   - name: python3-dependencies
     buildsystem: simple
     # Install the app's Python dependencies from vendored wheels, offline. The
-    # wheels (base requirements.txt + optional AI requirements-ai.txt, resolved
-    # for the runtime's Python) are fetched by `make download-wheels` into
-    # src/share/markdown-vault/wheels/ (gitignored). requirements(-ai).txt is the
-    # single source of truth shared with the venv-based source install.
+    # trust anchor is the version-controlled root requirements.lock (every wheel
+    # pinned with its sha256). `make download-wheels` fetches the wheels into
+    # src/share/markdown-vault/wheels/ (gitignored), regenerates a lock from what
+    # arrived and diffs it against the committed one — a mismatch aborts the build
+    # — then copies the committed lock in as wheels/requirements.lock. Installing
+    # with --require-hashes against it is what verifies the bundle's contents
+    # (flatpak-builder no longer hashes the wheels itself once they are a type:
+    # dir). requirements(-ai).txt stays the human-edited source of truth; run
+    # `make lock-wheels` to refresh the lock when they change.
     build-commands:
-      - pip3 install --verbose --exists-action=i --no-index --find-links="wheels" --no-build-isolation --ignore-installed --prefix=${FLATPAK_DEST} -r requirements.txt -r requirements-ai.txt
+      - pip3 install --verbose --exists-action=i --no-index --find-links="wheels" --no-build-isolation --ignore-installed --require-hashes --prefix=${FLATPAK_DEST} -r wheels/requirements.lock
     sources:
       - type: dir
         path: wheels
         dest: wheels
-      - type: file
-        path: ../../../requirements.txt
-      - type: file
-        path: ../../../requirements-ai.txt
 
   - name: markdown-vault
     buildsystem: meson
