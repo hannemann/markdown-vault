@@ -21,11 +21,13 @@ import logging
 import re
 import socket
 import sys
+import time
 import urllib.error
 import urllib.request
 
 import yaml
 from dataclasses import dataclass
+from html import unescape as html_unescape
 from pathlib import Path
 from urllib.parse import urljoin, urlparse
 
@@ -395,8 +397,25 @@ def slug(text: str, max_len: int = 60) -> str:
 # ── Optional local image download ──────────────────────────────────
 
 _IMG_MD = re.compile(r"!\[([^\]]*)\]\(<?(https?://[^)>\s]+)>?\)")
+# <img src="…"> inside a table kept as HTML — the src is downloaded and rewritten
+# just like a markdown image so complex-table images are localised too.
+_IMG_HTML = re.compile(r'(<img\b[^>]*?\bsrc=")(https?://[^"]+)(")', re.I)
 _MAX_IMAGES = 100                       # per note, bounds a hostile page's fan-out
 _MAX_IMAGE_TOTAL = 100 * 1024 * 1024    # total bytes downloaded per note
+_RETRY_STATUS = (429, 503)              # transient throttling — worth a retry
+_MAX_RETRIES = 2                        # attempts = 1 + this
+_MAX_RETRY_WAIT = 5.0                   # cap on an honoured Retry-After (seconds)
+_THROTTLE_SECONDS = 0.2                 # polite gap between image requests
+_IMAGE_DEADLINE_SECONDS = 90.0          # wall-clock cap on the whole image pass
+
+
+def _retry_after_seconds(exc: urllib.error.HTTPError, attempt: int) -> float:
+    """How long to wait before retrying: the server's ``Retry-After`` (capped) if
+    it gives one as plain seconds, else exponential backoff (1s, 2s, …)."""
+    header = exc.headers.get("Retry-After") if exc.headers else None
+    if header and header.strip().isdigit():
+        return min(float(header.strip()), _MAX_RETRY_WAIT)
+    return min(2.0 ** attempt, _MAX_RETRY_WAIT)
 _IMG_EXTS = (".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp", ".ico", ".avif")
 _CTYPE_EXT = {"image/png": ".png", "image/jpeg": ".jpg", "image/gif": ".gif",
               "image/webp": ".webp", "image/svg+xml": ".svg", "image/bmp": ".bmp",
@@ -443,29 +462,42 @@ class _ImageRedirectGuard(_HttpRedirectGuard):
         return new
 
 
-def _fetch_image(url: str, timeout: int = 20):
+def _fetch_image(url: str, timeout: int = 20, sleep=time.sleep):
     """Download *url* as ``(bytes, content_type)``; ``None`` on any error, a
     non-image response, or a non-public host. Same http(s)-only, size-capped,
     redirect-guarded fetch as the page itself, plus an SSRF address guard on the
-    initial URL and every redirect target."""
+    initial URL and every redirect target. A transient 429/503 is retried a few
+    times, honouring ``Retry-After`` — image-heavy pages otherwise trip a server's
+    rate limit and lose their images to the keep-the-URL fallback."""
     host = urlparse(url).hostname or ""
     if not _host_is_public(host):
         logger.warning("web_import: refusing image from non-public host %r", host)
         return None
-    try:
-        opener = urllib.request.build_opener(_ImageRedirectGuard())
-        req = urllib.request.Request(url, headers={"User-Agent": "markdown-vault"})
-        with opener.open(req, timeout=timeout) as resp:
-            ctype = resp.headers.get_content_type()
-            if not ctype.startswith("image/"):
-                return None
-            raw = resp.read(_MAX_BYTES + 1)
-            if len(raw) > _MAX_BYTES:
-                return None
-        return raw, ctype
-    except (urllib.error.URLError, ValueError, OSError) as exc:
-        logger.warning("web_import: image download failed for %s: %s", url, exc)
-        return None
+    opener = urllib.request.build_opener(_ImageRedirectGuard())
+    req = urllib.request.Request(url, headers={"User-Agent": "markdown-vault"})
+    for attempt in range(_MAX_RETRIES + 1):
+        try:
+            with opener.open(req, timeout=timeout) as resp:
+                ctype = resp.headers.get_content_type()
+                if not ctype.startswith("image/"):
+                    return None
+                raw = resp.read(_MAX_BYTES + 1)
+                if len(raw) > _MAX_BYTES:
+                    return None
+            return raw, ctype
+        except urllib.error.HTTPError as exc:
+            if exc.code in _RETRY_STATUS and attempt < _MAX_RETRIES:
+                wait = _retry_after_seconds(exc, attempt)
+                logger.info("web_import: %s for %s, retrying in %.1fs",
+                            exc.code, url, wait)
+                sleep(wait)
+                continue
+            logger.warning("web_import: image download failed for %s: %s", url, exc)
+            return None
+        except (urllib.error.URLError, ValueError, OSError) as exc:
+            logger.warning("web_import: image download failed for %s: %s", url, exc)
+            return None
+    return None
 
 
 def _image_filename(url: str, content_type: str, taken: set) -> str:
@@ -488,25 +520,39 @@ def _image_filename(url: str, content_type: str, taken: set) -> str:
 
 
 def _localize_images(markdown: str, dest_dir: Path, rel_prefix: str,
-                     fetch=_fetch_image) -> str:
+                     fetch=_fetch_image, sleep=time.sleep, clock=time.monotonic) -> str:
     """Download each remote image referenced in *markdown* into *dest_dir* and
     rewrite its link to ``rel_prefix/<file>``. Each URL is fetched once (dedup);
     a failed download leaves the original remote URL in place so nothing is lost.
     Non-http(s) links (already-local, ``data:``) are untouched. Bounded by
-    ``_MAX_IMAGES`` and ``_MAX_IMAGE_TOTAL`` so a hostile page cannot make the
-    importer download without limit; images past a limit keep their remote URL."""
+    ``_MAX_IMAGES``, ``_MAX_IMAGE_TOTAL`` and a wall-clock ``_IMAGE_DEADLINE_SECONDS``
+    (retries against a slow/throttling host could otherwise run for an hour) so a
+    hostile or merely slow page cannot stall the pass; images past any limit keep
+    their remote URL."""
     mapping: dict[str, str | None] = {}
     taken: set = set()
     dest_dir = Path(dest_dir)
     total = 0
-    for _alt, url in _IMG_MD.findall(markdown):
+    start = clock()
+    # Both markdown ``![alt](url)`` and HTML ``<img src="url">`` (retained tables)
+    # carry images; the group-2 URL is common to both patterns.
+    urls = [m.group(2) for m in _IMG_MD.finditer(markdown)]
+    # An HTML src is entity-encoded (``&amp;``); unescape it so it fetches the real
+    # URL and dedups against the same image written as a markdown ``&`` link.
+    urls += [html_unescape(m.group(2)) for m in _IMG_HTML.finditer(markdown)]
+    fetched_any = False
+    for url in urls:
         if url in mapping:
             continue
-        if len(taken) >= _MAX_IMAGES or total >= _MAX_IMAGE_TOTAL:
+        if (len(taken) >= _MAX_IMAGES or total >= _MAX_IMAGE_TOTAL
+                or clock() - start > _IMAGE_DEADLINE_SECONDS):
             logger.warning("web_import: image limit reached, keeping remote URL %s", url)
             mapping[url] = None
             continue
+        if fetched_any:
+            sleep(_THROTTLE_SECONDS)   # a polite gap so we don't trip a rate limit
         got = fetch(url)
+        fetched_any = True
         if not got:
             mapping[url] = None
             continue
@@ -517,11 +563,15 @@ def _localize_images(markdown: str, dest_dir: Path, rel_prefix: str,
         total += len(data)
         mapping[url] = f"{rel_prefix}/{fname}"
 
-    def repl(m):
+    def md_repl(m):
         rel = mapping.get(m.group(2))
         return f"![{m.group(1)}]({rel})" if rel else m.group(0)
 
-    return _IMG_MD.sub(repl, markdown)
+    def html_repl(m):
+        rel = mapping.get(html_unescape(m.group(2)))
+        return f"{m.group(1)}{rel}{m.group(3)}" if rel else m.group(0)
+
+    return _IMG_HTML.sub(html_repl, _IMG_MD.sub(md_repl, markdown))
 
 
 def save_to_vault(result: ImportResult, vault_dir: str | Path,

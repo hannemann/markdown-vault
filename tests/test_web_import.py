@@ -390,6 +390,35 @@ class TestLocalizeImages(unittest.TestCase):
         out = wi._localize_images(md, Path(self._tmp) / "att", "att", fetch=self._fetch_ok)
         self.assertEqual(out, md)
 
+    def test_downloads_image_in_html_table(self):
+        # Images inside a complex table kept as HTML use <img src="…">, not
+        # markdown, and must be downloaded and rewritten too.
+        from pathlib import Path
+        md = ('text\n\n<table><tr><td>'
+              '<img src="https://ex.com/moon.png" alt="Moon"></td></tr></table>')
+        dest = Path(self._tmp) / "att"
+        out = wi._localize_images(md, dest, "att", fetch=self._fetch_ok)
+        self.assertIn('src="att/moon.png"', out)
+        self.assertNotIn("https://ex.com/moon.png", out)
+        self.assertTrue((dest / "moon.png").exists())
+
+    def test_dedup_across_markdown_and_html(self):
+        from pathlib import Path
+        calls = []
+
+        def fetch(url, timeout=20):
+            calls.append(url)
+            return (b"D", "image/png")
+
+        # The HTML src is entity-encoded (&amp;) but is the same image as the
+        # markdown link (&); it must fetch the unescaped URL once and dedup.
+        md = ('![a](https://ex.com/x.png?p=1&q=2) '
+              '<img src="https://ex.com/x.png?p=1&amp;q=2">')
+        out = wi._localize_images(md, Path(self._tmp) / "att", "att", fetch=fetch)
+        self.assertEqual(calls, ["https://ex.com/x.png?p=1&q=2"])   # once, unescaped
+        self.assertIn("![a](att/x.png)", out)
+        self.assertIn('src="att/x.png"', out)
+
     def test_image_count_is_bounded(self):
         # R74.2: a hostile page cannot make the importer download without limit.
         import unittest.mock as mock
@@ -402,7 +431,8 @@ class TestLocalizeImages(unittest.TestCase):
             return (b"D", "image/png")
 
         with mock.patch.object(wi, "_MAX_IMAGES", 2):
-            out = wi._localize_images(md, Path(self._tmp) / "att", "att", fetch=fetch)
+            out = wi._localize_images(md, Path(self._tmp) / "att", "att", fetch=fetch,
+                                      sleep=lambda *_: None)
         self.assertEqual(len(calls), 2)                 # only 2 fetched
         self.assertIn("https://ex.com/4.png", out)      # the rest keep remote URLs
 
@@ -412,9 +442,40 @@ class TestLocalizeImages(unittest.TestCase):
         md = "".join(f"![{i}](https://ex.com/{i}.png)" for i in range(5))
         with mock.patch.object(wi, "_MAX_IMAGE_TOTAL", 3):
             out = wi._localize_images(md, Path(self._tmp) / "att", "att",
-                                      fetch=lambda url, timeout=20: (b"XXXX", "image/png"))
+                                      fetch=lambda url, timeout=20: (b"XXXX", "image/png"),
+                                      sleep=lambda *_: None)
         # first over-budget image already exceeds the cap; the rest stay remote
         self.assertIn("https://ex.com/4.png", out)
+
+    def test_deadline_stops_downloading(self):
+        # R78.1: once the wall-clock deadline is passed, remaining images keep
+        # their remote URL rather than letting a slow/throttling host run for hours.
+        import unittest.mock as mock
+        from pathlib import Path
+        md = "".join(f"![{i}](https://ex.com/{i}.png)" for i in range(3))
+        calls = []
+
+        def fetch(url, timeout=20):
+            calls.append(url)
+            return (b"D", "image/png")
+
+        # start=0; first check 0 (ok, fetch), then jump past the deadline
+        times = iter([0.0, 0.0, 1e9, 1e9])
+        with mock.patch.object(wi, "_IMAGE_DEADLINE_SECONDS", 90.0):
+            out = wi._localize_images(md, Path(self._tmp) / "att", "att", fetch=fetch,
+                                      sleep=lambda *_: None, clock=lambda: next(times))
+        self.assertEqual(len(calls), 1)                 # only the first, then deadline
+        self.assertIn("https://ex.com/2.png", out)      # rest keep remote URLs
+
+    def test_throttle_sleeps_between_fetches(self):
+        from pathlib import Path
+        md = "".join(f"![{i}](https://ex.com/{i}.png)" for i in range(3))
+        slept = []
+        wi._localize_images(md, Path(self._tmp) / "att", "att",
+                            fetch=lambda url, timeout=20: (b"D", "image/png"),
+                            sleep=slept.append)
+        # a gap before each fetch except the first → 2 for 3 images
+        self.assertEqual(slept, [wi._THROTTLE_SECONDS, wi._THROTTLE_SECONDS])
 
 
 class TestSaveToVault(unittest.TestCase):
@@ -504,6 +565,58 @@ class TestExtractImagesInTables(unittest.TestCase):
         md = wi.extract(html, "https://ex.com/page.html").markdown
         self.assertIn("<table", md)                      # kept as HTML (colspan)
         self.assertIn("https://ex.com/x.png", md)        # image survived, absolute
+
+
+class TestFetchImageRetry(unittest.TestCase):
+    """A transient 429/503 is retried (honouring Retry-After) so image-heavy pages
+    don't lose images to a momentary rate limit."""
+
+    def _run(self, open_side_effect):
+        import unittest.mock as mock
+        opener = mock.Mock()
+        opener.open.side_effect = open_side_effect
+        slept = []
+        with mock.patch("urllib.request.build_opener", return_value=opener):
+            got = wi._fetch_image("http://8.8.8.8/x.png", sleep=slept.append)
+        return got, slept
+
+    def test_retries_on_429_then_succeeds(self):
+        import email.message
+        import urllib.error
+        hdr = email.message.Message()
+        hdr["Retry-After"] = "1"
+        seq = [urllib.error.HTTPError("http://8.8.8.8/x.png", 429, "slow", hdr, None),
+               _FakeResp(b"IMG", content_type="image/png")]
+
+        def openf(req, timeout=None):
+            item = seq.pop(0)
+            if isinstance(item, Exception):
+                raise item
+            return item
+
+        got, slept = self._run(openf)
+        self.assertEqual(got, (b"IMG", "image/png"))
+        self.assertEqual(slept, [1.0])                  # honoured Retry-After
+
+    def test_gives_up_after_max_retries(self):
+        import urllib.error
+
+        def openf(req, timeout=None):
+            raise urllib.error.HTTPError("http://8.8.8.8/x.png", 429, "slow", None, None)
+
+        got, slept = self._run(openf)
+        self.assertIsNone(got)
+        self.assertEqual(len(slept), wi._MAX_RETRIES)   # waited before each retry
+
+    def test_non_retryable_status_fails_fast(self):
+        import urllib.error
+
+        def openf(req, timeout=None):
+            raise urllib.error.HTTPError("http://8.8.8.8/x.png", 404, "nope", None, None)
+
+        got, slept = self._run(openf)
+        self.assertIsNone(got)
+        self.assertEqual(slept, [])                     # 404 is not retried
 
 
 if __name__ == "__main__":
