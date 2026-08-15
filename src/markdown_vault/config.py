@@ -358,6 +358,10 @@ _DEFAULT_SETTINGS = {
     # on a gold set, never worse); the Preferences switch can disable it if the
     # extra BM25 index is unwanted on a very large vault.
     "ask_hybrid": True,
+    # Document import — Whisper model size for audio transcription (tiny · base ·
+    # small · medium · large-v3; bigger = more accurate, slower, larger download).
+    # Downloaded explicitly in Preferences, never during an import.
+    "document_whisper_model": "base",
 }
 
 

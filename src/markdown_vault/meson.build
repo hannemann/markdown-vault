@@ -14,6 +14,7 @@ py_sources = files(
   'debug_control.py',
   'dialog_import.py',
   'dialogs.py',
+  'document_import.py',
   'editor.py',
   'event_router.py',
   'file_index.py',

@@ -15,3 +15,12 @@ stopwordsiso==0.7.1
 # is installed by scripts/install-llama.sh, invoked from `make install-ai`, which
 # builds it with Vulkan when the toolchain is present and otherwise fetches the
 # prebuilt CPU wheel. Pinning it here would always pull the CPU wheel.
+# Document import (File tab): convert PDF/Word/PowerPoint/Excel/audio to Markdown.
+# Deliberately torch-free, format-dispatched lightweight backends (~200 MB total,
+# no CUDA) instead of docling (3+ GB, half of it CUDA wheels useless on non-NVIDIA
+# hardware). No OCR of scanned documents — digital text only.
+pymupdf4llm==1.28.2      # PDF  -> Markdown (PyMuPDF), with image extraction
+mammoth==1.12.1          # .docx -> Markdown/HTML, with embedded images
+python-pptx==1.0.2       # .pptx -> text/notes per slide
+openpyxl==3.1.5          # .xlsx -> Markdown tables
+faster-whisper==1.2.1    # audio -> transcript (CTranslate2, CPU; model on first use)

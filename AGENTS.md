@@ -198,10 +198,12 @@ Hard rules:
   `requirements-ai.txt` (the heavy/compiled AI stack, kept opt-in), pin the
   version, then pull it in with `make install` / `make install-ai`. That is the
   ONLY allowed way to add a dependency.
-- After adding or changing a dependency in `requirements.txt`, regenerate the
-  version-controlled Flatpak hash lock: `make lock-wheels`, review the diff, and
-  commit the updated `requirements.lock`. Skipping this aborts `make build-flatpak`
-  at the hash-verification gate (the download no longer matches the committed lock).
+- After adding or changing a dependency in **either** `requirements.txt` **or**
+  `requirements-ai.txt` (the lock spans both, and `download-wheels` fetches from
+  both), regenerate the version-controlled Flatpak hash lock: `make lock-wheels`,
+  review the diff, and commit the updated `requirements.lock`. Skipping this aborts
+  `make build-flatpak` at the hash-verification gate (the download no longer matches
+  the committed lock).
 - Before a feature that added or changed a dependency is considered done, VERIFY
   **both** installation types from a clean state — `make uninstall && make install`
   (base) **and** `make uninstall && make install-ai` (with the optional AI stack) —
