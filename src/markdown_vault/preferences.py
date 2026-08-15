@@ -381,9 +381,56 @@ class PreferencesDialog(Adw.PreferencesDialog):
             "Chat model + prompt for synthesized answers", self._ask_subpage))
         search.add(cfg_group)
 
+        # ── Audio transcription (used by the document importer's File tab) ──
+        audio_group = Adw.PreferencesGroup(
+            title="Audio transcription",
+            description=("Turn audio files into text when you import them. Pick a "
+                         "model size and download it once (bigger = more accurate, "
+                         "slower, larger)."))
+        # Model picker: the multilingual sizes (one model handles ~99 languages,
+        # auto-detected). Bigger = more accurate but slower and a larger download.
+        whisper_models = [
+            ("tiny", "tiny (~75 MB)"),
+            ("base", "base (~140 MB)"),
+            ("small", "small (~460 MB)"),
+            ("medium", "medium (~1.5 GB)"),
+            ("large-v3", "large-v3 (~3 GB)"),
+        ]
+        self._whisper_values = [v for v, _ in whisper_models]
+        self._whisper_model_row = Adw.ComboRow(
+            title="Model",
+            subtitle="Multilingual; bigger = more accurate, slower, larger download",
+            model=Gtk.StringList.new([label for _, label in whisper_models]))
+        current = (self._settings.get("document_whisper_model")
+                   or config.default("document_whisper_model"))
+        self._whisper_model_row.set_selected(
+            self._whisper_values.index(current) if current in self._whisper_values
+            else self._whisper_values.index("base"))
+        self._whisper_model_row.connect("notify::selected",
+                                        self._on_whisper_model_changed)
+        audio_group.add(self._whisper_model_row)
+
+        self._whisper_progress = Gtk.ProgressBar(
+            show_text=True, visible=False,
+            margin_start=12, margin_end=12, margin_bottom=6)
+        audio_group.add(self._whisper_progress)
+
+        self._whisper_row = Adw.ActionRow(title="Model files")
+        self._whisper_status_icon = Gtk.Image()
+        self._whisper_row.add_prefix(self._whisper_status_icon)
+        self._whisper_dl_btn = Gtk.Button(
+            icon_name="folder-download-symbolic", valign=Gtk.Align.CENTER,
+            tooltip_text="Download the selected model")
+        self._whisper_dl_btn.add_css_class("flat")
+        self._whisper_dl_btn.connect("clicked", self._on_download_whisper)
+        self._whisper_row.add_suffix(self._whisper_dl_btn)
+        audio_group.add(self._whisper_row)
+        search.add(audio_group)
+
         self._update_sem_backend_sensitivity()
         self._refresh_onnx_status()
         self._refresh_ask_models()
+        self._refresh_whisper_status()
         threading.Thread(target=self._probe_onnx_runtime, daemon=True).start()
 
         self.add(search)
@@ -1195,6 +1242,79 @@ class PreferencesDialog(Adw.PreferencesDialog):
             self._persist()
         self._refresh_gguf_models()
         self._refresh_gguf_status()
+
+    # ── Audio transcription model (document import) ─────────────────
+    def _refresh_whisper_status(self) -> None:
+        """Show whether the configured transcription model is downloaded. Both checks
+        are cheap (a find_spec and a file test), so no background thread is needed."""
+        from . import document_import
+        if document_import.is_available(".mp3"):          # faster_whisper absent
+            self._whisper_status_icon.set_from_icon_name("dialog-warning-symbolic")
+            self._whisper_row.set_subtitle("Needs the optional AI stack — make install-ai")
+            self._whisper_dl_btn.set_sensitive(False)
+            return
+        self._apply_whisper_status(document_import.whisper_model_ready())
+
+    def _on_whisper_model_changed(self, row, _pspec) -> None:
+        self._settings["document_whisper_model"] = self._whisper_values[
+            row.get_selected()]
+        self._persist()
+        self._refresh_whisper_status()          # different size → its own folder
+
+    def _apply_whisper_status(self, ready: bool) -> bool:
+        if ready:
+            self._whisper_status_icon.set_from_icon_name("emblem-ok-symbolic")
+            self._whisper_row.set_subtitle("Downloaded — audio import ready")
+        else:
+            self._whisper_status_icon.set_from_icon_name("folder-download-symbolic")
+            self._whisper_row.set_subtitle("Not downloaded")
+        self._whisper_dl_btn.set_sensitive(True)
+        return False
+
+    def _make_whisper_tqdm(self):
+        """A tqdm subclass that drives the progress bar from the byte-download of the
+        model file (the dominant part); the tiny config files just flash past."""
+        bar = self._whisper_progress
+        from tqdm.auto import tqdm as _base
+
+        class _Bar(_base):
+            def update(self_inner, n=1):
+                r = super().update(n)
+                if self_inner.total and getattr(self_inner, "unit", "") == "B":
+                    GLib.idle_add(bar.set_fraction,
+                                  min(1.0, self_inner.n / self_inner.total))
+                return r
+        return _Bar
+
+    def _on_download_whisper(self, _btn) -> None:
+        self._whisper_dl_btn.set_sensitive(False)
+        self._whisper_status_icon.set_from_icon_name("folder-download-symbolic")
+        self._whisper_row.set_subtitle("Downloading…")
+        self._whisper_progress.set_fraction(0.0)
+        self._whisper_progress.set_visible(True)
+        model = self._whisper_values[self._whisper_model_row.get_selected()]
+        threading.Thread(target=self._whisper_download_worker, args=(model,),
+                         daemon=True).start()
+
+    def _whisper_download_worker(self, model) -> None:
+        from . import document_import
+        try:
+            document_import.download_whisper_model(
+                model, tqdm_class=self._make_whisper_tqdm())
+            GLib.idle_add(self._after_whisper_download, True, None)
+        except Exception as exc:
+            logger.warning("Whisper model download failed: %s", exc, exc_info=True)
+            GLib.idle_add(self._after_whisper_download, False, str(exc))
+
+    def _after_whisper_download(self, ok: bool, msg: str | None) -> bool:
+        self._whisper_progress.set_visible(False)
+        if ok:
+            self._apply_whisper_status(True)
+        else:
+            self._whisper_status_icon.set_from_icon_name("dialog-error-symbolic")
+            self._whisper_row.set_subtitle(f"Download failed: {msg[:70]}")
+            self._whisper_dl_btn.set_sensitive(True)
+        return False
 
     def _on_ask_gpu_layers_changed(self, _row, _pspec) -> None:
         self._settings["ask_n_gpu_layers"] = int(
