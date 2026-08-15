@@ -105,73 +105,41 @@ Markdown Vault — a GNOME desktop app for editing and previewing Markdown files
 
 ## Project structure
 
-```
-src/
-  bin/markdown-vault.in       — launcher template; Meson substitutes the interpreter
-                                and PYTHONPATH, then installs it as bin/markdown-vault
-  markdown_vault/             — the Python package (import `markdown_vault`)
-    __init__.py               — package marker
-    __main__.py               — entry point (python3 -m markdown_vault)
-    main.py                   — AdwApplication setup, logging
-    app_window.py             — main window, three-panel layout (delegates to the managers below)
-    tab_manager.py            — TabOrchestrator: tab lifecycle
-    session_manager.py        — vault session save/restore
-    view_mode_manager.py      — edit/render/split view switching
-    input_manager.py          — keyboard shortcuts / accelerators
-    file_manager.py, file_ops.py — file create/delete/rename/move operations
-    monitor_handler.py        — routes VaultMonitor events to tree/index/tabs
-    event_router.py           — FileEventDispatcher (external-event fan-out to the sidebar)
-    content_changes.py        — external-change detection + reload banner
-    autosave.py               — AutosaveManager
-    dialogs.py, banners.py    — reusable Adw dialogs / banner widget
-    vault_tree.py             — left panel: file tree for vaults
-    vault_monitor.py          — Gio.FileMonitor wrapper for external change detection
-    editor.py                 — text editor widget (GtkSourceView 5)
-    preview.py                — WebView-based Markdown renderer
-    tabs.py                   — TabBar + Tab widgets
-    sidebar.py                — right sidebar (outline, backlinks, metadata, git, details)
-    find_bar.py               — in-view find bar (Ctrl+F), editor/preview search
-    quick_open.py             — quick-open engine: fuzzy matcher, providers, ranking
-    quick_open_palette.py     — Ctrl+Space palette (Adw.Dialog), provider-driven
-    search.py                 — bottom bar UI: live results, modifiers, operators, scope toggle
-    search_backend.py         — search engine: ripgrep + Python fallback, ranking, query operators/filters
-    search_logic.py           — pure helpers: heading extraction, file details, legacy vault search
-    vault_scope.py            — shared vault-scope dropdown (current / all / a vault) for every search
-    semantic_search.py        — chunking (chunk_markdown) + embedders (OnnxEmbedder/OllamaEmbedder) + VectorIndex
-    semantic_index.py         — semantic index manager: per-file cache, incremental update, note-level RAG retrieve
-    ask.py                    — RAG answering: grounded prompt (build_messages) + OllamaChat/OpenAIChat, reasoning toggle
-    git_integration.py        — git status, diff, commit
-    tags.py                   — [[wikilink]] parsing, backlinks
-    wikilink_autofix.py       — pre-save wikilink autofix + broken-link detection (pure logic + WikilinkResolver glue)
-    backlink_index.py         — O(1) backlink lookup, built on startup
-    file_index.py             — O(1) wikilink resolution (single index shared across previews)
-    attachments.py            — managed image attachments: <vault>/attachments/<note-path>/ layout
-                                (attachment_target/store_image), move/remove on rename/delete + relink,
-                                is_internal guard, classify/adopt for hand-typed links
-    config.py                 — vaults.yaml reader/writer + settings
-    session.py                — session persistence (JSON)
-    preferences.py            — Adw.PreferencesDialog
-    mru.py                    — MRU tab switcher (Ctrl+Tab)
-    history.py                — navigation history (back/forward)
-    path_utils.py             — vault path resolution helpers
-    validation.py             — input validation utilities
-    latex_mathml.py           — LaTeX → MathML converter (no JS/CDN)
-    markdown_help.py          — Markdown syntax reference overlay (F1)
-    meson.build               — Python package build rules (the manually-maintained py_sources list)
-  css/
-    style.css                 — WebView styling for rendered Markdown
-    gtk.css                   — GTK CSS for tab bar and widgets
-                                (Meson installs both into markdown_vault/css/)
-  share/markdown-vault/
-    icons/hicolor/            — icon theme
-    de.hannemann.markdown-vault.desktop
-    de.hannemann.markdown-vault.metainfo.xml
-    de.hannemann.markdown-vault.gresource.xml
-    de.hannemann.markdown-vault.yml  — Flatpak manifest
-    meson.build               — Data files build rules
-meson.build            — top-level build system
-tests/                   — unit tests (unittest); run with PYTHONPATH=src
-```
+For module-level detail — where a symbol lives, who calls it, how modules connect — use
+**graphify** (`make graph-query/explain/path`); it derives that from the code and stays
+current. Do **not** keep an exhaustive per-file list here — it only rots and duplicates
+the graph. This section is the curated navigation index: directory layout, entry points,
+key files.
+
+### Directory layout
+
+| Path | Purpose |
+| ---- | ------- |
+| `src/bin/markdown-vault.in` | launcher template; Meson substitutes interpreter + PYTHONPATH → installed `bin/markdown-vault` |
+| `src/markdown_vault/` | the Python package (`import markdown_vault`) — all app code |
+| `src/markdown_vault/meson.build` | the **manually-maintained `py_sources` list** — every new `.py` MUST be added here (alphabetical) or it is not installed and the app crashes with `ModuleNotFoundError` |
+| `src/css/` | `style.css` (WebKit preview) + `gtk.css` (GTK widgets); Meson installs both into `markdown_vault/css/` |
+| `src/share/markdown-vault/` | `.desktop` / metainfo / gresource, icons, and the Flatpak manifest (`.yml`) |
+| `tests/` | unit tests (unittest); run via `make test` / `make test-one` |
+| `meson.build` (top level) | build-system entry point |
+
+### Entry points — where to start for a task
+
+- **App startup:** `__main__.py` → `main.py` (AdwApplication, logging) → `app_window.py`
+  (three-panel main window, delegates to the `*_manager.py` helpers).
+- **Add a document-import format:** `document_import.py` — add a handler and register it in
+  `_HANDLERS`; the File tab (`dialog_import.py`) surfaces it via `SUPPORTED_SUFFIXES`.
+- **Web import (URL → note):** `web_import.py`, surfaced through `dialog_import.py`.
+- **Managed image attachments:** `attachments.py` — the shared layout web import, document
+  import, paste and drag-drop all store into.
+- **Preview / rendering:** `preview.py` (Markdown → HTML via Python-Markdown + pymdownx,
+  rendered in WebKit); styling in `src/css/style.css`.
+- **Editor:** `editor.py` (GtkSourceView 5).
+- **Search:** bottom-bar `search.py` over `search_backend.py`; semantic + Ask in
+  `semantic_search.py` / `semantic_index.py` / `ask.py`.
+- **Config / session:** `config.py` (vaults.yaml + settings), `session.py` (JSON state).
+
+For anything finer-grained, query the graph rather than reading top-to-bottom.
 
 ## Module Dependencies
 
