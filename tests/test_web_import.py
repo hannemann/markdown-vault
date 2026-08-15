@@ -507,12 +507,32 @@ class TestImageNormalize(unittest.TestCase):
         self.assertFalse(wi._is_tracking_pixel(self._img('<img src="p.png" width="640">')))
         self.assertFalse(wi._is_tracking_pixel(self._img('<img src="p.png">')))
 
-    def test_pick_src_prefers_src_then_lazy(self):
+    def test_pick_src_plain_and_lazy_when_no_conflict(self):
         base = "https://ex.com/a/b.html"
         self.assertEqual(wi._pick_img_src(self._img('<img src="x.png">'), base),
-                         "https://ex.com/a/x.png")
+                         "https://ex.com/a/x.png")          # no lazy attr -> plain src
         self.assertEqual(wi._pick_img_src(self._img('<img data-src="y.png">'), base),
-                         "https://ex.com/a/y.png")
+                         "https://ex.com/a/y.png")          # no src -> data-src
+
+    def test_pick_src_lazy_attr_wins_over_placeholder(self):
+        # Lazy-load: a data-* source means the plain src is only a placeholder.
+        base = "https://ex.com/a/b.html"
+        for attr in ("data-src", "data-original", "data-lazy-src", "data-lazy"):
+            self.assertEqual(
+                wi._pick_img_src(self._img(f'<img src="ph.gif" {attr}="real.jpg">'), base),
+                "https://ex.com/a/real.jpg", attr)
+
+    def test_pick_src_lazy_srcset_wins_over_placeholder(self):
+        base = "https://ex.com/a/"
+        el = self._img('<img src="ph.gif" data-srcset="small.jpg 480w, big.jpg 1024w">')
+        self.assertEqual(wi._pick_img_src(el, base), "https://ex.com/a/big.jpg")
+
+    def test_lazy_image_with_pixel_placeholder_is_kept(self):
+        # A 1x1 placeholder src with a real data-src is a lazy image, not a beacon.
+        out = wi._normalize_images(
+            '<img src="data:image/gif;base64,AAAA" width="1" height="1" '
+            'data-src="/real.jpg">', "https://ex.com/")
+        self.assertIn("https://ex.com/real.jpg", out)
 
     def test_pick_src_protocol_relative_and_srcset(self):
         base = "https://ex.com/a/"

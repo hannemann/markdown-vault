@@ -365,7 +365,9 @@ def _restore_blocks(markdown: str, blocks: list) -> str:
 # as content comes out as a sound ``![alt](https://…)``. Recall stays bounded by
 # Trafilatura's content model — this fixes correctness, not completeness.
 
-_SRC_ATTRS = ("src", "data-src", "data-original", "data-lazy-src")
+# Lazy-load point-source attributes (cross-library, not per-site). Their presence
+# means the plain ``src`` is a placeholder (spinner / 1x1 / LQIP blur), so they win.
+_LAZY_SRC_ATTRS = ("data-src", "data-original", "data-lazy-src", "data-lazy")
 _PIXEL_STYLE = re.compile(r"\b(?:width|height)\s*:\s*[01]px", re.I)
 
 
@@ -378,22 +380,40 @@ def _is_tracking_pixel(el) -> bool:
     return bool(_PIXEL_STYLE.search(el.get("style") or ""))
 
 
+def _has_lazy_source(el) -> bool:
+    """True if *el* carries a lazy-load source — then a tiny ``src`` is a placeholder,
+    not a tracking beacon (beacons never lazy-load)."""
+    return (any((el.get(a) or "").strip() for a in _LAZY_SRC_ATTRS)
+            or bool((el.get("data-srcset") or "").strip()))
+
+
+def _largest_srcset(value: str | None) -> str:
+    """The highest-width candidate URL in a ``srcset`` string, or "" if none."""
+    best_w, chosen = -1, ""
+    for cand in (value or "").split(","):
+        parts = cand.split()
+        if not parts:
+            continue
+        w = int(parts[1][:-1]) if len(parts) > 1 and parts[1].endswith("w") \
+            and parts[1][:-1].isdigit() else 0
+        if w >= best_w:
+            best_w, chosen = w, parts[0]
+    return chosen
+
+
 def _pick_img_src(el, base_url: str | None) -> str | None:
     """The best source URL for *el*, resolved to absolute against *base_url*.
-    Prefers a plain ``src``, then common lazy-load attributes, then the largest
-    ``srcset`` candidate. Returns ``None`` when nothing usable is present."""
-    chosen = next((el.get(a).strip() for a in _SRC_ATTRS if (el.get(a) or "").strip()), "")
+    Lazy-load wins: a ``data-*`` source (or ``data-srcset``) means the plain ``src``
+    is only a placeholder, so it takes precedence; otherwise fall back to ``src`` and
+    finally a plain ``srcset``. Returns ``None`` when nothing usable is present."""
+    chosen = next((el.get(a).strip() for a in _LAZY_SRC_ATTRS
+                   if (el.get(a) or "").strip()), "")
     if not chosen:
-        srcset = (el.get("srcset") or el.get("data-srcset") or "").strip()
-        best_w = -1
-        for cand in srcset.split(","):
-            parts = cand.split()
-            if not parts:
-                continue
-            w = int(parts[1][:-1]) if len(parts) > 1 and parts[1].endswith("w") \
-                and parts[1][:-1].isdigit() else 0
-            if w >= best_w:
-                best_w, chosen = w, parts[0]
+        chosen = _largest_srcset(el.get("data-srcset"))
+    if not chosen:
+        chosen = (el.get("src") or "").strip()
+    if not chosen:
+        chosen = _largest_srcset(el.get("srcset"))
     if not chosen:
         return None
     resolved = urljoin(base_url, chosen) if base_url else chosen
@@ -417,7 +437,7 @@ def _normalize_images(html: str, base_url: str | None) -> str:
 
 def _normalize_images_tree(tree, base_url: str | None) -> None:
     for el in list(tree.iter("img")):
-        if _is_tracking_pixel(el):
+        if not _has_lazy_source(el) and _is_tracking_pixel(el):
             el.drop_tree()
             continue
         src = _pick_img_src(el, base_url)
