@@ -388,6 +388,7 @@ MARKDOWN_EXTENSIONS = [
     "markdown.extensions.fenced_code",
     "markdown.extensions.tables",
     "markdown.extensions.toc",
+    "markdown.extensions.footnotes",
     WikiLinkExtension(),
     "pymdownx.tilde",
     "pymdownx.mark",
@@ -486,6 +487,17 @@ def _split_frontmatter(text: str) -> tuple[str, str]:
         return text, ""
     raw = m.group(0)
     return "\n" * raw.count("\n") + text[m.end():], raw
+
+
+def _same_page_fragment(uri: str, base_uri: str | None) -> str | None:
+    """The fragment of *uri* when it is an in-page anchor (its base equals the
+    document's own ``base_uri``), else ``None``. Footnote references/backlinks and
+    TOC links resolve against the loaded document's base, so they must scroll the
+    view rather than be treated as file/wikilink navigation."""
+    if not base_uri or "#" not in uri:
+        return None
+    base, _, fragment = uri.partition("#")
+    return fragment if fragment and base == base_uri else None
 
 
 class Preview(Gtk.ScrolledWindow):
@@ -648,6 +660,19 @@ class Preview(Gtk.ScrolledWindow):
     def _emit_link(self, resolved: str, new_tab: bool) -> None:
         self.emit("link-clicked-new-tab" if new_tab else "link-clicked", resolved)
 
+    def _scroll_to_anchor(self, fragment: str) -> None:
+        """Scroll the WebView to the element whose id is *fragment* (an in-page
+        anchor such as a footnote reference or backlink)."""
+        if self._web_view is None:
+            return
+        frag = json.dumps(fragment)
+        js = (f"var _t = document.getElementById({frag});"
+              ' if (_t) _t.scrollIntoView({behavior: "smooth", block: "start"});')
+        GLib.idle_add(
+            self._web_view.evaluate_javascript,
+            js, -1, None, None, None, None,
+        )
+
     def _open_external(self, uri: str) -> None:
         GLib.idle_add(Gtk.show_uri, self.get_root(), uri, Gdk.CURRENT_TIME)
 
@@ -773,6 +798,13 @@ class Preview(Gtk.ScrolledWindow):
             logger.warning("Wikilink NOT resolved: %r", uri)
             decision.ignore()
             self.emit("link-not-found", uri)
+            return True
+
+        # In-page anchor (footnote ref/backlink, TOC): scroll to it, don't navigate.
+        fragment = _same_page_fragment(uri, self._base_uri)
+        if fragment:
+            decision.ignore()
+            self._scroll_to_anchor(fragment)
             return True
 
         # Extract the path string from the URI

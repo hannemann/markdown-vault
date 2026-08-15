@@ -14,6 +14,7 @@ from markdown_vault.preview import (
     WikiLinkExtension,
     _heading_to_slug,
     _build_csp,
+    _same_page_fragment,
     LanguageExtractorPreprocessor,
     PygmentsCodePostprocessor,
 )
@@ -44,6 +45,28 @@ class TestHtmlTemplate(unittest.TestCase):
     def test_template_has_csp_meta(self):
         rendered = HTML_TEMPLATE.format(**_TEMPLATE_KWARGS)
         self.assertIn('http-equiv="Content-Security-Policy"', rendered)
+
+
+class TestSamePageFragment(unittest.TestCase):
+    """In-page anchors (footnote ref/backlink, TOC) must scroll, not navigate."""
+
+    BASE = "file:///v/Wikipedia/"
+
+    def test_footnote_fragment_is_in_page(self):
+        self.assertEqual(
+            _same_page_fragment("file:///v/Wikipedia/#fn:1", self.BASE), "fn:1")
+        self.assertEqual(
+            _same_page_fragment("file:///v/Wikipedia/#fnref:1", self.BASE), "fnref:1")
+
+    def test_link_to_other_document_is_not_in_page(self):
+        self.assertIsNone(
+            _same_page_fragment("file:///v/Wikipedia/Other#sec", self.BASE))
+
+    def test_no_fragment_is_none(self):
+        self.assertIsNone(_same_page_fragment("file:///v/Wikipedia/", self.BASE))
+
+    def test_no_base_uri_is_none(self):
+        self.assertIsNone(_same_page_fragment("file:///v/Wikipedia/#fn:1", None))
 
 
 class TestBuildCsp(unittest.TestCase):
@@ -296,6 +319,22 @@ class TestMarkdownConversion(unittest.TestCase):
         md_text = "- [ ] unchecked\n- [x] checked"
         result = md.markdown(md_text, extensions=MARKDOWN_EXTENSIONS)
         self.assertIn("checkbox", result)
+
+    def test_renders_footnotes(self):
+        # The web importer emits pymdownx-style [^n] / [^n]: footnotes; the preview
+        # must actually render them (reference superscript + collected block).
+        md_text = "A claim[^1] here.\n\n[^1]: The evidence."
+        result = md.markdown(md_text, extensions=MARKDOWN_EXTENSIONS)
+        self.assertIn('class="footnote-ref"', result)      # inline reference
+        self.assertIn('class="footnote"', result)          # collected block
+        self.assertIn("The evidence.", result)
+
+    def test_footnote_and_superscript_coexist(self):
+        # [^1] must be a footnote while ^2^ stays a caret superscript.
+        result = md.markdown("a^2^[^1]\n\n[^1]: note",
+                             extensions=MARKDOWN_EXTENSIONS)
+        self.assertIn("<sup>2</sup>", result)              # caret superscript
+        self.assertIn('class="footnote-ref"', result)      # footnote reference
 
     def test_checkbox_data_line_on_input(self):
         md_text = "- [ ] first checkbox\n- [x] second checkbox\n- [ ] third checkbox"
