@@ -304,6 +304,15 @@ opening files in editor, toggling sidebar etc.) ask the user.
   applied only to Wikipedia) — never as a conditional special-case inside the general
   path. The web import is one instance: it must work across arbitrary sites, not be
   tuned so one page is perfect while others break.
+- **This governs how you reason about requirements, not only how you write code.**
+  Markdown Vault is a general-purpose GNOME app shipped to **every user on Earth** — any
+  language, any script, any locale, any document. NEVER weigh or dismiss a requirement by
+  the developer's own situation. "Deutsch/Englisch reicht", "for this user's vault it's
+  irrelevant", "unlikely anyone imports Arabic/Hindi/Thai", "it's just their PDF" is the
+  SAME single-case specialization this rule forbids — only aimed at the person asking
+  instead of at one web page. A capability (OCR scripts, encodings, RTL, formats, …) is a
+  first-class requirement for the whole audience; judge trade-offs for that audience, and
+  never assume the requester's language or use-case is the app's scope.
 - All strings in the code or tests are english (comments etc.)
 - Follow PEP 8, max line length 100.
 - Use `snake_case` for functions/variables, `PascalCase` for classes.
