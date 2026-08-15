@@ -527,6 +527,146 @@ def _strip_tracking(url: str) -> str:
     return urlunsplit(parts._replace(query=urlencode(kept)))
 
 
+def _figcaptions_to_emphasis(tree) -> None:
+    """Turn each ``<figcaption>`` into an emphasised paragraph. Trafilatura otherwise
+    drops figure captions entirely; retagging keeps them as an italic line under the
+    image (whose ``<img>`` Trafilatura keeps)."""
+    from lxml import html as LH
+    for cap in tree.xpath("//figure//figcaption"):
+        em = LH.Element("em")
+        em.text = cap.text
+        cap.text = None
+        for child in list(cap):
+            em.append(child)          # moves the child (and its tail) into <em>
+        cap.append(em)
+        cap.tag = "p"
+
+
+def _replace_el_with_text(el, text: str) -> None:
+    """Remove *el*, splicing *text* (plus el's own tail) into the surrounding text
+    flow — the reverse of wrapping, used to drop a reference in place."""
+    parent = el.getparent()
+    if parent is None:
+        return
+    tail = el.tail or ""
+    prev = el.getprevious()
+    if prev is not None:
+        prev.tail = (prev.tail or "") + text + tail
+    else:
+        parent.text = (parent.text or "") + text + tail
+    parent.remove(el)
+
+
+def _convert_footnotes(html: str):
+    """Convert HTML footnotes into pymdownx ``[^N]`` markers + ``[^N]: …`` definitions,
+    site-agnostically via ref↔note **reciprocity**: a note element back-links to a
+    reference element that itself links back to the note. The note can be *any* tag
+    (``<li>``, ``<p>``, ``<div>``, …) and the markup may nest either way — a ``<sup>``
+    wrapping the anchor (MediaWiki), the anchor wrapping the ``<sup>`` (many static-site
+    generators), or neither — because detection keys on the mutual link, not on any tag
+    or CSS class. Of a reciprocal pair the *note* is the side cited from outside the
+    footnote apparatus (the running prose); the reference-location is cited only by the
+    note's own backlink. Each reference becomes ``[^n]`` in place (a sole ``<sup>``/
+    ``<sub>`` wrapper removed so nothing leaks); each note becomes a returned definition
+    (backlinks dropped, dead intra-doc links unwrapped to text, external links kept) and
+    is removed. Reciprocity is required, so a plain in-page link to a heading or list
+    item is not mistaken for a footnote. Returns ``(modified_html, definition_lines)``."""
+    if 'href="#' not in html and "href='#" not in html:
+        return html, []
+    from lxml import html as LH
+    tree = LH.fromstring(html)
+    id_map = {el.get("id"): el for el in tree.xpath("//*[@id]")}
+    pos = {el: i for i, el in enumerate(tree.iter())}   # document order
+
+    def _links_back(ref_el, note_id: str) -> bool:
+        return ref_el is not None and any(
+            (b.get("href") or "") == f"#{note_id}" for b in ref_el.iter("a"))
+
+    # Candidates: any id'd element that back-links to a reference which links back to
+    # it (ref<->note reciprocity), regardless of tag.
+    candidates: dict = {}                # id -> (element, set of reference-location ids)
+    for el in tree.xpath("//*[@id]"):
+        nid = el.get("id")
+        rids = {(a.get("href") or "")[1:] for a in el.iter("a")
+                if (a.get("href") or "").startswith("#")
+                and _links_back(id_map.get((a.get("href") or "")[1:]), nid)}
+        if rids:
+            candidates[nid] = (el, rids)
+    if not candidates:
+        return LH.tostring(tree, encoding="unicode"), []
+
+    # Of a reciprocal pair the NOTE is the one that appears later in the document —
+    # references sit inline in the prose, note bodies are collected below them.
+    note_refs = {}
+    for nid, (el, rids) in candidates.items():
+        refs = [id_map.get(r) for r in rids]
+        if refs and all(r is not None and pos[el] > pos[r] for r in refs):
+            note_refs[nid] = rids
+    if not note_refs:
+        return LH.tostring(tree, encoding="unicode"), []
+    note_set = set(note_refs)
+    note_els = {candidates[nid][0] for nid in note_set}
+
+    # References, in document order, become [^n]; a sole <sup>/<sub> wrapper goes too.
+    num: dict = {}
+    order: list = []
+    for a in tree.xpath("//a[starts-with(@href, '#')]"):
+        nid = a.get("href")[1:]
+        if nid not in note_set:
+            continue
+        if any(anc in note_els for anc in a.iterancestors()):
+            continue                     # a cross-link inside a note body, not a ref
+        if nid not in num:
+            num[nid] = len(num) + 1
+            order.append(nid)
+        ref_el, parent = a, a.getparent()
+        if parent is not None and parent.tag in ("sup", "sub") \
+                and len(parent) == 1 and not (parent.text or "").strip():
+            ref_el = parent
+        _replace_el_with_text(ref_el, f"[^{num[nid]}]")
+
+    defs = []
+    for nid in order:
+        el = id_map[nid]
+        for a in list(el.iter("a")):
+            href = a.get("href") or ""
+            if not href.startswith("#"):
+                continue
+            a.drop_tree() if href[1:] in note_refs[nid] else a.drop_tag()
+        _sup_sub_in_tree(el)       # defs are appended after _convert_sup_sub runs, so
+        body = " ".join(_html_to_markdown(LH.tostring(el, encoding="unicode")).split())
+        body = re.sub(r"^[-*]\s+", "", body).lstrip("↑↩⇑ ").strip()
+        defs.append(f"[^{num[nid]}]: {body}")
+        el.drop_tree()
+    return LH.tostring(tree, encoding="unicode"), defs
+
+
+def _sup_sub_in_tree(root) -> None:
+    """In-place: convert ``<sup>``/``<sub>`` under *root* to pymdownx caret/tilde
+    (``^x^`` / ``~x~``). A single whitespace-free token gets the marker; content with
+    spaces or child markup keeps its text but drops the tag (caret/tilde cannot span
+    spaces). A footnote marker (``[^…]``) is left untouched."""
+    for tag, mark in (("sup", "^"), ("sub", "~")):
+        for el in root.xpath(f".//{tag}"):
+            if len(el) == 0:
+                text = (el.text or "").strip()
+                if text and " " not in text and not text.startswith("[^"):
+                    el.text = f"{mark}{text}{mark}"
+            el.drop_tag()          # unwrap: no raw <sup>/<sub> is left behind
+
+
+def _convert_sup_sub(html: str) -> str:
+    """Convert ``<sup>``/``<sub>`` to pymdownx caret/tilde so real superscripts and
+    subscripts (exponents, indices) render instead of leaking as raw HTML. Must run
+    after ``_convert_footnotes`` so footnote-reference ``<sup>`` are already consumed."""
+    if "<sup" not in html and "<sub" not in html:
+        return html
+    from lxml import html as LH
+    tree = LH.fromstring(html)
+    _sup_sub_in_tree(tree)
+    return LH.tostring(tree, encoding="unicode")
+
+
 def _clean_content_html(html: str, base_url: str | None) -> str:
     """Pre-extraction DOM cleanup in a single parse: convert ``<math>`` to ``$…$``
     LaTeX (before spans are unwrapped, so the text lands in the prose), unwrap
@@ -536,6 +676,7 @@ def _clean_content_html(html: str, base_url: str | None) -> str:
     from lxml import html as LH
     tree = LH.fromstring(html)
     _convert_math_tree(tree)
+    _figcaptions_to_emphasis(tree)
     # Drop no-op colspan/rowspan="1": they change nothing but make _is_complex_table
     # keep the table as HTML, where cell content (e.g. $…$ math) doesn't render.
     for cell in tree.iter("td", "th"):
@@ -605,6 +746,8 @@ def extract(html: str, url: str | None = None) -> ImportResult:
     # clean absolute src (tracking pixels dropped) — so images inside tables are
     # normalised too, before _inject_placeholders converts those tables.
     cleaned = _clean_content_html(html, url)
+    cleaned, footnotes = _convert_footnotes(cleaned)
+    cleaned = _convert_sup_sub(cleaned)
     modified, tables = _inject_placeholders(cleaned)
     modified, blocks = _inject_blocks(modified, url)
     prose = trafilatura.extract(
@@ -613,6 +756,10 @@ def extract(html: str, url: str | None = None) -> ImportResult:
     # Restore blocks first: a blockquote may hold a table marker that then resolves.
     md = _restore_placeholders(_restore_blocks(prose, blocks), tables)
     md = _label_unlabeled_images(_dedent_after_headings(md))
+    # Append definitions for the footnotes whose [^N] marker survived extraction.
+    used = [d for d in footnotes if d[:d.index("]") + 1] in md]
+    if used:
+        md = md.rstrip() + "\n\n" + "\n".join(used)
     return _assemble(url, md, _metadata(html, url))
 
 

@@ -491,6 +491,133 @@ class TestPlaceholders(unittest.TestCase):
 
 
 @unittest.skipUnless(_has_table_deps(), "web-import table deps not installed")
+class TestFigureCaption(unittest.TestCase):
+    """<figcaption> -> emphasised paragraph so Trafilatura keeps it (it drops it)."""
+
+    def test_figcaption_becomes_emphasis_paragraph(self):
+        out = wi._clean_content_html(
+            '<figure><img src="/c.png"><figcaption>A caption</figcaption></figure>',
+            "https://ex.com/")
+        self.assertNotIn("<figcaption", out)
+        self.assertIn("<em>A caption</em>", out)
+
+    def test_non_figure_html_untouched(self):
+        out = wi._clean_content_html("<p>plain text</p>", "https://ex.com/")
+        self.assertNotIn("<em>", out)
+
+
+class TestFootnotes(unittest.TestCase):
+    """HTML footnotes (<sup> -> intra-doc <li>) become pymdownx [^N] footnotes."""
+
+    def test_sup_wraps_anchor_mediawiki_shape(self):
+        # Reference <sup> wraps the anchor (MediaWiki); note back-links to the <sup>.
+        html = ('<p>A claim<sup id="r1"><a href="#fn1">[1]</a></sup> here.</p>'
+                '<ol><li id="fn1"><a href="#r1">↑</a> The body.</li></ol>')
+        out, defs = wi._convert_footnotes(html)
+        self.assertIn("[^1]", out)
+        self.assertNotIn("<sup", out)          # no raw <sup> leak
+        self.assertNotIn('id="fn1"', out)      # footnote <li> consumed
+        self.assertEqual(defs, ["[^1]: The body."])
+
+    def test_anchor_wraps_sup_static_site_shape(self):
+        # Reference anchor wraps the <sup> (gwern / many SSGs); note back-links to it.
+        html = ('<p>x<a href="#fn1" id="fnref1"><sup>1</sup></a>.</p>'
+                '<ol><li id="fn1">Body.<a href="#fnref1">↩</a></li></ol>')
+        out, defs = wi._convert_footnotes(html)
+        self.assertIn("[^1]", out)
+        self.assertNotIn("<sup", out)
+        self.assertNotIn("<a", out)
+        self.assertEqual(defs, ["[^1]: Body."])
+
+    def test_note_body_can_be_any_tag_not_just_li(self):
+        # Footnote body in a <p> (not a list item) — detection is tag-agnostic.
+        html = ('<p>x<sup id="r1"><a href="#fn1">[1]</a></sup></p>'
+                '<div class="footnotes"><p id="fn1"><a href="#r1">↩</a> '
+                'Para body.</p></div>')
+        out, defs = wi._convert_footnotes(html)
+        self.assertIn("[^1]", out)
+        self.assertEqual(defs, ["[^1]: Para body."])
+
+    def test_reciprocity_required_plain_anchor_is_not_a_footnote(self):
+        # An in-page link to a list item with no back-link is NOT a footnote.
+        html = ('<p>See <a href="#item1">the item</a> below.</p>'
+                '<ul><li id="item1">A plain list item.</li></ul>')
+        out, defs = wi._convert_footnotes(html)
+        self.assertEqual(defs, [])
+        self.assertNotIn("[^", out)
+
+    def test_backlink_dropped_content_link_kept_as_text(self):
+        html = ('<p>x<sup id="r1"><a href="#fn1">[1]</a></sup></p>'
+                '<ol><li id="fn1"><a href="#r1">↑</a> '
+                '<a href="#CITE">Smith 2020</a>, p. 5.</li></ol>')
+        out, defs = wi._convert_footnotes(html)
+        self.assertEqual(defs, ["[^1]: Smith 2020, p. 5."])
+
+    def test_external_link_in_body_preserved(self):
+        html = ('<p>x<sup id="r1"><a href="#fn1">[1]</a></sup></p>'
+                '<ol><li id="fn1"><a href="#r1">↑</a> '
+                'See <a href="https://ex.io/p">source</a>.</li></ol>')
+        _, defs = wi._convert_footnotes(html)
+        self.assertEqual(defs, ["[^1]: See [source](https://ex.io/p)."])
+
+    def test_shared_target_gets_one_number(self):
+        html = ('<p>a<sup id="r1"><a href="#fn1">[1]</a></sup> '
+                'b<sup id="r2"><a href="#fn1">[1]</a></sup></p>'
+                '<ol><li id="fn1">Body.<a href="#r1">↑</a><a href="#r2">↑</a></li></ol>')
+        out, defs = wi._convert_footnotes(html)
+        self.assertEqual(out.count("[^1]"), 2)
+        self.assertEqual(defs, ["[^1]: Body."])
+
+    def test_no_footnotes_is_noop(self):
+        out, defs = wi._convert_footnotes("<p>Text with [brackets] but no refs.</p>")
+        self.assertEqual(defs, [])
+        self.assertIn("[brackets]", out)
+
+    def test_footnote_definitions_appended_in_extract(self):
+        md = wi.extract(
+            '<html><body><article><h1>T</h1><p>' + ('word ' * 30) +
+            'A fact<sup id="r1"><a href="#fn1">[1]</a></sup> stated.</p>'
+            '<ol><li id="fn1"><a href="#r1">↑</a> The evidence.</li></ol>'
+            '</article></body></html>', "https://ex.com/").markdown
+        self.assertIn("[^1]", md)
+        self.assertIn("[^1]: The evidence.", md)
+
+
+class TestSupSub(unittest.TestCase):
+    """<sup>/<sub> -> pymdownx caret/tilde so superscripts/subscripts render."""
+
+    def test_sup_becomes_caret(self):
+        self.assertIn("a^2^b", wi._convert_sup_sub("<p>a<sup>2</sup>b</p>"))
+
+    def test_sub_becomes_tilde(self):
+        self.assertIn("x~i~", wi._convert_sup_sub("<p>x<sub>i</sub></p>"))
+
+    def test_no_raw_tag_remains(self):
+        out = wi._convert_sup_sub("<p>a<sup>2</sup> and H<sub>2</sub>O</p>")
+        self.assertNotIn("<sup", out)
+        self.assertNotIn("<sub", out)
+        self.assertIn("^2^", out)
+        self.assertIn("~2~", out)
+
+    def test_multiword_content_unwrapped_without_marker(self):
+        # caret/tilde can't span spaces — keep the text, drop the tag, no ^...^.
+        out = wi._convert_sup_sub("<p>x<sup>see note</sup></p>")
+        self.assertNotIn("<sup", out)
+        self.assertNotIn("^see note^", out)
+        self.assertIn("see note", out)
+
+    def test_noop_without_sup_sub(self):
+        self.assertEqual(wi._convert_sup_sub("<p>plain</p>"), "<p>plain</p>")
+
+    def test_exponents_in_extract(self):
+        md = wi.extract(
+            '<html><body><article><h1>T</h1><p>' + ('word ' * 30) +
+            'The identity a<sup>2</sup> + b<sup>2</sup> = c<sup>2</sup> holds.</p>'
+            '</article></body></html>', "https://ex.com/").markdown
+        self.assertIn("a^2^", md)
+        self.assertNotIn("<sup", md)
+
+
 class TestImageNormalize(unittest.TestCase):
     """Ansatz C: clean up <img> in place so Trafilatura emits sound URLs."""
 
