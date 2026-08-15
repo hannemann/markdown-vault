@@ -362,6 +362,9 @@ _DEFAULT_SETTINGS = {
     # small · medium · large-v3; bigger = more accurate, slower, larger download).
     # Downloaded explicitly in Preferences, never during an import.
     "document_whisper_model": "base",
+    # Folder the document-import file chooser reopens in — the directory of the last
+    # picked file, so importing several files in a row doesn't drop back to $HOME.
+    "document_import_last_dir": "",
 }
 
 

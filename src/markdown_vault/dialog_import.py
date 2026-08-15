@@ -42,9 +42,12 @@ class ImportDialog(Adw.Dialog):
         "import-failed": (GObject.SignalFlags.RUN_LAST, None, (str,)),
     }
 
-    def __init__(self, target_dir: str):
+    def __init__(self, target_dir: str, last_dir: str | None = None,
+                 save_last_dir=None):
         super().__init__()
         self._target_dir = target_dir
+        self._last_dir = last_dir            # folder to reopen the chooser in
+        self._save_last_dir = save_last_dir  # callback to persist the last folder
         self._busy = False
         self._closed = False
         self.set_title("Import")
@@ -234,6 +237,10 @@ class ImportDialog(Adw.Dialog):
         filters.append(filt)
         dialog.set_filters(filters)
         dialog.set_default_filter(filt)
+        # Reopen where the last import came from — importing several files in a row
+        # shouldn't drop you back at $HOME each time.
+        if self._last_dir and Path(self._last_dir).is_dir():
+            dialog.set_initial_folder(Gio.File.new_for_path(self._last_dir))
         dialog.open(self.get_root(), None, self._on_file_chosen)
 
     def _on_file_chosen(self, dialog, result) -> None:
@@ -247,7 +254,15 @@ class ImportDialog(Adw.Dialog):
         self._file_row.set_subtitle(gfile.get_basename())
         if not self._file_name_row.get_text().strip():
             self._file_name_row.set_text(Path(self._file_path).stem)
+        self._remember_dir(Path(self._file_path).parent)
         self._recheck_file()
+
+    def _remember_dir(self, folder) -> None:
+        """Persist the folder of the last picked file (through the window's shared
+        settings, via the injected setter) so the chooser reopens there next time."""
+        self._last_dir = str(folder)
+        if self._save_last_dir is not None:
+            self._save_last_dir(str(folder))
 
     def _recheck_file(self) -> None:
         """Set the banner + Import-button state. Runs on opening the File tab and on

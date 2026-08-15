@@ -1972,10 +1972,20 @@ class MainWindow(Adw.ApplicationWindow):
         """Handle 'Import…' from the vault tree context menu — fetch a URL as a
         note into *target_dir*, then open it and reveal it in the tree."""
         from .dialog_import import ImportDialog
-        dialog = ImportDialog(target_dir)
+        dialog = ImportDialog(
+            target_dir,
+            last_dir=self._settings.get("document_import_last_dir"),
+            save_last_dir=self._set_import_last_dir)
         dialog.connect("note-imported", self._on_note_imported)
         dialog.connect("import-failed", self._on_import_failed)
         dialog.present(self)
+
+    def _set_import_last_dir(self, folder: str) -> None:
+        """Remember the folder of the last imported file so the chooser reopens there.
+        Mutates the shared settings dict (not a private re-read) so the window's next
+        save can't revert it."""
+        self._settings["document_import_last_dir"] = folder
+        config.save_settings(self._settings)
 
     def _on_editor_attachment_added(self, _editor) -> None:
         """An image was saved into the attachments tree (paste/drop/insert) — the
