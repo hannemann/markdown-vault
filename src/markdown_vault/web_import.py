@@ -31,6 +31,7 @@ from dataclasses import dataclass
 from html import unescape as html_unescape
 from pathlib import Path
 
+from . import note_writer
 from .attachments import attachment_target  # re-exported: layout lives in attachments
 from urllib.parse import parse_qsl, urlencode, urljoin, urlparse, urlsplit, urlunsplit
 
@@ -792,16 +793,10 @@ def to_note(result: ImportResult, today: datetime.date | None = None) -> str:
     return f"---\n{front}\n---\n\n{result.markdown.strip()}\n"
 
 
-_SLUG_STRIP = re.compile(r"[^\w\s-]", re.UNICODE)
-_SLUG_DASH = re.compile(r"[\s_-]+")
-
-
 def slug(text: str, max_len: int = 60) -> str:
     """A safe kebab-case filename stem from *text* (no extension). Falls back to
     ``"imported-page"`` when nothing usable remains."""
-    text = _SLUG_STRIP.sub("", (text or "").lower())
-    text = _SLUG_DASH.sub("-", text).strip("-")
-    return text[:max_len].strip("-") or "imported-page"
+    return note_writer.slug(text, max_len=max_len, fallback="imported-page")
 
 
 # ── Optional local image download ──────────────────────────────────
@@ -1031,11 +1026,7 @@ def save_to_vault(result: ImportResult, vault_dir: str | Path,
     vault_dir = Path(vault_dir)
     vault_dir.mkdir(parents=True, exist_ok=True)
     stem = slug(name) if name and name.strip() else slug(result.title)
-    target = vault_dir / f"{stem}.md"
-    n = 2
-    while target.exists():
-        target = vault_dir / f"{stem}-{n}.md"
-        n += 1
+    target = note_writer.unique_path(vault_dir, stem)
     stem = target.stem
     if download_images:
         attach_dir, rel_prefix = attachment_target(vault_root or vault_dir, vault_dir, stem)

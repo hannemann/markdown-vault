@@ -32,6 +32,7 @@ py_sources = files(
   'markdown_widgets.py',
   'monitor_handler.py',
   'mru.py',
+  'note_writer.py',
   'paned_sizer.py',
   'path_utils.py',
   'preferences.py',
