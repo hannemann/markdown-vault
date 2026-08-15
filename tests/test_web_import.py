@@ -19,6 +19,90 @@ class TestValidateUrl(unittest.TestCase):
                 wi.validate_url(bad)
 
 
+class TestStripTracking(unittest.TestCase):
+    def test_removes_utm_family(self):
+        self.assertEqual(
+            wi._strip_tracking("https://x.io/a?utm_source=s&utm_medium=m&utm_campaign=c"),
+            "https://x.io/a")
+
+    def test_keeps_functional_params(self):
+        self.assertEqual(wi._strip_tracking("https://x.io/a?id=5&utm_source=s"),
+                         "https://x.io/a?id=5")
+
+    def test_keeps_youtube_video_id(self):
+        self.assertEqual(wi._strip_tracking("https://youtube.com/watch?v=abc&utm_source=s"),
+                         "https://youtube.com/watch?v=abc")
+
+    def test_removes_click_ids(self):
+        self.assertEqual(wi._strip_tracking("https://x.io/a?fbclid=1&gclid=2&msclkid=3"),
+                         "https://x.io/a")
+
+    def test_no_query_is_unchanged(self):
+        self.assertEqual(wi._strip_tracking("https://x.io/a"), "https://x.io/a")
+
+    def test_preserves_encoding_when_nothing_dropped(self):
+        # R90.2: a presigned URL's signature covers the exact query string —
+        # re-encoding it (e.g. / -> %2F) would break the signature. Return as-is.
+        url = ("https://cdn.io/x.jpg?X-Amz-Credential=AKIA/20260815/eu/s3/aws4_request"
+               "&X-Amz-Signature=abc123")
+        self.assertEqual(wi._strip_tracking(url), url)
+
+    def test_preserves_percent_encoding_when_nothing_dropped(self):
+        url = "https://x.io/a?q=a%20b&r=x%2Fy"
+        self.assertEqual(wi._strip_tracking(url), url)
+
+    def test_works_on_relative_url(self):
+        self.assertEqual(wi._strip_tracking("/page?utm_campaign=x"), "/page")
+
+    def test_preserves_fragment(self):
+        self.assertEqual(wi._strip_tracking("https://x.io/a?utm_source=s#sec"),
+                         "https://x.io/a#sec")
+
+    def test_stripped_from_link_image_and_media_in_extract(self):
+        md = wi.extract(
+            '<html><body><article><h1>T</h1><p>' + ('lorem ipsum ' * 20) + '</p>'
+            '<p>See <a href="https://x.io/a?utm_source=s&id=5">this link</a> here.</p>'
+            '<p><img src="https://x.io/pic.png?utm_medium=m" alt="p"></p>'
+            '<video src="https://x.io/c.mp4?fbclid=9" controls></video>'
+            '</article></body></html>', "https://ex.com/").markdown
+        self.assertNotIn("utm_source", md)
+        self.assertNotIn("utm_medium", md)
+        self.assertNotIn("fbclid", md)
+        self.assertIn("https://x.io/a?id=5", md)      # functional param kept
+        self.assertIn("https://x.io/pic.png)", md)
+        self.assertIn("https://x.io/c.mp4)", md)
+
+
+class TestDedentAfterHeadings(unittest.TestCase):
+    """Trafilatura indents the first content line after a heading (MDN section
+    markup). An indented ``` opener stops being a fence and breaks the page."""
+
+    def test_indented_fence_opener_is_dedented(self):
+        md = wi._dedent_after_headings("## H\n\n    ```\ncode\n```\n\ntail")
+        self.assertIn("\n```\ncode\n```", md)
+        self.assertNotIn("    ```", md)
+
+    def test_indented_paragraph_is_dedented(self):
+        md = wi._dedent_after_headings("## H\n\n    Some prose here.\n\n- item")
+        self.assertIn("\nSome prose here.", md)
+        self.assertNotIn("    Some prose", md)
+
+    def test_indentation_inside_fence_is_preserved(self):
+        md = wi._dedent_after_headings("## H\n\n```\n    indented code\n```\n")
+        self.assertIn("    indented code", md)
+
+    def test_indented_heading_chains_dedent_to_its_body(self):
+        # An indented heading is itself dedented, and still primes its own body.
+        md = wi._dedent_after_headings("## A\n\n      ## B\n\n    body\n")
+        self.assertIn("\n## B\n", md)
+        self.assertIn("\nbody", md)
+        self.assertNotIn("    body", md)
+
+    def test_no_heading_leaves_text_untouched(self):
+        src = "para\n\n- a\n  - nested list stays\n"
+        self.assertEqual(wi._dedent_after_headings(src), src)
+
+
 class TestFetchGuards(unittest.TestCase):
     """R71.4: a redirect must not leave the http(s) allowlist."""
 
@@ -105,6 +189,69 @@ class TestFetchBodyGuards(unittest.TestCase):
         with mock.patch.object(wi, "_MAX_BYTES", 10):
             with self.assertRaisesRegex(ValueError, "exceeds"):
                 self._fetch(_FakeResp(b"x" * 11))
+
+
+class TestMetadata(unittest.TestCase):
+    """Title-suffix stripping and author sanitation."""
+
+    def test_strip_suffix_matches_hostname_core(self):
+        self.assertEqual(
+            wi._strip_title_suffix("Markdown - Wikipedia",
+                                   "https://en.wikipedia.org/wiki/Markdown", "Wikimedia"),
+            "Markdown")
+        self.assertEqual(
+            wi._strip_title_suffix("Python's F-String – Real Python",
+                                   "https://realpython.com/x/", "Realpython"),
+            "Python's F-String")
+        self.assertEqual(
+            wi._strip_title_suffix("Wget - GNU Project",
+                                   "https://www.gnu.org/software/wget/", "gnu.org"),
+            "Wget")
+
+    def test_strip_suffix_kept_when_tail_is_not_the_site(self):
+        self.assertEqual(
+            wi._strip_title_suffix("Cause - Effect", "https://example.com/", "Example"),
+            "Cause - Effect")
+
+    def test_strip_suffix_no_separator(self):
+        self.assertEqual(
+            wi._strip_title_suffix("Just A Title", "https://ex.com/", "Ex"),
+            "Just A Title")
+
+    def test_strip_suffix_title_is_site_only(self):
+        self.assertEqual(
+            wi._strip_title_suffix("Wikipedia", "https://en.wikipedia.org/", "Wikipedia"),
+            "Wikipedia")
+
+    def test_strip_suffix_not_fooled_by_short_core(self):
+        # R90.1: a 1-2 char hostname core must not match arbitrary trailing segments.
+        self.assertEqual(
+            wi._strip_title_suffix("Rust - Linux", "https://x.com/", ""),
+            "Rust - Linux")
+        self.assertEqual(
+            wi._strip_title_suffix("Alpha - Box", "https://x.co/", ""),
+            "Alpha - Box")
+
+    def test_strip_suffix_not_fooled_by_site_substring(self):
+        # R90.1: tail being a substring of the site name is not evidence it IS the site.
+        self.assertEqual(
+            wi._strip_title_suffix("A - B", "https://example.org/", "AB"),
+            "A - B")
+
+    def test_clean_author_drops_boilerplate(self):
+        self.assertEqual(wi._clean_author(
+            "Authority control databases International FAST National United States "
+            "Israel", ""), "")
+
+    def test_clean_author_keeps_real_name(self):
+        self.assertEqual(wi._clean_author("Real Python; Joanna Jablonski", "Realpython"),
+                         "Real Python; Joanna Jablonski")
+
+    def test_clean_author_drops_sitename(self):
+        self.assertEqual(wi._clean_author("Example Site", "Example Site"), "")
+
+    def test_clean_author_empty(self):
+        self.assertEqual(wi._clean_author("", "X"), "")
 
 
 class TestSlug(unittest.TestCase):
@@ -694,6 +841,44 @@ class TestExtractImagesInTables(unittest.TestCase):
         md = wi.extract(html, "https://ex.com/page.html").markdown
         self.assertIn("<table", md)                      # kept as HTML (colspan)
         self.assertIn("https://ex.com/x.png", md)        # image survived, absolute
+
+    def test_blockquote_preserved(self):
+        md = wi.extract(self._page(
+            '<blockquote><p>quoted line one</p><p>and two</p></blockquote>'),
+            "https://ex.com/").markdown
+        self.assertIn("> quoted line one", md)
+        self.assertIn("> and two", md)
+
+    def test_video_becomes_link(self):
+        md = wi.extract(self._page('<video src="/clip.mp4" controls></video>'),
+                        "https://ex.com/").markdown
+        self.assertIn("(https://ex.com/clip.mp4)", md)
+        self.assertIn("Video", md)
+
+    def test_video_source_becomes_link(self):
+        md = wi.extract(self._page(
+            '<video controls><source src="/movie.webm"></video>'),
+            "https://ex.com/").markdown
+        self.assertIn("https://ex.com/movie.webm", md)
+
+    def test_audio_becomes_link(self):
+        md = wi.extract(self._page('<audio src="/song.mp3" controls></audio>'),
+                        "https://ex.com/").markdown
+        self.assertIn("https://ex.com/song.mp3", md)
+
+    def test_video_in_code_example_not_linkified(self):
+        # A media element that is itself sample code (inside <pre>/<code>) must be
+        # left as source, never rewritten to a [▶ Video] link.
+        md = wi.extract(self._page(
+            '<pre><code><video src="/x.mp4" controls></video></code></pre>'),
+            "https://ex.com/").markdown
+        self.assertNotIn("[▶ Video]", md)
+
+    def test_blockquote_in_code_example_not_converted(self):
+        md = wi.extract(self._page(
+            '<pre><code><blockquote>sample</blockquote></code></pre>'),
+            "https://ex.com/").markdown
+        self.assertNotIn("> sample", md)
 
     def test_math_in_table_survives_extraction(self):
         # R88.1: math in a table goes through markdownify (which escapes _) and the

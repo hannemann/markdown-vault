@@ -32,7 +32,7 @@ from html import unescape as html_unescape
 from pathlib import Path
 
 from .attachments import attachment_target  # re-exported: layout lives in attachments
-from urllib.parse import urljoin, urlparse
+from urllib.parse import parse_qsl, urlencode, urljoin, urlparse, urlsplit, urlunsplit
 
 logger = logging.getLogger(__name__)
 
@@ -118,12 +118,56 @@ def _metadata(html: str, url: str | None) -> dict:
             "date": g("date"), "sitename": g("sitename")}
 
 
+# Common "<article title> <sep> <site name>" separators.
+_TITLE_SEPS = (" | ", " - ", " – ", " — ", " :: ", " » ", " · ", " • ")
+_TITLE_NORM = re.compile(r"[^a-z0-9]+")
+
+
+def _strip_title_suffix(title: str, url: str | None, sitename: str) -> str:
+    """Drop a trailing ``<sep> <site>`` from a page title (``Markdown - Wikipedia``
+    → ``Markdown``), but only when the trailing segment is the site — matched
+    against the hostname's core label or the site name — so a real ``A - B`` title
+    is left intact."""
+    host = urlparse(url or "").hostname or ""
+    labels = host.split(".")
+    core = _TITLE_NORM.sub("", (labels[-2] if len(labels) >= 2 else host).lower())
+    site = _TITLE_NORM.sub("", (sitename or "").lower())
+    cut = max((title.rfind(sep), sep) for sep in _TITLE_SEPS if sep in title) \
+        if any(s in title for s in _TITLE_SEPS) else (-1, "")
+    idx, sep = cut
+    if idx <= 0:
+        return title
+    head, tail = title[:idx].strip(), _TITLE_NORM.sub("", title[idx + len(sep):].lower())
+    if not head or not tail:
+        return title
+    # Match the tail against the site: exact site-name equality, or the hostname
+    # core contained in it. Require the core to be at least 3 chars — a 1-2 char
+    # core ("x" from x.com, "co" from bbc.co.uk) is a substring of far too much —
+    # and use equality only for the site name (a substring either way is no proof).
+    if (len(core) >= 3 and core in tail) or (site and tail == site):
+        return head
+    return title
+
+
+def _clean_author(author: str, sitename: str) -> str:
+    """Drop an implausible author — Trafilatura sometimes returns navbox/boilerplate
+    text (long, many words) or the site name itself instead of a byline."""
+    author = (author or "").strip()
+    if not author or len(author) > 60 or len(author.split()) > 6:
+        return ""
+    if author.lower() == (sitename or "").strip().lower():
+        return ""
+    return author
+
+
 def _assemble(url: str | None, markdown: str, meta: dict,
               fallback_title: str = "") -> ImportResult:
-    title = meta.get("title") or fallback_title or (url or "Imported page")
+    site = meta.get("sitename", "")
+    title = _strip_title_suffix(meta.get("title") or "", url, site)
+    title = title or fallback_title or (url or "Imported page")
     return ImportResult(url=url or "", title=title, markdown=markdown,
-                        author=meta.get("author", ""), date=meta.get("date", ""),
-                        sitename=meta.get("sitename", ""))
+                        author=_clean_author(meta.get("author", ""), site),
+                        date=meta.get("date", ""), sitename=site)
 
 
 # ── Table conversion: markdownify turns a simple table into a pipe table; one
@@ -254,6 +298,64 @@ def _restore_placeholders(markdown: str, tables: list) -> str:
     return re.sub(r"\n{3,}", "\n\n", markdown).strip()
 
 
+_BLOCK_MARKER = "mvxblockxplaceholderx{}xend"
+
+
+def _inject_blocks(html: str, base_url: str | None):
+    """Replace blockquotes and media (``<video>``/``<audio>``) with unique text
+    markers; return the modified HTML and the markdown each was converted to (index
+    = marker number). Like the table swap, this shields them from Trafilatura, which
+    strips a blockquote's ``>`` markers and drops media (and link-only paragraphs)
+    as boilerplate. Media can't render in a note, so it degrades to a source link."""
+    from lxml import html as LH
+    tree = LH.fromstring(html)
+    blocks = []
+
+    def _swap(el, md):
+        parent = el.getparent()
+        if parent is None:
+            return
+        if not md:
+            el.drop_tree()
+            return
+        marker = LH.Element("p")
+        marker.text = _BLOCK_MARKER.format(len(blocks))
+        parent.replace(el, marker)
+        blocks.append(md)
+
+    # Never rewrite content inside a code example — <video>/<blockquote> there are
+    # sample source, not real media/quotes, and must survive verbatim.
+    in_code = "ancestor::pre or ancestor::code"
+    # Top-level blockquotes only — nested ones ride along in their parent's markdown.
+    for bq in [b for b in tree.iter("blockquote")
+               if not b.xpath(f"ancestor::blockquote or {in_code}")]:
+        _swap(bq, _html_to_markdown(LH.tostring(bq, encoding="unicode")).strip())
+    for tag, label in (("video", "Video"), ("audio", "Audio")):
+        for el in list(tree.iter(tag)):
+            if el.xpath(in_code):
+                continue
+            src = el.get("src")
+            if not src:
+                source = el.find("source")
+                src = source.get("src") if source is not None else None
+            if not src:
+                el.drop_tree()
+                continue
+            _swap(el, f"[▶ {label}]({urljoin(base_url or '', src)})")
+    return LH.tostring(tree, encoding="unicode"), blocks
+
+
+def _restore_blocks(markdown: str, blocks: list) -> str:
+    """Swap each block marker back for its markdown. A marker Trafilatura pruned
+    away just drops — unlike a table, a lost blockquote or media link is not
+    reappended (it was boilerplate Trafilatura judged out of the content)."""
+    for i, bmd in enumerate(blocks):
+        marker = _BLOCK_MARKER.format(i)
+        if marker in markdown:
+            markdown = markdown.replace(marker, "\n\n" + bmd + "\n\n")
+    return re.sub(r"\n{3,}", "\n\n", markdown).strip()
+
+
 # ── Images (Strategy C: normalise <img> in place) ──────────────────
 #
 # Trafilatura's own image handling is unreliable — it drops most images and, on
@@ -375,6 +477,36 @@ def _convert_math_tree(tree) -> None:
         parent.remove(math)
 
 
+# Known tracking query parameters — pure analytics cruft, safe to drop. Functional
+# params (?v=, ?id=, ?q=, tokens) are kept. Prefixes cover whole families (utm_*).
+_TRACKING_PARAMS = frozenset({
+    "fbclid", "gclid", "gclsrc", "dclid", "gbraid", "wbraid", "msclkid", "yclid",
+    "twclid", "igshid", "igsh", "mc_eid", "mc_cid", "_ga", "_gl", "vero_id",
+    "vero_conv", "oly_enc_id", "oly_anon_id", "wickedid", "scid", "s_cid",
+    "ck_subscriber_id", "_hsenc", "_hsmi", "__hstc", "__hssc", "__hsfp",
+})
+_TRACKING_PREFIXES = ("utm_", "pk_", "mtm_", "matomo_", "hsa_", "ga_")
+
+
+def _strip_tracking(url: str) -> str:
+    """Remove known tracking query parameters (``utm_*``, ``fbclid``, …) from *url*,
+    keeping every functional parameter, the path, and the fragment intact. Works on
+    relative URLs too."""
+    try:
+        parts = urlsplit(url)
+    except ValueError:
+        return url
+    if not parts.query:
+        return url
+    params = parse_qsl(parts.query, keep_blank_values=True)
+    kept = [(k, v) for k, v in params
+            if k.lower() not in _TRACKING_PARAMS
+            and not any(k.lower().startswith(p) for p in _TRACKING_PREFIXES)]
+    if len(kept) == len(params):
+        return url          # nothing dropped — keep the original query verbatim
+    return urlunsplit(parts._replace(query=urlencode(kept)))
+
+
 def _clean_content_html(html: str, base_url: str | None) -> str:
     """Pre-extraction DOM cleanup in a single parse: convert ``<math>`` to ``$…$``
     LaTeX (before spans are unwrapped, so the text lands in the prose), unwrap
@@ -393,6 +525,13 @@ def _clean_content_html(html: str, base_url: str | None) -> str:
     for sp in list(tree.iter("span")):
         sp.drop_tag()          # unwrap: keep the text, drop the presentational tag
     _normalize_images_tree(tree, base_url)
+    # Strip tracking params from every URL (links, images, media) once images are
+    # resolved to absolute — one pass covers <a>, <img>, <video>/<audio>/<source>.
+    for el in tree.iter():
+        for attr in ("href", "src"):
+            val = el.get(attr)
+            if val:
+                el.set(attr, _strip_tracking(val))
     return LH.tostring(tree, encoding="unicode")
 
 
@@ -410,6 +549,32 @@ def _label_unlabeled_images(markdown: str) -> str:
     return re.sub(r"!\[\]\(", repl, markdown)
 
 
+_HEADING_RE = re.compile(r"^#{1,6} ")
+_FENCE_RE = re.compile(r"^\s*(```|~~~)")
+
+
+def _dedent_after_headings(markdown: str) -> str:
+    """Strip the leading indentation Trafilatura puts on the first content line
+    after a heading (an artifact of nested ``<section>`` markup). That indent turns
+    an opening ``` fence into an indented code block — silently breaking the fence
+    and everything after it — and renders plain paragraphs as code. Outside fenced
+    code, the first non-blank line after a heading is never meant to be indented, so
+    dedenting it is safe; content inside fences is left untouched."""
+    out = []
+    in_fence = False
+    pending = False
+    for line in markdown.split("\n"):
+        if not in_fence and pending and line.strip():
+            line = line.lstrip(" ")
+            pending = False
+        if _FENCE_RE.match(line):
+            in_fence = not in_fence
+        elif not in_fence and _HEADING_RE.match(line):
+            pending = True
+        out.append(line)
+    return "\n".join(out)
+
+
 def extract(html: str, url: str | None = None) -> ImportResult:
     """Extract *html* as a Markdown note: Trafilatura for the prose, with every real
     table kept at its exact position via the placeholder swap and converted
@@ -421,10 +586,13 @@ def extract(html: str, url: str | None = None) -> ImportResult:
     # normalised too, before _inject_placeholders converts those tables.
     cleaned = _clean_content_html(html, url)
     modified, tables = _inject_placeholders(cleaned)
+    modified, blocks = _inject_blocks(modified, url)
     prose = trafilatura.extract(
         modified, url=url, output_format="markdown", include_tables=False,
         include_links=True, include_images=True, include_formatting=True) or ""
-    md = _label_unlabeled_images(_restore_placeholders(prose, tables))
+    # Restore blocks first: a blockquote may hold a table marker that then resolves.
+    md = _restore_placeholders(_restore_blocks(prose, blocks), tables)
+    md = _label_unlabeled_images(_dedent_after_headings(md))
     return _assemble(url, md, _metadata(html, url))
 
 
