@@ -8,9 +8,15 @@ A GNOME desktop application for editing and previewing Markdown files organized 
 - **Multiple vaults** — work with several Markdown directories at once
 - **View modes** — Edit, Render, or Split (side-by-side)
 - **Tab system** — open multiple files simultaneously
-- **Sidebar** — outline, backlinks, git status, file details
+- **Sidebar** — outline, backlinks, frontmatter metadata, git status, file details
 - **Git integration** — status indicators, diff, commit
-- **Full-text search** — bottom bar across all vaults (Ctrl+F)
+- **Web import** — turn a web page into a Markdown note (URL → note): tables, math, footnotes, and optional image download
+- **Document import** — import PDF, Word, PowerPoint, Excel, OpenDocument (odt/ods/odp) and audio (transcribed) as notes, extracting embedded images into the vault
+- **Semantic search & Ask** — opt-in local vector search over your notes, plus an *Ask* mode that answers questions grounded in them with a local model (Preferences → Search)
+- **Quick Open** — fuzzy file switcher (Ctrl+Space) over note names, aliases and paths
+- **Managed image attachments** — pasted, dropped, downloaded or imported images live in a per-vault attachments tree, kept in sync as notes move / rename / delete
+- **Full-text search** — live results across all vaults in the bottom bar (Ctrl+Shift+F), with operators/filters and a vault-scope selector
+- **In-view find** — search the focused editor or preview (Ctrl+F)
 - **Tags & backlinks** — wikilink-style `[[page]]` navigation
 - **Live reload** — external file changes (edits, git pulls) are detected and the affected tab offers a reload
 - **Interactive checkboxes** — toggle `- [ ]`/`- [x]` task items directly in the rendered preview
@@ -22,9 +28,11 @@ A GNOME desktop application for editing and previewing Markdown files organized 
 ## Installation
 
 System dependencies for running the application (the GObject/GTK stack). The
-app's pure-Python packages (Markdown, PyYAML, pymdown-extensions, Pygments) are
-**not** listed here — `make install` installs them from `requirements.txt` into a
-private venv (see [Install and run](#install-and-run)).
+app's pure-Python packages are **not** listed here — `make install` installs them
+from `requirements.txt` into a private venv (see [Install and run](#install-and-run)):
+Markdown, PyYAML, pymdown-extensions, Pygments, latex2mathml (math), and the
+web-import stack trafilatura / markdownify / nh3. Web import therefore works out of
+the box; document import and semantic search are opt-in (see below).
 
 ### openSUSE Tumbleweed
 
@@ -150,6 +158,19 @@ gcc-c++ cmake`; Debian/Ubuntu `libvulkan-dev glslc spirv-headers cmake g++`. Onc
 Vulkan build is installed,
 the **GPU layers** control appears in Preferences → Search → Ask; set it above 0
 (e.g. 999) to offload the model.
+
+### Document import (optional)
+
+The import dialog's **File** tab converts local documents to Markdown notes — PDF,
+Word (`.docx`), PowerPoint (`.pptx`), Excel (`.xlsx`), OpenDocument
+(`.odt`/`.ods`/`.odp`) and audio — extracting embedded images into the vault's
+attachments tree. It uses a deliberately lightweight, **torch-free** stack, installed
+by the same `make install-ai` (from `requirements-ai.txt`): `pymupdf4llm` (PDF),
+`mammoth` (Word), `python-pptx`, `openpyxl`, `odfpy` (OpenDocument) and
+`faster-whisper` (audio).
+
+Audio transcription needs a Whisper model — a one-time **file download** chosen in
+Preferences, nothing is bundled. Scanned PDFs/images are not OCR'd (digital text only).
 
 ### Ubuntu 24.04: AppArmor profile
 
