@@ -1,28 +1,29 @@
 """Import dialog — right-click a vault/folder → Import… to bring content into it.
 
-A two-step :class:`Adw.Dialog`: pick a source (Web Page / File — File is a later,
-document-import feature), then a source-specific form. The web branch takes a URL,
-an optional name and a download-images switch; the fetch/extract/save runs on a
-worker thread so the UI never blocks and the result is marshalled back with
+A two-step :class:`Adw.Dialog`: pick a source (Web Page / File), then a
+source-specific form. The web branch takes a URL, an optional name and a
+download-images switch; the file branch picks a local document (PDF, Word,
+PowerPoint, Excel, audio) and an optional name. Either way the convert/save runs on
+a worker thread so the UI never blocks and the result is marshalled back with
 :func:`GLib.idle_add`. On success it emits ``note-imported`` with the new file's
 path; the window opens it and reveals it in the tree.
 
-This dialog is deliberately not web-specific: when document import lands, its form
-moves into ``dialog_import_document`` (and the web form into ``dialog_import_web``)
-while this file keeps the chooser shell.
+The two forms are independent (only the chooser shell and the success/close plumbing
+are shared), so web and document import never depend on each other.
 """
 
 import logging
 import threading
+from pathlib import Path
 
 import gi
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 
-from gi.repository import Gtk, Adw, GObject, GLib
+from gi.repository import Gtk, Adw, Gio, GObject, GLib
 
-from . import path_utils, web_import
+from . import document_import, path_utils, web_import
 
 logger = logging.getLogger(__name__)
 
@@ -50,9 +51,12 @@ class ImportDialog(Adw.Dialog):
         self.set_content_width(480)
         self.connect("closed", self._on_closed)
 
+        self._file_path: str | None = None
+        self._file_block_reason: str | None = None   # why Import is disabled, if any
         self._stack = Gtk.Stack()
         self._stack.add_named(self._build_chooser(), "chooser")
         self._stack.add_named(self._build_web_form(), "web")
+        self._stack.add_named(self._build_file_form(), "file")
 
         toolbar = Adw.ToolbarView()
         toolbar.add_top_bar(Adw.HeaderBar())
@@ -73,8 +77,11 @@ class ImportDialog(Adw.Dialog):
         group.add(web_row)
 
         file_row = Adw.ActionRow(title="File",
-                                 subtitle="Import a document (coming soon)",
-                                 sensitive=False)
+                                 subtitle="Import a document (PDF, Word, PowerPoint, "
+                                          "Excel, audio)",
+                                 activatable=True)
+        file_row.add_suffix(Gtk.Image.new_from_icon_name("go-next-symbolic"))
+        file_row.connect("activated", self._on_choose_file)
         group.add(file_row)
 
         box.append(group)
@@ -179,6 +186,153 @@ class ImportDialog(Adw.Dialog):
             GLib.idle_add(self._on_error, str(exc))
             return
         GLib.idle_add(self._on_success, str(path))
+
+    # ── Step 2: file form ──────────────────────────────────────────────
+    def _build_file_form(self) -> Gtk.Widget:
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12,
+                      margin_top=18, margin_bottom=18, margin_start=18, margin_end=18)
+
+        self._file_error = Adw.Banner()
+        self._file_error.set_revealed(False)
+        box.append(self._file_error)
+
+        group = Adw.PreferencesGroup()
+        self._file_row = Adw.ActionRow(title="File", subtitle="No file selected")
+        browse = Gtk.Button(label="Browse…", valign=Gtk.Align.CENTER)
+        browse.connect("clicked", lambda *_: self._browse_file())
+        self._file_row.add_suffix(browse)
+        self._file_row.set_activatable_widget(browse)
+        group.add(self._file_row)
+
+        self._file_name_row = Adw.EntryRow(title="Name (optional)")
+        group.add(self._file_name_row)
+        box.append(group)
+
+        actions = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8,
+                          halign=Gtk.Align.END)
+        self._file_spinner = Gtk.Spinner()
+        actions.append(self._file_spinner)
+        self._file_import_btn = Gtk.Button(label="Import")
+        self._file_import_btn.add_css_class("suggested-action")
+        self._file_import_btn.set_sensitive(False)
+        self._file_import_btn.connect("clicked", lambda *_: self._on_file_import())
+        actions.append(self._file_import_btn)
+        box.append(actions)
+        return box
+
+    def _on_choose_file(self, _row) -> None:
+        self._stack.set_visible_child_name("file")
+        self._recheck_file()                # heads-up before a file is even picked
+
+    def _browse_file(self) -> None:
+        dialog = Gtk.FileDialog(title="Choose a document")
+        filt = Gtk.FileFilter()
+        filt.set_name("Supported documents")
+        for suffix in document_import.SUPPORTED_SUFFIXES:
+            filt.add_suffix(suffix.lstrip("."))
+        filters = Gio.ListStore.new(Gtk.FileFilter)
+        filters.append(filt)
+        dialog.set_filters(filters)
+        dialog.set_default_filter(filt)
+        dialog.open(self.get_root(), None, self._on_file_chosen)
+
+    def _on_file_chosen(self, dialog, result) -> None:
+        try:
+            gfile = dialog.open_finish(result)
+        except GLib.Error:
+            return                          # cancelled or failed — leave state as-is
+        if gfile is None or not gfile.get_path():
+            return
+        self._file_path = gfile.get_path()
+        self._file_row.set_subtitle(gfile.get_basename())
+        if not self._file_name_row.get_text().strip():
+            self._file_name_row.set_text(Path(self._file_path).stem)
+        self._recheck_file()
+
+    def _recheck_file(self) -> None:
+        """Set the banner + Import-button state. Runs on opening the File tab and on
+        every file pick, both cheap (a find_spec and a file test). With no file yet it
+        shows a *heads-up* (audio needs its model) without blocking; once a file is
+        picked it blocks Import only for that file's actual needs — a format whose
+        backend is missing, or audio whose *selected* Whisper model isn't downloaded."""
+        stack_hint = document_import.is_available()            # whole feature present?
+        model_missing = (not stack_hint
+                         and not document_import.whisper_model_ready())
+        reason = None                                         # blocks Import
+        notice = None                                         # informational only
+        if self._file_path:
+            suffix = Path(self._file_path).suffix
+            reason = document_import.is_available(suffix)      # this format's backend?
+            if (not reason and document_import.needs_transcription_model(suffix)
+                    and model_missing):
+                reason = (f"The '{document_import.whisper_model_name()}' transcription "
+                          "model isn't downloaded — get it in Preferences → Search "
+                          "before importing audio.")
+        elif stack_hint:
+            notice = stack_hint                               # AI stack not installed
+        elif model_missing:
+            notice = (f"Audio import needs the '{document_import.whisper_model_name()}' "
+                      "model, which isn't downloaded yet (Preferences → Search).")
+        self._file_block_reason = reason
+        message = reason or notice
+        if message:
+            self._show_file_error(message)
+        else:
+            self._file_error.set_revealed(False)
+        self._validate_file()
+
+    def _validate_file(self) -> None:
+        self._file_import_btn.set_sensitive(
+            bool(self._file_path) and not self._busy and not self._file_block_reason)
+
+    def _show_file_error(self, message: str) -> None:
+        self._file_error.set_title(message)
+        self._file_error.set_revealed(True)
+
+    def _set_file_busy(self, busy: bool) -> None:
+        self._busy = busy
+        for widget in (self._file_name_row, self._file_import_btn):
+            widget.set_sensitive(not busy)
+        if busy:
+            self._file_spinner.start()
+        else:
+            self._file_spinner.stop()
+            self._validate_file()
+
+    def _on_file_import(self) -> None:
+        if self._busy or not self._file_path:
+            return
+        hint = document_import.is_available(Path(self._file_path).suffix)
+        if hint:
+            self._show_file_error(hint)
+            return
+        self._file_error.set_revealed(False)
+        self._set_file_busy(True)
+        name = self._file_name_row.get_text().strip()
+        threading.Thread(target=self._file_worker, args=(self._file_path, name),
+                         daemon=True).start()
+
+    def _file_worker(self, file_path: str, name: str) -> None:
+        try:
+            result = document_import.convert(file_path)
+            if not result.markdown.strip():
+                raise ValueError("No text could be extracted from this file.")
+            path = document_import.save_to_vault(result, self._target_dir,
+                                                 name=name or None)
+        except Exception as exc:            # surface any failure, never crash
+            logger.warning("Document import failed for %s: %s", file_path, exc,
+                           exc_info=True)
+            GLib.idle_add(self._on_file_error, str(exc))
+            return
+        GLib.idle_add(self._on_success, str(path))
+
+    def _on_file_error(self, message: str) -> bool:
+        if self._closed:
+            self.emit("import-failed", message)
+        else:
+            self._set_file_busy(False)
+            self._show_file_error(message)
+        return False
 
     def _on_success(self, path: str) -> bool:
         # Dismissing the dialog only backgrounds the import — the note is still
