@@ -16,7 +16,8 @@ class InputManager:
     """Manages keyboard shortcuts and navigation history."""
 
     def __init__(self, application, on_nav_file_opened,
-                 nav_history, back_btn, forward_btn, settings):
+                 nav_history, back_btn, forward_btn, settings,
+                 in_page_state_fn=None):
         """Initialize the input manager.
 
         Args:
@@ -26,6 +27,9 @@ class InputManager:
             back_btn: Back navigation :class:`Gtk.Button`
             forward_btn: Forward navigation :class:`Gtk.Button`
             settings: Settings dict from :mod:`config`
+            in_page_state_fn: Optional ``() -> (can_back, can_forward)`` reporting the
+                active preview's in-page anchor history, so the buttons stay lit while
+                footnote/TOC jumps can still be unwound.
         """
         self._application = application
         self._on_nav_file_opened = on_nav_file_opened
@@ -33,6 +37,7 @@ class InputManager:
         self._back_btn = back_btn
         self._forward_btn = forward_btn
         self._settings = settings
+        self._in_page_state_fn = in_page_state_fn
         self._tab_shortcut_ctrl: Gtk.ShortcutController | None = None
         self._tab_shortcuts: list = []
 
@@ -145,9 +150,12 @@ class InputManager:
         double-click toggle-maximizes the window.  "Nothing to navigate" is shown
         by dimming instead; the click then simply no-ops.
         """
-        self._back_btn.set_opacity(1.0 if self._nav_history.can_go_back() else 0.35)
+        extra_back, extra_fwd = (self._in_page_state_fn()
+                                 if self._in_page_state_fn else (False, False))
+        self._back_btn.set_opacity(
+            1.0 if (self._nav_history.can_go_back() or extra_back) else 0.35)
         self._forward_btn.set_opacity(
-            1.0 if self._nav_history.can_go_forward() else 0.35)
+            1.0 if (self._nav_history.can_go_forward() or extra_fwd) else 0.35)
 
     def update_nav_buttons(self) -> None:
         """Public API: dim/undim the navigation buttons based on history state."""

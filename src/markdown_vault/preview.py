@@ -518,6 +518,10 @@ class Preview(Gtk.ScrolledWindow):
         "image-download-requested": (GObject.SignalFlags.RUN_LAST, None, (str,)),
         # Emitted when the in-preview search match count becomes available.
         "search-info-changed": (GObject.SignalFlags.RUN_LAST, None, ()),
+        # Emitted when an in-page anchor jump changes the in-page back/forward
+        # availability, so the nav buttons refresh immediately (not just on the
+        # next nav action).
+        "in-page-nav-changed": (GObject.SignalFlags.RUN_LAST, None, ()),
     }
 
     def __init__(self, css_path: str = "") -> None:
@@ -529,6 +533,8 @@ class Preview(Gtk.ScrolledWindow):
         self._base_uri: str | None = None
         self._csp: str = _build_csp(False)
         self._last_html_hash: str = ""
+        self._in_page_back: int = 0     # depth of the in-page anchor back stack
+        self._in_page_fwd: int = 0      # depth of the in-page anchor forward stack
         self._last_html: str = ""
         self._active: bool = True
         self._pending_text: str | None = None
@@ -660,18 +666,67 @@ class Preview(Gtk.ScrolledWindow):
     def _emit_link(self, resolved: str, new_tab: bool) -> None:
         self.emit("link-clicked-new-tab" if new_tab else "link-clicked", resolved)
 
-    def _scroll_to_anchor(self, fragment: str) -> None:
-        """Scroll the WebView to the element whose id is *fragment* (an in-page
-        anchor such as a footnote reference or backlink)."""
+    def _run_js(self, js: str) -> None:
         if self._web_view is None:
             return
-        frag = json.dumps(fragment)
-        js = (f"var _t = document.getElementById({frag});"
-              ' if (_t) _t.scrollIntoView({behavior: "smooth", block: "start"});')
         GLib.idle_add(
-            self._web_view.evaluate_javascript,
-            js, -1, None, None, None, None,
-        )
+            self._web_view.evaluate_javascript, js, -1, None, None, None, None)
+
+    def _jump_to_anchor(self, fragment: str) -> None:
+        """Smooth-scroll to *fragment*, pushing the current position onto the in-page
+        back stack (and clearing the forward stack) so the nav buttons can return."""
+        frag = json.dumps(fragment)
+        self._run_js(
+            "window._mvBack=window._mvBack||[];window._mvFwd=[];"
+            "window._mvBack.push(window.scrollY);"
+            f"var _t=document.getElementById({frag});"
+            "if(_t)_t.scrollIntoView({behavior:'smooth',block:'start'});")
+        self._in_page_back += 1
+        self._in_page_fwd = 0
+        self.emit("in-page-nav-changed")
+
+    def can_go_back_in_page(self) -> bool:
+        """True if there is in-page anchor history (footnote/TOC jumps) to unwind."""
+        return self._in_page_back > 0
+
+    def can_go_forward_in_page(self) -> bool:
+        """True if an unwound in-page anchor jump can be re-applied."""
+        return self._in_page_fwd > 0
+
+    def go_back_in_page(self) -> bool:
+        """Smooth-scroll back to the position before the last in-page jump. Returns
+        True if a step was taken, False if there is no in-page history to unwind."""
+        if self._in_page_back <= 0:
+            return False
+        self._run_js(
+            "if(window._mvBack&&window._mvBack.length){"
+            "window._mvFwd=window._mvFwd||[];window._mvFwd.push(window.scrollY);"
+            "window.scrollTo({top:window._mvBack.pop(),behavior:'smooth'});}")
+        self._in_page_back -= 1
+        self._in_page_fwd += 1
+        return True
+
+    def go_forward_in_page(self) -> bool:
+        """Re-apply an unwound in-page anchor jump; True if a step was taken."""
+        if self._in_page_fwd <= 0:
+            return False
+        self._run_js(
+            "if(window._mvFwd&&window._mvFwd.length){"
+            "window._mvBack=window._mvBack||[];window._mvBack.push(window.scrollY);"
+            "window.scrollTo({top:window._mvFwd.pop(),behavior:'smooth'});}")
+        self._in_page_fwd -= 1
+        self._in_page_back += 1
+        return True
+
+    def _reset_in_page_nav(self) -> None:
+        """Clear the in-page anchor history — a re-render or note switch makes the
+        recorded scroll positions meaningless — and refresh the nav buttons if any
+        history actually went away, so they never advertise a stack that is gone."""
+        changed = self._in_page_back or self._in_page_fwd
+        self._in_page_back = 0
+        self._in_page_fwd = 0
+        if changed:
+            self.emit("in-page-nav-changed")
 
     def _open_external(self, uri: str) -> None:
         GLib.idle_add(Gtk.show_uri, self.get_root(), uri, Gdk.CURRENT_TIME)
@@ -800,11 +855,14 @@ class Preview(Gtk.ScrolledWindow):
             self.emit("link-not-found", uri)
             return True
 
-        # In-page anchor (footnote ref/backlink, TOC): scroll to it, don't navigate.
+        # In-page anchor (footnote ref/backlink, TOC): smooth-scroll to it and record
+        # the departure position on our own in-page history, which the nav buttons
+        # unwind before the note history. (WebKit's own load_html history neither
+        # scrolls smoothly nor records fragment jumps, so we manage it ourselves.)
         fragment = _same_page_fragment(uri, self._base_uri)
         if fragment:
             decision.ignore()
-            self._scroll_to_anchor(fragment)
+            self._jump_to_anchor(fragment)
             return True
 
         # Extract the path string from the URI
@@ -944,6 +1002,9 @@ class Preview(Gtk.ScrolledWindow):
         if html_hash == self._last_html_hash:
             return
         self._last_html_hash = html_hash
+        # Content changed — old in-page anchor positions are meaningless now; this
+        # also refreshes the nav buttons so they don't keep advertising the stack.
+        self._reset_in_page_nav()
 
         base_uri = GLib.filename_to_uri(base_dir + "/") if base_dir else None
 
@@ -975,6 +1036,7 @@ class Preview(Gtk.ScrolledWindow):
             )
             html_json = json.dumps(html_content, ensure_ascii=False)
             js = (
+                'window._mvBack=[];window._mvFwd=[];'   # drop stale anchor positions
                 'document.querySelector(".markdown-body").innerHTML '
                 f'= {html_json}'
             )

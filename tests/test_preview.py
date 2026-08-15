@@ -69,6 +69,67 @@ class TestSamePageFragment(unittest.TestCase):
         self.assertIsNone(_same_page_fragment("file:///v/Wikipedia/#fn:1", None))
 
 
+class TestInPageNavHistory(unittest.TestCase):
+    """In-page anchor back/forward state machine (footnote/TOC jumps).
+
+    The WebView JS is mocked out; only the Python-side counters — which drive the
+    nav buttons and the return-to-reference behaviour — are under test.
+    """
+
+    def _preview(self):
+        p = Preview.__new__(Preview)          # bypass GTK/WebKit init
+        p._in_page_back = 0
+        p._in_page_fwd = 0
+        p._run_js = MagicMock()
+        p.emit = MagicMock()
+        return p
+
+    def test_jump_pushes_back_clears_forward_and_notifies(self):
+        p = self._preview()
+        p._in_page_fwd = 2                     # a prior unwind existed
+        p._jump_to_anchor("fn:1")
+        self.assertEqual((p._in_page_back, p._in_page_fwd), (1, 0))
+        self.assertTrue(p.can_go_back_in_page())
+        p.emit.assert_called_once_with("in-page-nav-changed")   # buttons refresh now
+        p._run_js.assert_called_once()
+
+    def test_back_then_forward_round_trip(self):
+        p = self._preview()
+        p._jump_to_anchor("fn:1")
+        p._jump_to_anchor("fn:2")              # back=2, fwd=0
+        self.assertTrue(p.go_back_in_page())
+        self.assertEqual((p._in_page_back, p._in_page_fwd), (1, 1))
+        self.assertTrue(p.go_forward_in_page())
+        self.assertEqual((p._in_page_back, p._in_page_fwd), (2, 0))
+
+    def test_back_is_false_when_no_in_page_history(self):
+        p = self._preview()
+        self.assertFalse(p.go_back_in_page())
+        self.assertFalse(p.can_go_back_in_page())
+        p._run_js.assert_not_called()          # nothing to scroll, no JS fired
+
+    def test_forward_is_false_when_nothing_unwound(self):
+        p = self._preview()
+        self.assertFalse(p.go_forward_in_page())
+        self.assertFalse(p.can_go_forward_in_page())
+
+    def test_reset_clears_and_notifies_when_history_existed(self):
+        # R94.1: a re-render clears the stack, so the buttons must refresh too.
+        p = self._preview()
+        p._jump_to_anchor("fn:1")
+        p.emit.reset_mock()
+        p._reset_in_page_nav()
+        self.assertEqual((p._in_page_back, p._in_page_fwd), (0, 0))
+        p.emit.assert_called_once_with("in-page-nav-changed")
+
+    def test_reset_is_silent_when_no_history(self):
+        # Nothing to clear -> no needless button refresh on every render.
+        p = self._preview()
+        p._reset_in_page_nav()
+        self.assertEqual((p._in_page_back, p._in_page_fwd), (0, 0))
+        p.emit.assert_not_called()
+
+
 class TestBuildCsp(unittest.TestCase):
     """Content-Security-Policy assembly (5.1)."""
 

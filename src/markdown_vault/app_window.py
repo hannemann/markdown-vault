@@ -358,6 +358,7 @@ class MainWindow(Adw.ApplicationWindow):
                 "on_preview_link_not_found": self._on_preview_link_not_found,
                 "on_preview_checkbox_toggled": self._on_preview_checkbox_toggled,
                 "on_preview_image_download": self._on_preview_image_download,
+                "on_preview_in_page_nav": self._update_nav_buttons,
                 "on_editor_text_changed": self._on_editor_text_changed,
                 "on_editor_modified": self._on_editor_modified,
                 "on_editor_attachment_added": self._on_editor_attachment_added,
@@ -379,6 +380,7 @@ class MainWindow(Adw.ApplicationWindow):
             back_btn=self._back_btn,
             forward_btn=self._forward_btn,
             settings=self._settings,
+            in_page_state_fn=self._in_page_nav_state,
         )
 
         # Session persistence manager.
@@ -2218,12 +2220,30 @@ class MainWindow(Adw.ApplicationWindow):
             self._update_nav_buttons()
 
     def _nav_back(self) -> None:
-        """Navigate back — delegates to :class:`InputManager`."""
+        """Navigate back — unwind in-page anchor jumps (footnotes, TOC) first, then
+        delegate note-level history to :class:`InputManager`."""
+        tab = self._tab_bar.get_current_tab()
+        if tab and tab.preview.go_back_in_page():
+            self._update_nav_buttons()
+            return
         self._input_manager.nav_back()
 
     def _nav_forward(self) -> None:
-        """Navigate forward — delegates to :class:`InputManager`."""
+        """Navigate forward — re-apply in-page anchor jumps first, then note history."""
+        tab = self._tab_bar.get_current_tab()
+        if tab and tab.preview.go_forward_in_page():
+            self._update_nav_buttons()
+            return
         self._input_manager.nav_forward()
+
+    def _in_page_nav_state(self) -> tuple[bool, bool]:
+        """(can_back, can_forward) for the active preview's in-page anchor history —
+        lets the nav buttons stay lit while there are footnote/TOC jumps to unwind."""
+        tab = self._tab_bar.get_current_tab()
+        if not tab:
+            return (False, False)
+        return (tab.preview.can_go_back_in_page(),
+                tab.preview.can_go_forward_in_page())
 
     def _update_nav_buttons(self) -> None:
         """Update navigation button state — delegates to :class:`InputManager`."""
