@@ -187,8 +187,11 @@ def _html_to_markdown(content_html: str) -> str:
     # keep_inline_images_in: markdownify otherwise reduces an <img> in a table cell
     # to its alt text; the app's renderer (markdown.extensions.tables) renders
     # ``| ![alt](url) |`` as an image, so keep the image markdown in the pipe cell.
+    # escape_underscores=False: markdownify would otherwise write ``W\_{1}`` and
+    # corrupt LaTeX ($…$) in a cell; GFM doesn't treat intra-word ``_`` as emphasis.
     return _Converter(heading_style="ATX", bullets="-",
-                      keep_inline_images_in=["td", "th"]).convert(content_html).strip()
+                      keep_inline_images_in=["td", "th"],
+                      escape_underscores=False).convert(content_html).strip()
 
 
 # ── Table placeholder swap: keep every real table at its exact position ─────
@@ -354,7 +357,12 @@ def _convert_math_tree(tree) -> None:
         wrapper = _MATH_STYLE_WRAPPER.match(tex)
         if wrapper:
             tex = wrapper.group(1).strip()
-        repl = f"$${tex}$$" if math.get("display") == "block" else f"${tex}$"
+        # Display math renders as a block ($$…$$) — except inside a table cell,
+        # where $$ mis-parses (a stray literal $ survives); there use inline $…$.
+        in_cell = any(isinstance(a.tag, str) and a.tag in ("td", "th")
+                      for a in math.iterancestors())
+        block = math.get("display") == "block" and not in_cell
+        repl = f"$${tex}$$" if block else f"${tex}$"
         parent = math.getparent()
         if parent is None:
             continue

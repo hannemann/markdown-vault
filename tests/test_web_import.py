@@ -248,6 +248,19 @@ class TestMath(unittest.TestCase):
             "https://ex.com/")
         self.assertIn("$a^2$", out)
 
+    def test_block_math_in_table_is_inline(self):
+        # $$…$$ in a pipe cell mis-parses (a stray literal $ survives), so math in
+        # a table cell must be inline $…$.
+        out = self._convert(
+            '<table><tr><td>'
+            '<math display="block" alttext="a_{1}"></math></td></tr></table>')
+        self.assertIn("$a_{1}$", out)
+        self.assertNotIn("$$", out)
+
+    def test_block_math_outside_table_stays_block(self):
+        out = self._convert('<p><math display="block" alttext="a_{1}"></math></p>')
+        self.assertIn("$$a_{1}$$", out)
+
     def test_noop_colrowspan_stripped(self):
         # colspan/rowspan="1" are no-ops but make _is_complex_table keep the table
         # as HTML instead of a pipe table — strip them; keep real spans.
@@ -276,6 +289,13 @@ class TestTableToMarkdown(unittest.TestCase):
             '<tr><td><img src="https://ex.com/de.png" alt="DE"></td></tr></table>')
         self.assertIn("![DE](https://ex.com/de.png)", md)
         self.assertNotIn("<table", md)
+
+    def test_underscores_not_escaped_in_cells(self):
+        # markdownify escapes _ by default, which corrupts LaTeX ($…W_{1}…$) in a
+        # cell — GFM doesn't treat intra-word _ as emphasis, so keep it verbatim.
+        md = wi._html_to_markdown('<table><tr><td>$a_{1}+W_{2}$</td></tr></table>')
+        self.assertNotIn("\\_", md)
+        self.assertIn("a_{1}+W_{2}", md)
 
     def test_complex_kept_as_sanitised_html(self):
         md = wi._html_to_markdown(
@@ -674,6 +694,19 @@ class TestExtractImagesInTables(unittest.TestCase):
         md = wi.extract(html, "https://ex.com/page.html").markdown
         self.assertIn("<table", md)                      # kept as HTML (colspan)
         self.assertIn("https://ex.com/x.png", md)        # image survived, absolute
+
+    def test_math_in_table_survives_extraction(self):
+        # R88.1: math in a table goes through markdownify (which escapes _) and the
+        # $$ downgrade, a different path than prose. End to end: inline $…$ (no $$),
+        # underscores intact.
+        html = self._page(
+            '<table><tr><th>Eq</th></tr><tr><td>'
+            '<math display="block"><annotation encoding="application/x-tex">'
+            'a_{1}+W_{2}</annotation></math></td></tr></table>')
+        md = wi.extract(html, "https://ex.com/").markdown
+        self.assertIn("$a_{1}+W_{2}$", md)
+        self.assertNotIn("\\_", md)
+        self.assertNotIn("$$", md)
 
     def test_math_survives_extraction_unescaped(self):
         # R82.1: the TeX is injected as tree text and passes through Trafilatura's
