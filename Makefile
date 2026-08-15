@@ -1,5 +1,5 @@
 SHELL := /bin/bash
-.PHONY: _fetch-wheels lock-wheels download-wheels build-flatpak bundle install-flatpak run-flatpak test-flatpak clean clean-build clean-cache build venv venv-ai install install-ai uninstall clean-local run test test-e2e
+.PHONY: _fetch-wheels lock-wheels download-wheels build-flatpak bundle-flatpak install-flatpak uninstall-flatpak run-flatpak test-flatpak clean clean-build clean-cache build venv venv-ai install install-ai uninstall clean-local run test test-one test-e2e graph-build graph-update graph-query graph-path graph-explain start stop restart status
 
 WHEEL_DIR := src/share/markdown-vault
 WHEELS_DIR := $(WHEEL_DIR)/wheels
@@ -140,6 +140,23 @@ test:
 	@PY=$$([ -x "$(VENV)/bin/python" ] && echo "$(VENV)/bin/python" || echo "$(PYTHON)"); \
 	PYTHONPATH=$(PYTHONPATH_DIR) "$$PY" -m unittest discover -s tests -v
 
+# Run a single test target instead of the whole suite. Pass T= a dotted path
+# (module, class, or method) and/or K= a name substring (unittest -k):
+#   make test-one T=test_preview
+#   make test-one T=test_preview.TestBlankLineBeforeList
+#   make test-one T=test_preview.TestBlankLineBeforeList.test_thematic_break_is_not_treated_as_a_list
+#   make test-one K=blank_line          # every test whose name matches
+test-one:
+	@test -n "$(T)$(K)" || { echo "usage: make test-one T=<module[.Class[.method]]> | K=<name-substring>"; exit 2; }
+	@PY=$$([ -x "$(VENV)/bin/python" ] && echo "$(VENV)/bin/python" || echo "$(PYTHON)"); \
+	if [ -n "$(T)" ]; then \
+	  echo "=> Running $(T)..."; \
+	  PYTHONPATH=$(PYTHONPATH_DIR):tests "$$PY" -m unittest -v $(T); \
+	else \
+	  echo "=> Running tests matching '$(K)'..."; \
+	  PYTHONPATH=$(PYTHONPATH_DIR) "$$PY" -m unittest discover -s tests -v -k "$(K)"; \
+	fi
+
 # Full-app E2E smoke tests: spawn the app on an ISOLATED session bus
 # (dbus-run-session — so the developer's running instance is not activated
 # instead) and drive it over the D-Bus debug interface. Headless via xvfb-run
@@ -182,3 +199,27 @@ stop:
 restart:
 	@echo "=> restart app"
 	./scripts/app.sh restart
+
+status:
+	@./scripts/app.sh status
+
+# --- Code graph (graphify) ------------------------------------------------
+# Wrapped as make targets so graphify runs without a per-command approval
+# prompt (make is pre-approved; a bare `graphify ...` is not).
+graph-build:
+	graphify .
+
+graph-update:
+	graphify update .
+
+graph-query:
+	@test -n "$(Q)" || { echo 'usage: make graph-query Q="how does the preview render markdown?"'; exit 2; }
+	graphify query "$(Q)"
+
+graph-path:
+	@test -n "$(A)" && test -n "$(B)" || { echo 'usage: make graph-path A="Editor" B="Preview"'; exit 2; }
+	graphify path "$(A)" "$(B)"
+
+graph-explain:
+	@test -n "$(S)" || { echo 'usage: make graph-explain S="TabManager"'; exit 2; }
+	graphify explain "$(S)"
