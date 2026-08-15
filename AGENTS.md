@@ -1,12 +1,45 @@
 # AGENTS.md
 
-## 🚨 MANDATORY TOOL CHOICE RULES (HIGH PRIORITY)
+## 🚨 Code exploration — graphify FIRST (HIGH PRIORITY)
 
-Before exploring code, searching for symbols, or tracing dependencies:
+For ANY question about code structure — architecture, "how does X work?", who
+calls Y, dependencies, call chains, where a symbol lives, "what breaks if I change
+Z" — your FIRST tool call MUST be graphify, never grep/rg/find or reading source.
+It queries a local AST knowledge graph (`graphify-out/`) and returns a scoped
+subgraph, faster and more accurate than reading files. Do NOT pre-judge it as
+"insufficient" before running it; only after it has run and did not answer may you
+grep/read the files it points you to. (When the user types `/graphify`, invoke the
+graphify skill.)
 
-1. **ALWAYS use Graphify FIRST:** Execute `graphify query "<question>"` or read `graphify-out/GRAPH_REPORT.md`.
-2. **STRICT FALLBACK:** Do NOT use `grep`, `ripgrep`, `find`, or direct file browsing until Graphify has been checked.
-3. Only fall back to `grep` if Graphify does not return sufficient line-level details.
+Run graphify through its **pre-approved `make` wrappers** (no approval prompt),
+never a bare `graphify …`:
+
+| Task                                             | `make` target                 | wraps                  |
+| ------------------------------------------------ | ----------------------------- | ---------------------- |
+| Build/refresh the graph (first use, big changes) | `make graph-build`            | `graphify .`           |
+| Incremental update after edits                   | `make graph-update`           | `graphify update .`    |
+| "How does X work?" / how A connects to B         | `make graph-query Q="…"`      | `graphify query "…"`   |
+| Call chain / path between two symbols            | `make graph-path A="…" B="…"` | `graphify path "A" "B"`|
+| Explain / locate a symbol and its wiring         | `make graph-explain S="…"`    | `graphify explain "…"` |
+
+Rules:
+
+- graphify is the FIRST step for structural questions, not a fallback. If a query
+  returns nothing useful or seems stale, `make graph-update` once and re-query —
+  do NOT silently fall back to grep. Only after it has run and did not answer may
+  you grep/read the files it cited.
+- Dirty `graphify-out/` files are expected after edits; not a reason to skip it.
+- `graphify-out/wiki/index.md` is for broad navigation; read
+  `graphify-out/GRAPH_REPORT.md` only for broad architecture review or when
+  query/path/explain don't surface enough.
+- After modifying code, run `make graph-update` to keep the graph current
+  (AST-only, no API cost).
+
+```
+WRONG:  "How does the sidebar refresh?"  →  grep -r "refresh" src/
+RIGHT:  "How does the sidebar refresh?"  →  make graph-query Q="how does the sidebar refresh?"
+                                            →  then read the files it cites
+```
 
 ---
 
@@ -31,8 +64,7 @@ Markdown Vault — a GNOME desktop app for editing and previewing Markdown files
 - Vault list stored in YAML (`vaults.yaml`), not dconf — simpler to debug and version.
 - Images referenced in Markdown are resolved relative to the `.md` file's directory.
 - **Flatpak** as primary distribution format (sandboxed file access via portal).
-- **Dependencies**: Before adding a new Python dependency, ALWAYS ask the user first. Never add dependencies without confirmation.
-- **NEVER install packages**: You MUST NEVER run `pip install`, `zypper install`, `dnf install`, `apt install`, `pacman -S`, or any other package installation command. ONLY the user installs packages on this system. This is a non-negotiable rule. If a package is missing, tell the user what to install — do NOT install it yourself.
+- **Dependencies**: never install packages yourself and never add a dependency without asking first — see the **Dependencies** section for the only allowed flow.
 
 ## Layout
 
@@ -161,25 +193,34 @@ tests/                   — unit tests (unittest); run with PYTHONPATH=src
 ## Running the app — agents MUST use ONLY these commands
 
 The app is a GTK GUI. NEVER start it in the foreground: a GUI process does not
-exit, so the tool call blocks until timeout. `scripts/app.sh` detaches the
-process and returns immediately — always use it.
+exit, so the tool call blocks until timeout.
 
-| Task                        | Command (run VERBATIM)     |
-| --------------------------- | -------------------------- |
-| Start / restart the app     | `./scripts/app.sh restart` |
-| Stop the app                | `./scripts/app.sh stop`    |
-| Check if running            | `./scripts/app.sh status`  |
-| Install after a code change | `make install`             |
-| Run unit tests              | `make test`                |
+**All routine tooling is exposed as `make` targets — always prefer them.** `make`
+is pre-approved in this environment, so these run WITHOUT an approval prompt,
+whereas a bare `./scripts/app.sh …`, `graphify …`, or an ad-hoc
+`python -m unittest …` is NOT pre-approved and interrupts the user with a
+permission request. The app targets just wrap `scripts/app.sh`, which detaches
+the GUI and returns immediately. Do not hand-roll the wrapped commands when a
+target exists.
+
+| Task                          | Command (run VERBATIM)                                       |
+| ----------------------------- | ------------------------------------------------------------ |
+| Start / restart the app       | `make restart`                                               |
+| Stop the app                  | `make stop`                                                  |
+| Check if running              | `make status`                                                |
+| Install after a code change   | `make install`                                               |
+| Run the full unit test suite  | `make test`                                                  |
+| Run one test / tests by name  | `make test-one T=<module[.Class[.method]]>` or `make test-one K=<name-substring>` |
+| Code graph (see graphify)     | `make graph-update` · `graph-query Q="…"` · `graph-explain S="…"` · `graph-path A="…" B="…"` · `graph-build` |
 
 Hard rules:
 
 - Run these EXACTLY as written. Do NOT construct your own `gtk-launch`,
   `python3 -m ...`, `pkill`, or `kill` commands for start/stop.
 - `make run` is FORBIDDEN — it runs in the foreground and will hang the tool call.
-- After changing code you MUST `make install` before `./scripts/app.sh restart`
+- After changing code you MUST `make install` before `make restart`
   (the app runs the installed copy, not the source tree).
-- `./scripts/app.sh restart` is idempotent and exits 0 on success — a "not
+- `make restart` is idempotent and exits 0 on success — a "not
   running" stop is normal, not an error, so do not retry with other commands.
 - App logs: `~/.local/state/markdown-vault/markdown-vault.log` (level ≤ INFO)
   and `~/.local/state/markdown-vault/markdown-vault.stderr.log` (level ≥ WARNING
@@ -228,7 +269,7 @@ with `unittest`:
 **WARNING:** Check with `git status` for uncommitted changes before starting.
 If any exist, warn the user explicitly — changes may be lost during loop resets.
 
-1. Close the app: `./scripts/app.sh stop`
+1. Close the app: `make stop`
 2. Delete debug dumps: `rm ~/.local/state/markdown-vault/debug-*`
 3. In `~/.config/markdown-vault/vaults.yaml` set `loglevel: debug`,
    `debug_active: true` and enable required `debug_dump_*` flags
@@ -238,7 +279,7 @@ If any exist, warn the user explicitly — changes may be lost during loop reset
 1. **Implement change** + write/update unit tests
 2. **Run unit tests:** `make test`
 3. **Install:** `make install`
-4. **Start/restart the app:** `./scripts/app.sh restart`
+4. **Start/restart the app:** `make restart`
 5. **Test the feature manually** (use debug dumps if available)
 6. **Bug found:** implement fix → go to step 2
 7. **Commit** (only on user request)
@@ -315,7 +356,7 @@ opening files in editor, toggling sidebar etc.) ask the user.
 - On Flatpak, file access is sandboxed — use `org.freedesktop.portal` for file chooser.
 - GtkSourceView 5 renamed `begin_not_undoable_action` → `begin_irreversible_action`.
 - `editor.file_path` is a `str`, not `Path` — use `Path(editor.file_path).parent` for directory.
-- Kill all existing app instances before starting a new one: always use `./scripts/app.sh stop` (or `restart`, which stops first) — never hand-roll `pkill`/`kill`/`killall`. Duplicate instances cause confusing state.
+- Kill all existing app instances before starting a new one: always use `make stop` (or `make restart`, which stops first) — never hand-roll `pkill`/`kill`/`killall`. Duplicate instances cause confusing state.
 - Shift+Tab generates `Gdk.KEY_ISO_Left_Tab`, not `Gdk.KEY_Tab`. Always check for both keyvals.
 - **Gtk.Stack remove/add destroys WebView DOM**: When a tab is renamed externally, `_on_tab_renamed` removes and re-adds the content stack child. This destroys the WebView's rendered DOM, but `_loaded` and `_last_html_hash` remain stale. Always call `preview.reset()` before `_refresh_preview()` after stack manipulation.
 - **Tab button closures capture file_path**: Close buttons and click gestures in `TabBar._build_tab_widget` must read `_file_path` from the container widget at click time, not capture `file_path` at creation time. After `update_path()`, the old capture points to a dead path.
@@ -348,64 +389,3 @@ Status folders: `Draft`, `Pending`, `Progress`, `Review`, `Done`.
 When a ticket-related keyword is mentioned (e.g. "ticket", "bug", "feature"), search under `./tmp/Tickets/` for relevant files first.
 When a ticket changes it's status move it to the appropriate folder.
 If a ticket can be broken down into subtasks, create a folder with the same name. Create tickets for subtasks in that folder.
-
-## Code Exploration — graphify FIRST
-
-For ANY question about code structure — architecture, "how does X work?", who
-calls Y, dependencies, call chains, where a symbol lives, "what breaks if I
-change Z" — your FIRST tool call MUST be `/graphify`. Do NOT use grep/rg/find or
-read source files as your first step for a structural question — call graphify
-first, every time. You may NOT pre-judge graphify as "insufficient" before
-running it. graphify queries a local AST knowledge graph — faster and more
-accurate than reading files.
-
-Commands (run VERBATIM — these are the ONLY graphify forms; do not invent others):
-
-| Task                                             | Command                                                   |
-| ------------------------------------------------ | --------------------------------------------------------- |
-| Build/refresh the graph (first use, big changes) | `/graphify .`                                             |
-| Incremental update after edits                   | `/graphify . --update`                                    |
-| "How does X work?" / how does A connect to B?    | `/graphify query "how does the preview render markdown?"` |
-| Call chain / dependency path between two symbols | `/graphify path "Editor" "Preview"`                       |
-| Explain / locate a symbol and how it is wired    | `/graphify explain "TabManager"`                          |
-
-Rules:
-
-- graphify is the FIRST step for structural questions, not a fallback.
-- If a query returns nothing useful or seems stale, run `/graphify . --update`
-  once, then re-query — do NOT silently fall back to grep.
-- Only after graphify has run and did not answer the question may you grep/read
-  source directly.
-- Use exactly the four forms above (`.`, `. --update`, `query`, `path`,
-  `explain`). Do NOT invent other subcommands or flags.
-
-**How to comply — every structural task:**
-
-1. Ask yourself: is this about _where / how / why_ the code is structured, or who
-   calls / depends on what? If yes → graphify is your first tool call.
-2. Issue `/graphify query|path|explain …` FIRST. Not grep. Not read. Not glob.
-3. Only after graphify has actually run and did not answer may you grep/read the
-   files it pointed you to.
-
-```
-WRONG:  "How does the sidebar refresh?"  →  grep -r "refresh" src/
-RIGHT:  "How does the sidebar refresh?"  →  /graphify query "how does the sidebar refresh?"
-                                            →  then read the files it cites
-```
-
-If you catch yourself reaching for grep/rg/find/read to understand code you have
-not yet queried with graphify, that itch is the trigger to call graphify instead.
-
-## graphify
-
-This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships.
-
-When the user types `/graphify`, use the installed graphify skill or instructions before doing anything else.
-
-Rules:
-
-- For codebase questions, first run `graphify query "<question>"` when graphify-out/graph.json exists. Use `graphify path "<A>" "<B>"` for relationships and `graphify explain "<concept>"` for focused concepts. These return a scoped subgraph, usually much smaller than GRAPH_REPORT.md or raw grep output.
-- Dirty graphify-out/ files are expected after hooks or incremental updates; dirty graph files are not a reason to skip graphify. Only skip graphify if the task is about stale or incorrect graph output, or the user explicitly says not to use it.
-- If graphify-out/wiki/index.md exists, use it for broad navigation instead of raw source browsing.
-- Read graphify-out/GRAPH_REPORT.md only for broad architecture review or when query/path/explain do not surface enough context.
-- After modifying code, run `graphify update .` to keep the graph current (AST-only, no API cost).
