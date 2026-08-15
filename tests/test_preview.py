@@ -17,6 +17,8 @@ from markdown_vault.preview import (
     _same_page_fragment,
     LanguageExtractorPreprocessor,
     PygmentsCodePostprocessor,
+    BlankLineBeforeListExtension,
+    BlankLineBeforeListPreprocessor,
 )
 import markdown as md
 
@@ -924,6 +926,83 @@ class TestPreviewSearch(unittest.TestCase):
         preview.search_prev()
         preview.search_clear()
         self.assertEqual(preview.search_info(), (0, 0))
+
+
+class TestBlankLineBeforeList(unittest.TestCase):
+    """A list directly under a paragraph (no blank line) must still render as a
+    list. Python-Markdown otherwise folds it into the paragraph, which trips up
+    GFM-style / AI-generated content; a preprocessor inserts the missing blank
+    line at the paragraph-to-list boundary."""
+
+    def _render(self, src):
+        return md.markdown(src, extensions=[BlankLineBeforeListExtension()])
+
+    def _plain(self, src):
+        return md.markdown(src)
+
+    def test_bullet_list_after_paragraph_without_blank_line(self):
+        html = self._render("Generalist per handler:\n- PDF\n- DOCX")
+        self.assertIn("<ul>", html)
+        self.assertIn("<li>PDF</li>", html)
+        self.assertIn("<li>DOCX</li>", html)
+
+    def test_premise_plain_markdown_swallows_the_list(self):
+        # Guards the premise the fix relies on: without it, no list forms.
+        self.assertNotIn("<ul>", self._plain("Generalist per handler:\n- PDF\n- DOCX"))
+
+    def test_ordered_list_starting_at_one_after_paragraph(self):
+        html = self._render("Steps:\n1. first\n2. second")
+        self.assertIn("<ol>", html)
+        self.assertIn("<li>first</li>", html)
+
+    def test_wrapped_number_is_not_turned_into_a_list(self):
+        # CommonMark safeguard: an ordered list only interrupts a paragraph when it
+        # starts at 1, so a hard-wrapped "14." stays prose.
+        html = self._render("The number of doors is\n14. total, roughly")
+        self.assertNotIn("<ol>", html)
+
+    def test_existing_blank_line_is_not_doubled(self):
+        html = self._render("Intro:\n\n- one\n- two")
+        self.assertIn("<li>one</li>", html)           # still a tight list
+        self.assertEqual(html.count("<ul>"), 1)
+
+    def test_list_stays_tight_and_unsplit_with_continuations(self):
+        src = "Intro:\n- PDF: use its\n  image support\n- DOCX"
+        html = self._render(src)
+        self.assertEqual(html.count("<ul>"), 1)       # one list, not split in two
+        self.assertEqual(html.count("<li>"), 2)
+        self.assertIn("image support", html)
+        self.assertNotIn("<p>PDF", html)              # tight: no <p> inside <li>
+
+    def test_list_marker_inside_fenced_code_is_untouched(self):
+        html = md.markdown("```\ncode:\n- not a list\n```",
+                           extensions=[BlankLineBeforeListExtension(), "fenced_code"])
+        self.assertNotIn("<li>", html)
+        self.assertIn("- not a list", html)           # survives as code text
+
+    def test_thematic_break_is_not_treated_as_a_list(self):
+        html = self._render("Some text\n***")
+        self.assertNotIn("<li>", html)
+
+    def test_longer_fence_is_not_closed_by_inner_fence(self):
+        # R103.1: a block opened with four backticks (the idiom for showing a
+        # three-backtick fence) must not be considered closed by the inner ```;
+        # otherwise the rest of the code is read as prose and a blank line is
+        # inserted *inside* the code block. The whole input is one fence -> the
+        # preprocessor must leave it exactly as-is.
+        pp = BlankLineBeforeListPreprocessor(None)
+        lines = ["````", "```", "text", "- item", "```", "````"]
+        self.assertEqual(pp.run(lines), lines)
+
+    def test_lazy_continuation_is_not_corrupted(self):
+        # A column-0 line continuing a list item (no blank line), then the next
+        # item, must render exactly as Python-Markdown would natively.
+        src = "- a\ntext\n- b"
+        self.assertEqual(self._render(src), self._plain(src))
+
+    def test_wired_into_markdown_extensions(self):
+        self.assertTrue(any(isinstance(e, BlankLineBeforeListExtension)
+                            for e in MARKDOWN_EXTENSIONS))
 
 
 if __name__ == "__main__":

@@ -324,6 +324,97 @@ class PygmentsCodeExtension(Extension):
         CheckboxExtension().extendMarkdown(md)
 
 
+class BlankLineBeforeListPreprocessor(Preprocessor):
+    """Insert the blank line Python-Markdown requires before a list.
+
+    Python-Markdown follows the original Markdown rule that a list does not
+    interrupt a paragraph: a list marker directly under a text line is folded
+    into that paragraph instead of starting a list. GitHub-flavored Markdown —
+    and therefore most AI-generated content — routinely omits that blank line, so
+    such lists render as run-on text here. This normalizes the input by inserting
+    a single blank line at a paragraph-to-list boundary, before the block parser
+    runs.
+
+    Scope is deliberately bounded to top-level lists (indent 0): it never fires
+    inside fenced code, inside an existing list, or on a lazy paragraph
+    continuation, and it mirrors CommonMark's safeguard that an ordered list only
+    interrupts a paragraph when it starts at 1 (so a hard-wrapped "14." stays
+    prose). Nested lists after a paragraph are left to the author.
+    """
+
+    FENCE_RE = re.compile(r'^\s*(`{3,}|~{3,})')
+    LIST_MARKER_RE = re.compile(r'^([-*+]|(\d+)\.)\s')
+    THEMATIC_BREAK_RE = re.compile(r'^ {0,3}([-*_])( *\1){2,} *$')
+
+    def _interrupts(self, marker) -> bool:
+        # Bullets always interrupt a paragraph; ordered lists only when they
+        # start at 1 (group 2 is the number, None for bullets).
+        number = marker.group(2)
+        return number is None or number == '1'
+
+    def run(self, lines):
+        out: list[str] = []
+        in_fence = False
+        fence_char = None
+        fence_len = 0
+        in_list = False
+        prev_blank = True                              # start of doc == fresh block
+        for line in lines:
+            stripped = line.strip()
+            if in_fence:
+                out.append(line)
+                # CommonMark: a fence closes only on a run of the SAME character,
+                # at least as long as the opener and nothing else on the line — so
+                # a ```` block is not closed by an inner ```.
+                if (stripped and set(stripped) == {fence_char}
+                        and len(stripped) >= fence_len):
+                    in_fence = False
+                prev_blank = False
+                continue
+            fence = self.FENCE_RE.match(line)
+            if fence:
+                in_fence = True
+                fence_char = fence.group(1)[0]
+                fence_len = len(fence.group(1))
+                in_list = False
+                out.append(line)
+                prev_blank = False
+                continue
+            if stripped == '':
+                out.append(line)
+                prev_blank = True
+                continue
+            indent = len(line) - len(line.lstrip())
+            marker = (self.LIST_MARKER_RE.match(line)
+                      if indent == 0 and not self.THEMATIC_BREAK_RE.match(line)
+                      else None)
+            if marker:
+                if self._interrupts(marker) and not in_list and not prev_blank and out:
+                    out.append('')                     # the missing separator
+                in_list = True
+                out.append(line)
+                prev_blank = False
+                continue
+            # Any other non-blank line. A fresh top-level block (one preceded by a
+            # blank line) ends the list; a column-0 lazy continuation does not.
+            if indent == 0 and prev_blank:
+                in_list = False
+            out.append(line)
+            prev_blank = False
+        return out
+
+
+class BlankLineBeforeListExtension(Extension):
+    """Register :class:`BlankLineBeforeListPreprocessor`."""
+
+    def extendMarkdown(self, md):
+        # Priority 35: after checkbox_line (40), which records editor source-line
+        # numbers, so those indices still match the un-normalized source; before
+        # fenced_code (25), so the preprocessor still sees literal ``` fences.
+        md.preprocessors.register(
+            BlankLineBeforeListPreprocessor(md), 'blank_line_before_list', 35)
+
+
 WIKILINK_RE = r"\[\[([^\]|]+)(?:\|([^\]]+))?\]\]"
 
 
@@ -385,6 +476,7 @@ class WikiLinkExtension(Extension):
 
 
 MARKDOWN_EXTENSIONS = [
+    BlankLineBeforeListExtension(),
     "markdown.extensions.fenced_code",
     "markdown.extensions.tables",
     "markdown.extensions.toc",
