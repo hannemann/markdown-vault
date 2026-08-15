@@ -21,13 +21,22 @@ _fetch-wheels:
 	@echo "=> Downloading Python wheels (base + AI) for the Flatpak runtime (py3.13)..."
 	@rm -rf $(WHEELS_DIR)
 	@mkdir -p $(WHEELS_DIR)
+	# odfpy publishes no wheel. Split it off (single-sourcing its pin from
+	# requirements-ai.txt) and fetch it as an sdist via host resolution — pip
+	# forbids --no-binary together with --platform. Its deps come as wheels; pip
+	# builds odfpy at Flatpak-build time under --no-build-isolation. Everything
+	# else is fetched as cross-platform wheels.
+	@grep -vE '^odfpy([[:space:]=<>!~]|$$)' $(REQUIREMENTS_AI) > $(WHEELS_DIR)/.req.wheels
+	@grep -E  '^odfpy([[:space:]=<>!~]|$$)' $(REQUIREMENTS_AI) > $(WHEELS_DIR)/.req.sdist
+	pip3 download --dest $(WHEELS_DIR) --no-binary odfpy -r $(WHEELS_DIR)/.req.sdist
 	pip3 download --dest $(WHEELS_DIR) \
 		--only-binary=:all: --python-version 3.13 \
 		--platform manylinux2014_x86_64 \
 		--platform manylinux_2_17_x86_64 \
 		--platform manylinux_2_28_x86_64 \
-		-r requirements.txt -r requirements-ai.txt
-	@echo "=> $$(ls -1 $(WHEELS_DIR)/*.whl | wc -l) wheels in $(WHEELS_DIR)"
+		-r requirements.txt -r $(WHEELS_DIR)/.req.wheels
+	@rm -f $(WHEELS_DIR)/.req.wheels $(WHEELS_DIR)/.req.sdist
+	@echo "=> $$(ls -1 $(WHEELS_DIR)/*.whl | wc -l) wheels + $$(ls -1 $(WHEELS_DIR)/*.tar.gz 2>/dev/null | wc -l) sdists in $(WHEELS_DIR)"
 
 # Regenerate the VERSION-CONTROLLED lock. Run deliberately when deps change, then
 # review the diff and commit requirements.lock — that committed file is the trust

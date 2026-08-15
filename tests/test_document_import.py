@@ -64,6 +64,11 @@ class TestDispatch(unittest.TestCase):
     def test_docx_routes_to_docx_handler(self):
         self.assertIs(di._HANDLERS[".docx"], di._convert_docx)
 
+    def test_odf_suffixes_route_to_odf_handler(self):
+        for s in (".odt", ".ods", ".odp"):
+            self.assertIn(s, di.SUPPORTED_SUFFIXES)
+            self.assertIs(di._HANDLERS[s], di._convert_odf)
+
     def test_unsupported_suffix_raises(self):
         with self.assertRaises(ValueError):
             di.convert("/tmp/whatever.xyz")
@@ -201,6 +206,41 @@ class TestFormatRoundTrips(unittest.TestCase):
             self.assertIn("| Metric | Value |", md)
             self.assertIn("| Revenue | 100 |", md)
             self.assertIn("| --- |", md)
+
+    def test_odt(self):
+        from odf.opendocument import OpenDocumentText
+        from odf.text import H, P
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "doc.odt"
+            doc = OpenDocumentText()
+            doc.text.addElement(H(outlinelevel=1, text="Report"))
+            doc.text.addElement(P(text="A body paragraph with content."))
+            doc.save(str(path))
+            r = di.convert(path)
+            self.assertIn("Report", r.markdown)
+            self.assertIn("A body paragraph with content.", r.markdown)
+
+    def test_ods_table(self):
+        from odf.opendocument import OpenDocumentSpreadsheet
+        from odf.table import Table, TableRow, TableCell
+        from odf.text import P
+        def cell(v):
+            c = TableCell(); c.addElement(P(text=v)); return c
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "sheet.ods"
+            doc = OpenDocumentSpreadsheet()
+            table = Table(name="Sales")
+            for cells in (["Month", "Revenue"], ["July", "4800"]):
+                row = TableRow()
+                for v in cells:
+                    row.addElement(cell(v))
+                table.addElement(row)
+            doc.spreadsheet.addElement(table)
+            doc.save(str(path))
+            md = di.convert(path).markdown
+            self.assertIn("Month", md)
+            self.assertIn("Revenue", md)
+            self.assertIn("4800", md)
 
     def test_pptx(self):
         from pptx import Presentation

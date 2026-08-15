@@ -66,11 +66,14 @@ _AUDIO_SUFFIXES = (".mp3", ".wav", ".m4a", ".ogg", ".flac", ".opus", ".aac")
 # The backend each format needs. Availability is checked against just these, so
 # opening a PDF never probes the audio stack. (markdownify, used by the docx path,
 # is a base dependency and always present, so it is not listed.)
+_ODF_SUFFIXES = (".odt", ".ods", ".odp")
+
 _HANDLER_MODULES = {
     ".pdf": ("pymupdf4llm",),
     ".docx": ("mammoth",),
     ".pptx": ("pptx",),
     ".xlsx": ("openpyxl",),
+    **{s: ("odf",) for s in _ODF_SUFFIXES},        # odfpy imports as `odf`
     **{s: ("faster_whisper",) for s in _AUDIO_SUFFIXES},
 }
 
@@ -156,6 +159,17 @@ def _convert_docx(path: Path) -> tuple[str, str]:
     return md, ""                                  # docx has no reliable title metadata
 
 
+def _convert_odf(path: Path) -> tuple[str, str]:
+    # OpenDocument (Writer/Calc/Impress): odf2xhtml renders any of them to XHTML,
+    # then markdownify emits Markdown — the same HTML route as the .docx path, so one
+    # handler covers .odt/.ods/.odp (headings, paragraphs, lists, tables).
+    import markdownify
+    from odf.odf2xhtml import ODF2XHTML
+    html = ODF2XHTML().odf2xhtml(str(path))
+    md = markdownify.markdownify(html, heading_style="ATX", bullets="-")
+    return md, ""
+
+
 def _convert_pptx(path: Path) -> tuple[str, str]:
     from pptx import Presentation
     prs = Presentation(str(path))
@@ -239,6 +253,7 @@ _HANDLERS = {
     ".docx": _convert_docx,
     ".pptx": _convert_pptx,
     ".xlsx": _convert_xlsx,
+    **{s: _convert_odf for s in _ODF_SUFFIXES},
     **{s: _convert_audio for s in _AUDIO_SUFFIXES},
 }
 
