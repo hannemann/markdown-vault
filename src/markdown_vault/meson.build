@@ -15,12 +15,9 @@ py_sources = files(
    'input_manager.py',
    'llama_runtime.py',
    'main.py',
-  'markdown_help.py',
-  'markdown_widgets.py',
   'monitor_handler.py',
   'note_writer.py',
   'preferences.py',
-  'preview.py',
   'quick_open.py',
   'ask.py',
   'lexical_search.py',
@@ -45,6 +42,7 @@ py_sources = files(
 subdir('core')
 subdir('editor')
 subdir('markdown')
+subdir('preview')
 subdir('uikit')
 
 install_data(

@@ -10,7 +10,7 @@ from gi.repository import Adw, Gtk
 
 Adw.init()
 
-from markdown_vault import markdown_widgets as M
+from markdown_vault.preview import markdown_widgets as M
 
 
 class TestInline(unittest.TestCase):

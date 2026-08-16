@@ -17,7 +17,7 @@ gi.require_version("Adw", "1")
 from gi.repository import Gtk
 
 from markdown_vault.editor.editor import Editor
-from .preview import Preview
+from markdown_vault.preview.preview import Preview
 from markdown_vault.uikit import banners as banner_mod
 
 logger = logging.getLogger(__name__)

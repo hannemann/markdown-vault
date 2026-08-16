@@ -1,4 +1,4 @@
-"""Tests for markdown_vault.preview — Markdown-to-HTML rendering."""
+"""Tests for markdown_vault.preview.preview — Markdown-to-HTML rendering."""
 
 import os
 import tempfile
@@ -6,7 +6,7 @@ import unittest
 from unittest.mock import MagicMock
 from pathlib import Path
 
-from markdown_vault.preview import (
+from markdown_vault.preview.preview import (
     Preview,
     HTML_TEMPLATE,
     MARKDOWN_EXTENSIONS,

@@ -142,7 +142,7 @@ class TestMathIntegration(unittest.TestCase):
 
     def _render(self, text):
         import markdown
-        from markdown_vault.preview import MARKDOWN_EXTENSIONS, EXTENSION_CONFIGS
+        from markdown_vault.preview.preview import MARKDOWN_EXTENSIONS, EXTENSION_CONFIGS
         html = markdown.markdown(text, extensions=MARKDOWN_EXTENSIONS,
                                  extension_configs=EXTENSION_CONFIGS)
         return MathMLPostprocessor().run(html)

@@ -29,7 +29,7 @@ import threading
 from markdown_vault.core import logging_setup
 from .vault_tree import VaultTree
 from markdown_vault.editor.editor import Editor
-from .preview import Preview
+from markdown_vault.preview.preview import Preview
 from markdown_vault.editor.tabs import TabBar
 from .sidebar import Sidebar
 from .search import SearchBar
@@ -43,7 +43,7 @@ from markdown_vault.editor.find_bar import FindBar
 from .monitor_handler import MonitorHandler
 from .tab_manager import TabOrchestrator
 from .session_manager import SessionManager
-from .markdown_help import MarkdownHelpOverlay
+from markdown_vault.preview.markdown_help import MarkdownHelpOverlay
 from markdown_vault.editor.autosave import AutosaveManager
 from .file_ops import FileOps
 from .view_mode_manager import ViewModeManager
