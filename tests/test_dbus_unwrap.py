@@ -44,6 +44,18 @@ class TestDbusUnwrap(unittest.TestCase):
         # The @<sig> stripping must not touch an @ inside a quoted string.
         self.assertEqual(run("('reach me at a@b.com',)"), "reach me at a@b.com\n")
 
+    def test_double_quoted_string_contents_are_protected(self):
+        # g_variant_print double-quotes a string that contains an apostrophe
+        # (R121.1); `false`/`@…` inside it must still be left untouched.
+        self.assertEqual(run('''("it's false @as x",)'''), "it's false @as x\n")
+
+    def test_double_quoted_json_with_apostrophe_stays_valid(self):
+        # An apostrophe in a path forces gdbus to double-quote the whole JSON.
+        inp = '("{\\"path\\": \\"/It\'s\\", \\"hide\\": false}",)'
+        out = run(inp)
+        self.assertEqual(out, '{"path": "/It\'s", "hide": false}\n')
+        json.loads(out)
+
     def test_false_inside_json_string_is_untouched(self):
         # DumpState returns a JSON string; a bare `false` inside it must NOT be
         # mapped to Python `False` (that would break the JSON).

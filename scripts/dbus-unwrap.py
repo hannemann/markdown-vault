@@ -22,9 +22,15 @@ import ast
 import re
 import sys
 
-# A single-quoted GVariant string, honouring backslash escapes. Matched so its
-# contents are left untouched by the normalisation below.
-_QUOTED = re.compile(r"'(?:[^'\\]|\\.)*'", re.DOTALL)
+# A quoted GVariant string, honouring backslash escapes, matched so its contents
+# are left untouched by the normalisation below. g_variant_print picks the quote
+# character from the payload — a string containing an apostrophe is printed
+# double-quoted — so BOTH forms must be recognised (R121.1).
+_QUOTED = re.compile(
+    r"'(?:[^'\\]|\\.)*'"        # single-quoted
+    r'|"(?:[^"\\]|\\.)*"',      # double-quoted (used when the payload has a ')
+    re.DOTALL,
+)
 # A GVariant type annotation: `@` + a run of signature characters (basic types
 # plus the `a m {} ()` containers), e.g. `@as`, `@a{sv}`, `@ay`.
 _TYPE_ANNOTATION = re.compile(r"@[a-z{}()]+\s*")
