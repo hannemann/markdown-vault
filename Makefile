@@ -232,6 +232,8 @@ graph-explain:
 DBUS_PATH := /de/hannemann/markdown_vault/debug
 DBUS_IFACE := de.hannemann.markdown_vault.Debug
 DBUS_CALL := gdbus call --session --dest $(APP_ID) --object-path $(DBUS_PATH) --method $(DBUS_IFACE)
+# gdbus prints the reply as a GVariant tuple; unwrap it to the raw string/paths.
+UNWRAP := python3 scripts/dbus-unwrap.py
 
 dbg-ready:                 # block (≤10s) until the debug interface answers, e.g. after restart
 	@for i in $$(seq 1 50); do \
@@ -242,13 +244,13 @@ dbg-ready:                 # block (≤10s) until the debug interface answers, e
 	exit 1
 
 dbg-state:                 ## dump window state as JSON (active file, tabs, vault)
-	@$(DBUS_CALL).DumpState
+	@$(DBUS_CALL).DumpState | $(UNWRAP)
 
 dbg-tabs:
-	@$(DBUS_CALL).ListTabs
+	@$(DBUS_CALL).ListTabs | $(UNWRAP)
 
 dbg-active:
-	@$(DBUS_CALL).ActiveFile
+	@$(DBUS_CALL).ActiveFile | $(UNWRAP)
 
 dbg-open:                  # F=<abs path>: open a note in a tab
 	@test -n "$(F)" || { echo 'usage: make dbg-open F=/abs/path/note.md'; exit 2; }
@@ -266,7 +268,7 @@ dbg-search:                # Q=<query>: run full-text search, wait, print result
 	@test -n "$(Q)" || { echo 'usage: make dbg-search Q="query"'; exit 2; }
 	@$(DBUS_CALL).Search "$(Q)" >/dev/null
 	@$(DBUS_CALL).WaitIdle 10000 >/dev/null
-	@$(DBUS_CALL).SearchResults
+	@$(DBUS_CALL).SearchResults | $(UNWRAP)
 
 # Low-level Quick-Open/Ask steps (compose your own flow), plus the dbg-ask combo.
 dbg-quickopen:             # Q=<text>: open the palette and type the query (no submit)
@@ -277,14 +279,16 @@ dbg-submit:                # press Enter in the palette (answer / open selection
 	@$(DBUS_CALL).Submit
 
 dbg-waitidle:              # [T=<ms>, default 120000]: block until async work settles
-	@gdbus call --timeout 130 --session --dest $(APP_ID) --object-path $(DBUS_PATH) --method $(DBUS_IFACE).WaitIdle $(or $(T),120000)
+	@t=$(or $(T),120000); \
+	gdbus call --timeout $$(( t/1000 + 10 )) --session --dest $(APP_ID) --object-path $(DBUS_PATH) --method $(DBUS_IFACE).WaitIdle $$t | $(UNWRAP)
 
 dbg-answer:                # print the current (streaming) Ask answer as raw Markdown
-	@$(DBUS_CALL).AskAnswer
+	@$(DBUS_CALL).AskAnswer | $(UNWRAP)
 
 dbg-ask:                   # Q=<question>: full Ask flow (open, submit, wait, print answer)
 	@test -n "$(Q)" || { echo 'usage: make dbg-ask Q="your question"'; exit 2; }
 	@$(DBUS_CALL).QuickOpen "$(Q)" >/dev/null
 	@$(DBUS_CALL).Submit >/dev/null
-	@gdbus call --timeout 130 --session --dest $(APP_ID) --object-path $(DBUS_PATH) --method $(DBUS_IFACE).WaitIdle 120000 >/dev/null
-	@$(DBUS_CALL).AskAnswer
+	@settled=$$(gdbus call --timeout 130 --session --dest $(APP_ID) --object-path $(DBUS_PATH) --method $(DBUS_IFACE).WaitIdle 120000); \
+	case "$$settled" in *true*) ;; *) echo "WARNING: answer may be truncated — WaitIdle timed out with the answer still streaming" >&2 ;; esac
+	@$(DBUS_CALL).AskAnswer | $(UNWRAP)
