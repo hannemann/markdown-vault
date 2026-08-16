@@ -234,6 +234,9 @@ DBUS_IFACE := de.hannemann.markdown_vault.Debug
 DBUS_CALL := gdbus call --session --dest $(APP_ID) --object-path $(DBUS_PATH) --method $(DBUS_IFACE)
 # gdbus prints the reply as a GVariant tuple; unwrap it to the raw string/paths.
 UNWRAP := python3 scripts/dbus-unwrap.py
+# pipefail so `gdbus … | $(UNWRAP)` fails when gdbus fails (a dead app must not
+# read as an empty result). Scoped to dbg-* only, leaving other recipes as-is.
+dbg-%: .SHELLFLAGS := -o pipefail -c
 
 dbg-ready:                 # block (≤10s) until the debug interface answers, e.g. after restart
 	@for i in $$(seq 1 50); do \

@@ -2,27 +2,62 @@
 """Unwrap a `gdbus call` reply on stdin to its raw payload.
 
 `gdbus call` prints the D-Bus reply as a GVariant text tuple: a string comes back
-single-quoted with ``\\n`` escapes, an array as ``[...]``. That is unreadable for
-a human or an agent expecting the Markdown / JSON / paths the method actually
-returns (the whole answer collapses onto one line; a JSON string is not valid
-JSON until unquoted). Read that tuple and print the payload instead:
+single-quoted with ``\\n`` escapes, an array as ``[...]``, and — because it calls
+``g_variant_print(reply, TRUE)`` — a value whose type can't be inferred (an empty
+array, a boolean) is prefixed with a ``@<signature>`` annotation. That is
+unreadable for a human or an agent expecting the Markdown / JSON / paths the
+method returns. Read that tuple and print the payload instead:
 
 - a string  -> printed with real newlines (raw Markdown; a JSON string is now
   valid JSON, pipeable to `jq`)
-- a list    -> one item per line
-- anything not Python-parsable (e.g. a boolean ``(true,)``) -> printed unchanged
+- a list    -> one item per line (an empty list prints nothing)
+- a boolean -> ``True`` / ``False``
+- anything still unparsable -> printed unchanged
+
+Empty stdin (e.g. `gdbus` failed and wrote only to stderr) is an error, not an
+empty answer — exit non-zero so a caller can tell "no result" from "call failed".
 """
 
 import ast
+import re
 import sys
+
+# A single-quoted GVariant string, honouring backslash escapes. Matched so its
+# contents are left untouched by the normalisation below.
+_QUOTED = re.compile(r"'(?:[^'\\]|\\.)*'", re.DOTALL)
+# A GVariant type annotation: `@` + a run of signature characters (basic types
+# plus the `a m {} ()` containers), e.g. `@as`, `@a{sv}`, `@ay`.
+_TYPE_ANNOTATION = re.compile(r"@[a-z{}()]+\s*")
+
+
+def _normalize_outside(segment: str) -> str:
+    """Turn GVariant text that is OUTSIDE any quoted string into Python-literal
+    text: drop `@<sig>` annotations and map the GVariant keywords."""
+    segment = _TYPE_ANNOTATION.sub("", segment)
+    segment = re.sub(r"\btrue\b", "True", segment)
+    segment = re.sub(r"\bfalse\b", "False", segment)
+    segment = re.sub(r"\bnothing\b", "None", segment)
+    return segment
+
+
+def _normalize(text: str) -> str:
+    """Normalize *text* to a Python literal, leaving quoted strings verbatim (so
+    an `@` or `false` inside a string is never rewritten)."""
+    out, last = [], 0
+    for m in _QUOTED.finditer(text):
+        out.append(_normalize_outside(text[last:m.start()]))
+        out.append(m.group(0))
+        last = m.end()
+    out.append(_normalize_outside(text[last:]))
+    return "".join(out)
 
 
 def unwrap(text: str) -> str:
     text = text.strip()
     try:
-        value = ast.literal_eval(text)
+        value = ast.literal_eval(_normalize(text))
     except (ValueError, SyntaxError):
-        return text                      # e.g. "(true,)" — GVariant bool literal
+        return text                      # unknown shape: show it verbatim
     if isinstance(value, tuple) and len(value) == 1:
         value = value[0]
     if isinstance(value, (list, tuple)):
@@ -31,4 +66,8 @@ def unwrap(text: str) -> str:
 
 
 if __name__ == "__main__":
-    print(unwrap(sys.stdin.read()))
+    data = sys.stdin.read()
+    if not data.strip():
+        sys.stderr.write("dbus-unwrap: empty reply (gdbus produced no output)\n")
+        sys.exit(1)
+    print(unwrap(data))
