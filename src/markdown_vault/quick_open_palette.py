@@ -493,10 +493,12 @@ class QuickOpenPalette(Adw.Dialog):
         row.set_selectable(False)
         label = Gtk.Label(label=text)
         label.set_xalign(0)
+        label.set_wrap(True)            # long notices must wrap inside the palette
         label.add_css_class("dim-label")
         label.set_margin_top(6)
         label.set_margin_bottom(6)
         label.set_margin_start(8)
+        label.set_margin_end(8)
         row.set_child(label)
         return row
 

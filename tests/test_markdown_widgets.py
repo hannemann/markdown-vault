@@ -151,6 +151,12 @@ class TestRender(unittest.TestCase):
         self.assertEqual(grid.get_child_at(0, 0).get_text(), "A")
         self.assertEqual(grid.get_child_at(1, 1).get_text(), "2")
 
+    def test_code_block_is_styled_as_a_box(self):
+        label = self._children(M.render_markdown("```\nx = 1\n```"))[0]
+        self.assertEqual(label.get_text(), "x = 1")
+        self.assertTrue(label.has_css_class("monospace"))
+        self.assertTrue(label.has_css_class("mv-answer-code"))   # bg/padding box
+
     def test_rendered_labels_are_selectable_but_not_focusable(self):
         # selectable so a mouse selection + context menu copies the visible text,
         # but not focusable so the answer adds no Tab stops (R47.1)

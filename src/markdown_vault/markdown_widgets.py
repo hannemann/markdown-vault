@@ -233,6 +233,7 @@ def _render_block(kind: str, payload) -> Gtk.Widget:
     if kind == "code":
         label = _label(GLib.markup_escape_text(payload), wrap=False)
         label.add_css_class("monospace")
+        label.add_css_class("mv-answer-code")   # subtle background + padding box
         return label
     if kind == "table":
         return _render_table(*payload)
