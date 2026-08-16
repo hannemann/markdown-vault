@@ -3018,7 +3018,8 @@ class MainWindow(Adw.ApplicationWindow):
             version=_app_version(),
             developer_name="hannemann",
             comments="Edit and preview Markdown files organized in vaults.",
-            license_type=Gtk.License.GPL_3_0,
+            copyright="© 2026 hannemann",
+            license_type=Gtk.License.AGPL_3_0,
             website="https://github.com/hannemann/markdown-vault",
             issue_url="https://github.com/hannemann/markdown-vault/issues",
         )

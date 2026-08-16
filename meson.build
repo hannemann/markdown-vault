@@ -2,6 +2,7 @@ project(
   'markdown-vault',
   'c',
   version: '0.1.0',
+  license: 'AGPL-3.0-or-later',
   meson_version: '>= 0.64.0',
   default_options: [
     'warning_level=2',
@@ -31,6 +32,13 @@ venvpython = pkgdatadir / 'venv' / 'bin' / 'python3'
 subdir('src/bin')
 subdir('src/markdown_vault')
 subdir('src/share/markdown-vault')
+
+# Ship the full licence text in the installed tree / Flatpak (the About dialog also
+# renders it from GTK's own strings, but carry the file for completeness).
+install_data(
+  'LICENSE',
+  install_dir: get_option('datadir') / 'licenses' / meson.project_name(),
+)
 
 gnome.post_install(
   update_desktop_database: true,

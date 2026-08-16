@@ -235,7 +235,9 @@ vaults:
 
 ## License
 
-GPL-3.0-or-later
+AGPL-3.0-or-later — see [`LICENSE`](LICENSE). The app bundles PyMuPDF
+(dual-licensed AGPL-3.0 / commercial) for PDF import, so the combined work is
+distributed under the AGPL.
 
 ## Contributing
 
