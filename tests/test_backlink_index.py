@@ -537,7 +537,7 @@ class TestGraphAdapter(unittest.TestCase):
         shutil.rmtree(self._tmp, ignore_errors=True)
 
     def test_canonical_key_round_trips_to_file_edges(self):
-        from markdown_vault import graph
+        from markdown_vault.graph import graph
         page = self._vault / "Page.md"
         page.write_text("# Page\n")
         note = self._vault / "Note.md"

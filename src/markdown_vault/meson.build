@@ -3,9 +3,6 @@ py_sources = files(
   '__main__.py',
   'app_window.py',
   'backlink_index.py',
-  'graph.py',
-  'graph_explorer.py',
-  'graph_view.py',
   'dialog_import.py',
   'document_import.py',
   'file_index.py',
@@ -41,6 +38,7 @@ py_sources = files(
 
 subdir('core')
 subdir('editor')
+subdir('graph')
 subdir('markdown')
 subdir('preview')
 subdir('uikit')

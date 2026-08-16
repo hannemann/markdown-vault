@@ -1367,7 +1367,7 @@ class MainWindow(Adw.ApplicationWindow):
 
     def _graph_payload(self, center):
         """Local graph around *center* (the current file) as a render payload."""
-        from . import graph
+        from markdown_vault.graph import graph
         seq = self._backlink_index.mutation_seq
         if self._graph_full is None or seq != self._graph_seq:
             self._graph_full = self._build_full_graph()
@@ -1388,7 +1388,7 @@ class MainWindow(Adw.ApplicationWindow):
         chips, so *include_tags* is off on the sidebar's hot path (which reruns
         after every save) to avoid opening every file in the vault (R29.1).
         """
-        from . import graph
+        from markdown_vault.graph import graph
         bi = self._backlink_index
         file_vaults = {}
         for vault in self._vault_tree.get_vault_paths():
@@ -2349,7 +2349,7 @@ class MainWindow(Adw.ApplicationWindow):
     def _enter_graph_mode(self) -> None:
         """Show the full-graph explorer in the content area (lazy WebView)."""
         if self._graph_explorer is None:
-            from .graph_explorer import GraphExplorer
+            from markdown_vault.graph.graph_explorer import GraphExplorer
             self._graph_explorer = GraphExplorer(
                 get_payload=self._graph_explorer_payload)
             self._graph_explorer.connect(
@@ -2375,7 +2375,7 @@ class MainWindow(Adw.ApplicationWindow):
         the sidebar's tag-less structure graph so the explorer's file reads only
         happen when it is actually open.
         """
-        from . import graph
+        from markdown_vault.graph import graph
         seq = self._backlink_index.mutation_seq
         if self._graph_tagged is None or seq != self._graph_tagged_seq:
             self._graph_tagged = self._build_full_graph(include_tags=True)

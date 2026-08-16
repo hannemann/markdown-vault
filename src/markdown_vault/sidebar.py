@@ -246,7 +246,7 @@ class Sidebar(Gtk.Box):
         if self._get_graph_payload is None:
             return
         if self._graph_view is None:
-            from .graph_view import GraphView
+            from markdown_vault.graph.graph_view import GraphView
             self._graph_view = GraphView()
             self._graph_view.connect(
                 "node-activated",
