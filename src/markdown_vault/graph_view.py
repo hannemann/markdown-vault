@@ -22,7 +22,7 @@ gi.require_version("Adw", "1")
 
 from gi.repository import Gtk, WebKit, GObject, GLib, Adw
 
-from . import frontmatter
+from markdown_vault.markdown import frontmatter
 
 
 _PAGE = r"""<!doctype html>

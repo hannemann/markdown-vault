@@ -10,7 +10,7 @@ import re
 
 import yaml
 
-from .md_text import strip_markdown
+from markdown_vault.markdown.md_text import strip_markdown
 
 _FRONTMATTER_RE = re.compile(r"^---[ \t]*\n(.*?)\n---[ \t]*(?:\n|$)", re.DOTALL)
 

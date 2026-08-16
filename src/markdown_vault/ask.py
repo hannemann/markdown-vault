@@ -442,7 +442,7 @@ def answer_question(question: str, semantic_index, settings: dict, vaults,
     to override (e.g. an eval sweep).  *note_paths*, when given, skips retrieval
     and uses exactly those notes as context (the user picked them).
     """
-    from . import frontmatter
+    from markdown_vault.markdown import frontmatter
     from markdown_vault.core import config  # local import keeps ask import-light
     if semantic_index is None:
         return Answer(text="Semantic search is not active — without an index I "

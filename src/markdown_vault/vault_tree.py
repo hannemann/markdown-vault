@@ -29,7 +29,7 @@ from markdown_vault.core import attachments
 from markdown_vault.core import validation
 from . import dialogs
 from markdown_vault.core import config
-from . import frontmatter
+from markdown_vault.markdown import frontmatter
 
 logger = logging.getLogger(__name__)
 

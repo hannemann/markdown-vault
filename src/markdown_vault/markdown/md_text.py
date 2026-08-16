@@ -9,7 +9,7 @@ reaching across modules for it.
 
 import re
 
-from .md_fences import FenceTracker
+from markdown_vault.markdown.md_fences import FenceTracker
 
 _WIKILINK_RE = re.compile(r"\[\[([^\]]+)\]\]")
 _MDLINK_RE = re.compile(r"!?\[([^\]]*)\]\([^)]*\)")

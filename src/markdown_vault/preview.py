@@ -30,8 +30,8 @@ from pygments.formatters import HtmlFormatter
 from urllib.parse import unquote
 from pymdownx.emoji import to_alt
 from markdown_vault.core import config
-from markdown_vault.latex_mathml import MathMLPostprocessor
-from markdown_vault.md_fences import FenceTracker
+from markdown_vault.markdown.latex_mathml import MathMLPostprocessor
+from markdown_vault.markdown.md_fences import FenceTracker
 from markdown_vault.core.path_utils import (
     HEADING_RE,
     find_vault_name_for_path,

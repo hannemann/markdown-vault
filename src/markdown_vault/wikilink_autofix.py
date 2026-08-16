@@ -25,9 +25,9 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from markdown_vault.core import config
-from .md_fences import FenceTracker
+from markdown_vault.markdown.md_fences import FenceTracker
 from markdown_vault.core.path_utils import find_vault_name_for_path, resolve_wikilink
-from .tags import WIKILINK_RE, wikilink_info_from_match
+from markdown_vault.markdown.tags import WIKILINK_RE, wikilink_info_from_match
 
 
 @dataclass(frozen=True)

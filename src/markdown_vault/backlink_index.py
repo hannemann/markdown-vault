@@ -16,7 +16,7 @@ from markdown_vault.core.path_utils import (
     resolve_vault_path,
     wikilink_url,
 )
-from .tags import WIKILINK_RE, parse_wikilinks, wikilink_info_from_match
+from markdown_vault.markdown.tags import WIKILINK_RE, parse_wikilinks, wikilink_info_from_match
 
 logger = logging.getLogger(__name__)
 

@@ -419,7 +419,7 @@ class TestAnswerQuestionLocalBackend(unittest.TestCase):
     def test_hide_deprecated_all_deprecated_gives_graceful_message(self):
         # Graceful fallback: when every retrieved note is deprecated and the filter
         # is on, explain it (and offer the excluded notes) instead of "nothing".
-        from markdown_vault import frontmatter
+        from markdown_vault.markdown import frontmatter
         orig = frontmatter.status_of
         frontmatter.status_of = lambda p: "deprecated"
         try:
@@ -439,7 +439,8 @@ class TestAnswerQuestionLocalBackend(unittest.TestCase):
     def test_hide_deprecated_partial_drop_warns(self):
         # Some (not all) hits are deprecated: answer from the rest, but say the
         # filter excluded the others instead of thinning the context silently.
-        from markdown_vault import frontmatter, llama_runtime
+        from markdown_vault import llama_runtime
+        from markdown_vault.markdown import frontmatter
         sem = SimpleNamespace(retrieve=lambda *a, **k: [
             (_chunk("/v/keep.md", 1, "keep"), 1.0),
             (_chunk("/v/dep.md", 1, "dep"), 0.9)])

@@ -253,7 +253,7 @@ class TestWikilinkResolverFragment(unittest.TestCase):
         shutil.rmtree(self._tmp, ignore_errors=True)
 
     def _info(self, stem):
-        from markdown_vault.tags import WikilinkInfo
+        from markdown_vault.markdown.tags import WikilinkInfo
         return WikilinkInfo(raw=stem, stem=stem, vault=None, alias=None, display=stem)
 
     def _resolver(self):

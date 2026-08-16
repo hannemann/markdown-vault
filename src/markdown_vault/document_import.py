@@ -28,8 +28,8 @@ import yaml
 
 from . import note_writer
 from markdown_vault.core import attachments
-from .md_fences import FenceTracker
-from .md_text import unwrap_bold_headings
+from markdown_vault.markdown.md_fences import FenceTracker
+from markdown_vault.markdown.md_text import unwrap_bold_headings
 
 logger = logging.getLogger(__name__)
 

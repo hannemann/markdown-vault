@@ -8,7 +8,7 @@ turns pymdownx.arithmatex's <script type="math/tex"> tags into <math> elements.
 import unittest
 from unittest import mock
 
-from markdown_vault.latex_mathml import latex_to_mathml, MathMLPostprocessor
+from markdown_vault.markdown.latex_mathml import latex_to_mathml, MathMLPostprocessor
 
 
 class TestLatexToMathml(unittest.TestCase):
@@ -64,7 +64,7 @@ class TestLatexToMathml(unittest.TestCase):
     def test_converter_error_falls_back_to_escaped_text(self):
         # A converter exception must degrade to the source as escaped text inside
         # valid MathML — one bad formula can't break the whole preview.
-        with mock.patch("markdown_vault.latex_mathml.convert",
+        with mock.patch("markdown_vault.markdown.latex_mathml.convert",
                         side_effect=ValueError("boom")):
             out = latex_to_mathml("x < y & z", inline=False)
         self.assertIn("<math", out)

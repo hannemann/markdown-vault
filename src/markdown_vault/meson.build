@@ -17,16 +17,12 @@ py_sources = files(
   'file_ops.py',
   'find_bar.py',
   'file_manager.py',
-  'frontmatter.py',
   'git_integration.py',
    'input_manager.py',
-   'latex_mathml.py',
    'llama_runtime.py',
    'main.py',
   'markdown_help.py',
   'markdown_widgets.py',
-  'md_fences.py',
-  'md_text.py',
   'monitor_handler.py',
   'mru.py',
   'note_writer.py',
@@ -47,7 +43,6 @@ py_sources = files(
   'status_bar.py',
   'tab_manager.py',
   'tabs.py',
-  'tags.py',
    'view_mode_manager.py',
    'vault_monitor.py',
   'vault_scope.py',
@@ -57,6 +52,7 @@ py_sources = files(
 )
 
 subdir('core')
+subdir('markdown')
 
 install_data(
   py_sources,

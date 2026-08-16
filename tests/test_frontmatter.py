@@ -5,7 +5,7 @@ import os
 import tempfile
 import unittest
 
-from markdown_vault import frontmatter as fm
+from markdown_vault.markdown import frontmatter as fm
 
 
 class TestParse(unittest.TestCase):

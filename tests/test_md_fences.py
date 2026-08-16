@@ -2,7 +2,7 @@
 
 import unittest
 
-from markdown_vault.md_fences import FenceTracker
+from markdown_vault.markdown.md_fences import FenceTracker
 
 
 class TestFenceTracker(unittest.TestCase):

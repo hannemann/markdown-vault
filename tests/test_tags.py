@@ -1,8 +1,8 @@
-"""Tests for markdown_vault.tags — wikilink parsing."""
+"""Tests for markdown_vault.markdown.tags — wikilink parsing."""
 
 import unittest
 
-from markdown_vault.tags import (
+from markdown_vault.markdown.tags import (
     WikilinkInfo,
     parse_wikilinks,
 )

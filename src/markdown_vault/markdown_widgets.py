@@ -24,7 +24,7 @@ import gi
 gi.require_version("Gtk", "4.0")
 from gi.repository import GLib, Gtk
 
-from .md_fences import FENCE_OPEN_RE, FenceTracker
+from markdown_vault.markdown.md_fences import FENCE_OPEN_RE, FenceTracker
 
 # --- inline -----------------------------------------------------------------
 
