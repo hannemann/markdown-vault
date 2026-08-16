@@ -98,6 +98,109 @@ class TestPipeTable(unittest.TestCase):
         self.assertIn("| c | d |", md)          # first row widened to 2 columns
 
 
+class TestOdfTableHeaderFix(unittest.TestCase):
+    """odf2xhtml + markdownify emit an empty leading header row for tables with
+    no <th>; the real header lands in the body.  _promote_empty_table_headers
+    repairs that generally."""
+
+    def test_promotes_first_body_row_when_header_is_empty(self):
+        md = "\n".join([
+            "|  |  |  |",
+            "| --- | --- | --- |",
+            "| Name | Diameter | Discovered |",
+            "| Pluto | 2377 | 1930 |",
+        ])
+        lines = di._promote_empty_table_headers(md).splitlines()
+        self.assertEqual(lines[0], "| Name | Diameter | Discovered |")
+        self.assertEqual(lines[1], "| --- | --- | --- |")
+        self.assertEqual(lines[2], "| Pluto | 2377 | 1930 |")
+        self.assertNotIn("|  |  |  |", "\n".join(lines))
+
+    def test_leaves_a_real_header_untouched(self):
+        md = "\n".join(["| Name | Age |", "| --- | --- |", "| Alice | 30 |"])
+        self.assertEqual(di._promote_empty_table_headers(md), md)
+
+    def test_empty_header_with_no_body_row_is_left_as_is(self):
+        # Nothing to promote — do not drop the (degenerate) table silently.
+        md = "\n".join(["|  |  |", "| --- | --- |"])
+        self.assertEqual(di._promote_empty_table_headers(md), md)
+
+    def test_non_table_text_is_unchanged(self):
+        md = "# Title\n\nProse mentioning a | pipe but not a table.\n"
+        self.assertEqual(di._promote_empty_table_headers(md), md)
+
+    def test_two_tables_are_both_fixed(self):
+        md = "\n".join([
+            "|  |  |", "| --- | --- |", "| A | B |", "| 1 | 2 |",
+            "",
+            "|  |  |", "| --- | --- |", "| C | D |", "| 3 | 4 |",
+        ])
+        out = di._promote_empty_table_headers(md)
+        self.assertNotIn("|  |  |", out)
+        self.assertIn("| A | B |", out)
+        self.assertIn("| C | D |", out)
+
+    def test_does_not_touch_a_table_inside_a_fenced_code_block(self):
+        # R113.1: an empty-header table shown *as an example* in a code block
+        # must be left byte-for-byte, fence included.
+        md = "\n".join([
+            "```",
+            "|  |  |  |",
+            "| --- | --- | --- |",
+            "| Name | Diameter | Discovered |",
+            "| Pluto | 2377 | 1930 |",
+            "```",
+        ])
+        self.assertEqual(di._promote_empty_table_headers(md), md)
+
+    def test_inner_fence_does_not_close_a_longer_outer_fence(self):
+        # A ``` inside a ```` block must not end the fence early (CommonMark).
+        md = "\n".join([
+            "````",
+            "```",
+            "|  |  |",
+            "| --- | --- |",
+            "| A | B |",
+            "````",
+        ])
+        self.assertEqual(di._promote_empty_table_headers(md), md)
+
+    def test_still_fixes_a_real_table_after_a_code_block(self):
+        md = "\n".join([
+            "```", "|  |  |", "```",
+            "",
+            "|  |  |", "| --- | --- |", "| A | B |", "| 1 | 2 |",
+        ])
+        out = di._promote_empty_table_headers(md)
+        lines = out.splitlines()
+        self.assertEqual(lines[:3], ["```", "|  |  |", "```"])  # fence untouched
+        self.assertIn("| A | B |", out)
+        self.assertEqual(out.count("|  |  |"), 1)              # only the fenced one
+
+
+class TestOdfLegendStrip(unittest.TestCase):
+    """Presentations wrap each draw:page in a <fieldset> whose <legend> is the
+    page name; markdownify renders it as a stray line (NoName / an encoded
+    name).  _strip_odf_legends removes it generally."""
+
+    def test_removes_unnamed_page_legend(self):
+        html = ('<fieldset class="DP- MP-Standard"><legend>NoName</legend>'
+                '<h1>Slide</h1></fieldset>')
+        out = di._strip_odf_legends(html)
+        self.assertNotIn("NoName", out)
+        self.assertNotIn("<legend>", out)
+        self.assertIn("<h1>Slide</h1>", out)
+
+    def test_removes_named_page_legend(self):
+        out = di._strip_odf_legends("<fieldset><legend>Slide_20_1</legend><p>x</p></fieldset>")
+        self.assertNotIn("Slide_20_1", out)
+        self.assertIn("<p>x</p>", out)
+
+    def test_html_without_legend_is_unchanged(self):
+        html = "<h1>Doc</h1><p>Body</p>"
+        self.assertEqual(di._strip_odf_legends(html), html)
+
+
 class TestNoteAssembly(unittest.TestCase):
     def test_frontmatter_has_title_source_date(self):
         r = di.DocumentResult(path="/docs/report.pdf", title="Q3 Report",
@@ -407,7 +510,10 @@ class TestFormatRoundTrips(unittest.TestCase):
             path = Path(d) / "t.docx"
             self._make_docx(path, body)
             md = di.convert(path).markdown
+            # mammoth emits <td>-only tables, so markdownify would synthesise an
+            # empty header — the same repair as ODF must apply here too.
             self.assertIn("| Metric | Value |", md)
+            self.assertNotIn("|  |  |", md)
             self.assertIn("| Revenue | 100 |", md)
             self.assertIn("| --- |", md)
 
@@ -467,9 +573,31 @@ class TestFormatRoundTrips(unittest.TestCase):
             doc.spreadsheet.addElement(table)
             doc.save(str(path))
             md = di.convert(path).markdown
-            self.assertIn("Month", md)
-            self.assertIn("Revenue", md)
-            self.assertIn("4800", md)
+            # The first row is promoted to a real header — no empty |  |  | row.
+            self.assertIn("| Month | Revenue |", md)
+            self.assertNotIn("|  |  |", md)
+            self.assertIn("| July | 4800 |", md)
+
+    def test_odp_strips_page_name_line(self):
+        from odf.opendocument import OpenDocumentPresentation
+        from odf.style import MasterPage, PageLayout
+        from odf.draw import Page, Frame, TextBox
+        from odf.text import P
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "deck.odp"
+            doc = OpenDocumentPresentation()
+            doc.automaticstyles.addElement(PageLayout(name="PL0"))
+            doc.masterstyles.addElement(MasterPage(name="Standard", pagelayoutname="PL0"))
+            page = Page(masterpagename="Standard")   # unnamed → odf2xhtml legend "NoName"
+            box = TextBox(); box.addElement(P(text="Hello Slide"))
+            frame = Frame(width="20cm", height="3cm", x="2cm", y="2cm")
+            frame.addElement(box)
+            page.addElement(frame)
+            doc.presentation.addElement(page)
+            doc.save(str(path))
+            md = di.convert(path).markdown
+            self.assertIn("Hello Slide", md)
+            self.assertNotIn("NoName", md)          # per-slide page name stripped
 
     # A valid 1x1 PNG — python-pptx parses the header for dimensions, so the bytes
     # must be a real image, not a stub.

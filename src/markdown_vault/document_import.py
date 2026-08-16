@@ -27,6 +27,7 @@ from pathlib import Path
 import yaml
 
 from . import attachments, note_writer
+from .md_fences import FenceTracker
 
 logger = logging.getLogger(__name__)
 
@@ -270,10 +271,63 @@ def _convert_docx(path: Path) -> tuple[str, str, list]:
     for msg in result.messages:                    # unsupported styles etc. — not fatal
         logger.debug("mammoth: %s", msg)
     md = markdownify.markdownify(result.value, heading_style="ATX", bullets="-")
+    md = _promote_empty_table_headers(md)          # mammoth tables have no <th> header
     return md, "", images                          # docx has no reliable title metadata
 
 
 _IMG_SRC_RE = re.compile(r'<img\b[^>]*?\bsrc="([^"]+)"', re.IGNORECASE)
+
+
+_TABLE_SEP_RE = re.compile(r"^\s*\|(?:\s*:?-{3,}:?\s*\|)+\s*$")
+_LEGEND_RE = re.compile(r"<legend\b[^>]*>.*?</legend>", re.DOTALL | re.IGNORECASE)
+
+
+def _is_pipe_row(line: str) -> bool:
+    """True if *line* looks like a GFM table row (``| ... |``)."""
+    s = line.strip()
+    return len(s) >= 2 and s.startswith("|") and s.endswith("|")
+
+
+def _promote_empty_table_headers(md: str) -> str:
+    """Repair GFM tables whose header row is entirely empty.
+
+    odf2xhtml/markdownify render a table without a ``<th>`` row as an empty
+    header (``|  |  |``) followed by the separator, pushing the real first row
+    into the body.  Promote that first body row to the header and drop the empty
+    one.  A table that already carries a real header is left untouched, and a
+    table shown as an example inside a fenced code block is never rewritten.
+    """
+    lines = md.split("\n")
+    out: list[str] = []
+    i, n = 0, len(lines)
+    fences = FenceTracker()
+    while i < n:
+        line = lines[i]
+        if fences.feed(line):             # opener/content/closer → never rewrite
+            out.append(line)
+            i += 1
+            continue
+        if (_is_pipe_row(line) and i + 2 < n
+                and _TABLE_SEP_RE.match(lines[i + 1])
+                and all(c.strip() == "" for c in line.strip()[1:-1].split("|"))
+                and _is_pipe_row(lines[i + 2])):
+            out.append(lines[i + 2])      # real header (was the first body row)
+            out.append(lines[i + 1])      # separator
+            i += 3
+            continue
+        out.append(line)
+        i += 1
+    return "\n".join(out)
+
+
+def _strip_odf_legends(html: str) -> str:
+    """Remove ``<legend>`` elements from odf2xhtml output.
+
+    Presentations wrap each ``draw:page`` in a ``<fieldset>`` whose ``<legend>``
+    is the page name (``NoName`` when unnamed, an encoded name otherwise), which
+    markdownify would otherwise render as a stray line before each slide.
+    """
+    return _LEGEND_RE.sub("", html)
 
 
 def _convert_odf(path: Path) -> tuple[str, str, list]:
@@ -287,6 +341,7 @@ def _convert_odf(path: Path) -> tuple[str, str, list]:
     import markdownify
     from odf.odf2xhtml import ODF2XHTML
     html = ODF2XHTML().odf2xhtml(str(path))
+    html = _strip_odf_legends(html)                     # drop per-slide page names
 
     pictures: dict = {}                                 # basename -> bytes
     with zipfile.ZipFile(path) as zf:
@@ -312,6 +367,7 @@ def _convert_odf(path: Path) -> tuple[str, str, list]:
 
     html = _IMG_SRC_RE.sub(_swap, html)
     md = markdownify.markdownify(html, heading_style="ATX", bullets="-")
+    md = _promote_empty_table_headers(md)               # fix empty table headers
     return md, "", images
 
 
