@@ -1,4 +1,4 @@
-"""Tests for markdown_vault.logging_setup.
+"""Tests for markdown_vault.core.logging_setup.
 
 Covers the standard-logging routing (normal messages -> stdout,
 errors -> stderr), the two rotated log files, and the fd redirect
@@ -13,7 +13,7 @@ import shutil
 import tempfile
 import unittest
 
-from markdown_vault import logging_setup
+from markdown_vault.core import logging_setup
 
 _ROOT = logging.getLogger()
 

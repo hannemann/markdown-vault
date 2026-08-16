@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from markdown_vault import config
+from markdown_vault.core import config
 from markdown_vault.backlink_index import BacklinkIndex
 from markdown_vault.file_index import FileIndex
 from markdown_vault.tags import parse_wikilinks

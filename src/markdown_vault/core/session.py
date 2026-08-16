@@ -15,7 +15,7 @@ import logging
 import os
 from pathlib import Path
 
-from . import config
+from markdown_vault.core import config
 
 logger = logging.getLogger(__name__)
 

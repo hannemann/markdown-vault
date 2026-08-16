@@ -15,7 +15,8 @@ gi.require_version("Gtk", "4.0")
 
 from gi.repository import GLib, Gtk
 
-from . import dialogs, validation
+from . import dialogs
+from markdown_vault.core import validation
 from .file_ops import FileOps
 
 logger = logging.getLogger(__name__)
@@ -173,7 +174,7 @@ class FileManager:
 
         # 2. Only on success: drop the note/folder's downloaded images, then
         #    close tabs, remove from MRU/history, refresh tree.
-        from . import attachments, path_utils
+        from markdown_vault.core import attachments, path_utils
         vault = path_utils.find_vault_for_dir(str(Path(path).parent)) or str(Path(path).parent)
         try:
             attachments.remove(vault, path)

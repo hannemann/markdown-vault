@@ -105,7 +105,7 @@ def validate_drop(
         return "Cannot drop onto a file."
 
     # The attachments tree is app-managed — notes must not be moved into it.
-    from . import attachments
+    from markdown_vault.core import attachments
     if attachments.is_internal(target_dir):
         return "Cannot move items into the attachments folder."
 

@@ -26,7 +26,8 @@ from pathlib import Path
 
 import yaml
 
-from . import attachments, note_writer
+from . import note_writer
+from markdown_vault.core import attachments
 from .md_fences import FenceTracker
 from .md_text import unwrap_bold_headings
 
@@ -44,7 +45,7 @@ _WHISPER_MODEL = "base"
 def whisper_model_name() -> str:
     """The configured Whisper model size/id (Preferences → Audio transcription),
     defaulting to ``base``."""
-    from . import config
+    from markdown_vault.core import config
     return (config.load_settings().get("document_whisper_model") or _WHISPER_MODEL).strip()
 
 
@@ -62,7 +63,7 @@ def whisper_model_dir(name: str | None = None) -> "Path":
     """App-local folder for a Whisper model size, beside the other downloaded models
     (``<state>/models/whisper-<size>/``) — not the global HuggingFace cache, so it is
     visible, managed by the app, and removed with it."""
-    from . import config
+    from markdown_vault.core import config
     safe = (name or whisper_model_name()).replace("/", "--")
     return config.models_dir() / f"whisper-{safe}"
 

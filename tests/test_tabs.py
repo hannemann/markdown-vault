@@ -8,7 +8,7 @@ import gi
 gi.require_version("Gtk", "4.0")
 from gi.repository import Gtk
 
-import markdown_vault.config as _cfg
+import markdown_vault.core.config as _cfg
 from markdown_vault.tabs import Tab, TabBar
 
 

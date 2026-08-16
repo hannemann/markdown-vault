@@ -81,7 +81,7 @@ def _install_llama_logging() -> None:
         import llama_cpp
     except ImportError:
         return
-    from . import logging_setup
+    from markdown_vault.core import logging_setup
     _LOG_INSTALLED = True
     llog = logging_setup.get_llama_logger()
     # ggml log levels → Python levels; CONT/unknown continue at INFO.
@@ -252,7 +252,7 @@ def recommended_gpu_layers(model_path: str) -> int | None:
     ``usable_VRAM ÷ per-layer weight size``. ``None`` when VRAM or the layer
     count is unknown. On a shared-memory GPU this number is misleading — see
     :func:`gpu_layers_advice`."""
-    from . import config
+    from markdown_vault.core import config
     vram = vram_bytes()
     layers = config.gguf_n_layers(model_path)
     if not vram or not layers or not os.path.exists(model_path):

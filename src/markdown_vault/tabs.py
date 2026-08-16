@@ -17,7 +17,7 @@ gi.require_version("Gdk", "4.0")
 
 from gi.repository import Gtk, GObject, Gio, Gdk, GLib
 
-from .path_utils import find_vault_for_dir
+from markdown_vault.core.path_utils import find_vault_for_dir
 
 logger = logging.getLogger(__name__)
 

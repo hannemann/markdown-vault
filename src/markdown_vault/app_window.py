@@ -26,7 +26,7 @@ import sys
 import faulthandler
 import threading
 
-from . import logging_setup
+from markdown_vault.core import logging_setup
 from .vault_tree import VaultTree
 from .editor import Editor
 from .preview import Preview
@@ -50,17 +50,17 @@ from .view_mode_manager import ViewModeManager
 from .content_changes import ContentChangeHandler
 from .input_manager import InputManager
 from .file_manager import FileManager
-from . import config
+from markdown_vault.core import config
 from . import dialogs
 from . import banners as banner_mod
-from . import session
+from markdown_vault.core import session
 from . import mru
-from . import history
-from . import path_utils
-from . import validation
+from markdown_vault.core import history
+from markdown_vault.core import path_utils
+from markdown_vault.core import validation
 from . import vault_monitor
 from .backlink_index import BacklinkIndex, scan_vaults
-from .event_router import FileEventDispatcher
+from markdown_vault.core.event_router import FileEventDispatcher
 from .file_index import FileIndex
 
 logger = logging.getLogger(__name__)
@@ -1718,7 +1718,7 @@ class MainWindow(Adw.ApplicationWindow):
     def _is_attachment_path(path) -> bool:
         """A note never lives inside an ``attachments/`` tree, so an event on such a
         path is our own side effect (e.g. an image dir we just moved), not a note."""
-        from . import attachments
+        from markdown_vault.core import attachments
         return attachments.is_internal(path)
 
     def _on_attachments_deleted(self, _vault_path, path: str) -> None:
@@ -1726,7 +1726,7 @@ class MainWindow(Adw.ApplicationWindow):
         in-app delete and the external monitor path; idempotent so overlap is safe."""
         if self._is_attachment_path(path):
             return
-        from . import attachments
+        from markdown_vault.core import attachments
         logger.debug("attachments: remove for deleted %s", path)
         try:
             attachments.remove(self._vault_root_for(path), path)
@@ -1743,7 +1743,7 @@ class MainWindow(Adw.ApplicationWindow):
         """Move a renamed/moved note-or-folder's images to the mirrored location
         and relink each affected note (editor buffer if open, else on disk).
         Idempotent, so calling it from both the in-app and monitor paths is safe."""
-        from . import attachments
+        from markdown_vault.core import attachments
         old_vault = self._vault_root_for(old_path)
         new_vault = self._vault_root_for(new_path)
         logger.debug("attachments: sync move %s -> %s", old_path, new_path)
@@ -1761,7 +1761,7 @@ class MainWindow(Adw.ApplicationWindow):
             self._relink_note(old_vault, old_note, new_vault, new_note)
 
     def _relink_note(self, old_vault, old_note, new_vault, new_note) -> None:
-        from . import attachments
+        from markdown_vault.core import attachments
         old_prefix = attachments.link_prefix(old_vault, old_note)
         new_prefix = attachments.link_prefix(new_vault, new_note)
         if old_prefix == new_prefix:

@@ -26,10 +26,10 @@ from gi.repository import Gtk, GLib, GObject, Gdk
 
 from . import git_integration, tags
 from .backlink_index import BacklinkIndex
-from .event_router import FileEvent
+from markdown_vault.core.event_router import FileEvent
 from .md_fences import FenceTracker
 from .md_text import strip_markdown
-from .path_utils import HEADING_RE
+from markdown_vault.core.path_utils import HEADING_RE
 
 logger = logging.getLogger(__name__)
 

@@ -17,7 +17,7 @@ import os
 import logging
 from pathlib import Path
 
-from .path_utils import find_vault_name_for_path, resolve_vault_path
+from markdown_vault.core.path_utils import find_vault_name_for_path, resolve_vault_path
 
 logger = logging.getLogger(__name__)
 

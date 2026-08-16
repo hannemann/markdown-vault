@@ -17,7 +17,8 @@ gi.require_version("Adw", "1")
 
 from gi.repository import Gtk, Adw, GObject, GLib, Gdk
 
-from . import markdown_widgets, path_utils, frontmatter, search_logic
+from . import markdown_widgets, frontmatter, search_logic
+from markdown_vault.core import path_utils
 from .quick_open import fuzzy_match
 
 logger = logging.getLogger(__name__)

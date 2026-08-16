@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-import markdown_vault.config as _cfg
+import markdown_vault.core.config as _cfg
 from markdown_vault.file_index import FileIndex
 
 

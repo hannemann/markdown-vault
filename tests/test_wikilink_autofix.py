@@ -239,7 +239,7 @@ class TestWikilinkResolverFragment(unittest.TestCase):
 
     def setUp(self):
         import tempfile
-        import markdown_vault.config as cfg
+        import markdown_vault.core.config as cfg
         self._cfg = cfg
         self._tmp = tempfile.mkdtemp()
         self._vault = Path(self._tmp) / "V"

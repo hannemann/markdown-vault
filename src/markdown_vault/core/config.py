@@ -13,7 +13,7 @@ from pathlib import Path
 
 import yaml
 
-from . import validation
+from markdown_vault.core import validation
 
 logger = logging.getLogger(__name__)
 

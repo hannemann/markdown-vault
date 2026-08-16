@@ -5,7 +5,7 @@ import re
 from pathlib import Path
 from urllib.parse import parse_qs, quote, unquote, urlparse
 
-from . import config
+from markdown_vault.core import config
 
 # Regex for parsing Markdown headings (h1-h6).
 # Used by preview, sidebar, and search_logic — keep in one place.

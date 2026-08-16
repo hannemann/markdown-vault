@@ -32,7 +32,7 @@ from html import unescape as html_unescape
 from pathlib import Path
 
 from . import note_writer
-from .attachments import attachment_target  # re-exported: layout lives in attachments
+from markdown_vault.core.attachments import attachment_target  # re-exported: layout lives in attachments
 from .md_fences import FenceTracker
 from .md_text import unwrap_bold_headings
 from urllib.parse import parse_qsl, urlencode, urljoin, urlparse, urlsplit, urlunsplit

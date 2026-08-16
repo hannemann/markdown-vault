@@ -341,7 +341,7 @@ class TestLogging(unittest.TestCase):
         L._install_llama_logging()
 
     def test_dedicated_llama_logger(self):
-        from markdown_vault import logging_setup
+        from markdown_vault.core import logging_setup
         lg = logging_setup.get_llama_logger()
         self.assertEqual(lg.name, "markdown_vault.llama")
         self.assertFalse(lg.propagate)          # kept out of the main app log
@@ -384,7 +384,7 @@ class TestGpuRecommendation(unittest.TestCase):
     def test_recommended_layers_estimate(self):
         import os
         import tempfile
-        from markdown_vault import config
+        from markdown_vault.core import config
         f = tempfile.NamedTemporaryFile(suffix=".gguf", delete=False)
         f.write(b"x" * 800)      # 800-byte "model", 10 layers → 80 B/layer
         f.close()
@@ -432,7 +432,7 @@ class TestGpuRecommendation(unittest.TestCase):
             os.unlink(f.name)
 
     def test_recommended_layers_none_without_vram(self):
-        from markdown_vault import config
+        from markdown_vault.core import config
         ov, ol = L.vram_bytes, config.gguf_n_layers
         L.vram_bytes = lambda: None
         config.gguf_n_layers = lambda p: 10

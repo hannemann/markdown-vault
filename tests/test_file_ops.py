@@ -8,7 +8,7 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 from markdown_vault.file_ops import FileOps
-import markdown_vault.config as _cfg
+import markdown_vault.core.config as _cfg
 
 
 class TestResolveActiveVault(unittest.TestCase):

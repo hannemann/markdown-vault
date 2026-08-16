@@ -1,4 +1,4 @@
-"""Tests for markdown_vault.path_utils — vault name-to-path resolver."""
+"""Tests for markdown_vault.core.path_utils — vault name-to-path resolver."""
 
 import os
 import tempfile
@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 
 # Need to patch config before importing path_utils.
-import markdown_vault.config as _cfg
+import markdown_vault.core.config as _cfg
 
 
 class _TempConfigMixin:
@@ -114,7 +114,7 @@ class TestResolveVaultPath(_TempConfigMixin, unittest.TestCase):
 
     def setUp(self):
         super().setUp()
-        from markdown_vault.path_utils import resolve_vault_path
+        from markdown_vault.core.path_utils import resolve_vault_path
         self._resolve = resolve_vault_path
 
     def test_returns_path_for_known_name(self):
@@ -164,7 +164,7 @@ class TestVaultRelativeName(_TempConfigMixin, unittest.TestCase):
 
     def setUp(self):
         super().setUp()
-        from markdown_vault.path_utils import vault_relative_name
+        from markdown_vault.core.path_utils import vault_relative_name
         self._name = vault_relative_name
         _cfg.CONFIG_FILE.write_text(
             "vaults:\n"
@@ -190,7 +190,7 @@ class TestResolveWikilink(_TempConfigMixin, unittest.TestCase):
 
     def setUp(self):
         super().setUp()
-        from markdown_vault.path_utils import resolve_wikilink
+        from markdown_vault.core.path_utils import resolve_wikilink
         self._resolve = resolve_wikilink
 
     def test_resolves_simple_stem(self):
@@ -262,7 +262,7 @@ class TestWikilinkUrl(unittest.TestCase):
     """Tests for wikilink_url()/parse_wikilink_url() — canonical vault: URLs."""
 
     def setUp(self):
-        from markdown_vault.path_utils import (
+        from markdown_vault.core.path_utils import (
             parse_wikilink_url,
             wikilink_url,
         )

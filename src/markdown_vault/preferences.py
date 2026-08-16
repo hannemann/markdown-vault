@@ -19,7 +19,7 @@ gi.require_version("Gdk", "4.0")
 
 from gi.repository import Gtk, Adw, GObject, Gdk, GLib, Gio
 
-from . import config
+from markdown_vault.core import config
 from . import dialogs
 
 
@@ -1919,7 +1919,7 @@ class PreferencesDialog(Adw.PreferencesDialog):
             logging.getLogger("markdown-vault").setLevel(level)
 
     def _on_tp_loglevel_changed(self, row: Adw.ComboRow, _pspec) -> None:
-        from .logging_setup import set_third_party_loglevel
+        from markdown_vault.core.logging_setup import set_third_party_loglevel
         levels = list(_LOGLEVELS.keys())
         idx = row.get_selected()
         if idx < len(levels):

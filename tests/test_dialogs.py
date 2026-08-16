@@ -347,7 +347,7 @@ class TestShowRenameVaultDialog(unittest.TestCase):
 
     @patch("markdown_vault.dialogs.Adw.AlertDialog")
     @patch("markdown_vault.dialogs.Gtk.Entry")
-    @patch("markdown_vault.config")
+    @patch("markdown_vault.core.config")
     def test_creates_dialog_with_entry(self, MockConfig, MockEntry, MockAlertDialog):
         MockConfig.load_vaults.return_value = [{"path": "/a", "name": "A"}]
         parent = MagicMock()
@@ -367,7 +367,7 @@ class TestShowRenameVaultDialog(unittest.TestCase):
     @patch("markdown_vault.dialogs.Adw.AlertDialog")
     @patch("markdown_vault.dialogs.Gtk.Entry")
     @patch("markdown_vault.dialogs.GLib.idle_add")
-    @patch("markdown_vault.config")
+    @patch("markdown_vault.core.config")
     def test_presents_to_parent(self, MockConfig, MockIdleAdd, MockEntry, MockAlertDialog):
         MockConfig.load_vaults.return_value = [{"path": "/a", "name": "A"}]
         parent = MagicMock()
@@ -442,7 +442,7 @@ class TestShowAddVaultNameDialog(unittest.TestCase):
     @patch("markdown_vault.dialogs.Adw.AlertDialog")
     @patch("markdown_vault.dialogs.Gtk.Entry")
     @patch("markdown_vault.dialogs.GLib.idle_add")
-    @patch("markdown_vault.config")
+    @patch("markdown_vault.core.config")
     def test_creates_dialog_with_default_name(self, MockConfig, MockIdleAdd, MockEntry, MockAlertDialog):
         MockConfig.load_vaults.return_value = [{"path": "/a", "name": "A"}]
         parent = MagicMock()
@@ -461,7 +461,7 @@ class TestShowAddVaultNameDialog(unittest.TestCase):
     @patch("markdown_vault.dialogs.Adw.AlertDialog")
     @patch("markdown_vault.dialogs.Gtk.Entry")
     @patch("markdown_vault.dialogs.GLib.idle_add")
-    @patch("markdown_vault.config")
+    @patch("markdown_vault.core.config")
     def test_presents_to_parent(self, MockConfig, MockIdleAdd, MockEntry, MockAlertDialog):
         MockConfig.load_vaults.return_value = [{"path": "/a", "name": "A"}]
         parent = MagicMock()
@@ -472,7 +472,7 @@ class TestShowAddVaultNameDialog(unittest.TestCase):
     @patch("markdown_vault.dialogs.Adw.AlertDialog")
     @patch("markdown_vault.dialogs.Gtk.Entry")
     @patch("markdown_vault.dialogs.GLib.idle_add")
-    @patch("markdown_vault.config")
+    @patch("markdown_vault.core.config")
     def test_calls_on_add_on_confirm(self, MockConfig, MockIdleAdd, MockEntry, MockAlertDialog):
         MockConfig.load_vaults.return_value = [{"path": "/a", "name": "A"}]
         parent = MagicMock()
@@ -488,7 +488,7 @@ class TestShowAddVaultNameDialog(unittest.TestCase):
     @patch("markdown_vault.dialogs.Adw.AlertDialog")
     @patch("markdown_vault.dialogs.Gtk.Entry")
     @patch("markdown_vault.dialogs.GLib.idle_add")
-    @patch("markdown_vault.config")
+    @patch("markdown_vault.core.config")
     def test_noop_on_cancel(self, MockConfig, MockIdleAdd, MockEntry, MockAlertDialog):
         MockConfig.load_vaults.return_value = [{"path": "/a", "name": "A"}]
         parent = MagicMock()

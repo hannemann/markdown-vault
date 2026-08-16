@@ -8,7 +8,7 @@ import os
 from datetime import datetime
 from pathlib import Path
 
-from .path_utils import HEADING_RE
+from markdown_vault.core.path_utils import HEADING_RE
 
 logger = logging.getLogger(__name__)
 

@@ -24,9 +24,9 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import config
+from markdown_vault.core import config
 from .md_fences import FenceTracker
-from .path_utils import find_vault_name_for_path, resolve_wikilink
+from markdown_vault.core.path_utils import find_vault_name_for_path, resolve_wikilink
 from .tags import WIKILINK_RE, wikilink_info_from_match
 
 

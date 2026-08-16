@@ -25,10 +25,10 @@ gi.require_version("Pango", "1.0")
 
 from gi.repository import Gtk, Adw, GLib, GObject, Pango, Gio, Gdk
 
-from . import attachments
-from . import validation
+from markdown_vault.core import attachments
+from markdown_vault.core import validation
 from . import dialogs
-from . import config
+from markdown_vault.core import config
 from . import frontmatter
 
 logger = logging.getLogger(__name__)

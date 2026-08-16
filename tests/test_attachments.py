@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from markdown_vault import attachments as at
+from markdown_vault.core import attachments as at
 
 
 class TestPaths(unittest.TestCase):

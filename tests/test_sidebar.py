@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 
 from gi.repository import GLib
-from markdown_vault.event_router import FileEvent
+from markdown_vault.core.event_router import FileEvent
 from markdown_vault.sidebar import Sidebar
 
 

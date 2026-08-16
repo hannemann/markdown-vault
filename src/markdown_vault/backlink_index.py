@@ -11,7 +11,7 @@ import logging
 import os
 from pathlib import Path
 
-from .path_utils import (
+from markdown_vault.core.path_utils import (
     find_vault_name_for_path,
     resolve_vault_path,
     wikilink_url,

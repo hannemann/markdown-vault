@@ -8,7 +8,7 @@ and restoring window state, tab data, and per-vault sessions.
 import logging
 from pathlib import Path
 
-from . import session
+from markdown_vault.core import session
 
 logger = logging.getLogger(__name__)
 

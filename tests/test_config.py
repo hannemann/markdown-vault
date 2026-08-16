@@ -1,4 +1,4 @@
-"""Tests for markdown_vault.config — vault configuration management."""
+"""Tests for markdown_vault.core.config — vault configuration management."""
 
 import os
 import shutil
@@ -8,7 +8,7 @@ from pathlib import Path
 
 # Patch CONFIG_DIR / CONFIG_FILE before importing the module under test
 # so that no real user config is touched.
-import markdown_vault.config as _cfg
+import markdown_vault.core.config as _cfg
 
 
 class _TempConfigMixin:

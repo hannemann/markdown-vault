@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-import markdown_vault.config as _cfg
+import markdown_vault.core.config as _cfg
 from markdown_vault.backlink_index import BacklinkIndex, scan_vaults
 
 

@@ -193,7 +193,7 @@ class Editor(Gtk.ScrolledWindow):
         if not self._file_path:
             logger.warning("insert_image: note has no path yet; save it first")
             return
-        from . import attachments, path_utils
+        from markdown_vault.core import attachments, path_utils
         note_dir = str(Path(self._file_path).parent)
         vault = path_utils.find_vault_for_dir(note_dir) or note_dir
         try:
@@ -266,7 +266,7 @@ class Editor(Gtk.ScrolledWindow):
         if not self._file_path:
             self._set_image_link_marks([])
             return False
-        from . import attachments, path_utils
+        from markdown_vault.core import attachments, path_utils
         note_dir = str(Path(self._file_path).parent)
         vault = path_utils.find_vault_for_dir(note_dir) or note_dir
         self._set_image_link_marks(
@@ -314,7 +314,7 @@ class Editor(Gtk.ScrolledWindow):
         except OSError as exc:
             logger.warning("adopt image: cannot read %s: %s", source, exc)
             return
-        from . import attachments, path_utils
+        from markdown_vault.core import attachments, path_utils
         note_dir = str(Path(self._file_path).parent)
         vault = path_utils.find_vault_for_dir(note_dir) or note_dir
         try:

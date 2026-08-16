@@ -10,7 +10,7 @@ import os
 import shutil
 from pathlib import Path
 
-from . import path_utils
+from markdown_vault.core import path_utils
 
 logger = logging.getLogger(__name__)
 

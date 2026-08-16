@@ -23,7 +23,8 @@ gi.require_version("Adw", "1")
 
 from gi.repository import Gtk, Adw, Gio, GObject, GLib
 
-from . import document_import, path_utils, web_import
+from . import document_import, web_import
+from markdown_vault.core import path_utils
 
 logger = logging.getLogger(__name__)
 

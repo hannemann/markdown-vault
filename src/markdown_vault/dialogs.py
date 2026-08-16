@@ -315,8 +315,8 @@ def show_rename_vault_dialog(
     *on_rename* is called with (vault_path, new_name, dialog) when the
     user confirms with a unique name.
     """
-    from . import config
-    from . import validation
+    from markdown_vault.core import config
+    from markdown_vault.core import validation
 
     base_body = "Enter a new name for the vault.\n" + validation.INVALID_VAULT_NAME_HINT
     dialog = Adw.AlertDialog(heading="Rename Vault", body=base_body)
@@ -408,8 +408,8 @@ def show_add_vault_name_dialog(
     *on_add* is called with (vault_path, default_name, new_name, dialog)
     when the user confirms with a unique name.
     """
-    from . import config
-    from . import validation
+    from markdown_vault.core import config
+    from markdown_vault.core import validation
 
     base_body = "Enter a unique vault name.\n" + validation.INVALID_VAULT_NAME_HINT
     dialog = Adw.AlertDialog(

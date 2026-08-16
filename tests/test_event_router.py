@@ -1,4 +1,4 @@
-"""Tests for markdown_vault.event_router — FileEventDispatcher."""
+"""Tests for markdown_vault.core.event_router — FileEventDispatcher."""
 
 import shutil
 import tempfile
@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from markdown_vault.event_router import (
+from markdown_vault.core.event_router import (
     FileEvent,
     FileEventDispatcher,
     SidebarRefresher,

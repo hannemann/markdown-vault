@@ -117,7 +117,7 @@ key files.
 | ---- | ------- |
 | `src/bin/markdown-vault.in` | launcher template; Meson substitutes interpreter + PYTHONPATH → installed `bin/markdown-vault` |
 | `src/markdown_vault/` | the Python package (`import markdown_vault`) — all app code |
-| `src/markdown_vault/meson.build` | the **manually-maintained `py_sources` list** — every new `.py` MUST be added here (alphabetical) or it is not installed and the app crashes with `ModuleNotFoundError` |
+| `src/markdown_vault/meson.build` | the **manually-maintained `py_sources` list** — a new root-level `.py` MUST be added here (alphabetical) or it is not installed and the app crashes with `ModuleNotFoundError`. During the package reorg a module that lives in a subpackage (e.g. `core/`) is listed in that subpackage's own `meson.build` instead — see the conventions note |
 | `src/css/` | `style.css` (WebKit preview) + `gtk.css` (GTK widgets); Meson installs both into `markdown_vault/css/` |
 | `src/share/markdown-vault/` | `.desktop` / metainfo / gresource, icons, and the Flatpak manifest (`.yml`) |
 | `tests/` | unit tests (unittest); run via `make test` / `make test-one` |
@@ -302,6 +302,7 @@ opening files in editor, toggling sidebar etc.) ask the user.
 - Git features must gracefully handle repos without git initialized.
 - Images in Markdown: support `![alt](path)` with both relative and absolute paths.
 - **New Python modules**: When creating a new `.py` file in `src/markdown_vault/`, it MUST be added to the `py_sources` list in `src/markdown_vault/meson.build` (alphabetically sorted). Meson has no built-in `glob()` — the list is manually maintained. Forgetting to add it means the file will not be installed and the app will crash with `ModuleNotFoundError`.
+- **During the package-structure refactoring** (`tmp/Tickets/PackageStructure/`) this applies per subpackage: a new `.py` under `src/markdown_vault/<pkg>/` belongs in `src/markdown_vault/<pkg>/meson.build`, not the root list. Already migrated: `core/`.
 - **GTK CSS in `css/gtk.css`**: Target GTK 4.14 / libadwaita 1.5. `var(--name)` and `color-mix()` need GTK 4.16+ and are silently dropped with "Expected a valid color" parser warnings. Use `@accent_bg_color` and `alpha(@color, 0.3)` instead. This does not apply to `css/style.css`, which is rendered by WebKit.
 - **WebKit needs an unprivileged user namespace**: WebKitGTK 2.46+ always sets up a `bwrap` sandbox and aborts the whole process if it cannot (`Failed to fully launch dbus-proxy`). On Ubuntu 24.04 this requires the AppArmor profile in `packaging/apparmor/` — see README. There is no API or env var to disable the sandbox.
 - **Test organization**: Add tests to existing test files grouped by topic (e.g. vault_monitor events → `test_vault_monitor_events.py`). Do not create new test files with arbitrary context names — distribute into the files that already cover the module under test. When in doubt, ask.
