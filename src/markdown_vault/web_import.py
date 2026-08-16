@@ -33,6 +33,7 @@ from pathlib import Path
 
 from . import note_writer
 from .attachments import attachment_target  # re-exported: layout lives in attachments
+from .md_fences import FenceTracker
 from urllib.parse import parse_qsl, urlencode, urljoin, urlparse, urlsplit, urlunsplit
 
 logger = logging.getLogger(__name__)
@@ -712,9 +713,6 @@ def _label_unlabeled_images(markdown: str) -> str:
 
 
 _HEADING_RE = re.compile(r"^#{1,6} ")
-_FENCE_RE = re.compile(r"^\s*(```|~~~)")
-
-
 def _dedent_after_headings(markdown: str) -> str:
     """Strip the leading indentation Trafilatura puts on the first content line
     after a heading (an artifact of nested ``<section>`` markup). That indent turns
@@ -723,15 +721,16 @@ def _dedent_after_headings(markdown: str) -> str:
     code, the first non-blank line after a heading is never meant to be indented, so
     dedenting it is safe; content inside fences is left untouched."""
     out = []
-    in_fence = False
+    fences = FenceTracker()
     pending = False
     for line in markdown.split("\n"):
-        if not in_fence and pending and line.strip():
+        # `in_fence` here is the state *before* this line — so the first line
+        # after a heading (including an over-indented ``` opener) is dedented.
+        if not fences.in_fence and pending and line.strip():
             line = line.lstrip(" ")
             pending = False
-        if _FENCE_RE.match(line):
-            in_fence = not in_fence
-        elif not in_fence and _HEADING_RE.match(line):
+        fenced = fences.feed(line)
+        if not fenced and _HEADING_RE.match(line):
             pending = True
         out.append(line)
     return "\n".join(out)

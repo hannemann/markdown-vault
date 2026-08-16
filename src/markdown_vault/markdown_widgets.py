@@ -24,6 +24,8 @@ import gi
 gi.require_version("Gtk", "4.0")
 from gi.repository import GLib, Gtk
 
+from .md_fences import FENCE_OPEN_RE, FenceTracker
+
 # --- inline -----------------------------------------------------------------
 
 _CODE = re.compile(r"`([^`]+)`")
@@ -101,7 +103,6 @@ _HR = re.compile(r"^\s*([-*_])(?:\s*\1){2,}\s*$")
 _ULIST = re.compile(r"^\s*[-*+]\s+(.*)$")
 _OLIST = re.compile(r"^\s*(\d+)\.\s+(.*)$")
 _TABLE_SEP = re.compile(r"^\s*\|?\s*:?-{1,}:?\s*(\|\s*:?-{1,}:?\s*)+\|?\s*$")
-_FENCE = re.compile(r"^\s*```")
 
 
 def _split_row(line: str) -> list:
@@ -130,13 +131,17 @@ def parse_blocks(text: str) -> list:
         if not line.strip():
             i += 1
             continue
-        if _FENCE.match(line):                      # fenced code block
+        fence = FenceTracker()
+        if fence.feed(line):                        # fenced code block (``` or ~~~)
             i += 1
             body = []
-            while i < n and not _FENCE.match(lines[i]):
-                body.append(lines[i])
+            while i < n:
+                fence.feed(lines[i])
+                if not fence.in_fence:               # this line is the closing marker
+                    i += 1
+                    break
+                body.append(lines[i])               # content (inc. inner fences)
                 i += 1
-            i += 1                                   # skip closing fence
             blocks.append(("code", "\n".join(body)))
             continue
         if _is_table_start(lines, i):               # pipe table
@@ -184,7 +189,7 @@ def parse_blocks(text: str) -> list:
 
 def _special(lines: list, i: int) -> bool:
     line = lines[i]
-    return bool(_FENCE.match(line) or _HEADING.match(line) or _HR.match(line)
+    return bool(FENCE_OPEN_RE.match(line) or _HEADING.match(line) or _HR.match(line)
                 or _ULIST.match(line) or _OLIST.match(line)
                 or line.lstrip().startswith(">") or _is_table_start(lines, i))
 

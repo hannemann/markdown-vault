@@ -105,6 +105,16 @@ class TestBlocks(unittest.TestCase):
         blocks = M.parse_blocks("```\nx = 1\ny = 2\n```")
         self.assertEqual(blocks, [("code", "x = 1\ny = 2")])
 
+    def test_tilde_fenced_code_block(self):
+        # Shared FenceTracker now recognises ~~~ fences (was: backticks only).
+        blocks = M.parse_blocks("~~~\nx = 1\n~~~")
+        self.assertEqual(blocks, [("code", "x = 1")])
+
+    def test_inner_fence_stays_inside_a_longer_block(self):
+        # A ``` inside a ```` block is code content, not a premature close.
+        blocks = M.parse_blocks("````\n```\ninner\n```\n````")
+        self.assertEqual(blocks, [("code", "```\ninner\n```")])
+
     def test_pipe_table(self):
         blocks = M.parse_blocks("| A | B |\n|---|---|\n| 1 | 2 |\n| 3 | 4 |")
         self.assertEqual(blocks, [("table",

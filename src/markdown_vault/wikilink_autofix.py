@@ -25,6 +25,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from . import config
+from .md_fences import FenceTracker
 from .path_utils import find_vault_name_for_path, resolve_wikilink
 from .tags import WIKILINK_RE, wikilink_info_from_match
 
@@ -64,8 +65,6 @@ class WikilinkFix:
 # Inline code: a run of N backticks, then the shortest content, then N
 # backticks. `(?!\1)` keeps the closing run out of the content.
 _INLINE_CODE_RE = re.compile(r"(`+)(?:(?!\1).)*?\1", re.DOTALL)
-# A fenced-code opening/closing line: ``` or ~~~ (3+), optionally indented.
-_FENCE_RE = re.compile(r"^[ \t]*(`{3,}|~{3,})")
 
 
 def _code_spans(text: str) -> list[tuple[int, int]]:
@@ -77,21 +76,17 @@ def _code_spans(text: str) -> list[tuple[int, int]]:
     spans: list[tuple[int, int]] = []
     # Fenced code blocks — line-based, robust against inline backticks.
     offset = 0
-    fence_char = None
+    fences = FenceTracker()
     fence_start = 0
     for line in text.split("\n"):
         line_end = offset + len(line)
-        stripped = line.strip()
-        if fence_char is None:
-            m = _FENCE_RE.match(line)
-            if m:
-                fence_char = m.group(1)[0]
-                fence_start = offset
-        elif stripped and set(stripped) == {fence_char} and len(stripped) >= 3:
+        fences.feed(line)
+        if fences.opened:
+            fence_start = offset
+        elif fences.closed:
             spans.append((fence_start, line_end))
-            fence_char = None
         offset = line_end + 1  # account for the newline
-    if fence_char is not None:  # unterminated fence → to end of text
+    if fences.in_fence:  # unterminated fence → to end of text
         spans.append((fence_start, len(text)))
     # Inline code, excluding anything already inside a fenced block.
     for m in _INLINE_CODE_RE.finditer(text):

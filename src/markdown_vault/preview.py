@@ -31,6 +31,7 @@ from urllib.parse import unquote
 from pymdownx.emoji import to_alt
 from markdown_vault import config
 from markdown_vault.latex_mathml import MathMLPostprocessor
+from markdown_vault.md_fences import FenceTracker
 from markdown_vault.path_utils import (
     HEADING_RE,
     find_vault_name_for_path,
@@ -171,39 +172,26 @@ def _hover_uri_display(uri: str, page_uri: str = "", page_breadcrumb: str = "") 
 
 class LanguageExtractorPreprocessor(Preprocessor):
     """Extract language from fenced code blocks in markdown source."""
-    
-    FENCE_RE = re.compile(r'^(\s*)(`{3,}|~{3,})\s*(\w+)?')
-    
+
     def __init__(self, md):
         super().__init__(md)
         self.languages = []
-    
+
     def run(self, lines):
         self.languages = []
-        new_lines = []
-        in_code_block = False
-        fence_chars = None
+        fences = FenceTracker()
         for line in lines:
-            match = self.FENCE_RE.match(line)
-            if match:
-                # Check if this is an opening or closing fence
-                if not in_code_block:
-                    # Opening fence
-                    lang = match.group(3) or None
-                    self.languages.append(lang)
-                    in_code_block = True
-                    fence_chars = match.group(2)[0]  # ` or ~
-                elif line.strip().startswith(fence_chars * 3):
-                    # Closing fence (same char, at least 3)
-                    in_code_block = False
-                    fence_chars = None
-            new_lines.append(line)
-        
+            fences.feed(line)
+            if fences.opened:
+                # The language is the first word of the fence's info string.
+                m = re.match(r'\w+', fences.info)
+                self.languages.append(m.group(0) if m else None)
+
         # Pass languages to the postprocessor
         if hasattr(self.md, 'lang_postprocessor') and self.md.lang_postprocessor:
             self.md.lang_postprocessor.set_languages(self.languages)
-        
-        return new_lines
+
+        return lines
 
 
 class PygmentsCodePostprocessor(Postprocessor):
@@ -265,7 +253,6 @@ class CheckboxLinePreprocessor(Preprocessor):
     """
 
     CHECKBOX_RE = re.compile(r'^(>\s*)*(\s*)([-*+]|\d+\.)\s+\[[ xX]\]')
-    FENCE_OPEN_RE = re.compile(r'^(`{3,}|~{3,})(.*)$')
     LIST_MARKER_RE = re.compile(r'^(\s*)([-*+]|\d+\.)\s')
 
     def _prev_nonblank_is_list(self, lines: list[str], i: int) -> bool:
@@ -275,19 +262,11 @@ class CheckboxLinePreprocessor(Preprocessor):
         return j >= 0 and bool(self.LIST_MARKER_RE.match(lines[j].lstrip()))
 
     def run(self, lines):
-        in_fence = False
-        fence_char = None
+        fences = FenceTracker()
         in_indented_code = False
         checkbox_lines = []
         for i, line in enumerate(lines):
-            if in_fence:
-                if line.rstrip().startswith(fence_char):
-                    in_fence = False
-                continue
-            m = self.FENCE_OPEN_RE.match(line.rstrip())
-            if m:
-                in_fence = True
-                fence_char = m.group(1)[0]
+            if fences.feed(line):        # opener/content/closer of a fenced block
                 continue
 
             stripped = line.lstrip()
@@ -385,7 +364,6 @@ class BlankLineBeforeListPreprocessor(Preprocessor):
     prose). Nested lists after a paragraph are left to the author.
     """
 
-    FENCE_RE = re.compile(r'^\s*(`{3,}|~{3,})')
     LIST_MARKER_RE = re.compile(r'^([-*+]|(\d+)\.)\s')
     THEMATIC_BREAK_RE = re.compile(r'^ {0,3}([-*_])( *\1){2,} *$')
 
@@ -397,29 +375,14 @@ class BlankLineBeforeListPreprocessor(Preprocessor):
 
     def run(self, lines):
         out: list[str] = []
-        in_fence = False
-        fence_char = None
-        fence_len = 0
+        fences = FenceTracker()
         in_list = False
         prev_blank = True                              # start of doc == fresh block
         for line in lines:
             stripped = line.strip()
-            if in_fence:
-                out.append(line)
-                # CommonMark: a fence closes only on a run of the SAME character,
-                # at least as long as the opener and nothing else on the line — so
-                # a ```` block is not closed by an inner ```.
-                if (stripped and set(stripped) == {fence_char}
-                        and len(stripped) >= fence_len):
-                    in_fence = False
-                prev_blank = False
-                continue
-            fence = self.FENCE_RE.match(line)
-            if fence:
-                in_fence = True
-                fence_char = fence.group(1)[0]
-                fence_len = len(fence.group(1))
-                in_list = False
+            if fences.feed(line):                      # opener/content/closer
+                if fences.opened:
+                    in_list = False
                 out.append(line)
                 prev_blank = False
                 continue

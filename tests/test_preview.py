@@ -254,6 +254,14 @@ class TestLanguageExtractorPreprocessor(unittest.TestCase):
         self._preprocessor.run(lines)
         self.assertEqual(self._preprocessor.languages, [])
 
+    def test_inner_fence_does_not_reopen_a_longer_block(self):
+        # A ``` inside a ```` block is content, so this is ONE code block, not
+        # two — the shared FenceTracker's CommonMark close rule (was: an inner
+        # ``` closed the block and the trailing ```` reopened it).
+        lines = ["````", "```", "still code", "````"]
+        self._preprocessor.run(lines)
+        self.assertEqual(self._preprocessor.languages, [None])
+
 
 class TestPygmentsCodePostprocessor(unittest.TestCase):
     """Tests for PygmentsCodePostprocessor."""

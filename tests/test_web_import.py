@@ -102,6 +102,13 @@ class TestDedentAfterHeadings(unittest.TestCase):
         src = "para\n\n- a\n  - nested list stays\n"
         self.assertEqual(wi._dedent_after_headings(src), src)
 
+    def test_inner_fence_inside_longer_fence_does_not_leak_dedent(self):
+        # R115.1: a ``` inside a ```` block must not flip the fence state, or a
+        # heading and indented line *inside* the code block get treated as prose
+        # and dedented.
+        src = "````\n```\n# not a real heading\n    indented code line\n````\n"
+        self.assertEqual(wi._dedent_after_headings(src), src)
+
 
 class TestFetchGuards(unittest.TestCase):
     """R71.4: a redirect must not leave the http(s) allowlist."""
