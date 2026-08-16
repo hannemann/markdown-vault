@@ -15,7 +15,7 @@ gi.require_version("Gtk", "4.0")
 
 from gi.repository import GLib, Gtk
 
-from . import dialogs
+from markdown_vault.uikit import dialogs
 from markdown_vault.core import validation
 from .file_ops import FileOps
 

@@ -7,7 +7,7 @@ in a tab, and lets the user reload or dismiss the change.
 import logging
 from pathlib import Path
 
-from markdown_vault.dialogs import show_error
+from markdown_vault.uikit.dialogs import show_error
 
 logger = logging.getLogger(__name__)
 

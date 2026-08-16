@@ -20,7 +20,7 @@ gi.require_version("Gdk", "4.0")
 from gi.repository import Gtk, Adw, GObject, Gdk, GLib, Gio
 
 from markdown_vault.core import config
-from . import dialogs
+from markdown_vault.uikit import dialogs
 
 
 class _HttpsOnlyRedirect:

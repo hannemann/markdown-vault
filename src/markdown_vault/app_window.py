@@ -51,8 +51,8 @@ from .content_changes import ContentChangeHandler
 from .input_manager import InputManager
 from .file_manager import FileManager
 from markdown_vault.core import config
-from . import dialogs
-from . import banners as banner_mod
+from markdown_vault.uikit import dialogs
+from markdown_vault.uikit import banners as banner_mod
 from markdown_vault.core import session
 from . import mru
 from markdown_vault.core import history

@@ -4,13 +4,11 @@ py_sources = files(
   'app_window.py',
   'autosave.py',
   'backlink_index.py',
-  'banners.py',
   'graph.py',
   'graph_explorer.py',
   'graph_view.py',
   'content_changes.py',
   'dialog_import.py',
-  'dialogs.py',
   'document_import.py',
   'editor.py',
   'file_index.py',
@@ -53,6 +51,7 @@ py_sources = files(
 
 subdir('core')
 subdir('markdown')
+subdir('uikit')
 
 install_data(
   py_sources,

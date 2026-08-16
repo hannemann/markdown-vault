@@ -27,7 +27,7 @@ from gi.repository import Gtk, Adw, GLib, GObject, Pango, Gio, Gdk
 
 from markdown_vault.core import attachments
 from markdown_vault.core import validation
-from . import dialogs
+from markdown_vault.uikit import dialogs
 from markdown_vault.core import config
 from markdown_vault.markdown import frontmatter
 

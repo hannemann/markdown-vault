@@ -18,7 +18,7 @@ from gi.repository import Gtk
 
 from .editor import Editor
 from .preview import Preview
-from . import banners as banner_mod
+from markdown_vault.uikit import banners as banner_mod
 
 logger = logging.getLogger(__name__)
 

@@ -1,8 +1,8 @@
-"""Tests for markdown_vault.banners."""
+"""Tests for markdown_vault.uikit.banners."""
 
 import unittest
 
-from markdown_vault.banners import BannerBox, create_banner
+from markdown_vault.uikit.banners import BannerBox, create_banner
 
 
 class TestBannerBox(unittest.TestCase):
