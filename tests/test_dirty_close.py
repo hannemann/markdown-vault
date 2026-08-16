@@ -24,8 +24,8 @@ gi.require_version("Adw", "1")
 from gi.repository import Gtk  # type: ignore[attr-defined]
 from gi.repository import Adw  # type: ignore[attr-defined]
 
-from markdown_vault.tabs import Tab, TabBar
-from markdown_vault.editor import Editor
+from markdown_vault.editor.tabs import Tab, TabBar
+from markdown_vault.editor.editor import Editor
 
 
 # ---------------------------------------------------------------------------
@@ -59,7 +59,7 @@ class TestTabBarSignalExists(unittest.TestCase):
         src = os.path.join(
             os.path.dirname(__file__),
             "..", "src",
-            "markdown_vault", "tabs.py",
+            "markdown_vault", "editor", "tabs.py",
         )
         source = Path(src).read_text()
         self.assertIn('"tab-close-requested"', source)
@@ -238,7 +238,7 @@ class TestAppWindowTabCloseRequest(unittest.TestCase):
 
     def _make_window(self):
         """Creates an AppWindow without display (structural)."""
-        import markdown_vault.app_window as aw
+        import markdown_vault.app.app_window as aw
         with unittest.mock.patch.object(aw.Gio.SimpleAction, 'new'):
             with unittest.mock.patch.object(aw.Adw.StyleManager, 'get_default') as sm:
                 sm.return_value.set_color_scheme = unittest.mock.Mock()
@@ -252,7 +252,7 @@ class TestAppWindowTabCloseRequest(unittest.TestCase):
         src = os.path.join(
             os.path.dirname(__file__),
             "..", "src",
-            "markdown_vault", "app_window.py",
+            "markdown_vault", "app", "app_window.py",
         )
         source = Path(src).read_text()
         self.assertIn("def _on_tab_close_request", source)
@@ -262,7 +262,7 @@ class TestAppWindowTabCloseRequest(unittest.TestCase):
         src = os.path.join(
             os.path.dirname(__file__),
             "..", "src",
-            "markdown_vault", "app_window.py",
+            "markdown_vault", "app", "app_window.py",
         )
         source = Path(src).read_text()
         self.assertIn("def _show_save_dialog", source)
@@ -272,7 +272,7 @@ class TestAppWindowTabCloseRequest(unittest.TestCase):
         src = os.path.join(
             os.path.dirname(__file__),
             "..", "src",
-            "markdown_vault", "app_window.py",
+            "markdown_vault", "app", "app_window.py",
         )
         source = Path(src).read_text()
         self.assertIn("def _on_save_dialog_response", source)
@@ -282,7 +282,7 @@ class TestAppWindowTabCloseRequest(unittest.TestCase):
         src = os.path.join(
             os.path.dirname(__file__),
             "..", "src",
-            "markdown_vault", "app_window.py",
+            "markdown_vault", "app", "app_window.py",
         )
         source = Path(src).read_text()
         self.assertIn("def _save_dirty_tabs", source)
@@ -314,7 +314,7 @@ class TestSaveDirtyTabsFailure(unittest.TestCase):
     """R6.1: save failure must not close the tab."""
 
     def _make_fake_window(self):
-        import markdown_vault.app_window as aw
+        import markdown_vault.app.app_window as aw
 
         class FakeWindow:
             def __init__(self):
@@ -387,7 +387,7 @@ class TestSaveDirtyTabsFailure(unittest.TestCase):
         tab.editor = failing_editor
         win._tab_bar.get_tab.return_value = tab
 
-        with unittest.mock.patch("markdown_vault.app_window.Adw.AlertDialog"):
+        with unittest.mock.patch("markdown_vault.app.app_window.Adw.AlertDialog"):
             win._on_save_dialog_response("save", ["/tmp/fail.md"], on_confirm=None)
             win._do_close_paths.assert_not_called()
 
@@ -406,7 +406,7 @@ class TestSaveDirtyTabsFailure(unittest.TestCase):
         tab.editor = failing_editor
         win._tab_bar.get_tab.return_value = tab
 
-        with unittest.mock.patch("markdown_vault.app_window.Adw.AlertDialog"):
+        with unittest.mock.patch("markdown_vault.app.app_window.Adw.AlertDialog"):
             win._on_save_dialog_response("save", ["/tmp/fail.md"], on_confirm=None)
 
         self.assertFalse(win._switch_vault_pending)
@@ -440,7 +440,7 @@ class TestSaveDirtyTabsFailure(unittest.TestCase):
         tab.editor = failing_editor
         win._tab_bar.get_tab.return_value = tab
 
-        with unittest.mock.patch("markdown_vault.app_window.Adw.AlertDialog") as MockDlg:
+        with unittest.mock.patch("markdown_vault.app.app_window.Adw.AlertDialog") as MockDlg:
             mock_instance = unittest.mock.Mock()
             MockDlg.return_value = mock_instance
             win._on_save_dialog_response("save", ["/tmp/fail.md"], on_confirm=None)
@@ -470,7 +470,7 @@ class TestOnCloseRequestDirtyCheck(unittest.TestCase):
     """R6.2: window close must check for dirty tabs."""
 
     def _make_fake_window(self):
-        import markdown_vault.app_window as aw
+        import markdown_vault.app.app_window as aw
 
         class FakeWindow:
             def __init__(self):
@@ -525,7 +525,7 @@ class TestOnCloseRequestDirtyCheck(unittest.TestCase):
         win._tab_bar.get_tab.return_value = tab
         win._tab_bar.get_all_paths.return_value = ["/tmp/dirty.md"]
 
-        with unittest.mock.patch("markdown_vault.app_window.GLib.idle_add"):
+        with unittest.mock.patch("markdown_vault.app.app_window.GLib.idle_add"):
             result = win._on_close_request()
         self.assertTrue(result)
 
@@ -539,7 +539,7 @@ class TestOnCloseRequestDirtyCheck(unittest.TestCase):
         win._tab_bar.get_tab.return_value = tab
         win._tab_bar.get_all_paths.return_value = ["/tmp/dirty.md"]
 
-        with unittest.mock.patch("markdown_vault.app_window.GLib.idle_add"):
+        with unittest.mock.patch("markdown_vault.app.app_window.GLib.idle_add"):
             win._on_close_request()
         self.assertTrue(win._close_window_pending)
 
@@ -566,7 +566,7 @@ class TestOnCloseRequestDirtyCheck(unittest.TestCase):
         win = self._make_fake_window()
         win._rebuild_timeout = 99
         win._tab_bar.get_all_paths.return_value = []
-        with unittest.mock.patch("markdown_vault.app_window.GLib.source_remove") as source_remove:
+        with unittest.mock.patch("markdown_vault.app.app_window.GLib.source_remove") as source_remove:
             result = win._on_close_request()
         self.assertFalse(result)
         source_remove.assert_called_once_with(99)
@@ -602,7 +602,7 @@ class TestOnCloseRequestDirtyCheck(unittest.TestCase):
         tab.editor = failing_editor
         win._tab_bar.get_tab.return_value = tab
 
-        with unittest.mock.patch("markdown_vault.app_window.dialogs") as mock_dialogs:
+        with unittest.mock.patch("markdown_vault.app.app_window.dialogs") as mock_dialogs:
             win._on_save_dialog_response("save", ["/tmp/fail.md"], on_confirm=None)
             # dialogs.show_error was called for the save failure
             mock_dialogs.show_error.assert_called_once()
@@ -629,7 +629,7 @@ class TestSwitchVaultDirtyDialogRace(unittest.TestCase):
 
     def _make_fake_window(self):
         """Create a minimal FakeWindow with all needed methods from MainWindow."""
-        import markdown_vault.app_window as aw
+        import markdown_vault.app.app_window as aw
 
         class FakeWindow:
             _close_all_tabs_with_dirty_check = aw.MainWindow._close_all_tabs_with_dirty_check
@@ -688,7 +688,7 @@ class TestSwitchVaultDirtyDialogRace(unittest.TestCase):
         def fake_on_confirm():
             confirmed.append(True)
 
-        with unittest.mock.patch("markdown_vault.app_window.GLib.idle_add") as mock_idle:
+        with unittest.mock.patch("markdown_vault.app.app_window.GLib.idle_add") as mock_idle:
             win._close_all_tabs_with_dirty_check(on_confirm=fake_on_confirm)
 
         self.assertEqual(confirmed, [True])
@@ -697,7 +697,7 @@ class TestSwitchVaultDirtyDialogRace(unittest.TestCase):
 
     def test_close_all_dirty_defers_on_confirm(self):
         """Dirty tabs: on_confirm NOT called yet, dialog is scheduled."""
-        import markdown_vault.app_window as aw
+        import markdown_vault.app.app_window as aw
 
         class DirtyWindow:
             _close_all_tabs_with_dirty_check = aw.MainWindow._close_all_tabs_with_dirty_check
@@ -726,7 +726,7 @@ class TestSwitchVaultDirtyDialogRace(unittest.TestCase):
             func(*args, **kwargs)
 
         with unittest.mock.patch(
-            "markdown_vault.app_window.GLib.idle_add", fake_idle_add
+            "markdown_vault.app.app_window.GLib.idle_add", fake_idle_add
         ):
             win._close_all_tabs_with_dirty_check(on_confirm=fake_on_confirm)
 
@@ -768,7 +768,7 @@ class TestSwitchVaultDirtyDialogRace(unittest.TestCase):
             func(*args, **kwargs)
 
         with unittest.mock.patch(
-            "markdown_vault.app_window.GLib.idle_add", fake_idle_add
+            "markdown_vault.app.app_window.GLib.idle_add", fake_idle_add
         ):
             win._switch_vault("/tmp/vault-b")
 
@@ -797,7 +797,7 @@ class TestSwitchVaultDirtyDialogRace(unittest.TestCase):
             func(*args, **kwargs)
 
         with unittest.mock.patch(
-            "markdown_vault.app_window.GLib.idle_add", fake_idle_add
+            "markdown_vault.app.app_window.GLib.idle_add", fake_idle_add
         ):
             win._switch_vault("/tmp/vault-b")
 
@@ -828,7 +828,7 @@ class TestSwitchVaultDirtyDialogRace(unittest.TestCase):
             func(*args, **kwargs)
 
         with unittest.mock.patch(
-            "markdown_vault.app_window.GLib.idle_add", fake_idle_add
+            "markdown_vault.app.app_window.GLib.idle_add", fake_idle_add
         ):
             win._switch_vault("/tmp/vault-b")
 

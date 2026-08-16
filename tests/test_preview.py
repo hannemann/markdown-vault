@@ -1,4 +1,4 @@
-"""Tests for markdown_vault.preview — Markdown-to-HTML rendering."""
+"""Tests for markdown_vault.preview.preview — Markdown-to-HTML rendering."""
 
 import os
 import tempfile
@@ -6,7 +6,7 @@ import unittest
 from unittest.mock import MagicMock
 from pathlib import Path
 
-from markdown_vault.preview import (
+from markdown_vault.preview.preview import (
     Preview,
     HTML_TEMPLATE,
     MARKDOWN_EXTENSIONS,
@@ -630,7 +630,7 @@ class TestPreviewResolveWikilink(unittest.TestCase):
         self.assertIsNone(result)
 
     def _page_uri(self, vault_name, relpath, fragment=""):
-        from markdown_vault.path_utils import wikilink_url
+        from markdown_vault.core.path_utils import wikilink_url
         return wikilink_url(vault_name, relpath, fragment)
 
     def test_resolves_vault_prefixed_wikilink(self):
@@ -639,7 +639,7 @@ class TestPreviewResolveWikilink(unittest.TestCase):
         other_vault.mkdir()
         (other_vault / "Page.md").write_text("# Other Page")
         # Set up config cache so resolve_wikilink finds the test vaults.
-        import markdown_vault.config as _cfg
+        import markdown_vault.core.config as _cfg
         _cfg._vaults_cache = [
             {"name": "vault", "path": str(self._vault)},
             {"name": "other_vault", "path": str(other_vault)},
@@ -652,7 +652,7 @@ class TestPreviewResolveWikilink(unittest.TestCase):
         self.assertTrue(result.endswith("other_vault" + os.sep + "Page.md"))
 
     def _set_current_vault(self):
-        import markdown_vault.config as _cfg
+        import markdown_vault.core.config as _cfg
         _cfg._vaults_cache = [{"name": "vault", "path": str(self._vault)}]
         self._preview._current_vault_path = str(self._vault)
 
@@ -685,7 +685,7 @@ class TestPreviewResolveWikilink(unittest.TestCase):
         other_vault = Path(self._tmp) / "other_vault"
         other_vault.mkdir()
         (other_vault / "Page.md").write_text("# Other Page")
-        import markdown_vault.config as _cfg
+        import markdown_vault.core.config as _cfg
         _cfg._vaults_cache = [
             {"name": "vault", "path": str(self._vault)},
             {"name": "other_vault", "path": str(other_vault)},
@@ -736,14 +736,14 @@ class TestPreviewResolveWikilink(unittest.TestCase):
 
     def test_resolve_source_vault_from_base_dir(self):
         """_resolve_source_vault prefers the file's own directory."""
-        import markdown_vault.config as _cfg
+        import markdown_vault.core.config as _cfg
         _cfg._vaults_cache = [{"name": "vault", "path": str(self._vault)}]
         result = self._preview._resolve_source_vault(str(self._vault))
         self.assertEqual(result, "vault")
 
     def test_resolve_source_vault_outside_falls_back_to_current(self):
         """Outside any vault, falls back to _current_vault_path."""
-        import markdown_vault.config as _cfg
+        import markdown_vault.core.config as _cfg
         _cfg._vaults_cache = [{"name": "vault", "path": str(self._vault)}]
         self._preview._current_vault_path = str(self._vault)
         result = self._preview._resolve_source_vault("/nonexistent/dir")

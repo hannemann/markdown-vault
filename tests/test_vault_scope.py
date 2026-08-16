@@ -1,4 +1,4 @@
-"""Tests for markdown_vault.vault_scope.VaultScope — the shared scope dropdown."""
+"""Tests for markdown_vault.search.vault_scope.VaultScope — the shared scope dropdown."""
 
 import unittest
 
@@ -8,7 +8,7 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 from gi.repository import Adw
 
-from markdown_vault.vault_scope import VaultScope
+from markdown_vault.search.vault_scope import VaultScope
 
 _VAULTS = [("A", "/v/a"), ("B", "/v/b"), ("C", "/v/c")]
 

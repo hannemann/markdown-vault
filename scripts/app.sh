@@ -51,15 +51,26 @@ start() {
     # Search+SearchResults probes note contents, and QuickOpen+Submit+AskAnswer
     # reads note content back out (and spends CPU/GPU) — acceptable for a
     # deliberate dev session; do not enable it on the .desktop launch.
-    MDV_DEBUG_CONTROL=1 setsid "$BIN" >/dev/null 2>&1 </dev/null &
-    sleep 2
-    if pgrep -f "$PATTERN" >/dev/null; then
-        echo "started"
-    else
-        echo "FAILED to start; last stderr log lines:" >&2
-        tail -n 5 "$STDERR_LOG" >&2 2>/dev/null || true
-        exit 1
-    fi
+    # A just-stopped instance can hold the session D-Bus name for a moment after
+    # its process is gone; a fresh launch then fails to register ("Failed to
+    # register: GDBus … Remote peer disconnected") and exits within the 2s window,
+    # so pgrep finds nothing. Retry once after a short settle before giving up —
+    # the reached retry means no process is alive, so this cannot duplicate one.
+    attempt=0
+    while :; do
+        attempt=$((attempt + 1))
+        MDV_DEBUG_CONTROL=1 setsid "$BIN" >/dev/null 2>&1 </dev/null &
+        sleep 2
+        if pgrep -f "$PATTERN" >/dev/null; then
+            echo "started"
+            return 0
+        fi
+        [ "$attempt" -ge 2 ] && break
+        sleep 1
+    done
+    echo "FAILED to start after $attempt attempts; last stderr log lines:" >&2
+    tail -n 5 "$STDERR_LOG" >&2 2>/dev/null || true
+    exit 1
 }
 
 case "${1:-}" in

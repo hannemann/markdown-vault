@@ -10,7 +10,7 @@ Tests die Banner-Integration über ContentChangeHandler:
 import unittest
 from unittest.mock import MagicMock
 
-from markdown_vault.content_changes import ContentChangeHandler
+from markdown_vault.editor.content_changes import ContentChangeHandler
 
 
 class TestExternalChangesBanner(unittest.TestCase):
@@ -133,13 +133,13 @@ class TestExternalChangesBanner(unittest.TestCase):
         tab_bar.hide_warning_banner.assert_not_called()
         tabs[tab_file].preview.update_from_text.assert_not_called()
 
-    @unittest.mock.patch("markdown_vault.content_changes.show_error")
+    @unittest.mock.patch("markdown_vault.editor.content_changes.show_error")
     def test_banner_reload_failure_shows_error_dialog(self, mock_show_error):
         tab_file = "/tmp/vault/test.md"
         handler, tab_bar, tabs = self._make_handler([tab_file])
 
         parent = MagicMock()
-        from markdown_vault.content_changes import ContentChangeHandler
+        from markdown_vault.editor.content_changes import ContentChangeHandler
         handler = ContentChangeHandler(tab_bar=tab_bar, parent=parent)
 
         tabs[tab_file].reload_editor.return_value = False
@@ -151,7 +151,7 @@ class TestExternalChangesBanner(unittest.TestCase):
             parent, "Reload Failed", 'Could not read "test.md" from disk.'
         )
 
-    @unittest.mock.patch("markdown_vault.content_changes.show_error")
+    @unittest.mock.patch("markdown_vault.editor.content_changes.show_error")
     def test_reload_content_missing_file_shows_dialog(self, mock_show_error):
         """Real integration: missing file → reload fails → dialog shown."""
         tab_file = "/tmp/vault_nonexistent_12345/test.md"
@@ -159,7 +159,7 @@ class TestExternalChangesBanner(unittest.TestCase):
         handler, tab_bar, tabs = self._make_handler([tab_file])
 
         parent = MagicMock()
-        from markdown_vault.content_changes import ContentChangeHandler
+        from markdown_vault.editor.content_changes import ContentChangeHandler
         handler = ContentChangeHandler(tab_bar=tab_bar, parent=parent)
 
         tabs[tab_file].reload_editor.return_value = False

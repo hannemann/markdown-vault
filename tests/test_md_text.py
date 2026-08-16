@@ -2,7 +2,7 @@
 
 import unittest
 
-from markdown_vault.md_text import strip_markdown, unwrap_bold_headings
+from markdown_vault.markdown.md_text import strip_markdown, unwrap_bold_headings
 
 
 class TestStripMarkdown(unittest.TestCase):

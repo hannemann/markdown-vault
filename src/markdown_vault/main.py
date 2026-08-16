@@ -10,14 +10,14 @@ import os
 import signal
 import sys
 
-from . import logging_setup
+from markdown_vault.core import logging_setup
 
 # Establish logging as the very first action so log files, console routing
 # and the fd redirect are in place before any other module is imported —
 # regardless of how the app was launched (terminal, gtk-launch, app.sh).
 logging_setup.init(None)
 
-from . import config
+from markdown_vault.core import config
 
 _settings = config.load_settings()
 config.apply_webkit_env(_settings)
@@ -44,7 +44,7 @@ gi.require_version("Adw", "1")
 
 from gi.repository import Adw, Gio
 
-from .app_window import MainWindow
+from markdown_vault.app.app_window import MainWindow
 
 
 class MarkdownVaultApp(Adw.Application):
@@ -99,7 +99,7 @@ class MarkdownVaultApp(Adw.Application):
         debug interface when MDV_DEBUG_CONTROL is set."""
         ok = Adw.Application.do_dbus_register(self, connection, object_path)
         try:
-            from . import debug_control
+            from markdown_vault.core import debug_control
             self._debug_control = debug_control.maybe_register(
                 self, connection, object_path)
         except Exception:

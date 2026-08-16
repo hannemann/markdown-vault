@@ -1,4 +1,4 @@
-"""Tests for markdown_vault.file_index — stem-to-path index for file tracking."""
+"""Tests for markdown_vault.vault.file_index — stem-to-path index for file tracking."""
 
 import os
 import shutil
@@ -6,8 +6,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-import markdown_vault.config as _cfg
-from markdown_vault.file_index import FileIndex
+import markdown_vault.core.config as _cfg
+from markdown_vault.vault.file_index import FileIndex
 
 
 class TestFileIndexBuild(unittest.TestCase):

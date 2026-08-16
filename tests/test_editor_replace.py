@@ -7,7 +7,7 @@ import gi
 gi.require_version("Gtk", "4.0")
 gi.require_version("GtkSource", "5")
 
-from markdown_vault.editor import Editor
+from markdown_vault.editor.editor import Editor
 
 
 class TestEditorReplace(unittest.TestCase):

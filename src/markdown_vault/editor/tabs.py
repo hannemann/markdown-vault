@@ -1,0 +1,732 @@
+"""Markdown Vault — tab management.
+
+Provides a ``Tab`` data class and a ``TabBar`` widget that owns one
+``Editor`` and ``Preview`` instance per open file.  This ensures that
+each tab retains its own buffer state and scroll position.
+"""
+
+import json
+import logging
+from pathlib import Path
+
+import gi
+
+gi.require_version("Gtk", "4.0")
+gi.require_version("Adw", "1")
+gi.require_version("Gdk", "4.0")
+
+from gi.repository import Gtk, GObject, Gio, Gdk, GLib
+
+from markdown_vault.core.path_utils import find_vault_for_dir
+
+logger = logging.getLogger(__name__)
+
+
+class Tab:
+    """Represents a single open file with its own editor and preview.
+
+    Attributes:
+        file_path: Absolute path of the Markdown file.
+        title: Display name shown in the tab bar.
+        editor: The ``Editor`` widget for this tab.
+        preview: The ``Preview`` widget for this tab.
+        view_mode: Current view mode (``"edit"``, ``"render"``, ``"split"``).
+        warning_banner: Revealer for warning-level banners (external changes).
+        error_banner: Revealer for error-level banners (save failures).
+        save_error: Error code if last save failed, e.g. ``"save_error"``.
+        save_error_message: Human-readable error description.
+    """
+
+    def __init__(
+        self,
+        file_path: str,
+        title: str,
+        editor,
+        preview,
+        warning_banner=None,
+        error_banner=None,
+    ) -> None:
+        self.file_path = file_path
+        self.title = title
+        self.editor = editor
+        self.preview = preview
+        self.view_mode = "edit"
+        # The horizontal Gtk.Paned holding editor|preview (set by TabManager),
+        # used to balance the split view.
+        self.split = None
+        # Remembered split divider position as a fraction (0..1) of the width,
+        # kept while the tab is open so it survives switching view modes and
+        # window resizes; None until the first (centered) activation.
+        self.split_ratio: float | None = None
+        self.warning_banner = warning_banner
+        self.error_banner = error_banner
+        self.save_error: str | None = None
+        self.save_error_message: str = ""
+        # True while an unacknowledged external change conflicts with unsaved
+        # edits in this tab. Blocks autosave so it cannot clobber the external
+        # change before the user reloads or dismisses it.
+        self.external_change_pending: bool = False
+
+    def reload_editor(self, file_path: str) -> bool:
+        """Reload editor content from disk.
+
+        Returns ``True`` on success, ``False`` if an I/O error occurred.
+        """
+        try:
+            new_text = Path(file_path).read_text(encoding="utf-8")
+            buf = self.editor._buffer
+            # Preserve caret + scroll across the full-content replace so a
+            # silent reload doesn't jump the reader to the top (R21.18).
+            cursor_offset = buf.get_iter_at_mark(buf.get_insert()).get_offset()
+            vadj = self.editor.get_vadjustment()
+            scroll = vadj.get_value() if vadj is not None else 0.0
+            buf.delete(buf.get_start_iter(), buf.get_end_iter())
+            buf.insert(buf.get_start_iter(), new_text)
+            buf.set_modified(False)
+            buf.place_cursor(
+                buf.get_iter_at_offset(min(cursor_offset, buf.get_char_count())))
+            if vadj is not None:
+                # Restore after the view re-lays out (scrolling now is ignored).
+                def _restore(adj=vadj, value=scroll):
+                    adj.set_value(
+                        min(value, max(0.0, adj.get_upper() - adj.get_page_size())))
+                    return False
+                GLib.idle_add(_restore)
+            return True
+        except OSError:
+            logger.warning("Could not reload editor from %s", file_path, exc_info=True)
+            return False
+
+
+class TabBar(Gtk.Box):
+    """Horizontal bar of tabs with close buttons.
+
+    Signals:
+        tab-changed(str): Emitted when the active tab switches.
+        tab-closed(str): Emitted when a tab is closed.
+        tab-renamed(str, str): Emitted when a tab is renamed.
+        tab-copy-path(str): Emitted when the user copies a tab path.
+    """
+
+    __gsignals__ = {
+        "tab-changed": (GObject.SignalFlags.RUN_LAST, None, (str,)),
+        "tab-closed": (GObject.SignalFlags.RUN_LAST, None, (str,)),
+        "tab-renamed": (GObject.SignalFlags.RUN_LAST, None, (str, str)),
+        "tab-copy-path": (GObject.SignalFlags.RUN_LAST, None, (str,)),
+        "tab-close-requested": (GObject.SignalFlags.RUN_LAST, None, (GObject.TYPE_PYOBJECT,)),
+    }
+
+    def __init__(self) -> None:
+        super().__init__(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
+        self._tabs: dict[str, Tab] = {}
+        self._current_path: str | None = None
+        self._context_menu_target: str | None = None
+        self._min_width = 100
+        self._css_provider = Gtk.CssProvider()
+
+        self._box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
+        self._box.add_css_class("tab-bar")
+
+        self._scrolled = Gtk.ScrolledWindow()
+        self._scrolled.set_child(self._box)
+        self._scrolled.set_hexpand(True)
+        self._scrolled.set_policy(Gtk.PolicyType.EXTERNAL, Gtk.PolicyType.NEVER)
+        self.append(self._scrolled)
+
+        self._setup_actions()
+
+    # ------------------------------------------------------------------
+    # Actions for context menu
+    # ------------------------------------------------------------------
+
+    def _setup_actions(self) -> None:
+        self._tab_actions = Gio.SimpleActionGroup()
+        self.insert_action_group("tab", self._tab_actions)
+
+        action_copy = Gio.SimpleAction.new("copy-path", None)
+        action_copy.connect("activate", self._on_action_copy_path)
+        self._tab_actions.add_action(action_copy)
+
+        action_close = Gio.SimpleAction.new("close", None)
+        action_close.connect("activate", self._on_action_close)
+        self._tab_actions.add_action(action_close)
+
+        action_close_others = Gio.SimpleAction.new("close-others", None)
+        action_close_others.connect("activate", self._on_action_close_others)
+        self._tab_actions.add_action(action_close_others)
+
+        action_close_left = Gio.SimpleAction.new("close-left", None)
+        action_close_left.connect("activate", self._on_action_close_left)
+        self._tab_actions.add_action(action_close_left)
+
+        action_close_right = Gio.SimpleAction.new("close-right", None)
+        action_close_right.connect("activate", self._on_action_close_right)
+        self._tab_actions.add_action(action_close_right)
+
+    def _on_action_copy_path(self, _action, _param) -> None:
+        path = self._context_menu_target
+        if not path:
+            return
+        display = Gdk.Display.get_default()
+        if display is None:
+            return
+        clipboard = display.get_clipboard()
+        clipboard.set(path)
+        self.emit("tab-copy-path", path)
+        logger.debug("Copied tab path to clipboard: %s", path)
+
+    def _on_action_close(self, _action, _param) -> None:
+        if self._context_menu_target:
+            self._on_close_button_clicked(self._context_menu_target)
+
+    def _on_action_close_others(self, _action, _param) -> None:
+        if self._context_menu_target:
+            self.close_others(self._context_menu_target)
+
+    def _on_action_close_left(self, _action, _param) -> None:
+        if self._context_menu_target:
+            self.close_left(self._context_menu_target)
+
+    def _on_action_close_right(self, _action, _param) -> None:
+        if self._context_menu_target:
+            self.close_right(self._context_menu_target)
+
+    # ------------------------------------------------------------------
+    # Close-request callback (R4.2: dirty-check for bulk operations)
+    # ------------------------------------------------------------------
+
+    def set_close_request_callback(self, callback) -> None:
+        """Set a callback invoked for bulk close when dirty tabs are detected.
+
+        Signature: ``callback(paths_to_close, on_confirm)``
+
+        *paths_to_close* is a list of file paths that would be closed.
+        *on_confirm* is a callable to invoke after the user confirms.
+        """
+        self._close_request_callback = callback
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+
+    def set_tab_min_width(self, min_width: int) -> None:
+        """Set the minimum width for tab widgets in pixels."""
+        self._min_width = min_width
+        css = f".tab {{ min-width: {min_width}px; }}"
+        try:
+            self._css_provider.load_from_string(css)
+        except TypeError:
+            self._css_provider.load_from_data(css.encode("utf-8"))
+        Gtk.StyleContext.add_provider_for_display(
+            Gdk.Display.get_default(),
+            self._css_provider,
+            Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION,
+        )
+
+    def add_tab(self, file_path: str, editor, preview, warning_banner=None, error_banner=None) -> Tab:
+        """Register a new tab or activate an existing one.
+
+        If *file_path* is already open, the existing tab is selected
+        and no new ``Editor``/``Preview`` pair is created.
+        """
+        if file_path in self._tabs:
+            self.set_active_tab(file_path)
+            return self._tabs[file_path]
+
+        title = Path(file_path).name
+        tab = Tab(file_path, title, editor, preview,
+                  warning_banner=warning_banner, error_banner=error_banner)
+        self._tabs[file_path] = tab
+
+        tab_widget = self._build_tab_widget(file_path, title)
+        self._box.append(tab_widget)
+        self.set_active_tab(file_path)
+        return tab
+
+    def set_active_tab(self, file_path: str) -> None:
+        """Select the tab for *file_path* and emit ``tab-changed``."""
+        if file_path not in self._tabs:
+            return
+
+        if file_path == self._current_path:
+            logger.debug("TabBar.set_active_tab: %s — already active, skipped", file_path)
+            return
+
+        logger.debug("TabBar.set_active_tab: %s (current=%s)", file_path, self._current_path)
+
+        # Deactivate previous tab's preview
+        if self._current_path and self._current_path in self._tabs:
+            old_tab = self._tabs[self._current_path]
+            if old_tab.preview:
+                old_tab.preview.deactivate()
+
+        self._current_path = file_path
+        self._update_tab_styles()
+        self._scroll_to_active_tab()
+
+        # Activate new tab's preview
+        new_tab = self._tabs[file_path]
+        if new_tab.preview:
+            new_tab.preview.activate()
+
+        self.emit("tab-changed", file_path)
+
+    def close_tab(self, file_path: str) -> None:
+        """Remove the tab for *file_path* and emit ``tab-closed``.
+
+        If the closed tab was the active one, its right neighbour (or the
+        left one, if it was the last tab) becomes active so the content of
+        the now-current tab actually renders.
+        """
+        if file_path not in self._tabs:
+            return
+        was_current = self._current_path == file_path
+        close_index = list(self._tabs.keys()).index(file_path)
+        tab = self._tabs.pop(file_path)
+        # Cleanup Python-side resources BEFORE removing from container
+        # (container removal triggers GTK widget destruction)
+        try:
+            if hasattr(tab.preview, "cleanup"):
+                tab.preview.cleanup()
+        except Exception:
+            logger.error("close_tab: preview cleanup failed for %s", file_path, exc_info=True)
+        try:
+            if hasattr(tab.editor, "cleanup"):
+                tab.editor.cleanup()
+        except Exception:
+            logger.error("close_tab: editor cleanup failed for %s", file_path, exc_info=True)
+        # Now remove from container (triggers GTK unparent)
+        self._remove_tab_widget(file_path)
+        self.emit("tab-closed", file_path)
+        if was_current:
+            self._current_path = None
+            remaining = list(self._tabs.keys())
+            if remaining:
+                neighbour = (remaining[close_index]
+                             if close_index < len(remaining)
+                             else remaining[-1])
+                self.set_active_tab(neighbour)
+
+    def close_others(self, file_path: str) -> None:
+        """Close all tabs except the one at *file_path*.
+
+        Wenn dirty tabs existieren wird ``tab-close-requested`` emittiert
+        und der Aufrufer kann einen Dialog anzeigen.
+        """
+        if file_path not in self._tabs:
+            return
+        others = [p for p in self._tabs.keys() if p != file_path]
+        dirty = self._collect_dirty_paths(others)
+        if dirty:
+            self._handle_dirty_close(others, dirty, method="close-others")
+        else:
+            for path in others:
+                self.close_tab(path)
+            self.set_active_tab(file_path)
+
+    def close_left(self, file_path: str) -> None:
+        """Close all tabs to the left of *file_path*.
+
+        Wenn dirty tabs existieren wird ``tab-close-requested`` emittiert
+        und der Aufrufer kann einen Dialog anzeigen.
+        """
+        paths = self.get_all_paths()
+        if file_path not in paths:
+            return
+        idx = paths.index(file_path)
+        to_close = paths[:idx]
+        dirty = self._collect_dirty_paths(to_close)
+        if dirty:
+            self._handle_dirty_close(to_close, dirty, method="close-left")
+        else:
+            for path in to_close:
+                self.close_tab(path)
+
+    def close_right(self, file_path: str) -> None:
+        """Close all tabs to the right of *file_path*.
+
+        Wenn dirty tabs existieren wird ``tab-close-requested`` emittiert
+        und der Aufrufer kann einen Dialog anzeigen.
+        """
+        paths = self.get_all_paths()
+        if file_path not in paths:
+            return
+        idx = paths.index(file_path)
+        to_close = paths[idx + 1:]
+        dirty = self._collect_dirty_paths(to_close)
+        if dirty:
+            self._handle_dirty_close(to_close, dirty, method="close-right")
+        else:
+            for path in to_close:
+                self.close_tab(path)
+
+    def _collect_dirty_paths(self, paths: list[str]) -> list[str]:
+        """Return paths that belong to tabs with dirty (modified) editors."""
+        dirty = []
+        for path in paths:
+            tab = self._tabs.get(path)
+            if tab and tab.editor and getattr(tab.editor, "is_modified", False):
+                dirty.append(path)
+        return dirty
+
+    def _handle_dirty_close(self, paths_to_close: list[str], dirty: list[str], method: str = "bulk") -> None:
+        """Handle bulk close when dirty tabs exist.
+
+        Wenn ein ``close_request_callback`` gesetzt ist wird dieser
+        aufgerufen (für aggregierte Dialoge).  Ansonsten wird das
+        ``tab-close-requested``-Signal emittiert.
+        """
+        logger.info("close: %s detected %d dirty tab(s) out of %d (paths=%s)",
+                     method, len(dirty), len(paths_to_close),
+                     [Path(p).name for p in paths_to_close])
+        if hasattr(self, "_close_request_callback") and self._close_request_callback:
+            cb = self._close_request_callback
+            on_confirm = lambda: self._do_close_paths(paths_to_close)
+            try:
+                cb(paths_to_close, on_confirm)
+            except Exception:
+                logger.error("close_request_callback failed", exc_info=True)
+        else:
+            self.emit("tab-close-requested", list(dirty))
+
+    def _do_close_paths(self, paths: list[str]) -> None:
+        """Close the given paths (called after dirty-dialog confirmation)."""
+        closed = []
+        for path in list(paths):
+            if path in self._tabs:
+                self.close_tab(path)
+                closed.append(path)
+        logger.info("close: closed %d tab(s) (paths=%s)", len(closed), [Path(p).name for p in closed])
+
+    def _on_close_button_clicked(self, file_path: str) -> None:
+        """Handle close-button click via the close_request_callback."""
+        logger.info("close: ×-button clicked for %s (has_callback=%s)",
+                     Path(file_path).name, bool(getattr(self, "_close_request_callback", None)))
+        if hasattr(self, "_close_request_callback") and self._close_request_callback:
+            cb = self._close_request_callback
+            try:
+                logger.debug("close: calling callback for single close")
+                cb(file_path)
+                logger.debug("close: callback returned")
+            except Exception:
+                logger.error("close: callback failed for single close", exc_info=True)
+        else:
+            logger.info("close: no callback, closing tab directly")
+            self.close_tab(file_path)
+
+    def get_tab(self, file_path: str) -> Tab | None:
+        """Return the ``Tab`` for *file_path*, or ``None``."""
+        return self._tabs.get(file_path)
+
+    def get_current_tab(self) -> Tab | None:
+        """Return the ``Tab`` for the active tab, or ``None``."""
+        if self._current_path and self._current_path in self._tabs:
+            return self._tabs[self._current_path]
+        return None
+
+    def get_current_path(self) -> str | None:
+        """Return the file path of the active tab, or ``None``."""
+        return self._current_path
+
+    def has_tabs(self) -> bool:
+        """Return ``True`` if at least one tab is open."""
+        return bool(self._tabs)
+
+    def get_all_paths(self) -> list[str]:
+        """Return file paths of all open tabs."""
+        return list(self._tabs.keys())
+
+    def update_path(self, old_path: str, new_path: str) -> None:
+        """Rename an open tab from *old_path* to *new_path*.
+
+        Updates the internal dict key, ``Tab`` attributes, the tab
+        widget, and emits ``tab-renamed`` so that the content stack
+        can be updated by the caller.
+        """
+        if old_path not in self._tabs:
+            return
+        tab = self._tabs.pop(old_path)
+        tab.file_path = new_path
+        if tab.editor:
+            tab.editor.set_file_path(new_path)
+        tab.title = Path(new_path).name
+        self._tabs[new_path] = tab
+
+        # Update _current_path if this was the active tab.
+        if self._current_path == old_path:
+            self._current_path = new_path
+
+        # Update the tab widget label, tooltip, and stash.
+        for child in self._box:
+            if getattr(child, "_file_path", None) == old_path:
+                child._file_path = new_path  # type: ignore[attr-defined]
+                for grandchild in child:
+                    if isinstance(grandchild, Gtk.Label):
+                        grandchild.set_label(tab.title)
+                child.set_tooltip_text(self._compute_relative_path(new_path))
+                break
+
+        self.emit("tab-renamed", old_path, new_path)
+
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+
+    def _compute_relative_path(self, file_path: str) -> str:
+        """Compute a path relative to the matching vault root, or fall back to filename."""
+        vault = find_vault_for_dir(str(Path(file_path).parent))
+        if vault:
+            return str(Path(file_path).relative_to(vault))
+        return Path(file_path).name
+
+    def _build_tab_widget(self, file_path: str, title: str) -> Gtk.Box:
+        """Create the visual widget for a single tab."""
+        container = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
+        container.add_css_class("tab")
+        container.set_hexpand(False)
+        container.set_margin_top(4)
+        container.set_margin_bottom(4)
+        container.set_margin_start(2)
+        container.set_margin_end(2)
+
+        label = Gtk.Label(label=title)
+        label.add_css_class("label")
+        label.set_ellipsize(3)
+        container.append(label)
+
+        error_icon = Gtk.Image.new_from_icon_name("dialog-error-symbolic")
+        error_icon.add_css_class("tab-error-icon")
+        error_icon.set_visible(False)
+        error_icon.set_tooltip_text("")
+        container.append(error_icon)
+
+        # Spacer pushes the close button to the right.
+        spacer = Gtk.Box()
+        spacer.set_hexpand(True)
+        container.append(spacer)
+
+        close_btn = Gtk.Button(icon_name="window-close-symbolic")
+        close_btn.add_css_class("flat")
+        close_btn.add_css_class("circular")
+        close_btn.set_size_request(24, 24)
+        close_btn.set_tooltip_text("Close tab")
+        close_btn.connect(
+            "clicked",
+            lambda _btn, cw=container: self._on_close_button_clicked(cw._file_path),
+        )
+        container.append(close_btn)
+
+        # Left-click: activate tab.
+        gesture = Gtk.GestureClick()
+        gesture.connect(
+            "released",
+            lambda _g, _n, _x, _y, cw=container: self.set_active_tab(cw._file_path),
+        )
+        container.add_controller(gesture)
+
+        # Right-click: context menu.
+        right_click = Gtk.GestureClick()
+        right_click.set_button(3)  # GDK_BUTTON_SECONDARY
+        right_click.connect(
+            "released",
+            lambda _g, _n, _x, _y, cw=container: self._show_context_menu(cw, _x, _y),
+        )
+        container.add_controller(right_click)
+
+        # Tooltip with relative path.
+        container.set_tooltip_text(self._compute_relative_path(file_path))
+
+        # Stash the path on the widget for style look-ups.
+        container._file_path = file_path  # type: ignore[attr-defined]
+        return container
+
+    def _show_context_menu(self, widget: Gtk.Box, x: float, y: float) -> None:
+        """Show the context menu for *widget* at the given coordinates."""
+        path = getattr(widget, "_file_path", None)
+        if not path:
+            return
+        self._context_menu_target = path
+
+        model = Gio.Menu()
+        model.append("Copy path", "tab.copy-path")
+        model.append("Close", "tab.close")
+        model.append("Close others", "tab.close-others")
+        model.append("Close left", "tab.close-left")
+        model.append("Close right", "tab.close-right")
+
+        popover = Gtk.PopoverMenu.new_from_model(model)
+        popover.set_parent(widget)
+        popover.set_has_arrow(False)
+
+        rect = Gdk.Rectangle()
+        rect.x = int(x)
+        rect.y = int(y)
+        rect.width = 1
+        rect.height = 1
+        popover.set_pointing_to(rect)
+        popover.popup()
+
+    def _remove_tab_widget(self, file_path: str) -> None:
+        """Remove the visual widget for *file_path*."""
+        for child in self._box:
+            if getattr(child, "_file_path", None) == file_path:
+                self._box.remove(child)
+                break
+
+    def _update_tab_styles(self) -> None:
+        """Highlight the active tab and dim all others."""
+        for child in self._box:
+            fp = getattr(child, "_file_path", None)
+            if fp is None:
+                continue
+            child.add_css_class("tab")
+            if fp == self._current_path:
+                child.add_css_class("active")
+            else:
+                child.remove_css_class("active")
+
+    def _scroll_to_active_tab(self) -> None:
+        """Scroll the tab bar so the active tab widget is visible."""
+        for child in self._box:
+            fp = getattr(child, "_file_path", None)
+            if fp == self._current_path:
+                adj = self._scrolled.get_hadjustment()
+                alloc = child.get_allocation()
+                page_size = adj.get_page_size()
+                new_val = alloc.x + alloc.width / 2 - page_size / 2
+                adj.set_value(max(0, new_val))
+                return
+
+    def _set_tab_unmodified(self, file_path: str, dirty: bool) -> None:
+        """Add/remove the ``tab-unmodified`` CSS class to mark unsaved tabs."""
+        for child in self._box:
+            fp = getattr(child, "_file_path", None)
+            if fp is None or fp != file_path:
+                continue
+            if dirty:
+                child.add_css_class("tab-unmodified")
+            else:
+                child.remove_css_class("tab-unmodified")
+
+    def set_tab_warning(self, file_path: str, active: bool) -> None:
+        """Add/remove warning highlight on the tab for *file_path*."""
+        for child in self._box:
+            fp = getattr(child, "_file_path", None)
+            if fp is None or fp != file_path:
+                continue
+            if active:
+                child.add_css_class("warning")
+            else:
+                child.remove_css_class("warning")
+
+    # ------------------------------------------------------------------
+    # Banner management
+    # ------------------------------------------------------------------
+
+    def show_warning_banner(
+        self, file_path: str, text: str, buttons: list[tuple[str, callable]] | None = None
+    ) -> None:
+        """Show the warning banner for *file_path* with *text* and optional buttons."""
+        tab = self._tabs.get(file_path)
+        if not tab or not tab.warning_banner:
+            return
+        banner_box = tab.warning_banner.get_child()
+        if banner_box:
+            banner_box.set_text(text)
+            banner_box.clear_buttons()
+            for label, callback in (buttons or []):
+                banner_box.add_button(label, callback)
+        self.set_tab_warning(file_path, True)
+        tab.warning_banner.set_reveal_child(True)
+
+    def hide_warning_banner(self, file_path: str) -> None:
+        """Hide the warning banner for *file_path*."""
+        tab = self._tabs.get(file_path)
+        if tab and tab.warning_banner:
+            tab.warning_banner.set_reveal_child(False)
+        self.set_tab_warning(file_path, False)
+
+    def show_error_banner(
+        self, file_path: str, text: str, buttons: list[tuple[str, callable]] | None = None
+    ) -> None:
+        """Show the error banner for *file_path* with *text* and optional buttons."""
+        tab = self._tabs.get(file_path)
+        if not tab or not tab.error_banner:
+            return
+        banner_box = tab.error_banner.get_child()
+        if banner_box:
+            banner_box.set_text(text)
+            banner_box.clear_buttons()
+            for label, callback in (buttons or []):
+                banner_box.add_button(label, callback)
+        tab.error_banner.set_reveal_child(True)
+
+    def hide_error_banner(self, file_path: str) -> None:
+        """Hide the error banner for *file_path*."""
+        tab = self._tabs.get(file_path)
+        if tab and tab.error_banner:
+            tab.error_banner.set_reveal_child(False)
+
+    # ------------------------------------------------------------------
+    # Tab error state
+    # ------------------------------------------------------------------
+
+    def set_tab_error(self, file_path: str, code: str, message: str = "") -> None:
+        """Set the error state on a tab (CSS class + icon + tooltip)."""
+        tab = self._tabs.get(file_path)
+        if tab:
+            tab.save_error = code
+            tab.save_error_message = message
+        for child in self._box:
+            fp = getattr(child, "_file_path", None)
+            if fp is None or fp != file_path:
+                continue
+            child.add_css_class("tab-error")
+            for grandchild in child:
+                if isinstance(grandchild, Gtk.Image) and grandchild.get_css_classes():
+                    if "tab-error-icon" in grandchild.get_css_classes():
+                        grandchild.set_visible(True)
+                        grandchild.set_tooltip_text(message)
+                        break
+
+    def clear_tab_error(self, file_path: str) -> None:
+        """Clear the error state on a tab (CSS class + icon)."""
+        tab = self._tabs.get(file_path)
+        if tab:
+            tab.save_error = None
+            tab.save_error_message = ""
+        for child in self._box:
+            fp = getattr(child, "_file_path", None)
+            if fp is None or fp != file_path:
+                continue
+            child.remove_css_class("tab-error")
+            for grandchild in child:
+                if isinstance(grandchild, Gtk.Image) and grandchild.get_css_classes():
+                    if "tab-error-icon" in grandchild.get_css_classes():
+                        grandchild.set_visible(False)
+                        grandchild.set_tooltip_text("")
+                        break
+
+    # ------------------------------------------------------------------
+    # Debug
+    # ------------------------------------------------------------------
+
+    def dump_to_file(self, path: str | Path) -> None:
+        """Write the tab state as JSON to *path* (overwrites)."""
+        try:
+            data = {
+                "current_path": self._current_path,
+                "tabs": {
+                    fp: {
+                        "view_mode": tab.view_mode,
+                        "is_modified": tab.editor.is_modified,
+                    }
+                    for fp, tab in self._tabs.items()
+                },
+            }
+            Path(path).write_text(
+                json.dumps(data, indent=2, ensure_ascii=False),
+                encoding="utf-8",
+            )
+        except OSError:
+            logger.warning("Failed to dump TabBar to %s", path, exc_info=True)

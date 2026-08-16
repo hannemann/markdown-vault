@@ -1,4 +1,4 @@
-"""Tests for markdown_vault.session_manager — SessionManager."""
+"""Tests for markdown_vault.app.session_manager — SessionManager."""
 
 import os
 import shutil
@@ -7,7 +7,7 @@ import unittest
 import unittest.mock
 from pathlib import Path
 
-from markdown_vault.session_manager import SessionManager
+from markdown_vault.app.session_manager import SessionManager
 
 
 class _Tab:
@@ -169,7 +169,7 @@ class TestSaveSession(unittest.TestCase):
             mru_manager=self._mru,
         )
 
-    @unittest.mock.patch("markdown_vault.session_manager.session")
+    @unittest.mock.patch("markdown_vault.app.session_manager.session")
     def test_save_session_calls_save(self, mock_session):
         """save_session calls session.save_session with correct args."""
         mock_session.load_session.return_value = {"vault_sessions": {}}
@@ -181,7 +181,7 @@ class TestSaveSession(unittest.TestCase):
         self.assertTrue(kwargs["sidebar_visible"])
         self.assertEqual(kwargs["active_vault"], "/tmp/vault")
 
-    @unittest.mock.patch("markdown_vault.session_manager.session")
+    @unittest.mock.patch("markdown_vault.app.session_manager.session")
     def test_save_session_preserves_other_vaults(self, mock_session):
         """save_session preserves other vaults' session data."""
         mock_session.load_session.return_value = {
@@ -192,14 +192,14 @@ class TestSaveSession(unittest.TestCase):
         self.assertIn("/other/vault", kwargs["vault_sessions"])
         self.assertIn("/tmp/vault", kwargs["vault_sessions"])
 
-    @unittest.mock.patch("markdown_vault.session_manager.session")
+    @unittest.mock.patch("markdown_vault.app.session_manager.session")
     def test_save_session_no_active_vault_skips(self, mock_session):
         """save_session with None active_vault skips tab collection."""
         self._mgr.save_session(None, self._content_stack)
         kwargs = mock_session.save_session.call_args[1]
         self.assertIsNone(kwargs["active_vault"])
 
-    @unittest.mock.patch("markdown_vault.session_manager.session")
+    @unittest.mock.patch("markdown_vault.app.session_manager.session")
     def test_save_session_includes_mru(self, mock_session):
         """save_session includes MRU data in vault session."""
         mock_session.load_session.return_value = {"vault_sessions": {}}
@@ -217,7 +217,7 @@ class TestSaveSession(unittest.TestCase):
 class TestSaveVaultSession(unittest.TestCase):
     """save_vault_session delegates to save_session."""
 
-    @unittest.mock.patch("markdown_vault.session_manager.session")
+    @unittest.mock.patch("markdown_vault.app.session_manager.session")
     def test_save_vault_session_skips_none(self, mock_session):
         """save_vault_session with None vault does nothing."""
         tab_bar = _TabBarMock()
@@ -229,7 +229,7 @@ class TestSaveVaultSession(unittest.TestCase):
         mgr.save_vault_session(None, _ContentStackMock())
         mock_session.save_session.assert_not_called()
 
-    @unittest.mock.patch("markdown_vault.session_manager.session")
+    @unittest.mock.patch("markdown_vault.app.session_manager.session")
     def test_save_vault_session_delegates(self, mock_session):
         """save_vault_session calls save_session."""
         mock_session.load_session.return_value = {"vault_sessions": {}}
@@ -268,7 +268,7 @@ class TestRestoreVaultSession(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree(self._tmp, ignore_errors=True)
 
-    @unittest.mock.patch("markdown_vault.session_manager.session")
+    @unittest.mock.patch("markdown_vault.app.session_manager.session")
     def test_restore_opens_tabs(self, mock_session):
         """restore_vault_session opens each saved tab."""
         md_a = os.path.join(self._tmp, "a.md")
@@ -303,7 +303,7 @@ class TestRestoreVaultSession(unittest.TestCase):
         self.assertEqual(opened[0][1]["view_mode"], "edit")
         self.assertEqual(opened[1][1]["split_position"], 400)
 
-    @unittest.mock.patch("markdown_vault.session_manager.session")
+    @unittest.mock.patch("markdown_vault.app.session_manager.session")
     def test_restore_sets_active_tab(self, mock_session):
         """restore_vault_session sets the active tab."""
         md_a = os.path.join(self._tmp, "a.md")
@@ -331,7 +331,7 @@ class TestRestoreVaultSession(unittest.TestCase):
         self.assertEqual(self._tab_bar._active, md_a)
         self.assertEqual(pushed, [md_a])
 
-    @unittest.mock.patch("markdown_vault.session_manager.session")
+    @unittest.mock.patch("markdown_vault.app.session_manager.session")
     def test_restore_rebuilds_mru(self, mock_session):
         """restore_vault_session rebuilds MRU from session data."""
         md_a = os.path.join(self._tmp, "a.md")
@@ -364,7 +364,7 @@ class TestRestoreVaultSession(unittest.TestCase):
         )
         self.assertEqual(pushed, [md_a, md_b])
 
-    @unittest.mock.patch("markdown_vault.session_manager.session")
+    @unittest.mock.patch("markdown_vault.app.session_manager.session")
     def test_restore_mru_fallback_to_tab_order(self, mock_session):
         """restore_vault_session falls back to tab order when no MRU."""
         md_a = os.path.join(self._tmp, "a.md")
@@ -398,7 +398,7 @@ class TestRestoreVaultSession(unittest.TestCase):
         self.assertIn(md_a, pushed)
         self.assertIn(md_b, pushed)
 
-    @unittest.mock.patch("markdown_vault.session_manager.session")
+    @unittest.mock.patch("markdown_vault.app.session_manager.session")
     def test_restore_empty_vault(self, mock_session):
         """restore_vault_session handles empty vault data."""
         mock_session.load_session.return_value = {"vault_sessions": {}}
@@ -414,7 +414,7 @@ class TestRestoreVaultSession(unittest.TestCase):
         )
         self.assertEqual(opened, [])
 
-    @unittest.mock.patch("markdown_vault.session_manager.session")
+    @unittest.mock.patch("markdown_vault.app.session_manager.session")
     def test_restore_suppress_nav_history(self, mock_session):
         """restore_vault_session toggles suppress around file opens."""
         md_a = os.path.join(self._tmp, "a.md")
@@ -440,7 +440,7 @@ class TestRestoreVaultSession(unittest.TestCase):
         )
         self.assertEqual(suppress_log, [True, False])
 
-    @unittest.mock.patch("markdown_vault.session_manager.session")
+    @unittest.mock.patch("markdown_vault.app.session_manager.session")
     def test_restore_skips_nonexistent_files(self, mock_session):
         """restore_vault_session skips tabs whose files don't exist."""
         mock_session.load_session.return_value = {

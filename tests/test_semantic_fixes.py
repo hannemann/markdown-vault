@@ -5,8 +5,8 @@ All targets are static/class methods, so no GTK widget is instantiated.
 
 import unittest
 
-from markdown_vault.search import SearchBar
-from markdown_vault.app_window import MainWindow
+from markdown_vault.search.search import SearchBar
+from markdown_vault.app.app_window import MainWindow
 
 
 class TestStripOperators(unittest.TestCase):

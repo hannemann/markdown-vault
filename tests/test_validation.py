@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from markdown_vault.validation import (
+from markdown_vault.core.validation import (
     validate_rename,
     validate_drop,
     validate_new_item,

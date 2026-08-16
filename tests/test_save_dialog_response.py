@@ -16,8 +16,8 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 from gi.repository import Gtk, Adw
 
-from markdown_vault.editor import Editor
-from markdown_vault.tabs import Tab, TabBar
+from markdown_vault.editor.editor import Editor
+from markdown_vault.editor.tabs import Tab, TabBar
 
 
 class TestSaveDialogResponse(unittest.TestCase):
@@ -45,7 +45,7 @@ class TestSaveDialogResponse(unittest.TestCase):
 
     def _make_window(self):
         """Minimaler AppWindow-Fragment mit _on_save_dialog_response."""
-        import markdown_vault.app_window as aw
+        import markdown_vault.app.app_window as aw
 
         # Nur die Methoden die wir testen, isoliert
         class FakeWindow:

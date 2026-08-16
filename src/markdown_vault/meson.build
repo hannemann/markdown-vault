@@ -1,69 +1,20 @@
 py_sources = files(
   '__init__.py',
   '__main__.py',
-  'app_window.py',
-  'attachments.py',
-  'autosave.py',
-  'backlink_index.py',
-  'banners.py',
-  'graph.py',
-  'graph_explorer.py',
-  'graph_view.py',
-  'config.py',
-  'content_changes.py',
-  'debug_control.py',
-  'dialog_import.py',
-  'dialogs.py',
-  'document_import.py',
-  'editor.py',
-  'event_router.py',
-  'file_index.py',
-  'file_ops.py',
-  'find_bar.py',
-  'file_manager.py',
-  'frontmatter.py',
-  'git_integration.py',
-   'history.py',
-   'input_manager.py',
-   'latex_mathml.py',
-   'llama_runtime.py',
-   'logging_setup.py',
-   'main.py',
-  'markdown_help.py',
-  'markdown_widgets.py',
-  'md_fences.py',
-  'md_text.py',
-  'monitor_handler.py',
-  'mru.py',
-  'note_writer.py',
-  'paned_sizer.py',
-  'path_utils.py',
-  'preferences.py',
-  'preview.py',
-  'quick_open.py',
-  'ask.py',
-  'lexical_search.py',
-  'quick_open_palette.py',
-  'search.py',
-  'search_backend.py',
-  'search_logic.py',
-  'semantic_index.py',
-  'semantic_search.py',
-  'session.py',
-  'session_manager.py',
-  'sidebar.py',
-  'status_bar.py',
-  'tab_manager.py',
-  'tabs.py',
-  'tags.py',
-   'validation.py',
-   'view_mode_manager.py',
-   'vault_monitor.py',
-  'vault_scope.py',
-  'vault_tree.py',
-  'web_import.py',
-  'wikilink_autofix.py',
+  'main.py',
 )
+
+subdir('app')
+subdir('core')
+subdir('editor')
+subdir('graph')
+subdir('importers')
+subdir('markdown')
+subdir('preview')
+subdir('search')
+subdir('ui')
+subdir('uikit')
+subdir('vault')
 
 install_data(
   py_sources,

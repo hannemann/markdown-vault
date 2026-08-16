@@ -1,8 +1,8 @@
-"""Tests for markdown_vault.graph — knowledge-graph data layer (pure logic)."""
+"""Tests for markdown_vault.graph.graph — knowledge-graph data layer (pure logic)."""
 
 import unittest
 
-from markdown_vault import graph as g
+from markdown_vault.graph import graph as g
 
 
 class TestBuildGraph(unittest.TestCase):

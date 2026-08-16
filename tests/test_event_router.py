@@ -1,4 +1,4 @@
-"""Tests for markdown_vault.event_router — FileEventDispatcher."""
+"""Tests for markdown_vault.core.event_router — FileEventDispatcher."""
 
 import shutil
 import tempfile
@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from markdown_vault.event_router import (
+from markdown_vault.core.event_router import (
     FileEvent,
     FileEventDispatcher,
     SidebarRefresher,
@@ -133,7 +133,7 @@ class TestSidebarRefreshEvent(unittest.TestCase):
     """
 
     def _make_sidebar(self, active_file="/vault/active.md", active_text="# Active"):
-        from markdown_vault.sidebar import Sidebar
+        from markdown_vault.ui.sidebar import Sidebar
 
         sidebar = Sidebar.__new__(Sidebar)
         sidebar._get_active_tab_info = lambda: (active_file, active_text)
@@ -195,7 +195,7 @@ class TestSidebarRefreshEvent(unittest.TestCase):
     def test_sidebar_refresh_without_callback_does_nothing(self):
         """When _get_active_tab_info is not set, refresh does nothing
         (safe no-op: never hijack to event file)."""
-        from markdown_vault.sidebar import Sidebar
+        from markdown_vault.ui.sidebar import Sidebar
 
         sidebar = Sidebar.__new__(Sidebar)
         sidebar._refresh_outline = MagicMock()

@@ -2,7 +2,7 @@
 
 import unittest
 
-import markdown_vault.app_window as aw
+import markdown_vault.app.app_window as aw
 
 
 class _FakeToggle:

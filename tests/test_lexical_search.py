@@ -1,8 +1,8 @@
-"""Tests for markdown_vault.lexical_search — BM25 + RRF fusion."""
+"""Tests for markdown_vault.search.lexical_search — BM25 + RRF fusion."""
 
 import unittest
 
-from markdown_vault import lexical_search as L
+from markdown_vault.search import lexical_search as L
 
 
 class TestTokenize(unittest.TestCase):

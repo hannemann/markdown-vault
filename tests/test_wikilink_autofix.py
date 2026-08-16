@@ -7,7 +7,7 @@ callables, so these tests need no config, filesystem, or GTK.
 import unittest
 from pathlib import Path
 
-from markdown_vault.wikilink_autofix import (
+from markdown_vault.vault.wikilink_autofix import (
     analyze_text,
     apply_fixes,
     find_broken_ranges,
@@ -239,7 +239,7 @@ class TestWikilinkResolverFragment(unittest.TestCase):
 
     def setUp(self):
         import tempfile
-        import markdown_vault.config as cfg
+        import markdown_vault.core.config as cfg
         self._cfg = cfg
         self._tmp = tempfile.mkdtemp()
         self._vault = Path(self._tmp) / "V"
@@ -253,11 +253,11 @@ class TestWikilinkResolverFragment(unittest.TestCase):
         shutil.rmtree(self._tmp, ignore_errors=True)
 
     def _info(self, stem):
-        from markdown_vault.tags import WikilinkInfo
+        from markdown_vault.markdown.tags import WikilinkInfo
         return WikilinkInfo(raw=stem, stem=stem, vault=None, alias=None, display=stem)
 
     def _resolver(self):
-        from markdown_vault.wikilink_autofix import WikilinkResolver
+        from markdown_vault.vault.wikilink_autofix import WikilinkResolver
         return WikilinkResolver()
 
     def test_heading_anchor_on_existing_file_resolves(self):

@@ -9,8 +9,8 @@ import gi
 gi.require_version("Gtk", "4.0")
 from gi.repository import GLib
 
-from markdown_vault import debug_control
-from markdown_vault.app_window import MainWindow
+from markdown_vault.core import debug_control
+from markdown_vault.app.app_window import MainWindow
 
 
 class _FakeWin:

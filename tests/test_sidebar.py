@@ -1,12 +1,12 @@
-"""Tests for markdown_vault.sidebar — right sidebar sub-views."""
+"""Tests for markdown_vault.ui.sidebar — right sidebar sub-views."""
 
 import tempfile
 import unittest
 from pathlib import Path
 
 from gi.repository import GLib
-from markdown_vault.event_router import FileEvent
-from markdown_vault.sidebar import Sidebar
+from markdown_vault.core.event_router import FileEvent
+from markdown_vault.ui.sidebar import Sidebar
 
 
 def _outline_text(row):

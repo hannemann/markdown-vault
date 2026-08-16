@@ -1,4 +1,4 @@
-"""Tests for markdown_vault.session — session persistence."""
+"""Tests for markdown_vault.core.session — session persistence."""
 
 import json
 import os
@@ -7,8 +7,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-import markdown_vault.session as _ses
-import markdown_vault.config as _cfg
+import markdown_vault.core.session as _ses
+import markdown_vault.core.config as _cfg
 
 
 class _TempSessionMixin:

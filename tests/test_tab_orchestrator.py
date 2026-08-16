@@ -1,9 +1,9 @@
-"""Tests for markdown_vault.tab_manager — TabOrchestrator."""
+"""Tests for markdown_vault.app.tab_manager — TabOrchestrator."""
 
 import unittest
 import unittest.mock
 
-from markdown_vault.tab_manager import TabOrchestrator
+from markdown_vault.app.tab_manager import TabOrchestrator
 
 
 class _Tab:

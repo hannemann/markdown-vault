@@ -19,7 +19,7 @@ class TestDialogIsShown(unittest.TestCase):
 
     def _make_fake_window(self, tab_bar, editor1, editor2):
         """Minimal FakeWindow with close-request methods."""
-        import markdown_vault.app_window as aw
+        import markdown_vault.app.app_window as aw
 
         class FakeWindow:
             def __init__(self, tb, e1, e2):
@@ -111,7 +111,7 @@ class TestDialogIsShown(unittest.TestCase):
 
     def test_close_left_via_callback_calls_dialog(self):
         """close_left with dirty tabs triggers dialog flow."""
-        from markdown_vault.tabs import TabBar
+        from markdown_vault.editor.tabs import TabBar
 
         tab_bar = TabBar()
         e1 = unittest.mock.Mock()
@@ -136,7 +136,7 @@ class TestDialogIsShown(unittest.TestCase):
 
     def test_on_confirm_closes_paths(self):
         """on_confirm closes the tabs."""
-        from markdown_vault.tabs import TabBar
+        from markdown_vault.editor.tabs import TabBar
 
         tab_bar = TabBar()
         e1 = unittest.mock.Mock()

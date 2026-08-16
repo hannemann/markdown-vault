@@ -1,9 +1,9 @@
-"""Tests for markdown_vault.view_mode_manager — ViewModeManager."""
+"""Tests for markdown_vault.app.view_mode_manager — ViewModeManager."""
 
 import unittest
 import unittest.mock
 
-from markdown_vault.view_mode_manager import ViewModeManager
+from markdown_vault.app.view_mode_manager import ViewModeManager
 
 
 class _MockTab:
@@ -85,7 +85,7 @@ class TestSetViewMode(unittest.TestCase):
 
     def test_invalid_mode_logged(self):
         """set_view_mode with invalid mode logs warning and does nothing."""
-        with unittest.mock.patch("markdown_vault.view_mode_manager.logger") as mock_logger:
+        with unittest.mock.patch("markdown_vault.app.view_mode_manager.logger") as mock_logger:
             self._mgr.set_view_mode("invalid")
             mock_logger.warning.assert_called_once()
             self.assertNotEqual(self.tab.view_mode, "invalid")
@@ -130,7 +130,7 @@ class TestSplitCentering(unittest.TestCase):
     def test_unallocated_paned_defers(self):
         self.tab.split.get_width.return_value = 0
         with unittest.mock.patch(
-            "markdown_vault.view_mode_manager.GLib.idle_add"
+            "markdown_vault.app.view_mode_manager.GLib.idle_add"
         ) as mock_idle:
             self._mgr.set_view_mode("split")
             self.tab.split.set_position.assert_not_called()  # nothing yet
@@ -310,7 +310,7 @@ class TestPreviewDebounce(unittest.TestCase):
     def test_schedule_preview_refresh_starts_timer(self):
         """_schedule_preview_refresh starts a GLib timer."""
         with unittest.mock.patch(
-            "markdown_vault.view_mode_manager.GLib.timeout_add"
+            "markdown_vault.app.view_mode_manager.GLib.timeout_add"
         ) as mock_add:
             mock_add.return_value = 42
             self._mgr._schedule_preview_refresh()
@@ -322,11 +322,11 @@ class TestPreviewDebounce(unittest.TestCase):
     def test_schedule_reschedules_existing(self):
         """_schedule_preview_refresh removes old timer before starting new one."""
         with unittest.mock.patch(
-            "markdown_vault.view_mode_manager.GLib.timeout_add",
+            "markdown_vault.app.view_mode_manager.GLib.timeout_add",
             return_value=42,
         ) as mock_add:
             with unittest.mock.patch(
-                "markdown_vault.view_mode_manager.GLib.source_remove"
+                "markdown_vault.app.view_mode_manager.GLib.source_remove"
             ) as mock_remove:
                 self._mgr._preview_debounce_id = 10
                 self._mgr._schedule_preview_refresh()
@@ -345,7 +345,7 @@ class TestPreviewDebounce(unittest.TestCase):
     def test_cancel_preview_debounce(self):
         """cancel_preview_debounce removes the timer and clears the id."""
         with unittest.mock.patch(
-            "markdown_vault.view_mode_manager.GLib.source_remove"
+            "markdown_vault.app.view_mode_manager.GLib.source_remove"
         ) as mock_remove:
             self._mgr._preview_debounce_id = 99
             self._mgr.cancel_preview_debounce()

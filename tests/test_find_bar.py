@@ -1,8 +1,8 @@
-"""Tests for markdown_vault.find_bar — the in-view find bar widget."""
+"""Tests for markdown_vault.editor.find_bar — the in-view find bar widget."""
 
 import unittest
 
-from markdown_vault.find_bar import FindBar
+from markdown_vault.editor.find_bar import FindBar
 
 
 class TestFindBar(unittest.TestCase):

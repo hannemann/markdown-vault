@@ -4,8 +4,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from markdown_vault.history import NavHistory
-from markdown_vault.path_utils import find_vault_for_dir
+from markdown_vault.core.history import NavHistory
+from markdown_vault.core.path_utils import find_vault_for_dir
 
 
 class TestNavHistory(unittest.TestCase):
@@ -334,7 +334,7 @@ class TestFindVaultForDir(unittest.TestCase):
 
     def test_find_vault_for_dir_uses_config_ssot(self):
         """Without a vault list, roots come from the config (SSOT)."""
-        import markdown_vault.config as _cfg
+        import markdown_vault.core.config as _cfg
         _cfg._vaults_cache = [{"name": "vault", "path": str(self._vault)}]
         try:
             result = find_vault_for_dir(str(self._vault / "Sub"))

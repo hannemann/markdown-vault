@@ -1,4 +1,4 @@
-"""Tests for markdown_vault.search — search integration.
+"""Tests for markdown_vault.search.search — search integration.
 
 These tests exercise ``search_logic.search_vaults`` directly (the
 function that ``SearchBar`` delegates to).  Widget-level tests live
@@ -10,7 +10,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from markdown_vault import search_logic
+from markdown_vault.search import search_logic
 
 
 class TestSearchVaults(unittest.TestCase):

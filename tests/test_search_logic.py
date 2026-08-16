@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from markdown_vault.search_logic import search_vaults, deprecated_hidden_message
+from markdown_vault.search.search_logic import search_vaults, deprecated_hidden_message
 
 
 class TestDeprecatedHiddenMessage(unittest.TestCase):

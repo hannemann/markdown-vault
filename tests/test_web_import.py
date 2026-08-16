@@ -5,7 +5,7 @@ isn't unit-tested here."""
 import datetime
 import unittest
 
-from markdown_vault import web_import as wi
+from markdown_vault.importers import web_import as wi
 
 
 class TestValidateUrl(unittest.TestCase):
@@ -281,7 +281,7 @@ class TestSlug(unittest.TestCase):
 
 class TestToNote(unittest.TestCase):
     def _fm(self, title="A Page", **kw):
-        from markdown_vault import frontmatter
+        from markdown_vault.markdown import frontmatter
         r = wi.ImportResult(url="https://x.io/p", title=title,
                             markdown="# Body\ntext", **kw)
         note = wi.to_note(r, today=datetime.date(2026, 8, 14))

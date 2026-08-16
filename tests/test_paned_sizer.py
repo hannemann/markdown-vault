@@ -1,9 +1,9 @@
-"""Tests for markdown_vault.paned_sizer.PanedSizer (side-panel sizing policy)."""
+"""Tests for markdown_vault.editor.paned_sizer.PanedSizer (side-panel sizing policy)."""
 
 import unittest
 import unittest.mock
 
-from markdown_vault.paned_sizer import PanedSizer
+from markdown_vault.editor.paned_sizer import PanedSizer
 
 
 class _FakePaned:
@@ -28,7 +28,7 @@ class _FakePaned:
 
 def _make(side, width, position):
     paned = _FakePaned(width, position)
-    with unittest.mock.patch("markdown_vault.paned_sizer.GLib.idle_add"):
+    with unittest.mock.patch("markdown_vault.editor.paned_sizer.GLib.idle_add"):
         sizer = PanedSizer(paned, side)
     return sizer, paned
 
@@ -54,13 +54,13 @@ class TestSideWidthGeometry(unittest.TestCase):
 class TestGrowthCap(unittest.TestCase):
     def test_first_width_change_seeds_want(self):
         sizer, paned = _make("end", 1900, 1600)  # sidebar = 300
-        with unittest.mock.patch("markdown_vault.paned_sizer.GLib.idle_add"):
+        with unittest.mock.patch("markdown_vault.editor.paned_sizer.GLib.idle_add"):
             sizer._on_width_changed(paned, None)
         self.assertEqual(sizer._want, 300)
 
     def test_widen_caps_side_to_want(self):
         sizer, paned = _make("end", 1900, 1600)  # sidebar = 300 (want)
-        with unittest.mock.patch("markdown_vault.paned_sizer.GLib.idle_add"):
+        with unittest.mock.patch("markdown_vault.editor.paned_sizer.GLib.idle_add"):
             sizer._on_width_changed(paned, None)   # seeds want=300
             paned._width = 3400                    # window widened; end absorbs
             sizer._on_width_changed(paned, None)
@@ -69,7 +69,7 @@ class TestGrowthCap(unittest.TestCase):
 
     def test_narrow_does_not_touch_position(self):
         sizer, paned = _make("end", 3400, 3100)  # sidebar = 300 (want)
-        with unittest.mock.patch("markdown_vault.paned_sizer.GLib.idle_add"):
+        with unittest.mock.patch("markdown_vault.editor.paned_sizer.GLib.idle_add"):
             sizer._on_width_changed(paned, None)   # want=300
             paned._width = 1900
             paned._position = 1649                 # sidebar shrank to 251 (< want)
@@ -79,7 +79,7 @@ class TestGrowthCap(unittest.TestCase):
 
     def test_start_side_widen_caps(self):
         sizer, paned = _make("start", 1900, 250)   # tree = 250 (want)
-        with unittest.mock.patch("markdown_vault.paned_sizer.GLib.idle_add"):
+        with unittest.mock.patch("markdown_vault.editor.paned_sizer.GLib.idle_add"):
             sizer._on_width_changed(paned, None)   # want=250
             paned._width = 3400
             paned._position = 900                  # tree grew (start absorbs)

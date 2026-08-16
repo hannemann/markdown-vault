@@ -10,7 +10,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from markdown_vault import document_import as di
+from markdown_vault.importers import document_import as di
 
 _HAS_STACK = di.is_available() is None
 

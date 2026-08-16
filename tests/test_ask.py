@@ -1,9 +1,9 @@
-"""Tests for markdown_vault.ask — the RAG prompt builder (pure logic)."""
+"""Tests for markdown_vault.search.ask — the RAG prompt builder (pure logic)."""
 
 import unittest
 from types import SimpleNamespace
 
-from markdown_vault import ask
+from markdown_vault.search import ask
 
 
 def _chunk(path, line, text):
@@ -326,7 +326,7 @@ class TestBudgetFill(unittest.TestCase):
     def test_reasoning_budget_exhaustion_is_reported(self):
         # A reasoning model that never closes its <think> yields an explanatory
         # message, not its raw chain of thought — and the notes stay visible.
-        from markdown_vault import llama_runtime
+        from markdown_vault.search import llama_runtime
 
         def _raise(_s, _u):
             raise llama_runtime.ReasoningBudgetExhausted
@@ -356,7 +356,7 @@ class TestOllamaChatPayload(unittest.TestCase):
             captured["body"] = json.loads(req.data.decode())
             return FakeResp(json.dumps({"message": {"content": "hi"}}).encode())
 
-        with mock.patch("markdown_vault.ask.urllib.request.urlopen", fake_urlopen):
+        with mock.patch("markdown_vault.search.ask.urllib.request.urlopen", fake_urlopen):
             out = ask.OllamaChat("m", "http://x", **kwargs).chat("s", "u")
         return out, captured["body"]
 
@@ -406,7 +406,7 @@ class TestAnswerQuestionLocalBackend(unittest.TestCase):
             retrieve=lambda *a, **k: [(_chunk("/v/a.md", 1, "text"), 1.0)])
 
     def test_unavailable_local_backend_returns_the_reason(self):
-        from markdown_vault import llama_runtime
+        from markdown_vault.search import llama_runtime
         orig = llama_runtime.availability
         llama_runtime.availability = lambda p: "MODEL MISSING"
         try:
@@ -419,7 +419,7 @@ class TestAnswerQuestionLocalBackend(unittest.TestCase):
     def test_hide_deprecated_all_deprecated_gives_graceful_message(self):
         # Graceful fallback: when every retrieved note is deprecated and the filter
         # is on, explain it (and offer the excluded notes) instead of "nothing".
-        from markdown_vault import frontmatter
+        from markdown_vault.markdown import frontmatter
         orig = frontmatter.status_of
         frontmatter.status_of = lambda p: "deprecated"
         try:
@@ -439,7 +439,8 @@ class TestAnswerQuestionLocalBackend(unittest.TestCase):
     def test_hide_deprecated_partial_drop_warns(self):
         # Some (not all) hits are deprecated: answer from the rest, but say the
         # filter excluded the others instead of thinning the context silently.
-        from markdown_vault import frontmatter, llama_runtime
+        from markdown_vault.search import llama_runtime
+        from markdown_vault.markdown import frontmatter
         sem = SimpleNamespace(retrieve=lambda *a, **k: [
             (_chunk("/v/keep.md", 1, "keep"), 1.0),
             (_chunk("/v/dep.md", 1, "dep"), 0.9)])
@@ -461,7 +462,7 @@ class TestAnswerQuestionLocalBackend(unittest.TestCase):
                             for w in a.warnings))
 
     def test_local_backend_fires_load_and_think_phases(self):
-        from markdown_vault import llama_runtime
+        from markdown_vault.search import llama_runtime
         orig_av, orig_cls = llama_runtime.availability, llama_runtime.LlamaCppChat
         phases = []
         llama_runtime.availability = lambda p: None
@@ -486,7 +487,7 @@ class TestAnswerQuestionLocalBackend(unittest.TestCase):
         self.assertEqual(phases, ["loading", "thinking"])
 
     def _capture_local_kwargs(self, settings):
-        from markdown_vault import llama_runtime
+        from markdown_vault.search import llama_runtime
         orig_av, orig_cls = llama_runtime.availability, llama_runtime.LlamaCppChat
         seen = {}
         llama_runtime.availability = lambda p: None
@@ -534,7 +535,7 @@ class TestAnswerQuestionLocalBackend(unittest.TestCase):
         self.assertEqual(seen.get("num_ctx"), 8192)      # config default, not 2048
 
     def test_should_cancel_reaches_the_local_backend(self):
-        from markdown_vault import llama_runtime
+        from markdown_vault.search import llama_runtime
         orig_av, orig_cls = llama_runtime.availability, llama_runtime.LlamaCppChat
         seen = {}
         llama_runtime.availability = lambda p: None
@@ -561,7 +562,7 @@ class TestAnswerQuestionLocalBackend(unittest.TestCase):
 
     def test_auto_engine_forces_local_backend(self):
         # even with ask_backend=ollama, engine=auto must use the local backend
-        from markdown_vault import llama_runtime
+        from markdown_vault.search import llama_runtime
         orig_av, orig_cls = llama_runtime.availability, llama_runtime.LlamaCppChat
         seen = {}
         llama_runtime.availability = lambda p: None
@@ -578,7 +579,7 @@ class TestAnswerQuestionLocalBackend(unittest.TestCase):
         self.assertGreaterEqual(seen.get("n_threads", 0), 1)  # safe default applied
 
     def test_available_local_backend_generates_via_llama(self):
-        from markdown_vault import llama_runtime
+        from markdown_vault.search import llama_runtime
         orig_av, orig_cls = llama_runtime.availability, llama_runtime.LlamaCppChat
         llama_runtime.availability = lambda p: None
         llama_runtime.LlamaCppChat = lambda *a, **k: SimpleNamespace(

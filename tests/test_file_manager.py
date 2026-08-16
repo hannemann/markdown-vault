@@ -1,4 +1,4 @@
-"""Tests for the FileManager module (src/markdown_vault/file_manager.py).
+"""Tests for the FileManager module (src/markdown_vault/app/file_manager.py).
 
 FileManager is a pure-Python class — no GTK display is needed.
 Tests wire mocks into the constructor and verify callback flow by
@@ -17,7 +17,7 @@ import gi
 gi.require_version("Gtk", "4.0")
 from gi.repository import GLib
 
-from markdown_vault.file_manager import FileManager
+from markdown_vault.app.file_manager import FileManager
 
 
 def _fire_callback(mock_prompt, expected_arg="name"):
@@ -80,7 +80,7 @@ class TestPromptNewFileNoVaults(unittest.TestCase):
 
     def test_none_vaults_skips_error(self):
         """None vaults → dialog shown (used from context menu)."""
-        with patch("markdown_vault.file_manager.dialogs.prompt_new_item") as mock_prompt:
+        with patch("markdown_vault.app.file_manager.dialogs.prompt_new_item") as mock_prompt:
             self._fm.prompt_new_file(MagicMock(), None, "/vault")
             mock_prompt.assert_called_once()
 
@@ -106,8 +106,8 @@ class TestPromptNewFileSuccess(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree(self._tmp, ignore_errors=True)
 
-    @patch("markdown_vault.file_manager.dialogs.prompt_new_item")
-    @patch("markdown_vault.file_manager.validation.validate_new_item")
+    @patch("markdown_vault.app.file_manager.dialogs.prompt_new_item")
+    @patch("markdown_vault.app.file_manager.validation.validate_new_item")
     def test_creates_file_and_opens_tab(self, mock_validate, mock_prompt):
         mock_validate.return_value = None
         self._file_ops.create_file.return_value = None
@@ -123,8 +123,8 @@ class TestPromptNewFileSuccess(unittest.TestCase):
         )
         self._show_error.assert_not_called()
 
-    @patch("markdown_vault.file_manager.dialogs.prompt_new_item")
-    @patch("markdown_vault.file_manager.validation.validate_new_item")
+    @patch("markdown_vault.app.file_manager.dialogs.prompt_new_item")
+    @patch("markdown_vault.app.file_manager.validation.validate_new_item")
     def test_preserves_md_extension(self, mock_validate, mock_prompt):
         mock_validate.return_value = None
         self._file_ops.create_file.return_value = None
@@ -155,15 +155,15 @@ class TestPromptNewFileErrors(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree(self._tmp, ignore_errors=True)
 
-    @patch("markdown_vault.file_manager.dialogs.prompt_new_item")
+    @patch("markdown_vault.app.file_manager.dialogs.prompt_new_item")
     def test_none_name_does_nothing(self, mock_prompt):
         self._fm.prompt_new_file(MagicMock(), [self._tmp], self._tmp)
         _fire_callback(mock_prompt, None)
         self._show_error.assert_not_called()
         self._file_ops.create_file.assert_not_called()
 
-    @patch("markdown_vault.file_manager.dialogs.prompt_new_item")
-    @patch("markdown_vault.file_manager.validation.validate_new_item")
+    @patch("markdown_vault.app.file_manager.dialogs.prompt_new_item")
+    @patch("markdown_vault.app.file_manager.validation.validate_new_item")
     def test_validation_error_shows_dialog(self, mock_validate, mock_prompt):
         mock_validate.return_value = "Name contains path separators."
         self._fm.prompt_new_file(MagicMock(), [self._tmp], self._tmp)
@@ -173,8 +173,8 @@ class TestPromptNewFileErrors(unittest.TestCase):
         self._file_ops.create_file.assert_not_called()
         self._open_tab.assert_not_called()
 
-    @patch("markdown_vault.file_manager.dialogs.prompt_new_item")
-    @patch("markdown_vault.file_manager.validation.validate_new_item")
+    @patch("markdown_vault.app.file_manager.dialogs.prompt_new_item")
+    @patch("markdown_vault.app.file_manager.validation.validate_new_item")
     def test_file_exists_shows_confirm(self, mock_validate, mock_prompt):
         mock_validate.return_value = None
         # Pre-create the file so os.path.exists() is True
@@ -182,7 +182,7 @@ class TestPromptNewFileErrors(unittest.TestCase):
         with open(existing, "w") as f:
             f.write("existing")
 
-        with patch("markdown_vault.file_manager.dialogs.confirm_file_exists") as mock_confirm:
+        with patch("markdown_vault.app.file_manager.dialogs.confirm_file_exists") as mock_confirm:
             self._fm.prompt_new_file(MagicMock(), [self._tmp], self._tmp)
             _fire_callback(mock_prompt, "note")
 
@@ -190,8 +190,8 @@ class TestPromptNewFileErrors(unittest.TestCase):
             self._file_ops.create_file.assert_not_called()
             self._open_tab.assert_not_called()
 
-    @patch("markdown_vault.file_manager.dialogs.prompt_new_item")
-    @patch("markdown_vault.file_manager.validation.validate_new_item")
+    @patch("markdown_vault.app.file_manager.dialogs.prompt_new_item")
+    @patch("markdown_vault.app.file_manager.validation.validate_new_item")
     def test_create_error_shows_dialog(self, mock_validate, mock_prompt):
         mock_validate.return_value = None
         self._file_ops.create_file.return_value = "Permission denied"
@@ -224,9 +224,9 @@ class TestFileExistsConfirmCallback(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree(self._tmp, ignore_errors=True)
 
-    @patch("markdown_vault.file_manager.dialogs.prompt_new_item")
-    @patch("markdown_vault.file_manager.validation.validate_new_item")
-    @patch("markdown_vault.file_manager.dialogs.confirm_file_exists")
+    @patch("markdown_vault.app.file_manager.dialogs.prompt_new_item")
+    @patch("markdown_vault.app.file_manager.validation.validate_new_item")
+    @patch("markdown_vault.app.file_manager.dialogs.confirm_file_exists")
     def test_confirm_open_opens_tab(self, mock_confirm, mock_validate, mock_prompt):
         mock_validate.return_value = None
         existing = os.path.join(self._tmp, "note.md")
@@ -240,9 +240,9 @@ class TestFileExistsConfirmCallback(unittest.TestCase):
         confirm_cb(True)
         self._open_tab.assert_called_once_with(existing)
 
-    @patch("markdown_vault.file_manager.dialogs.prompt_new_item")
-    @patch("markdown_vault.file_manager.validation.validate_new_item")
-    @patch("markdown_vault.file_manager.dialogs.confirm_file_exists")
+    @patch("markdown_vault.app.file_manager.dialogs.prompt_new_item")
+    @patch("markdown_vault.app.file_manager.validation.validate_new_item")
+    @patch("markdown_vault.app.file_manager.dialogs.confirm_file_exists")
     def test_confirm_cancel_does_not_open(self, mock_confirm, mock_validate, mock_prompt):
         mock_validate.return_value = None
         existing = os.path.join(self._tmp, "note.md")
@@ -273,8 +273,8 @@ class TestPromptNewFolder(unittest.TestCase):
             open_tab, vault_tree, file_ops, show_error,
         ), open_tab, vault_tree, file_ops, show_error
 
-    @patch("markdown_vault.file_manager.dialogs.prompt_new_item")
-    @patch("markdown_vault.file_manager.validation.validate_new_item")
+    @patch("markdown_vault.app.file_manager.dialogs.prompt_new_item")
+    @patch("markdown_vault.app.file_manager.validation.validate_new_item")
     def test_creates_folder(self, mock_validate, mock_prompt):
         mock_validate.return_value = None
         fm, _, _, file_ops, _ = self._make_fm()
@@ -287,7 +287,7 @@ class TestPromptNewFolder(unittest.TestCase):
         fm._vault_tree.refresh.assert_called_once()
         fm._open_tab.assert_not_called()
 
-    @patch("markdown_vault.file_manager.dialogs.prompt_new_item")
+    @patch("markdown_vault.app.file_manager.dialogs.prompt_new_item")
     def test_none_name_does_nothing(self, mock_prompt):
         fm, _, _, file_ops, show_error = self._make_fm()
         fm.prompt_new_folder(MagicMock(), "/tmp")
@@ -295,8 +295,8 @@ class TestPromptNewFolder(unittest.TestCase):
         show_error.assert_not_called()
         file_ops.create_folder.assert_not_called()
 
-    @patch("markdown_vault.file_manager.dialogs.prompt_new_item")
-    @patch("markdown_vault.file_manager.validation.validate_new_item")
+    @patch("markdown_vault.app.file_manager.dialogs.prompt_new_item")
+    @patch("markdown_vault.app.file_manager.validation.validate_new_item")
     def test_validation_error_shows_dialog(self, mock_validate, mock_prompt):
         mock_validate.return_value = "Invalid name."
         fm, _, _, file_ops, show_error = self._make_fm()
@@ -306,8 +306,8 @@ class TestPromptNewFolder(unittest.TestCase):
         show_error.assert_called_once_with("Invalid Name", "Invalid name.")
         file_ops.create_folder.assert_not_called()
 
-    @patch("markdown_vault.file_manager.dialogs.prompt_new_item")
-    @patch("markdown_vault.file_manager.validation.validate_new_item")
+    @patch("markdown_vault.app.file_manager.dialogs.prompt_new_item")
+    @patch("markdown_vault.app.file_manager.validation.validate_new_item")
     def test_create_error_shows_dialog(self, mock_validate, mock_prompt):
         mock_validate.return_value = None
         fm, _, _, file_ops, show_error = self._make_fm()
@@ -341,8 +341,8 @@ class TestFileManagerLogging(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree(self._tmp, ignore_errors=True)
 
-    @patch("markdown_vault.file_manager.dialogs.prompt_new_item")
-    @patch("markdown_vault.file_manager.validation.validate_new_item")
+    @patch("markdown_vault.app.file_manager.dialogs.prompt_new_item")
+    @patch("markdown_vault.app.file_manager.validation.validate_new_item")
     def test_invalid_name_logs_warning(self, mock_validate, mock_prompt):
         mock_validate.return_value = "Path separator not allowed."
         with patch.object(self._fm, "_show_error") as mock_err:
@@ -350,8 +350,8 @@ class TestFileManagerLogging(unittest.TestCase):
             _fire_callback(mock_prompt, "bad/name")
             mock_err.assert_called_once()
 
-    @patch("markdown_vault.file_manager.dialogs.prompt_new_item")
-    @patch("markdown_vault.file_manager.validation.validate_new_item")
+    @patch("markdown_vault.app.file_manager.dialogs.prompt_new_item")
+    @patch("markdown_vault.app.file_manager.validation.validate_new_item")
     def test_create_file_failure_logs_error(self, mock_validate, mock_prompt):
         mock_validate.return_value = None
         self._file_ops.create_file.return_value = "IO error"
@@ -360,8 +360,8 @@ class TestFileManagerLogging(unittest.TestCase):
             _fire_callback(mock_prompt, "note")
             mock_err.assert_called_once()
 
-    @patch("markdown_vault.file_manager.dialogs.prompt_new_item")
-    @patch("markdown_vault.file_manager.validation.validate_new_item")
+    @patch("markdown_vault.app.file_manager.dialogs.prompt_new_item")
+    @patch("markdown_vault.app.file_manager.validation.validate_new_item")
     def test_folder_creation_failure_logs_error(self, mock_validate, mock_prompt):
         mock_validate.return_value = None
         self._file_ops.create_folder.return_value = "IO error"
@@ -394,7 +394,7 @@ class TestPromptDelete(unittest.TestCase):
             nav_history=self._nav_history,
         )
 
-    @patch("markdown_vault.file_manager.dialogs.confirm_delete")
+    @patch("markdown_vault.app.file_manager.dialogs.confirm_delete")
     def test_shows_dialog(self, mock_confirm):
         parent = MagicMock()
         self._fm.prompt_delete(parent, "/vault/note.md")
@@ -428,7 +428,7 @@ class TestHandleDeleteConfirmedFile(unittest.TestCase):
             nav_history=self._nav_history,
         )
 
-    @patch("markdown_vault.file_manager.Path")
+    @patch("markdown_vault.app.file_manager.Path")
     def test_file_delete_success(self, mock_path_cls):
         mock_path_instance = MagicMock()
         mock_path_instance.is_dir.return_value = False
@@ -444,7 +444,7 @@ class TestHandleDeleteConfirmedFile(unittest.TestCase):
         self._vault_tree.refresh.assert_called_once()
         self._show_error.assert_not_called()
 
-    @patch("markdown_vault.file_manager.Path")
+    @patch("markdown_vault.app.file_manager.Path")
     def test_file_delete_failure_shows_error(self, mock_path_cls):
         mock_path_instance = MagicMock()
         mock_path_instance.is_dir.return_value = False
@@ -459,7 +459,7 @@ class TestHandleDeleteConfirmedFile(unittest.TestCase):
         self._nav_history.remove_path.assert_not_called()
         self._vault_tree.refresh.assert_not_called()
 
-    @patch("markdown_vault.file_manager.Path")
+    @patch("markdown_vault.app.file_manager.Path")
     def test_cancelled_does_nothing(self, mock_path_cls):
         self._fm.handle_delete_response(False, "/vault/note.md")
 
@@ -493,7 +493,7 @@ class TestHandleDeleteConfirmedDir(unittest.TestCase):
             nav_history=self._nav_history,
         )
 
-    @patch("markdown_vault.file_manager.Path")
+    @patch("markdown_vault.app.file_manager.Path")
     def test_dir_delete_closes_all_children(self, mock_path_cls):
         mock_path_instance = MagicMock()
         mock_path_instance.is_dir.return_value = True
@@ -538,7 +538,7 @@ class TestHandleDeleteConfirmedDir(unittest.TestCase):
 
 class TestHandleDeleteNoDependencies(unittest.TestCase):
 
-    @patch("markdown_vault.file_manager.Path")
+    @patch("markdown_vault.app.file_manager.Path")
     def test_no_tab_bar(self, mock_path_cls):
         mock_path_instance = MagicMock()
         mock_path_instance.is_dir.return_value = False
@@ -552,7 +552,7 @@ class TestHandleDeleteNoDependencies(unittest.TestCase):
         fm.handle_delete_response(True, "/vault/note.md")
         fm._vault_tree.refresh.assert_called_once()
 
-    @patch("markdown_vault.file_manager.Path")
+    @patch("markdown_vault.app.file_manager.Path")
     def test_no_mru(self, mock_path_cls):
         mock_path_instance = MagicMock()
         mock_path_instance.is_dir.return_value = False
@@ -566,7 +566,7 @@ class TestHandleDeleteNoDependencies(unittest.TestCase):
         fm.handle_delete_response(True, "/vault/note.md")
         fm._vault_tree.refresh.assert_called_once()
 
-    @patch("markdown_vault.file_manager.Path")
+    @patch("markdown_vault.app.file_manager.Path")
     def test_no_nav_history(self, mock_path_cls):
         mock_path_instance = MagicMock()
         mock_path_instance.is_dir.return_value = False
