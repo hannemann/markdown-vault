@@ -1,4 +1,4 @@
-"""Tests for markdown_vault.tabs — tab management."""
+"""Tests for markdown_vault.editor.tabs — tab management."""
 
 import unittest
 import unittest.mock
@@ -9,7 +9,7 @@ gi.require_version("Gtk", "4.0")
 from gi.repository import Gtk
 
 import markdown_vault.core.config as _cfg
-from markdown_vault.tabs import Tab, TabBar
+from markdown_vault.editor.tabs import Tab, TabBar
 
 
 class MockEditor:

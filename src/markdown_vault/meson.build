@@ -2,18 +2,14 @@ py_sources = files(
   '__init__.py',
   '__main__.py',
   'app_window.py',
-  'autosave.py',
   'backlink_index.py',
   'graph.py',
   'graph_explorer.py',
   'graph_view.py',
-  'content_changes.py',
   'dialog_import.py',
   'document_import.py',
-  'editor.py',
   'file_index.py',
   'file_ops.py',
-  'find_bar.py',
   'file_manager.py',
   'git_integration.py',
    'input_manager.py',
@@ -22,9 +18,7 @@ py_sources = files(
   'markdown_help.py',
   'markdown_widgets.py',
   'monitor_handler.py',
-  'mru.py',
   'note_writer.py',
-  'paned_sizer.py',
   'preferences.py',
   'preview.py',
   'quick_open.py',
@@ -40,7 +34,6 @@ py_sources = files(
   'sidebar.py',
   'status_bar.py',
   'tab_manager.py',
-  'tabs.py',
    'view_mode_manager.py',
    'vault_monitor.py',
   'vault_scope.py',
@@ -50,6 +43,7 @@ py_sources = files(
 )
 
 subdir('core')
+subdir('editor')
 subdir('markdown')
 subdir('uikit')
 

@@ -1002,7 +1002,7 @@ class VaultTree(Gtk.Box):
 
     def _is_open_file(self, file_path: str) -> bool:
         """Check if *file_path* is currently open in a tab."""
-        from .tabs import TabBar
+        from markdown_vault.editor.tabs import TabBar
         win = self.get_root()
         if win is None:
             return False

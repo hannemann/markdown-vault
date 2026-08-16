@@ -1,4 +1,4 @@
-"""Tests for markdown_vault.editor — GtkSourceView editor widget.
+"""Tests for markdown_vault.editor.editor — GtkSourceView editor widget.
 
 Editor requires GTK widgets for full behavioral testing. These tests
 verify the module structure and API surface without a display server.
@@ -8,7 +8,7 @@ import unittest
 from pathlib import Path
 
 
-_SRC = Path(__file__).resolve().parent.parent / "src" / "markdown_vault" / "editor.py"
+_SRC = Path(__file__).resolve().parent.parent / "src" / "markdown_vault" / "editor" / "editor.py"
 
 
 class TestEditorModuleStructure(unittest.TestCase):
@@ -54,7 +54,7 @@ class TestEditorSearch(unittest.TestCase):
     """Behavioural tests for the in-editor GtkSource search backend."""
 
     def _editor(self, text):
-        from markdown_vault.editor import Editor
+        from markdown_vault.editor.editor import Editor
         ed = Editor()
         ed._buffer.set_text(text)
         ed._buffer.place_cursor(ed._buffer.get_start_iter())

@@ -28,33 +28,33 @@ import threading
 
 from markdown_vault.core import logging_setup
 from .vault_tree import VaultTree
-from .editor import Editor
+from markdown_vault.editor.editor import Editor
 from .preview import Preview
-from .tabs import TabBar
+from markdown_vault.editor.tabs import TabBar
 from .sidebar import Sidebar
 from .search import SearchBar
 from . import quick_open
 from .quick_open_palette import QuickOpenPalette
-from .paned_sizer import PanedSizer
+from markdown_vault.editor.paned_sizer import PanedSizer
 from .status_bar import StatusBar
 from .preferences import PreferencesDialog
 from .wikilink_autofix import WikilinkResolver, analyze_text, find_broken_ranges
-from .find_bar import FindBar
+from markdown_vault.editor.find_bar import FindBar
 from .monitor_handler import MonitorHandler
 from .tab_manager import TabOrchestrator
 from .session_manager import SessionManager
 from .markdown_help import MarkdownHelpOverlay
-from .autosave import AutosaveManager
+from markdown_vault.editor.autosave import AutosaveManager
 from .file_ops import FileOps
 from .view_mode_manager import ViewModeManager
-from .content_changes import ContentChangeHandler
+from markdown_vault.editor.content_changes import ContentChangeHandler
 from .input_manager import InputManager
 from .file_manager import FileManager
 from markdown_vault.core import config
 from markdown_vault.uikit import dialogs
 from markdown_vault.uikit import banners as banner_mod
 from markdown_vault.core import session
-from . import mru
+from markdown_vault.editor import mru
 from markdown_vault.core import history
 from markdown_vault.core import path_utils
 from markdown_vault.core import validation

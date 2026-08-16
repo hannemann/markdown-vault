@@ -16,7 +16,7 @@ gi.require_version("Adw", "1")
 
 from gi.repository import Gtk
 
-from .editor import Editor
+from markdown_vault.editor.editor import Editor
 from .preview import Preview
 from markdown_vault.uikit import banners as banner_mod
 

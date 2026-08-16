@@ -3,7 +3,7 @@
 import unittest
 from unittest.mock import MagicMock, patch, call
 
-from markdown_vault.autosave import AutosaveManager
+from markdown_vault.editor.autosave import AutosaveManager
 
 
 class TestAutosaveManager(unittest.TestCase):
@@ -22,7 +22,7 @@ class TestAutosaveManager(unittest.TestCase):
 
     # ── Timer lifecycle ─────────────────────────────────────────────
 
-    @patch("markdown_vault.autosave.GLib")
+    @patch("markdown_vault.editor.autosave.GLib")
     def test_start_creates_timer(self, mock_glib):
         mock_glib.timeout_add_seconds.return_value = 42
         mgr = self._make_manager(interval=30)
@@ -30,14 +30,14 @@ class TestAutosaveManager(unittest.TestCase):
         mock_glib.timeout_add_seconds.assert_called_once_with(30, mgr._tick)
         self.assertEqual(mgr._timer_id, 42)
 
-    @patch("markdown_vault.autosave.GLib")
+    @patch("markdown_vault.editor.autosave.GLib")
     def test_start_skips_zero_interval(self, mock_glib):
         mgr = self._make_manager(interval=0)
         mgr.start()
         mock_glib.timeout_add_seconds.assert_not_called()
         self.assertIsNone(mgr._timer_id)
 
-    @patch("markdown_vault.autosave.GLib")
+    @patch("markdown_vault.editor.autosave.GLib")
     def test_cancel_removes_timer(self, mock_glib):
         mgr = self._make_manager()
         mgr._timer_id = 99
@@ -45,13 +45,13 @@ class TestAutosaveManager(unittest.TestCase):
         mock_glib.source_remove.assert_called_once_with(99)
         self.assertIsNone(mgr._timer_id)
 
-    @patch("markdown_vault.autosave.GLib")
+    @patch("markdown_vault.editor.autosave.GLib")
     def test_cancel_noop_when_no_timer(self, mock_glib):
         mgr = self._make_manager()
         mgr.cancel()
         mock_glib.source_remove.assert_not_called()
 
-    @patch("markdown_vault.autosave.GLib")
+    @patch("markdown_vault.editor.autosave.GLib")
     def test_restart_cancels_and_starts(self, mock_glib):
         mock_glib.timeout_add_seconds.return_value = 7
         mgr = self._make_manager(interval=10)
@@ -61,7 +61,7 @@ class TestAutosaveManager(unittest.TestCase):
         mock_glib.timeout_add_seconds.assert_called_once_with(10, mgr._tick)
         self.assertEqual(mgr._timer_id, 7)
 
-    @patch("markdown_vault.autosave.GLib")
+    @patch("markdown_vault.editor.autosave.GLib")
     def test_update_interval(self, mock_glib):
         mock_glib.timeout_add_seconds.return_value = 1
         mgr = self._make_manager(interval=30)

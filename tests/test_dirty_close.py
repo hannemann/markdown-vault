@@ -24,8 +24,8 @@ gi.require_version("Adw", "1")
 from gi.repository import Gtk  # type: ignore[attr-defined]
 from gi.repository import Adw  # type: ignore[attr-defined]
 
-from markdown_vault.tabs import Tab, TabBar
-from markdown_vault.editor import Editor
+from markdown_vault.editor.tabs import Tab, TabBar
+from markdown_vault.editor.editor import Editor
 
 
 # ---------------------------------------------------------------------------
@@ -59,7 +59,7 @@ class TestTabBarSignalExists(unittest.TestCase):
         src = os.path.join(
             os.path.dirname(__file__),
             "..", "src",
-            "markdown_vault", "tabs.py",
+            "markdown_vault", "editor", "tabs.py",
         )
         source = Path(src).read_text()
         self.assertIn('"tab-close-requested"', source)
