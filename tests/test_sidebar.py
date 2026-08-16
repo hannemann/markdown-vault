@@ -39,6 +39,12 @@ class TestSidebarOutline(unittest.TestCase):
         children = list(self.sidebar._outline_list["list"])
         self.assertEqual(len(children), 3)
 
+    def test_outline_strips_inline_markdown_from_heading(self):
+        # An imported heading wrapped in bold must read as clean text, not **...**.
+        self.sidebar._refresh_outline("# **Attention Is All You Need**\n\nbody")
+        children = list(self.sidebar._outline_list["list"])
+        self.assertEqual(_outline_text(children[0]), "Attention Is All You Need")
+
     def test_outline_skips_code_fences(self):
         """Headings inside ``` fenced code blocks should be ignored."""
         text = """# Real Title

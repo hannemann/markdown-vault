@@ -28,6 +28,7 @@ import yaml
 
 from . import attachments, note_writer
 from .md_fences import FenceTracker
+from .md_text import unwrap_bold_headings
 
 logger = logging.getLogger(__name__)
 
@@ -528,6 +529,7 @@ def convert(path: str | Path) -> DocumentResult:
     if handler is None:
         raise ValueError(f"Unsupported file type: {path.suffix or '(none)'}")
     markdown, title, images = handler(path)
+    markdown = unwrap_bold_headings(markdown)   # e.g. pymupdf4llm's "# **Title**"
     return DocumentResult(path=str(path.resolve()), title=title or path.stem,
                           markdown=markdown, images=images)
 

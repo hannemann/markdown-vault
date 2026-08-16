@@ -34,6 +34,7 @@ from pathlib import Path
 from . import note_writer
 from .attachments import attachment_target  # re-exported: layout lives in attachments
 from .md_fences import FenceTracker
+from .md_text import unwrap_bold_headings
 from urllib.parse import parse_qsl, urlencode, urljoin, urlparse, urlsplit, urlunsplit
 
 logger = logging.getLogger(__name__)
@@ -755,7 +756,7 @@ def extract(html: str, url: str | None = None) -> ImportResult:
         include_links=True, include_images=True, include_formatting=True) or ""
     # Restore blocks first: a blockquote may hold a table marker that then resolves.
     md = _restore_placeholders(_restore_blocks(prose, blocks), tables)
-    md = _label_unlabeled_images(_dedent_after_headings(md))
+    md = unwrap_bold_headings(_label_unlabeled_images(_dedent_after_headings(md)))
     # Append definitions for the footnotes whose [^N] marker survived extraction.
     used = [d for d in footnotes if d[:d.index("]") + 1] in md]
     if used:

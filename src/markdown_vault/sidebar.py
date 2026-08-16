@@ -27,6 +27,8 @@ from gi.repository import Gtk, GLib, GObject, Gdk
 from . import git_integration, tags
 from .backlink_index import BacklinkIndex
 from .event_router import FileEvent
+from .md_fences import FenceTracker
+from .md_text import strip_markdown
 from .path_utils import HEADING_RE
 
 logger = logging.getLogger(__name__)
@@ -272,53 +274,39 @@ class Sidebar(Gtk.Box):
         if not text:
             return
 
-        in_fence = False
-        fence_char = None
-        fence_indent = 0
+        fences = FenceTracker()
 
-        # Single pass through lines to track fence state
+        # Single pass through lines, skipping headings inside fenced code.
         lines = text.split('\n')
         for line_num, line in enumerate(lines):
-            stripped = line.lstrip()
-            indent = len(line) - len(stripped)
-
-            # Check for fence start/end
-            if stripped.startswith('```') or stripped.startswith('~~~'):
-                if not in_fence:
-                    in_fence = True
-                    fence_char = stripped[0]
-                    fence_indent = indent
-                elif stripped[0] == fence_char and indent == fence_indent:
-                    in_fence = False
-                    fence_char = None
-                    fence_indent = 0
-
-            # Check for heading
-            if not in_fence:
-                match = HEADING_RE.match(line)
-                if match:
-                    level = len(match.group(1))
-                    heading = match.group(2)
-                    row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
-                    for _ in range(level - 1):
-                        guide = Gtk.Box()
-                        guide.set_size_request(20, -1)
-                        guide.add_css_class("outline-guide")
-                        row.append(guide)
-                    label = Gtk.Label(label=heading)
-                    label.set_xalign(0)
-                    btn = Gtk.Button()
-                    btn.set_child(label)
-                    btn.add_css_class("flat")
-                    btn.add_css_class("outline-item")
-                    btn.add_css_class(f"outline-l{min(level, 4)}")
-                    btn.set_halign(Gtk.Align.START)
-                    btn.connect(
-                        "clicked",
-                        lambda _b, ln=line_num: self.emit("outline-clicked", ln),
-                    )
-                    row.append(btn)
-                    self._outline_list["list"].append(row)
+            if fences.feed(line):
+                continue
+            match = HEADING_RE.match(line)
+            if match:
+                level = len(match.group(1))
+                # Show clean text: a heading may carry inline markdown (e.g. an
+                # importer wrapping it in **bold**), which the label can't render.
+                heading = strip_markdown(match.group(2)).strip()
+                row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
+                for _ in range(level - 1):
+                    guide = Gtk.Box()
+                    guide.set_size_request(20, -1)
+                    guide.add_css_class("outline-guide")
+                    row.append(guide)
+                label = Gtk.Label(label=heading)
+                label.set_xalign(0)
+                btn = Gtk.Button()
+                btn.set_child(label)
+                btn.add_css_class("flat")
+                btn.add_css_class("outline-item")
+                btn.add_css_class(f"outline-l{min(level, 4)}")
+                btn.set_halign(Gtk.Align.START)
+                btn.connect(
+                    "clicked",
+                    lambda _b, ln=line_num: self.emit("outline-clicked", ln),
+                )
+                row.append(btn)
+                self._outline_list["list"].append(row)
 
     # ------------------------------------------------------------------
     # Backlinks

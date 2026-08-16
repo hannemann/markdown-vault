@@ -32,6 +32,7 @@ py_sources = files(
   'markdown_help.py',
   'markdown_widgets.py',
   'md_fences.py',
+  'md_text.py',
   'monitor_handler.py',
   'mru.py',
   'note_writer.py',

@@ -74,6 +74,21 @@ class TestDispatch(unittest.TestCase):
         with self.assertRaises(ValueError):
             di.convert("/tmp/whatever.xyz")
 
+    def test_convert_unwraps_bold_headings(self):
+        # Every document importer goes through convert(); a bold-wrapped heading
+        # (as pymupdf4llm emits) is cleaned regardless of the backend.
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "x.pdf"
+            p.write_bytes(b"%PDF-1.4")
+            orig = di._HANDLERS[".pdf"]
+            di._HANDLERS[".pdf"] = lambda _p: ("# **Title**\n\nbody", "T", [])
+            try:
+                md = di.convert(p).markdown
+            finally:
+                di._HANDLERS[".pdf"] = orig
+        self.assertIn("# Title", md)
+        self.assertNotIn("**Title**", md)
+
     def test_needs_transcription_model_only_for_audio(self):
         for s in (".mp3", ".WAV", ".m4a", ".flac"):
             self.assertTrue(di.needs_transcription_model(s), s)
