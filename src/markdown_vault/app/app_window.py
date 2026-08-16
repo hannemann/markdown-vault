@@ -40,16 +40,16 @@ from markdown_vault.ui.status_bar import StatusBar
 from markdown_vault.ui.preferences import PreferencesDialog
 from markdown_vault.vault.wikilink_autofix import WikilinkResolver, analyze_text, find_broken_ranges
 from markdown_vault.editor.find_bar import FindBar
-from .monitor_handler import MonitorHandler
-from .tab_manager import TabOrchestrator
-from .session_manager import SessionManager
+from markdown_vault.app.monitor_handler import MonitorHandler
+from markdown_vault.app.tab_manager import TabOrchestrator
+from markdown_vault.app.session_manager import SessionManager
 from markdown_vault.preview.markdown_help import MarkdownHelpOverlay
 from markdown_vault.editor.autosave import AutosaveManager
 from markdown_vault.vault.file_ops import FileOps
-from .view_mode_manager import ViewModeManager
+from markdown_vault.app.view_mode_manager import ViewModeManager
 from markdown_vault.editor.content_changes import ContentChangeHandler
-from .input_manager import InputManager
-from .file_manager import FileManager
+from markdown_vault.app.input_manager import InputManager
+from markdown_vault.app.file_manager import FileManager
 from markdown_vault.core import config
 from markdown_vault.uikit import dialogs
 from markdown_vault.uikit import banners as banner_mod

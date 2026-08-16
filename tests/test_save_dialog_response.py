@@ -45,7 +45,7 @@ class TestSaveDialogResponse(unittest.TestCase):
 
     def _make_window(self):
         """Minimaler AppWindow-Fragment mit _on_save_dialog_response."""
-        import markdown_vault.app_window as aw
+        import markdown_vault.app.app_window as aw
 
         # Nur die Methoden die wir testen, isoliert
         class FakeWindow:

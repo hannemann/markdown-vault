@@ -44,7 +44,7 @@ gi.require_version("Adw", "1")
 
 from gi.repository import Adw, Gio
 
-from .app_window import MainWindow
+from markdown_vault.app.app_window import MainWindow
 
 
 class MarkdownVaultApp(Adw.Application):

@@ -1,4 +1,4 @@
-"""Tests for markdown_vault.monitor_handler — MonitorHandler-Orchestrierung."""
+"""Tests for markdown_vault.app.monitor_handler — MonitorHandler-Orchestrierung."""
 
 import shutil
 import tempfile
@@ -16,7 +16,7 @@ class _GLibMock:
 
 
 def _handler_class():
-    from markdown_vault.monitor_handler import MonitorHandler
+    from markdown_vault.app.monitor_handler import MonitorHandler
     return MonitorHandler
 
 
@@ -47,7 +47,7 @@ class TestMonitorHandlerFileCreated(unittest.TestCase):
         )
 
     def test_calls_vault_tree_handle_file_created(self):
-        with patch("markdown_vault.monitor_handler.GLib", _GLibMock):
+        with patch("markdown_vault.app.monitor_handler.GLib", _GLibMock):
             h = self._make()
             h.on_file_created("/vault", "/vault/foo.md")
             self.mock_vault_tree._handle_file_created.assert_called_once_with(
@@ -55,14 +55,14 @@ class TestMonitorHandlerFileCreated(unittest.TestCase):
             )
 
     def test_non_md_skips_index(self):
-        with patch("markdown_vault.monitor_handler.GLib", _GLibMock):
+        with patch("markdown_vault.app.monitor_handler.GLib", _GLibMock):
             h = self._make()
             h.on_file_created("/vault", "/vault/foo.txt")
             self.mock_file_index.add_file.assert_not_called()
             self.mock_backlink.update_file.assert_not_called()
 
     def test_md_calls_file_index_add(self):
-        with patch("markdown_vault.monitor_handler.GLib", _GLibMock):
+        with patch("markdown_vault.app.monitor_handler.GLib", _GLibMock):
             h = self._make()
             p = Path(self._tmp) / "foo.md"
             p.write_text("# Foo", encoding="utf-8")
@@ -70,14 +70,14 @@ class TestMonitorHandlerFileCreated(unittest.TestCase):
             self.mock_file_index.add_file.assert_called_once_with(str(p), vault_path="/vault")
 
     def test_non_utf8_file_handled_gracefully(self):
-        with patch("markdown_vault.monitor_handler.GLib", _GLibMock):
+        with patch("markdown_vault.app.monitor_handler.GLib", _GLibMock):
             h = self._make()
             p = Path(self._tmp) / "bad.md"
             p.write_bytes(b"\xff\xfe binary garbage")
             h.on_file_created("/vault", str(p))
 
     def test_debug_fn_called_with_correct_components(self):
-        with patch("markdown_vault.monitor_handler.GLib", _GLibMock):
+        with patch("markdown_vault.app.monitor_handler.GLib", _GLibMock):
             h = self._make()
             p = Path(self._tmp) / "foo.md"
             p.write_text("# Foo", encoding="utf-8")
@@ -90,7 +90,7 @@ class TestMonitorHandlerFileCreated(unittest.TestCase):
     def test_created_md_with_links_refreshes_sidebar(self):
         """A newly created .md file with links must refresh the sidebar so
         backlinks appear without waiting for a tab switch."""
-        with patch("markdown_vault.monitor_handler.GLib", _GLibMock):
+        with patch("markdown_vault.app.monitor_handler.GLib", _GLibMock):
             h = self._make()
             p = Path(self._tmp) / "new.md"
             p.write_text("[[Target]]", encoding="utf-8")
@@ -100,7 +100,7 @@ class TestMonitorHandlerFileCreated(unittest.TestCase):
 
     def test_created_non_md_does_not_refresh_sidebar(self):
         """A non-.md file must not trigger a sidebar refresh."""
-        with patch("markdown_vault.monitor_handler.GLib", _GLibMock):
+        with patch("markdown_vault.app.monitor_handler.GLib", _GLibMock):
             h = self._make()
             h.on_file_created("/vault", "/vault/readme.txt")
             self.mock_dispatcher.on_file_created.assert_not_called()
@@ -133,7 +133,7 @@ class TestMonitorHandlerFileDeleted(unittest.TestCase):
         )
 
     def test_calls_vault_tree_handle_file_deleted(self):
-        with patch("markdown_vault.monitor_handler.GLib", _GLibMock):
+        with patch("markdown_vault.app.monitor_handler.GLib", _GLibMock):
             h = self._make()
             h.on_file_deleted("/vault", "/vault/foo.md")
             self.mock_vault_tree._handle_file_deleted.assert_called_once_with(
@@ -141,7 +141,7 @@ class TestMonitorHandlerFileDeleted(unittest.TestCase):
             )
 
     def test_non_md_directory_closes_nested_tabs(self):
-        with patch("markdown_vault.monitor_handler.GLib", _GLibMock):
+        with patch("markdown_vault.app.monitor_handler.GLib", _GLibMock):
             h = self._make()
             self.mock_tab_bar.get_all_paths.return_value = [
                 "/vault/dir/file.md",
@@ -155,7 +155,7 @@ class TestMonitorHandlerFileDeleted(unittest.TestCase):
             self.assertNotIn("/vault/outside.md", close_paths)
 
     def test_md_removes_wikilinks_and_file(self):
-        with patch("markdown_vault.monitor_handler.GLib", _GLibMock):
+        with patch("markdown_vault.app.monitor_handler.GLib", _GLibMock):
             h = self._make()
             h.on_file_deleted("/vault", "/vault/Notes.md")
             self.mock_backlink.remove_wikilinks.assert_called_once_with("/vault/Notes.md")
@@ -163,14 +163,14 @@ class TestMonitorHandlerFileDeleted(unittest.TestCase):
             self.mock_file_index.remove_file.assert_called_once_with("/vault/Notes.md")
 
     def test_md_closes_open_tab(self):
-        with patch("markdown_vault.monitor_handler.GLib", _GLibMock):
+        with patch("markdown_vault.app.monitor_handler.GLib", _GLibMock):
             h = self._make()
             self.mock_tab_bar.get_all_paths.return_value = ["/vault/foo.md"]
             h.on_file_deleted("/vault", "/vault/foo.md")
             self.mock_tab_bar.close_tab.assert_called_once_with("/vault/foo.md")
 
     def test_md_does_not_close_if_not_open(self):
-        with patch("markdown_vault.monitor_handler.GLib", _GLibMock):
+        with patch("markdown_vault.app.monitor_handler.GLib", _GLibMock):
             h = self._make()
             self.mock_tab_bar.get_all_paths.return_value = ["/vault/other.md"]
             h.on_file_deleted("/vault", "/vault/foo.md")
@@ -178,7 +178,7 @@ class TestMonitorHandlerFileDeleted(unittest.TestCase):
 
     def test_dispatcher_on_file_deleted_called(self):
         """Dispatcher.on_file_deleted should be called."""
-        with patch("markdown_vault.monitor_handler.GLib", _GLibMock):
+        with patch("markdown_vault.app.monitor_handler.GLib", _GLibMock):
             h = self._make()
             h.on_file_deleted("/vault", "/vault/foo.md")
             self.mock_dispatcher.on_file_deleted.assert_called_once_with(
@@ -186,7 +186,7 @@ class TestMonitorHandlerFileDeleted(unittest.TestCase):
             )
 
     def test_debug_fn_called(self):
-        with patch("markdown_vault.monitor_handler.GLib", _GLibMock):
+        with patch("markdown_vault.app.monitor_handler.GLib", _GLibMock):
             h = self._make()
             h.on_file_deleted("/vault", "/vault/foo.md")
             self.assertIn(
@@ -197,7 +197,7 @@ class TestMonitorHandlerFileDeleted(unittest.TestCase):
     def test_non_md_directory_purges_non_open_file_index_entries(self):
         """Directory delete must purge ALL .md entries under the directory,
         not just those that are open as tabs (R9.2)."""
-        with patch("markdown_vault.monitor_handler.GLib", _GLibMock):
+        with patch("markdown_vault.app.monitor_handler.GLib", _GLibMock):
             h = self._make()
             # Simulate non-open .md files in the file index
             self.mock_file_index._path_to_stem = {
@@ -220,7 +220,7 @@ class TestMonitorHandlerFileDeleted(unittest.TestCase):
     def test_non_md_directory_purges_non_open_backlink_index_entries(self):
         """Directory delete must purge ALL backlink entries under the directory,
         not just those that are open as tabs (R9.2)."""
-        with patch("markdown_vault.monitor_handler.GLib", _GLibMock):
+        with patch("markdown_vault.app.monitor_handler.GLib", _GLibMock):
             h = self._make()
             # MagicMock auto-creates _path_to_stem — set to None so the
             # backlink-path branch of _purge_index_prefix is taken.
@@ -258,12 +258,12 @@ class TestMonitorHandlerFileMoved(unittest.TestCase):
         # These are logic tests using synthetic paths. A real move leaves the
         # file at the new path, so on_file_moved ignores moves whose new path
         # is missing on disk (guard tested separately); pretend it exists here.
-        _exists = patch("markdown_vault.monitor_handler.os.path.exists",
+        _exists = patch("markdown_vault.app.monitor_handler.os.path.exists",
                         return_value=True)
         _exists.start()
         self.addCleanup(_exists.stop)
         # Vault membership is config-based; treat any /vault path as a vault.
-        _vault = patch("markdown_vault.monitor_handler.find_vault_name_for_path",
+        _vault = patch("markdown_vault.app.monitor_handler.find_vault_name_for_path",
                        side_effect=lambda p: "vault" if p and p.startswith("/vault") else None)
         _vault.start()
         self.addCleanup(_vault.stop)
@@ -284,7 +284,7 @@ class TestMonitorHandlerFileMoved(unittest.TestCase):
         return self._Handler(**args)
 
     def test_renamed_file_renames_wikilinks(self):
-        with patch("markdown_vault.monitor_handler.GLib", _GLibMock):
+        with patch("markdown_vault.app.monitor_handler.GLib", _GLibMock):
             h = self._make()
             h.on_file_moved("/vault", "/vault/New.md", "/vault/Old.md")
             self.mock_backlink.rename_wikilinks.assert_called_once_with(
@@ -292,14 +292,14 @@ class TestMonitorHandlerFileMoved(unittest.TestCase):
             )
 
     def test_renamed_file_renames_indexes(self):
-        with patch("markdown_vault.monitor_handler.GLib", _GLibMock):
+        with patch("markdown_vault.app.monitor_handler.GLib", _GLibMock):
             h = self._make()
             h.on_file_moved("/vault", "/vault/New.md", "/vault/Old.md")
             self.mock_backlink.rename_file.assert_called_once_with("/vault/Old.md", "/vault/New.md")
             self.mock_file_index.rename_file.assert_called_once_with("/vault/Old.md", "/vault/New.md")
 
     def test_renamed_file_updates_vault_tree(self):
-        with patch("markdown_vault.monitor_handler.GLib", _GLibMock):
+        with patch("markdown_vault.app.monitor_handler.GLib", _GLibMock):
             h = self._make()
             h.on_file_moved("/vault", "/vault/dir/New.md", "/vault/dir/Old.md")
             self.mock_vault_tree._handle_file_moved.assert_called_once_with(
@@ -307,7 +307,7 @@ class TestMonitorHandlerFileMoved(unittest.TestCase):
             )
 
     def test_renamed_file_updates_tab_path(self):
-        with patch("markdown_vault.monitor_handler.GLib", _GLibMock):
+        with patch("markdown_vault.app.monitor_handler.GLib", _GLibMock):
             h = self._make()
             self.mock_tab_bar.get_all_paths.return_value = ["/vault/Old.md", "/vault/other.md"]
             h.on_file_moved("/vault", "/vault/New.md", "/vault/Old.md")
@@ -315,7 +315,7 @@ class TestMonitorHandlerFileMoved(unittest.TestCase):
 
     def test_renamed_file_calls_dispatcher(self):
         """Dispatcher.on_file_moved should be called with all paths."""
-        with patch("markdown_vault.monitor_handler.GLib", _GLibMock):
+        with patch("markdown_vault.app.monitor_handler.GLib", _GLibMock):
             h = self._make()
             h.on_file_moved("/vault", "/vault/New.md", "/vault/Old.md")
             self.mock_dispatcher.on_file_moved.assert_called_once_with(
@@ -323,7 +323,7 @@ class TestMonitorHandlerFileMoved(unittest.TestCase):
             )
 
     def test_moved_from_outside_calls_handle_file_created(self):
-        with patch("markdown_vault.monitor_handler.GLib", _GLibMock):
+        with patch("markdown_vault.app.monitor_handler.GLib", _GLibMock):
             h = self._make()
             h.on_file_moved("/vault", "/vault/new_from_outside.md", None)
             self.mock_vault_tree._handle_file_created.assert_called_once_with(
@@ -331,7 +331,7 @@ class TestMonitorHandlerFileMoved(unittest.TestCase):
             )
 
     def test_moved_from_outside_adds_to_indexes(self):
-        with patch("markdown_vault.monitor_handler.GLib", _GLibMock):
+        with patch("markdown_vault.app.monitor_handler.GLib", _GLibMock):
             h = self._make()
             p = Path(self._tmp) / "arrived.md"
             p.write_text("# Arrived", encoding="utf-8")
@@ -339,7 +339,7 @@ class TestMonitorHandlerFileMoved(unittest.TestCase):
             self.mock_file_index.add_file.assert_called_once_with(str(p), vault_path="/vault")
 
     def test_moved_non_md_from_outside_no_index(self):
-        with patch("markdown_vault.monitor_handler.GLib", _GLibMock):
+        with patch("markdown_vault.app.monitor_handler.GLib", _GLibMock):
             h = self._make()
             h.on_file_moved("/vault", "/vault/readme.txt", None)
             self.mock_file_index.add_file.assert_not_called()
@@ -347,7 +347,7 @@ class TestMonitorHandlerFileMoved(unittest.TestCase):
     def test_move_back_to_md_notifies_sidebar_dispatcher(self):
         """Re-renaming a non-.md file back to .md must refresh the sidebar via
         the dispatcher so backlinks reappear without a tab switch."""
-        with patch("markdown_vault.monitor_handler.GLib", _GLibMock):
+        with patch("markdown_vault.app.monitor_handler.GLib", _GLibMock):
             h = self._make()
             self.mock_tab_bar.get_all_paths.return_value = []
             self.mock_file_index.has_path.return_value = False
@@ -363,7 +363,7 @@ class TestMonitorHandlerFileMoved(unittest.TestCase):
     def test_moved_in_md_with_links_refreshes_sidebar(self):
         """A .md file moved in from outside with links also refreshes the
         sidebar backlinks (consistent with _notify_external_change)."""
-        with patch("markdown_vault.monitor_handler.GLib", _GLibMock):
+        with patch("markdown_vault.app.monitor_handler.GLib", _GLibMock):
             h = self._make()
             self.mock_tab_bar.get_all_paths.return_value = []
             self.mock_file_index.has_path.return_value = False
@@ -376,7 +376,7 @@ class TestMonitorHandlerFileMoved(unittest.TestCase):
         """A .md file that is not open/indexed but renamed to a non-.md
         extension must still have its old index entries purged (treated like
         a deletion — no stale backlinks may remain)."""
-        with patch("markdown_vault.monitor_handler.GLib", _GLibMock):
+        with patch("markdown_vault.app.monitor_handler.GLib", _GLibMock):
             h = self._make()
             self.mock_tab_bar.get_all_paths.return_value = []
             self.mock_file_index.has_path.return_value = False
@@ -388,7 +388,7 @@ class TestMonitorHandlerFileMoved(unittest.TestCase):
     def test_untracked_md_to_md_rename_purges_old_entry(self):
         """An untracked .md→.md rename removes the old index entry while the
         new one is indexed (no stale path may remain)."""
-        with patch("markdown_vault.monitor_handler.GLib", _GLibMock):
+        with patch("markdown_vault.app.monitor_handler.GLib", _GLibMock):
             h = self._make()
             self.mock_tab_bar.get_all_paths.return_value = []
             self.mock_file_index.has_path.return_value = False
@@ -403,7 +403,7 @@ class TestMonitorHandlerFileMoved(unittest.TestCase):
         """R14.3: an external rename of a subdirectory .md that is not in an
         open tab (and not in the root-only FileIndex) must still rewrite
         inbound backlinks — not be treated as a brand-new file."""
-        with patch("markdown_vault.monitor_handler.GLib", _GLibMock):
+        with patch("markdown_vault.app.monitor_handler.GLib", _GLibMock):
             h = self._make()
             self.mock_tab_bar.get_all_paths.return_value = []
             self.mock_file_index.has_path.return_value = False
@@ -421,7 +421,7 @@ class TestMonitorHandlerFileMoved(unittest.TestCase):
 
     def test_atomic_save_over_open_file_triggers_external_change(self):
         """Atomic save (temp→target) over an open tab: notify external change."""
-        with patch("markdown_vault.monitor_handler.GLib", _GLibMock):
+        with patch("markdown_vault.app.monitor_handler.GLib", _GLibMock):
             h = self._make()
             self.mock_tab_bar.get_all_paths.return_value = ["/vault/target.md"]
             self.mock_file_index.has_path.return_value = False
@@ -433,7 +433,7 @@ class TestMonitorHandlerFileMoved(unittest.TestCase):
 
     def test_atomic_save_over_open_file_fires_banner_callback(self):
         """Atomic save over open tab calls the injected banner callback."""
-        with patch("markdown_vault.monitor_handler.GLib", _GLibMock):
+        with patch("markdown_vault.app.monitor_handler.GLib", _GLibMock):
             banner_cb = MagicMock()
             h = self._make(notify_banner_cb=banner_cb)
             self.mock_tab_bar.get_all_paths.return_value = ["/vault/target.md"]
@@ -443,7 +443,7 @@ class TestMonitorHandlerFileMoved(unittest.TestCase):
 
     def test_atomic_save_over_indexed_file_triggers_external_change(self):
         """Atomic save where dest is in file_index (not open tab) also triggers."""
-        with patch("markdown_vault.monitor_handler.GLib", _GLibMock):
+        with patch("markdown_vault.app.monitor_handler.GLib", _GLibMock):
             h = self._make()
             self.mock_tab_bar.get_all_paths.return_value = []
             self.mock_file_index.has_path.side_effect = (
@@ -456,7 +456,7 @@ class TestMonitorHandlerFileMoved(unittest.TestCase):
 
     def test_atomic_save_new_file_creates_tree_entry(self):
         """Atomic save to a brand-new (untracked) path: treat as creation."""
-        with patch("markdown_vault.monitor_handler.GLib", _GLibMock):
+        with patch("markdown_vault.app.monitor_handler.GLib", _GLibMock):
             h = self._make()
             self.mock_tab_bar.get_all_paths.return_value = []
             self.mock_file_index.has_path.return_value = False
@@ -475,7 +475,7 @@ class TestMonitorHandlerFileMoved(unittest.TestCase):
         event for an already-handled move raises a false 'modified externally'
         banner. vault_path here is the *projects* subdir; other_path is in
         *inbox*."""
-        with patch("markdown_vault.monitor_handler.GLib", _GLibMock):
+        with patch("markdown_vault.app.monitor_handler.GLib", _GLibMock):
             h = self._make()
             # dest is an open tab, source is not tracked (root-only index).
             self.mock_tab_bar.get_all_paths.return_value = ["/vault/projects/x.md"]
@@ -493,8 +493,8 @@ class TestMonitorHandlerFileMoved(unittest.TestCase):
         """A moved event whose new path doesn't exist is stale (e.g. an
         app-initiated move already handled, or a late reverse-direction
         duplicate) — it must not revert live state."""
-        with patch("markdown_vault.monitor_handler.GLib", _GLibMock), \
-                patch("markdown_vault.monitor_handler.os.path.exists",
+        with patch("markdown_vault.app.monitor_handler.GLib", _GLibMock), \
+                patch("markdown_vault.app.monitor_handler.os.path.exists",
                       return_value=False):
             h = self._make()
             h.on_file_moved("/vault", "/vault/New.md", "/vault/Old.md")
@@ -505,7 +505,7 @@ class TestMonitorHandlerFileMoved(unittest.TestCase):
 
     def test_genuine_rename_still_works(self):
         """Source-tracked rename still takes the rename path (no banner)."""
-        with patch("markdown_vault.monitor_handler.GLib", _GLibMock):
+        with patch("markdown_vault.app.monitor_handler.GLib", _GLibMock):
             banner_cb = MagicMock()
             h = self._make(notify_banner_cb=banner_cb)
             self.mock_tab_bar.get_all_paths.return_value = ["/vault/Old.md"]
@@ -521,7 +521,7 @@ class TestMonitorHandlerFileMoved(unittest.TestCase):
         """Renaming a tracked .md file to a non-.md extension must be treated
         like a deletion: close the tab, remove the tree entry and purge all
         index entries — nothing may remain under the new extension."""
-        with patch("markdown_vault.monitor_handler.GLib", _GLibMock):
+        with patch("markdown_vault.app.monitor_handler.GLib", _GLibMock):
             h = self._make()
             self.mock_tab_bar.get_all_paths.return_value = ["/vault/Old.md"]
             self.mock_file_index.has_path.return_value = False
@@ -544,7 +544,7 @@ class TestMonitorHandlerFileMoved(unittest.TestCase):
     def test_md_to_non_md_rename_closes_tab_when_not_indexed(self):
         """A .md→.txt rename of a file that is only open as a tab (not in the
         file index) still closes the tab and purges the backlink entry."""
-        with patch("markdown_vault.monitor_handler.GLib", _GLibMock):
+        with patch("markdown_vault.app.monitor_handler.GLib", _GLibMock):
             h = self._make()
             self.mock_tab_bar.get_all_paths.return_value = ["/vault/sub/Old.md"]
             self.mock_file_index.has_path.return_value = False
@@ -581,14 +581,14 @@ class TestMonitorHandlerContentChanged(unittest.TestCase):
         )
 
     def test_updates_backlink_index(self):
-        with patch("markdown_vault.monitor_handler.GLib", _GLibMock):
+        with patch("markdown_vault.app.monitor_handler.GLib", _GLibMock):
             h = self._make()
             h.on_content_changed("/vault", "/vault/foo.md")
             self.mock_backlink.update_file.assert_called()
 
     def test_dispatcher_on_content_changed_called(self):
         """Dispatcher.on_content_changed should be called."""
-        with patch("markdown_vault.monitor_handler.GLib", _GLibMock):
+        with patch("markdown_vault.app.monitor_handler.GLib", _GLibMock):
             h = self._make()
             h.on_content_changed("/vault", "/vault/foo.md")
             self.mock_dispatcher.on_content_changed.assert_called_once_with(
@@ -596,7 +596,7 @@ class TestMonitorHandlerContentChanged(unittest.TestCase):
             )
 
     def test_debug_fn_called_with_components(self):
-        with patch("markdown_vault.monitor_handler.GLib", _GLibMock):
+        with patch("markdown_vault.app.monitor_handler.GLib", _GLibMock):
             h = self._make()
             h.on_content_changed("/vault", "/vault/foo.md")
             self.assertIn(
@@ -605,7 +605,7 @@ class TestMonitorHandlerContentChanged(unittest.TestCase):
             )
 
     def test_unreadable_file_handled_gracefully(self):
-        with patch("markdown_vault.monitor_handler.GLib", _GLibMock):
+        with patch("markdown_vault.app.monitor_handler.GLib", _GLibMock):
             h = self._make()
             h.on_content_changed("/vault", "/vault/nonexistent.md")
             args = self.mock_backlink.update_file.call_args

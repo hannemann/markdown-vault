@@ -19,7 +19,7 @@ class TestDialogIsShown(unittest.TestCase):
 
     def _make_fake_window(self, tab_bar, editor1, editor2):
         """Minimal FakeWindow with close-request methods."""
-        import markdown_vault.app_window as aw
+        import markdown_vault.app.app_window as aw
 
         class FakeWindow:
             def __init__(self, tb, e1, e2):

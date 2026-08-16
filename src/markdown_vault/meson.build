@@ -1,16 +1,10 @@
 py_sources = files(
   '__init__.py',
   '__main__.py',
-  'app_window.py',
-  'file_manager.py',
-   'input_manager.py',
-   'main.py',
-  'monitor_handler.py',
-  'session_manager.py',
-  'tab_manager.py',
-   'view_mode_manager.py',
+  'main.py',
 )
 
+subdir('app')
 subdir('core')
 subdir('editor')
 subdir('graph')

@@ -75,7 +75,7 @@ class TestApplyBacklinkBuild(unittest.TestCase):
 
     def _make_fake_window(self, **overrides):
         import unittest.mock
-        import markdown_vault.app_window as aw
+        import markdown_vault.app.app_window as aw
 
         class FakeWindow:
             def __init__(self):
@@ -145,10 +145,10 @@ class TestApplyBacklinkBuild(unittest.TestCase):
     def test_coalesce_backlink_rebuild_debounces(self):
         """R17.1: consecutive coalesce calls while a rebuild is already
         pending must not stack further timers (livelock protection)."""
-        import markdown_vault.app_window as aw
+        import markdown_vault.app.app_window as aw
 
         win = self._make_fake_window()
-        with patch("markdown_vault.app_window.GLib") as glib:
+        with patch("markdown_vault.app.app_window.GLib") as glib:
             win._coalesce_backlink_rebuild()
             win._coalesce_backlink_rebuild()
         self.assertEqual(glib.timeout_add.call_count, 1)
@@ -164,8 +164,8 @@ class TestApplyBacklinkBuild(unittest.TestCase):
         win = self._make_fake_window()
         win._rebuild_timeout = 123
         vaults = [{"name": "A", "path": "/A"}]
-        with patch("markdown_vault.app_window.config.load_vaults", return_value=vaults):
-            with patch("markdown_vault.app_window.GLib"):
+        with patch("markdown_vault.app.app_window.config.load_vaults", return_value=vaults):
+            with patch("markdown_vault.app.app_window.GLib"):
                 result = win._do_backlink_rebuild()
         self.assertFalse(result)
         self.assertIsNone(win._rebuild_timeout)
@@ -176,7 +176,7 @@ class TestApplyBacklinkBuild(unittest.TestCase):
         timer source so it cannot fire after window teardown."""
         win = self._make_fake_window()
         win._rebuild_timeout = 99
-        with patch("markdown_vault.app_window.GLib") as glib:
+        with patch("markdown_vault.app.app_window.GLib") as glib:
             win._cancel_backlink_rebuild()
         glib.source_remove.assert_called_once_with(99)
         self.assertIsNone(win._rebuild_timeout)
@@ -184,7 +184,7 @@ class TestApplyBacklinkBuild(unittest.TestCase):
     def test_cancel_backlink_rebuild_noop_when_none(self):
         """R18.1: cancelling with no pending timer must be a no-op."""
         win = self._make_fake_window()
-        with patch("markdown_vault.app_window.GLib") as glib:
+        with patch("markdown_vault.app.app_window.GLib") as glib:
             win._cancel_backlink_rebuild()
         glib.source_remove.assert_not_called()
         self.assertIsNone(win._rebuild_timeout)
@@ -204,7 +204,7 @@ class TestApplyBacklinkBuild(unittest.TestCase):
         config SSOT, never a single vault, so one vault can never replace the
         whole index."""
         import unittest.mock
-        import markdown_vault.app_window as aw
+        import markdown_vault.app.app_window as aw
 
         vaults = [
             {"name": "A", "path": "/A"},
@@ -212,7 +212,7 @@ class TestApplyBacklinkBuild(unittest.TestCase):
         ]
         win = self._make_fake_window()
         win._switch_vault = unittest.mock.Mock()
-        with patch("markdown_vault.app_window.config.load_vaults", return_value=vaults):
+        with patch("markdown_vault.app.app_window.config.load_vaults", return_value=vaults):
             aw.MainWindow._on_vault_added(win, None, "/B")
         win._schedule_backlink_build.assert_called_once_with(vaults)
         win._file_index.build.assert_called_once_with(vaults)

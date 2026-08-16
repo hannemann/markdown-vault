@@ -1,9 +1,9 @@
-"""Tests for markdown_vault.input_manager — InputManager."""
+"""Tests for markdown_vault.app.input_manager — InputManager."""
 
 import unittest
 import unittest.mock
 
-from markdown_vault.input_manager import InputManager
+from markdown_vault.app.input_manager import InputManager
 
 
 class TestInputManagerInit(unittest.TestCase):
