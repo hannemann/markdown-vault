@@ -53,11 +53,17 @@ DIRS = ["src", "tests", "scripts", "tests-e2e"]
 #   markdown_vault.<mod>[.x]  ->  markdown_vault.<pkg>.<mod>[.x]
 #   (covers `from markdown_vault.<mod> import`, `import markdown_vault.<mod>`,
 #    "markdown_vault.<mod>..." in mock.patch/sys.modules/argparse/docstrings)
-# The trailing lookahead makes it idempotent for the collision packages (editor,
-# graph, preview, search): after one run `markdown_vault.preview` becomes
-# `markdown_vault.preview.preview`, and a second run must NOT match its own output.
-# Refuse to match when the next component is itself one of the moving modules.
-reA = re.compile(rf"(?<![\w.])markdown_vault\.({alt})\b(?!\.({alt})\b)")
+# Two trailing lookaheads make it idempotent for the collision packages whose name
+# equals a moving module (editor, graph, preview, search) — a second run must never
+# match its own output and grow another component. After one run the package's own
+# output takes two shapes, and both must be refused:
+#   * `markdown_vault.<pkg>.<mod>`         (dotted chain)   -> next component is a mod
+#   * `from markdown_vault.<pkg> import <mod>` (submodule)  -> ` import <mod>` follows
+# The first lookahead skips the dotted chain, the second the `import <submodule>` form
+# (which Pass B produced from the pre-move `from markdown_vault import <mod>`).
+reA = re.compile(
+    rf"(?<![\w.])markdown_vault\.({alt})\b(?!\.({alt})\b)(?! import (?:{alt})\b)"
+)
 
 
 def _split(names_str):
@@ -92,14 +98,18 @@ def rewrite_line(line):
     return [line.rstrip("\n")]
 
 
+_SELF = Path(__file__).resolve()
+
+
 def _target_files():
     for d in DIRS:
         base = REPO / d
         if not base.exists():
             continue
         for f in base.rglob("*.py"):
-            if "__pycache__" not in f.parts:
-                yield f
+            if "__pycache__" in f.parts or f.resolve() == _SELF:
+                continue  # never rewrite this script's own source (e.g. docstring examples)
+            yield f
 
 
 # Pass B is line-based, so the parenthesised multi-line form
