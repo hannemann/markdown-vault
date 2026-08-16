@@ -406,7 +406,7 @@ def answer(question: str, hits, chat: ChatBackend, language: str = "English",
         if not hits:
             return _no_context_answer()
     system, user, sources = build_messages(question, hits, language, system_template)
-    from . import llama_runtime
+    from markdown_vault.search import llama_runtime
     try:
         text = chat.chat(system, user)
     except llama_runtime.ReasoningBudgetExhausted:
@@ -494,7 +494,7 @@ def answer_question(question: str, semantic_index, settings: dict, vaults,
     # instead of being silently truncated); the OpenAI-compatible server sizes
     # its own context, so no client budget there.
     if backend == "local":
-        from . import llama_runtime
+        from markdown_vault.search import llama_runtime
         gguf = config.resolve_model_path(settings)
         unavailable = llama_runtime.availability(gguf)
         if unavailable:                       # no binding or no model file yet

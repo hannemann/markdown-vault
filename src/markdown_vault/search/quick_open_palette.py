@@ -17,11 +17,11 @@ gi.require_version("Adw", "1")
 
 from gi.repository import Gtk, Adw, GObject, GLib, Gdk
 
-from . import search_logic
+from markdown_vault.search import search_logic
 from markdown_vault.preview import markdown_widgets
 from markdown_vault.markdown import frontmatter
 from markdown_vault.core import path_utils
-from .quick_open import fuzzy_match
+from markdown_vault.search.quick_open import fuzzy_match
 
 logger = logging.getLogger(__name__)
 
@@ -146,7 +146,7 @@ class QuickOpenPalette(Adw.Dialog):
         self._dep_bar.append(Gtk.Box(hexpand=True))   # right-align the filters
         self._scope_dropdown = None
         if self._scope:
-            from .vault_scope import VaultScope
+            from markdown_vault.search.vault_scope import VaultScope
             self._scope_dropdown = VaultScope(
                 self._scope["get_vaults_named"], self._scope["get_active"],
                 self._scope["get_scope"], self._scope["set_scope"],
@@ -729,7 +729,7 @@ class QuickOpenPalette(Adw.Dialog):
                                        should_cancel=should_cancel)
             except Exception as exc:  # noqa: BLE001 — surface any failure to the UI
                 logger.debug("ask failed", exc_info=True)
-                from .ask import Answer
+                from markdown_vault.search.ask import Answer
                 ans = Answer(text="", error=str(exc))
             GLib.idle_add(self._show_answer, generation, ans)
 
@@ -922,7 +922,7 @@ class QuickOpenPalette(Adw.Dialog):
                                                 should_cancel=should_cancel)
             except Exception as exc:  # noqa: BLE001 — surface failure to the UI
                 logger.debug("ask (selected) failed", exc_info=True)
-                from .ask import Answer
+                from markdown_vault.search.ask import Answer
                 ans = Answer(text="", error=str(exc))
             GLib.idle_add(self._show_answer, generation, ans)
 

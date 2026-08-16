@@ -6,25 +6,14 @@ py_sources = files(
   'document_import.py',
   'file_manager.py',
    'input_manager.py',
-   'llama_runtime.py',
    'main.py',
   'monitor_handler.py',
   'preferences.py',
-  'quick_open.py',
-  'ask.py',
-  'lexical_search.py',
-  'quick_open_palette.py',
-  'search.py',
-  'search_backend.py',
-  'search_logic.py',
-  'semantic_index.py',
-  'semantic_search.py',
   'session_manager.py',
   'sidebar.py',
   'status_bar.py',
   'tab_manager.py',
    'view_mode_manager.py',
-  'vault_scope.py',
   'web_import.py',
 )
 
@@ -33,6 +22,7 @@ subdir('editor')
 subdir('graph')
 subdir('markdown')
 subdir('preview')
+subdir('search')
 subdir('uikit')
 subdir('vault')
 

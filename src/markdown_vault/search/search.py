@@ -27,7 +27,7 @@ gi.require_version("Adw", "1")
 
 from gi.repository import Gtk, GObject, GLib, Gdk
 
-from . import search_backend, search_logic
+from markdown_vault.search import search_backend, search_logic
 from markdown_vault.markdown import frontmatter
 from markdown_vault.core import path_utils
 
@@ -107,7 +107,7 @@ class SearchBar(Gtk.Box):
             scope_sep.set_margin_start(2)
             scope_sep.set_margin_end(2)
             input_box.append(scope_sep)
-            from .vault_scope import VaultScope
+            from markdown_vault.search.vault_scope import VaultScope
             self._scope_dropdown = VaultScope(
                 self._scope["get_vaults_named"], self._scope["get_active"],
                 self._scope["get_scope"], self._scope["set_scope"],

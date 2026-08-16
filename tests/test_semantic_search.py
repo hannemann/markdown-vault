@@ -1,9 +1,9 @@
-"""Tests for markdown_vault.semantic_search (Phase 5 core, backend-agnostic)."""
+"""Tests for markdown_vault.search.semantic_search (Phase 5 core, backend-agnostic)."""
 
 import unittest
 import urllib.error
 
-from markdown_vault import semantic_search as ss
+from markdown_vault.search import semantic_search as ss
 
 
 class _StubEmbedder:

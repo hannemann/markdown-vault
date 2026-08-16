@@ -309,7 +309,7 @@ class PreferencesDialog(Adw.PreferencesDialog):
         self.add(web)
 
         # ── Search page (overview → Embedding / Ask / Prompt subpages) ──
-        from . import ask as _ask
+        from markdown_vault.search import ask as _ask
         self._emb_subpage = self._build_embedding_subpage()
         self._prompt_subpage = self._build_prompt_subpage(_ask)
         self._runtime_subpage = self._build_runtime_subpage()
@@ -775,7 +775,7 @@ class PreferencesDialog(Adw.PreferencesDialog):
                 self._settings.get("ask_n_gpu_layers", 0), 0, 999, 1, 8, 0.0),
             digits=0)
         self._ask_gpu_row.connect("notify::value", self._on_ask_gpu_layers_changed)
-        from . import llama_runtime
+        from markdown_vault.search import llama_runtime
         self._ask_gpu_row.set_visible(llama_runtime.supports_gpu())
         group.add(self._ask_gpu_row)
 
@@ -887,7 +887,7 @@ class PreferencesDialog(Adw.PreferencesDialog):
     def _refresh_kv_hint(self) -> None:
         """V-cache subtitle: warn when it's quantized but flash attention (which
         it needs) is off — the user's decision basis."""
-        from . import llama_runtime
+        from markdown_vault.search import llama_runtime
         text = ("Value-cache precision. Quantizing V (below f16) needs flash "
                 "attention.")
         if llama_runtime.kv_needs_flash(self._settings.get("ask_kv_type_v", "f16")) \
@@ -1133,7 +1133,7 @@ class PreferencesDialog(Adw.PreferencesDialog):
         self._persist_debounced()
 
     def _on_ask_prompt_changed(self, buffer) -> None:
-        from . import ask as _ask
+        from markdown_vault.search import ask as _ask
         text = buffer.get_text(
             buffer.get_start_iter(), buffer.get_end_iter(), False)
         # Store empty when unchanged from the built-in default, so the prompt
@@ -1433,7 +1433,7 @@ class PreferencesDialog(Adw.PreferencesDialog):
         """Set the GPU-layers subtitle to a hardware-aware recommendation for the
         selected model (updates when the model changes)."""
         base = "Layers offloaded to the GPU. 0 = pure CPU, 999 = all."
-        from . import llama_runtime
+        from markdown_vault.search import llama_runtime
         advice = llama_runtime.gpu_layers_advice(
             config.resolve_model_path(self._settings))
         self._ask_gpu_row.set_subtitle(f"{base} {advice}" if advice else base)
@@ -1615,7 +1615,7 @@ class PreferencesDialog(Adw.PreferencesDialog):
 
     def _test_ollama_worker(self, button, url, model) -> None:
         try:
-            from .semantic_search import OllamaEmbedder
+            from markdown_vault.search.semantic_search import OllamaEmbedder
             vec = OllamaEmbedder(model, url).embed(["connection test"], is_query=True)
             dim = len(vec[0]) if vec else 0
             ok, msg = True, f"Connected — {model} OK (dim {dim})"
@@ -1634,7 +1634,7 @@ class PreferencesDialog(Adw.PreferencesDialog):
 
     def _test_onnx_worker(self, button, model_path, tok_path) -> None:
         try:
-            from .semantic_search import OnnxEmbedder
+            from markdown_vault.search.semantic_search import OnnxEmbedder
             vec = OnnxEmbedder(model_path, tok_path).embed(["probe"])
             dim = len(vec[0]) if vec else 0
             ok, msg = True, f"Model loads and embeds OK (dim {dim})"

@@ -16,7 +16,7 @@ The rule needs three ingredients or it is red on arrival / blind (review H8.4):
    namespace (``markdown_vault.llama``) or embedded Python source (``markdown_vault.
    __path__``) is ignored;
 3. the resolving prefix must be a real ``.py`` module, not a package directory, so a
-   stale ``markdown_vault.search`` is not excused by the *package* ``search/``.
+   stale ``markdown_vault.search.search`` is not excused by the *package* ``search/``.
 """
 
 import ast

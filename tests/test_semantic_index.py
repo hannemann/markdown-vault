@@ -1,4 +1,4 @@
-"""Tests for markdown_vault.semantic_index.SemanticIndexManager."""
+"""Tests for markdown_vault.search.semantic_index.SemanticIndexManager."""
 
 import os
 import shutil
@@ -6,8 +6,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from markdown_vault import semantic_index as SI
-from markdown_vault.semantic_index import SemanticIndexManager
+from markdown_vault.search import semantic_index as SI
+from markdown_vault.search.semantic_index import SemanticIndexManager
 
 
 class _StubEmbedder:
@@ -190,7 +190,7 @@ class TestSemanticIndexManager(unittest.TestCase):
         self.assertEqual(events, [True, False])  # one enter, one exit
 
     def test_snippet_skips_leading_markup_lines(self):
-        from markdown_vault.semantic_search import Chunk
+        from markdown_vault.search.semantic_search import Chunk
         chunk = Chunk("/n.md", 47, "---\nreal content on line 48.")
         snippet, line = SemanticIndexManager._snippet(chunk)
         self.assertEqual(snippet, "real content on line 48.")
@@ -358,8 +358,8 @@ class TestSemanticIndexManager(unittest.TestCase):
     def test_backend_error_aborts_without_per_chunk_retry(self):
         # R25.1/R26.1: a hung backend aborts the embed via BackendUnavailable —
         # no per-chunk retry, and the caller decides what (not) to persist.
-        from markdown_vault.semantic_search import Chunk
-        from markdown_vault.semantic_index import BackendUnavailable
+        from markdown_vault.search.semantic_search import Chunk
+        from markdown_vault.search.semantic_index import BackendUnavailable
         e = _HungEmbedder()
         m = self._manager(e)
         chunks = [Chunk("/a.md", i, f"text number {i}") for i in range(40)]
@@ -452,11 +452,11 @@ class TestSemanticIndexManager(unittest.TestCase):
         self.assertNotIn("bad.md", paths)  # failing chunk skipped
 
 
-from markdown_vault.semantic_index import (
+from markdown_vault.search.semantic_index import (
     _tokenize, _query_terms, _name_matches, _heading_words_by_level, _boost,
     _ASK_STOPWORDS,
 )
-from markdown_vault.semantic_search import Chunk
+from markdown_vault.search.semantic_search import Chunk
 
 
 class TestBoostHelpers(unittest.TestCase):

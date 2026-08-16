@@ -1,11 +1,11 @@
-"""Tests for markdown_vault.search_backend (ripgrep + Python fallback)."""
+"""Tests for markdown_vault.search.search_backend (ripgrep + Python fallback)."""
 
 import shutil
 import tempfile
 import unittest
 from pathlib import Path
 
-from markdown_vault import search_backend as sb
+from markdown_vault.search import search_backend as sb
 
 
 class TestSearchPython(unittest.TestCase):
@@ -235,7 +235,7 @@ class TestSubmatchSpans(unittest.TestCase):
 
 class TestHighlightMarkup(unittest.TestCase):
     def setUp(self):
-        from markdown_vault.search import _highlight_markup
+        from markdown_vault.search.search import _highlight_markup
         self._mk = _highlight_markup
 
     def test_bolds_span(self):

@@ -10,7 +10,7 @@ Pure logic, no GTK:
 * :class:`VectorIndex` — holds normalised chunk vectors and answers cosine
   top-K queries with numpy.
 
-The index manager (:mod:`markdown_vault.semantic_index`) owns embedding,
+The index manager (:mod:`markdown_vault.search.semantic_index`) owns embedding,
 caching and threading, and exposes the query methods the search bar and
 quick-open consume.
 

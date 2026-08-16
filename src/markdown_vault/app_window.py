@@ -32,9 +32,9 @@ from markdown_vault.editor.editor import Editor
 from markdown_vault.preview.preview import Preview
 from markdown_vault.editor.tabs import TabBar
 from .sidebar import Sidebar
-from .search import SearchBar
-from . import quick_open
-from .quick_open_palette import QuickOpenPalette
+from markdown_vault.search.search import SearchBar
+from markdown_vault.search import quick_open
+from markdown_vault.search.quick_open_palette import QuickOpenPalette
 from markdown_vault.editor.paned_sizer import PanedSizer
 from .status_bar import StatusBar
 from .preferences import PreferencesDialog
@@ -1409,7 +1409,7 @@ class MainWindow(Adw.ApplicationWindow):
     @staticmethod
     def _read_frontmatter_tags(file_vaults) -> dict:
         """Extract frontmatter tags for each file (bounded head read)."""
-        from .search_backend import frontmatter_tags
+        from markdown_vault.search.search_backend import frontmatter_tags
         file_tags = {}
         for path in file_vaults:
             try:
@@ -1512,7 +1512,7 @@ class MainWindow(Adw.ApplicationWindow):
         user-picked notes as context instead of retrieving.  *on_phase* is the
         UI status hook (loading/thinking).
         """
-        from . import ask
+        from markdown_vault.search import ask
         return ask.answer_question(
             question, self._semantic_index, self._settings,
             self._scope_vault_paths(), self._answer_language(),
@@ -1575,7 +1575,7 @@ class MainWindow(Adw.ApplicationWindow):
         GLib.idle_add(self._set_semantic_available, True)
         with self._semantic_build_lock:
             try:
-                from .semantic_index import SemanticIndexManager
+                from markdown_vault.search.semantic_index import SemanticIndexManager
                 embedder, tag = self._build_semantic_embedder()
                 manager = SemanticIndexManager(
                     embedder, self._vault_tree.get_vault_paths, config.STATE_DIR,
@@ -1663,14 +1663,14 @@ class MainWindow(Adw.ApplicationWindow):
         ``(embedder, signature_tag)``."""
         backend = self._settings.get("semantic_backend", "onnx")
         if backend == "onnx":
-            from .semantic_search import OnnxEmbedder
+            from markdown_vault.search.semantic_search import OnnxEmbedder
             onnx_dir = (self._settings.get("semantic_onnx_dir")
                         or str(config.STATE_DIR / "onnx"))
             model = str(Path(onnx_dir) / "model.onnx")
             tokenizer = str(Path(onnx_dir) / "tokenizer.json")
             logger.info("semantic search: onnx backend (model=%s)", model)
             return OnnxEmbedder(model, tokenizer), self._onnx_sig(model, tokenizer)
-        from .semantic_search import OllamaEmbedder
+        from markdown_vault.search.semantic_search import OllamaEmbedder
         model = (self._settings.get("semantic_ollama_model")
                  or config.default("semantic_ollama_model"))
         url = (self._settings.get("semantic_ollama_url")

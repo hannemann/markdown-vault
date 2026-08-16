@@ -10,8 +10,8 @@ from gi.repository import Adw
 
 Adw.init()
 
-from markdown_vault.quick_open_palette import QuickOpenPalette
-from markdown_vault.quick_open import QuickResult
+from markdown_vault.search.quick_open_palette import QuickOpenPalette
+from markdown_vault.search.quick_open import QuickResult
 
 
 def _sem(path):
@@ -67,7 +67,7 @@ class TestFirstRow(unittest.TestCase):
         return QuickOpenPalette(make_engine=lambda: None, semantic_query=lambda q: [])
 
     def test_first_row_skips_non_openable_answer_row(self):
-        from markdown_vault.ask import Source
+        from markdown_vault.search.ask import Source
         p = self._palette()
         p._results.append(p._answer_row("the answer"))          # no _mv_open
         p._results.append(p._source_row(Source(1, "/v/cite.md", 42)))  # openable
@@ -81,7 +81,7 @@ class TestFirstRow(unittest.TestCase):
         self.assertIsNone(p._first_row())
 
     def test_first_stop_lands_on_answer_before_citations(self):
-        from markdown_vault.ask import Source
+        from markdown_vault.search.ask import Source
         p = self._palette()
         answer = p._answer_row("the answer")
         p._results.append(answer)

@@ -7,7 +7,7 @@ driven via a monkeypatched is_available, and chat/caching use injected stubs.
 import tempfile
 import unittest
 
-from markdown_vault import llama_runtime as L
+from markdown_vault.search import llama_runtime as L
 
 
 class _StubModel:

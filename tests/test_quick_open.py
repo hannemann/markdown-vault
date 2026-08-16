@@ -1,11 +1,11 @@
-"""Tests for markdown_vault.quick_open (fuzzy switcher backend)."""
+"""Tests for markdown_vault.search.quick_open (fuzzy switcher backend)."""
 
 import shutil
 import tempfile
 import unittest
 from pathlib import Path
 
-from markdown_vault import quick_open as qo
+from markdown_vault.search import quick_open as qo
 
 
 class TestFuzzyMatch(unittest.TestCase):

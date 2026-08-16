@@ -1,6 +1,6 @@
 """Background semantic index over the vault (Phase 5, opt-in).
 
-Builds and maintains a :class:`~markdown_vault.semantic_search.VectorIndex` over
+Builds and maintains a :class:`~markdown_vault.search.semantic_search.VectorIndex` over
 all vault ``.md`` files.  Storage is **per file** (hash + chunks + vectors) so:
 
 * the initial build in a background thread only re-embeds files whose content
@@ -21,8 +21,8 @@ import re
 import threading
 from pathlib import Path
 
-from . import lexical_search
-from .semantic_search import Chunk, VectorIndex, chunk_markdown
+from markdown_vault.search import lexical_search
+from markdown_vault.search.semantic_search import Chunk, VectorIndex, chunk_markdown
 
 logger = logging.getLogger(__name__)
 
@@ -547,7 +547,7 @@ class SemanticIndexManager:
 
     def query_files(self, query: str, top_k: int = 20):
         """Return semantic FileResults (best chunk per file), marked semantic."""
-        from .search_backend import FileResult, Match
+        from markdown_vault.search.search_backend import FileResult, Match
         results = []
         seen: set[str] = set()
         for chunk, score in self._top_hits(query, top_k):
@@ -571,7 +571,7 @@ class SemanticIndexManager:
 
     def query_open(self, query: str, top_k: int = 20):
         """Return semantic hits as quick-open results (best chunk per file)."""
-        from .quick_open import QuickResult
+        from markdown_vault.search.quick_open import QuickResult
         results = []
         seen: set[str] = set()
         for chunk, score in self._top_hits(query, top_k):
