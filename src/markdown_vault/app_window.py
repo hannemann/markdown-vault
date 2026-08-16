@@ -110,6 +110,16 @@ _SIDEBAR_MIN_WIDTH = 220
 _CONTENT_MIN_WIDTH = 320
 
 
+def _app_version() -> str:
+    """The app version, generated into ``_version.py`` by Meson at install time, with a
+    ``dev`` fallback when running from an un-built source tree (e.g. the test suite)."""
+    try:
+        from ._version import __version__
+        return __version__
+    except ImportError:
+        return "dev"
+
+
 class MainWindow(Adw.ApplicationWindow):
     """Top-level application window."""
 
@@ -703,6 +713,7 @@ class MainWindow(Adw.ApplicationWindow):
 
         prefs_section = Gio.Menu()
         prefs_section.append("Preferences", "win.preferences")
+        prefs_section.append("About Markdown Vault", "win.about")
         menu.append_section(None, prefs_section)
 
         menu_btn.set_menu_model(menu)
@@ -829,6 +840,10 @@ class MainWindow(Adw.ApplicationWindow):
 
         action = Gio.SimpleAction.new("preferences", None)
         action.connect("activate", lambda *_: self._open_preferences())
+        self.add_action(action)
+
+        action = Gio.SimpleAction.new("about", None)
+        action.connect("activate", lambda *_: self._open_about())
         self.add_action(action)
 
         action = Gio.SimpleAction.new("zoom-in", None)
@@ -2995,6 +3010,19 @@ class MainWindow(Adw.ApplicationWindow):
         )
         dlg.connect("settings-changed", self._on_preferences_changed)
         dlg.present(self)
+
+    def _open_about(self) -> None:
+        about = Adw.AboutDialog(
+            application_name="Markdown Vault",
+            application_icon="de.hannemann.markdown-vault",
+            version=_app_version(),
+            developer_name="hannemann",
+            comments="Edit and preview Markdown files organized in vaults.",
+            license_type=Gtk.License.GPL_3_0,
+            website="https://github.com/hannemann/markdown-vault",
+            issue_url="https://github.com/hannemann/markdown-vault/issues",
+        )
+        about.present(self)
 
     def _on_preferences_changed(self, _dlg) -> None:
         # settings-changed fires on EVERY preference row change; only reload
