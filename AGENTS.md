@@ -308,6 +308,17 @@ opening files in editor, toggling sidebar etc.) ask the user.
   ask instead of assuming. Make changes only when the user has actually and clearly
   asked for them.
 - **NEVER commit without explicit user request**: NEVER run `git commit` unless the user explicitly asks for it. Not after editing files, not after testing, not ever. The user will say "commit" when ready.
+- **Commit at topic boundaries — cut in front, never carve up afterwards**: as soon as
+  one topic is finished (a feature, a bugfix in a distinct area, a review finding that
+  opens a *new* concern) and BEFORE starting the next, STOP and actively push to commit
+  the finished work — say "let's commit X first", don't let it slide. The user still gives
+  the commit word (see the rule above); insist on the *pause and prompt*, not on committing
+  unasked. This keeps history atomic for free and checkpoints work against loss. Do NOT let
+  several unrelated topics pile up in one working tree and then try to split them into
+  separate commits after the fact — the post-hoc `git stash`/hunk-surgery that requires is
+  slow and has already risked losing work. A fix to code from the *same* still-uncommitted
+  topic stays in that commit (no pause); only a genuinely *different* subsystem or
+  user-facing concern is a boundary.
 
 ## MRU Tab Switcher (Ctrl+Tab / Ctrl+Shift+Tab)
 
