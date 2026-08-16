@@ -207,7 +207,8 @@ status:
 # Wrapped as make targets so graphify runs without a per-command approval
 # prompt (make is pre-approved; a bare `graphify ...` is not).
 graph-build:
-	graphify .
+	graphify . --code-only
+	graphify cluster-only . --no-label
 
 graph-update:
 	graphify update .
