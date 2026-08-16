@@ -31,13 +31,13 @@ from markdown_vault.vault.vault_tree import VaultTree
 from markdown_vault.editor.editor import Editor
 from markdown_vault.preview.preview import Preview
 from markdown_vault.editor.tabs import TabBar
-from .sidebar import Sidebar
+from markdown_vault.ui.sidebar import Sidebar
 from markdown_vault.search.search import SearchBar
 from markdown_vault.search import quick_open
 from markdown_vault.search.quick_open_palette import QuickOpenPalette
 from markdown_vault.editor.paned_sizer import PanedSizer
-from .status_bar import StatusBar
-from .preferences import PreferencesDialog
+from markdown_vault.ui.status_bar import StatusBar
+from markdown_vault.ui.preferences import PreferencesDialog
 from markdown_vault.vault.wikilink_autofix import WikilinkResolver, analyze_text, find_broken_ranges
 from markdown_vault.editor.find_bar import FindBar
 from .monitor_handler import MonitorHandler

@@ -6,10 +6,7 @@ py_sources = files(
    'input_manager.py',
    'main.py',
   'monitor_handler.py',
-  'preferences.py',
   'session_manager.py',
-  'sidebar.py',
-  'status_bar.py',
   'tab_manager.py',
    'view_mode_manager.py',
 )
@@ -21,6 +18,7 @@ subdir('importers')
 subdir('markdown')
 subdir('preview')
 subdir('search')
+subdir('ui')
 subdir('uikit')
 subdir('vault')
 

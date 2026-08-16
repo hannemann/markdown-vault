@@ -1,4 +1,4 @@
-"""Tests for markdown_vault.preferences — preferences dialog structure."""
+"""Tests for markdown_vault.ui.preferences — preferences dialog structure."""
 
 import unittest
 from pathlib import Path
@@ -8,17 +8,17 @@ class TestPreferencesModuleStructure(unittest.TestCase):
     """Verify the preferences module exports the expected class."""
 
     def test_module_has_preferences_dialog(self):
-        src = Path(__file__).resolve().parent.parent / "src" / "markdown_vault" / "preferences.py"
+        src = Path(__file__).resolve().parent.parent / "src" / "markdown_vault" / "ui" / "preferences.py"
         source = src.read_text(encoding="utf-8")
         self.assertIn("class PreferencesDialog", source)
 
     def test_dialog_has_settings_changed_signal(self):
-        src = Path(__file__).resolve().parent.parent / "src" / "markdown_vault" / "preferences.py"
+        src = Path(__file__).resolve().parent.parent / "src" / "markdown_vault" / "ui" / "preferences.py"
         source = src.read_text(encoding="utf-8")
         self.assertIn("settings-changed", source)
 
     def test_dialog_has_all_pages(self):
-        src = Path(__file__).resolve().parent.parent / "src" / "markdown_vault" / "preferences.py"
+        src = Path(__file__).resolve().parent.parent / "src" / "markdown_vault" / "ui" / "preferences.py"
         source = src.read_text(encoding="utf-8")
         self.assertIn("General", source)
         self.assertIn("Editor", source)
@@ -26,7 +26,7 @@ class TestPreferencesModuleStructure(unittest.TestCase):
         self.assertIn("Web", source)
 
     def test_dialog_has_all_setting_rows(self):
-        src = Path(__file__).resolve().parent.parent / "src" / "markdown_vault" / "preferences.py"
+        src = Path(__file__).resolve().parent.parent / "src" / "markdown_vault" / "ui" / "preferences.py"
         source = src.read_text(encoding="utf-8")
         self.assertIn("autosave_interval", source)
         self.assertIn("default_view_mode", source)
@@ -36,7 +36,7 @@ class TestPreferencesModuleStructure(unittest.TestCase):
         self.assertIn("preview_zoom", source)
 
     def test_dialog_has_local_llm_rows(self):
-        src = Path(__file__).resolve().parent.parent / "src" / "markdown_vault" / "preferences.py"
+        src = Path(__file__).resolve().parent.parent / "src" / "markdown_vault" / "ui" / "preferences.py"
         source = src.read_text(encoding="utf-8")
         for token in ("ask_gguf_url", "ask_gguf_path", "ask_n_gpu_layers",
                       "ask_n_threads", "_on_download_gguf", "ask_engine",
@@ -45,13 +45,13 @@ class TestPreferencesModuleStructure(unittest.TestCase):
             self.assertIn(token, source)
 
     def test_dialog_persists_settings(self):
-        src = Path(__file__).resolve().parent.parent / "src" / "markdown_vault" / "preferences.py"
+        src = Path(__file__).resolve().parent.parent / "src" / "markdown_vault" / "ui" / "preferences.py"
         source = src.read_text(encoding="utf-8")
         self.assertIn("save_settings", source)
         self.assertIn("emit", source)
 
     def test_dialog_has_webkit_switches(self):
-        src = Path(__file__).resolve().parent.parent / "src" / "markdown_vault" / "preferences.py"
+        src = Path(__file__).resolve().parent.parent / "src" / "markdown_vault" / "ui" / "preferences.py"
         source = src.read_text(encoding="utf-8")
         self.assertIn("webkit_disable_dmabuf", source)
         self.assertIn("webkit_disable_compositing", source)
@@ -60,7 +60,7 @@ class TestPreferencesModuleStructure(unittest.TestCase):
 
     def test_spin_rows_initialized_from_settings(self):
         """R14.4: SpinRow values read from settings, not hardcoded literals."""
-        src = Path(__file__).resolve().parent.parent / "src" / "markdown_vault" / "preferences.py"
+        src = Path(__file__).resolve().parent.parent / "src" / "markdown_vault" / "ui" / "preferences.py"
         source = src.read_text(encoding="utf-8")
         for key in ("autosave_interval", "editor_font_size",
                     "editor_tab_width", "tab_min_width"):
@@ -73,7 +73,7 @@ class TestHttpsOnlyRedirect(unittest.TestCase):
     def _redirect_to(self, newurl):
         import email.message
         import urllib.request
-        from markdown_vault.preferences import _HttpsOnlyRedirect
+        from markdown_vault.ui.preferences import _HttpsOnlyRedirect
         handler = _HttpsOnlyRedirect()
         req = urllib.request.Request("https://example.com/model.gguf")
         return handler.redirect_request(
@@ -96,7 +96,7 @@ class TestHttpsOnlyRedirect(unittest.TestCase):
     def test_worker_wires_the_guard(self):
         # Pin the integration point: swapping opener.open back to the bare
         # urllib.request.urlopen would silently drop the redirect protection.
-        src = Path(__file__).resolve().parent.parent / "src" / "markdown_vault" / "preferences.py"
+        src = Path(__file__).resolve().parent.parent / "src" / "markdown_vault" / "ui" / "preferences.py"
         source = src.read_text(encoding="utf-8")
         self.assertIn("build_opener(_HttpsOnlyRedirect())", source)
         self.assertIn('urlparse(url).scheme != "https"', source)
