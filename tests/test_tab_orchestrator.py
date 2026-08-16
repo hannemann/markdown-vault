@@ -121,6 +121,7 @@ def _make_orchestrator(
     # Track callback invocations.
     cb = {
         "on_preview_link_clicked": unittest.mock.MagicMock(),
+        "on_preview_link_new_tab": unittest.mock.MagicMock(),
         "on_preview_link_not_found": unittest.mock.MagicMock(),
         "on_preview_checkbox_toggled": unittest.mock.MagicMock(),
         "on_editor_text_changed": unittest.mock.MagicMock(),
@@ -353,14 +354,25 @@ class TestSignalForwarding(unittest.TestCase):
             cb[name] = make_spy()
         return orch, spy
 
-    def test_preview_link_clicked_forwards_widget_and_path(self):
+    def test_preview_link_clicked_forwards_widget_path_and_fragment(self):
         orch, spy = self._make_with_spy()
         mock_widget = unittest.mock.MagicMock()
-        orch._on_preview_link_clicked(mock_widget, "/doc.md")
+        orch._on_preview_link_clicked(mock_widget, "/doc.md", "Some Heading")
         self.assertEqual(len(spy["on_preview_link_clicked"]), 1)
         args = spy["on_preview_link_clicked"][0][0]
         self.assertIs(args[0], mock_widget)
         self.assertEqual(args[1], "/doc.md")
+        self.assertEqual(args[2], "Some Heading")
+
+    def test_preview_link_new_tab_forwards_widget_path_and_fragment(self):
+        orch, spy = self._make_with_spy()
+        mock_widget = unittest.mock.MagicMock()
+        orch._on_preview_link_new_tab(mock_widget, "/doc.md", "H")
+        self.assertEqual(len(spy["on_preview_link_new_tab"]), 1)
+        args = spy["on_preview_link_new_tab"][0][0]
+        self.assertIs(args[0], mock_widget)
+        self.assertEqual(args[1], "/doc.md")
+        self.assertEqual(args[2], "H")
 
     def test_preview_link_not_found_forwards_widget_and_path(self):
         orch, spy = self._make_with_spy()

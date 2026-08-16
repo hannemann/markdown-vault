@@ -19,7 +19,10 @@ from markdown_vault.preview import (
     PygmentsCodePostprocessor,
     BlankLineBeforeListExtension,
     BlankLineBeforeListPreprocessor,
+    _hover_uri_display,
+    _anchor_scroll_js,
 )
+import json
 import markdown as md
 
 
@@ -1003,6 +1006,78 @@ class TestBlankLineBeforeList(unittest.TestCase):
     def test_wired_into_markdown_extensions(self):
         self.assertTrue(any(isinstance(e, BlankLineBeforeListExtension)
                             for e in MARKDOWN_EXTENSIONS))
+
+
+class TestHoverUriDisplay(unittest.TestCase):
+    """The hover status line shows external URLs verbatim but renders the internal
+    vault: scheme as a readable target (vault › path#fragment)."""
+
+    def test_empty(self):
+        self.assertEqual(_hover_uri_display(""), "")
+
+    def test_external_url_verbatim(self):
+        self.assertEqual(_hover_uri_display("https://example.com/a/b?q=1"),
+                         "https://example.com/a/b?q=1")
+        self.assertEqual(_hover_uri_display("mailto:a@b.c"), "mailto:a@b.c")
+
+    def test_in_page_anchor_verbatim(self):
+        self.assertEqual(_hover_uri_display("#fn:1"), "#fn:1")
+
+    def test_in_page_file_anchor_shows_only_the_fragment(self):
+        # A footnote/anchor within the current doc resolves to file://<base>#frag;
+        # show just the anchor, not the full file path.
+        page = "file:///home/u/notes/Web-Import/"
+        self.assertEqual(
+            _hover_uri_display("file:///home/u/notes/Web-Import/#fn:2", page), "#fn:2")
+
+    def test_in_page_anchor_uses_the_note_breadcrumb(self):
+        # With the current note's breadcrumb, a footnote reads like a wikilink to it.
+        page = "file:///home/u/notes/Web-Import/"
+        out = _hover_uri_display("file:///home/u/notes/Web-Import/#fn:2", page,
+                                 "Wissenschaft › Web-Import › plato")
+        self.assertEqual(out, "Wissenschaft › Web-Import › plato › fn:2")
+
+    def test_file_link_to_other_doc_is_verbatim(self):
+        page = "file:///home/u/notes/foo.md"
+        out = _hover_uri_display("file:///home/u/notes/bar.md", page)
+        self.assertEqual(out, "file:///home/u/notes/bar.md")
+
+    def test_vault_link_without_fragment(self):
+        self.assertEqual(_hover_uri_display("vault:Wissenschaft?path=Erde"),
+                         "Wissenschaft › Erde")
+
+    def test_vault_link_fragment_is_a_breadcrumb_segment(self):
+        # An anchor within a wikilink target uses the same " › " scheme, not "#":
+        # vault:Wissenschaft?path=Erde#Fußnote  ->  "Wissenschaft › Erde › Fußnote"
+        out = _hover_uri_display("vault:Wissenschaft?path=Erde#Fußnote")
+        self.assertEqual(out, "Wissenschaft › Erde › Fußnote")
+        self.assertNotIn("#", out)
+        self.assertNotIn("vault:", out)
+
+
+class TestAnchorScrollJs(unittest.TestCase):
+    """The JS builder that scrolls a freshly opened note to a heading anchor."""
+
+    def test_empty_heading_yields_no_script(self):
+        self.assertEqual(_anchor_scroll_js(""), "")
+
+    def test_targets_the_slug_of_the_heading(self):
+        # The fragment is heading *text*; it must be slugified to match the id.
+        js = _anchor_scroll_js("My Heading")
+        self.assertIn(json.dumps(_heading_to_slug("My Heading")), js)
+        self.assertIn("getElementById", js)
+        self.assertIn("scrollIntoView", js)
+
+    def test_retries_while_the_dom_is_still_rendering(self):
+        # A new note loads/swaps asynchronously, so the element may not exist on
+        # the first tick — the script must poll for a bounded window.
+        js = _anchor_scroll_js("Test")
+        self.assertIn("setTimeout", js)
+
+    def test_slug_is_json_encoded_so_quotes_cannot_break_out(self):
+        js = _anchor_scroll_js('He said "hi"')
+        # No raw double-quote from the heading leaks into the JS string literal.
+        self.assertIn(json.dumps(_heading_to_slug('He said "hi"')), js)
 
 
 if __name__ == "__main__":

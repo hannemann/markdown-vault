@@ -9,6 +9,7 @@ to light and dark mode.
 import hashlib
 import json
 import logging
+import os
 import markdown as md
 import re
 import unicodedata
@@ -34,6 +35,7 @@ from markdown_vault.path_utils import (
     HEADING_RE,
     find_vault_name_for_path,
     parse_wikilink_url,
+    resolve_vault_path,
     resolve_wikilink,
     wikilink_url,
 )
@@ -43,7 +45,7 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 gi.require_version("WebKit", "6.0")
 
-from gi.repository import Gtk, Adw, WebKit, GObject, Gdk, GLib, Gio
+from gi.repository import Gtk, Adw, WebKit, GObject, Gdk, GLib, Gio, Pango
 
 
 import unicodedata
@@ -64,6 +66,26 @@ def _heading_to_slug(heading: str, seen: MutableSet[str] | None = None,
         return toc_unique(base_slug, seen)
 
     return base_slug
+
+
+def _anchor_scroll_js(heading: str) -> str:
+    """Build JS that smooth-scrolls to the heading anchor for *heading*.
+
+    *heading* is heading **text** (as written after ``#`` in a wikilink), so it
+    is slugified to the rendered element id. The script polls for a bounded
+    window because a freshly opened note may still be rendering (full load or an
+    innerHTML swap) when this runs, so the target may not be in the DOM yet.
+    Returns ``""`` for an empty heading (nothing to scroll to).
+    """
+    if not heading:
+        return ""
+    target = json.dumps(_heading_to_slug(heading))
+    return (
+        "(function(){var n=0;(function t(){"
+        f"var e=document.getElementById({target});"
+        "if(e){e.scrollIntoView({behavior:'smooth',block:'start'});return;}"
+        "if(n++<40)setTimeout(t,50);})();})();"
+    )
 
 
 HTML_TEMPLATE = """\
@@ -124,6 +146,27 @@ def _build_csp(allow_remote_images: bool) -> str:
         "script-src 'none'; "
         f"img-src {img}"
     )
+
+
+def _hover_uri_display(uri: str, page_uri: str = "", page_breadcrumb: str = "") -> str:
+    """Text for the hover status line. External URLs are shown verbatim; the internal
+    ``vault:`` scheme as a readable breadcrumb (``vault › path › fragment``); and an
+    in-page anchor — same document as *page_uri*, only the ``#fragment`` differs — in
+    the SAME breadcrumb scheme, appending the fragment to *page_breadcrumb* (the current
+    note's ``vault › note``), so a footnote reads like a wikilink to the same note."""
+    if not uri:
+        return ""
+    if uri.startswith("vault:"):
+        # vault › path › fragment — a breadcrumb; an in-doc anchor is just another
+        # segment, not a "#…" suffix.
+        segments = [s for s in parse_wikilink_url(uri) if s]
+        return " › ".join(segments) if segments else uri
+    if "#" in uri:
+        base, _, frag = uri.partition("#")
+        if frag and page_uri and base.rstrip("/") == page_uri.partition("#")[0].rstrip("/"):
+            frag = unquote(frag)                        # in-page anchor (e.g. footnote)
+            return f"{page_breadcrumb} › {frag}" if page_breadcrumb else "#" + frag
+    return uri
 
 
 class LanguageExtractorPreprocessor(Preprocessor):
@@ -596,14 +639,15 @@ class Preview(Gtk.ScrolledWindow):
     """Widget that renders Markdown as styled HTML.
 
     Signals:
-        link-clicked(str): Emitted when a wikilink is clicked. The argument
-            is the resolved absolute path to the target ``.md`` file.
+        link-clicked(str, str): Emitted when a wikilink is clicked. The
+            arguments are the resolved absolute path to the target ``.md`` file
+            and the heading fragment to scroll to (``""`` when none).
     """
 
     __gsignals__ = {
-        "link-clicked": (GObject.SignalFlags.RUN_LAST, None, (str,)),
+        "link-clicked": (GObject.SignalFlags.RUN_LAST, None, (str, str)),
         # Middle-click / Ctrl+click on a wikilink → open in a NEW tab.
-        "link-clicked-new-tab": (GObject.SignalFlags.RUN_LAST, None, (str,)),
+        "link-clicked-new-tab": (GObject.SignalFlags.RUN_LAST, None, (str, str)),
         "link-not-found": (GObject.SignalFlags.RUN_LAST, None, (str,)),
         "checkbox-toggled": (GObject.SignalFlags.RUN_LAST, None, (int, bool)),
         # Right-click "Download Image" on a remote image → (image URL).
@@ -621,6 +665,7 @@ class Preview(Gtk.ScrolledWindow):
         self._css_path = css_path
         self._zoom_level: float = 1.0
         self._current_vault_path: str | None = None
+        self._current_file: str = ""    # the note being shown (for the hover breadcrumb)
         self._loaded: bool = False
         self._base_uri: str | None = None
         self._csp: str = _build_csp(False)
@@ -631,10 +676,29 @@ class Preview(Gtk.ScrolledWindow):
         self._active: bool = True
         self._pending_text: str | None = None
         self._pending_base_dir: str = ""
+        self._pending_current_file: str = ""
+        self._pending_anchor: str = ""  # heading to scroll to once the note has rendered
+        self._load_in_progress: bool = False  # full load_html in flight (DOM not ready yet)
         self._web_view = WebKit.WebView()
         self._setup_web_view(self._web_view)
+
+        # Browser-style hover-URL status line: a small label pinned bottom-left, shown
+        # only while the pointer is over a link (see _on_mouse_target_changed). Built
+        # before the signals so the handler can reference it.
+        self._hover_label = Gtk.Label(xalign=0, visible=False)
+        self._hover_label.add_css_class("preview-hover-url")
+        self._hover_label.set_halign(Gtk.Align.START)
+        self._hover_label.set_valign(Gtk.Align.END)
+        self._hover_label.set_max_width_chars(90)
+        self._hover_label.set_ellipsize(Pango.EllipsizeMode.MIDDLE)
+        self._hover_label.set_can_target(False)        # never intercept clicks / hover
+
         self._connect_preview_signals()
-        self.set_child(self._web_view)
+
+        overlay = Gtk.Overlay()
+        overlay.set_child(self._web_view)
+        overlay.add_overlay(self._hover_label)
+        self.set_child(overlay)
 
         # In-preview search (Ctrl+F find bar) — see _FIND_JS. current/total are
         # reported by the injected JS, so the preview counter shows "n/m" too.
@@ -703,12 +767,45 @@ class Preview(Gtk.ScrolledWindow):
 
         wv.connect("decide-policy", self._on_decide_policy)
         wv.connect("context-menu", self._on_context_menu)
+        wv.connect("mouse-target-changed", self._on_mouse_target_changed)
+        wv.connect("load-changed", self._on_load_changed)
 
         ctrl = wv.get_user_content_manager()
         ctrl.connect(
             "script-message-received::checkboxHandler",
             self._on_checkbox_clicked,
         )
+
+    def _on_mouse_target_changed(self, _wv, hit_test_result, _modifiers) -> None:
+        """Show the hovered link's URL in the bottom-left status line, browser-style;
+        hide it when the pointer leaves the link. Native WebKit signal — no JS, no CSP."""
+        if hit_test_result.context_is_link():
+            uri = hit_test_result.get_link_uri() or ""
+            text = _hover_uri_display(uri, self._web_view.get_uri() or "",
+                                      self._current_note_breadcrumb())
+            self._hover_label.set_text(text)
+            self._hover_label.set_visible(bool(text))
+        else:
+            self._hover_label.set_visible(False)
+
+    def _current_note_breadcrumb(self) -> str:
+        """``vault › folder › note`` for the note currently shown, so an in-page anchor
+        (footnote) reads like a wikilink to the same note. Empty when the file is
+        unknown or lives outside every configured vault."""
+        path = self._current_file
+        if not path:
+            return ""
+        vault = find_vault_name_for_path(path)
+        root = resolve_vault_path(vault) if vault else None
+        if not (vault and root):
+            return ""
+        try:
+            rel = os.path.relpath(path, root)
+        except ValueError:                             # different drive on Windows, etc.
+            return ""
+        stem = rel[:-3] if rel.lower().endswith(".md") else rel
+        segments = [p for p in stem.split(os.sep) if p and p != os.curdir]
+        return " › ".join([vault, *segments])
 
     # ------------------------------------------------------------------
     # Zoom
@@ -732,7 +829,8 @@ class Preview(Gtk.ScrolledWindow):
         """Tab became active -- render pending content if any."""
         self._active = True
         if self._pending_text is not None:
-            self.update_from_text(self._pending_text, self._pending_base_dir)
+            self.update_from_text(self._pending_text, self._pending_base_dir,
+                                  self._pending_current_file)
             self._pending_text = None
             self._pending_base_dir = ""
 
@@ -755,8 +853,9 @@ class Preview(Gtk.ScrolledWindow):
     # Navigation
     # ------------------------------------------------------------------
 
-    def _emit_link(self, resolved: str, new_tab: bool) -> None:
-        self.emit("link-clicked-new-tab" if new_tab else "link-clicked", resolved)
+    def _emit_link(self, resolved: str, new_tab: bool, fragment: str = "") -> None:
+        self.emit("link-clicked-new-tab" if new_tab else "link-clicked",
+                  resolved, fragment)
 
     def _run_js(self, js: str) -> None:
         if self._web_view is None:
@@ -776,6 +875,41 @@ class Preview(Gtk.ScrolledWindow):
         self._in_page_back += 1
         self._in_page_fwd = 0
         self.emit("in-page-nav-changed")
+
+    def scroll_to_anchor(self, heading: str) -> None:
+        """Scroll to the *heading* anchor once the note has rendered.
+
+        Used when a cross-note wikilink carries a fragment (``[[Other#Heading]]``):
+        the target note is opened in this preview and then scrolled to the heading.
+        The jump is deferred until the content is in the DOM — applied now if the
+        page is already loaded (the JS itself briefly polls for an in-progress
+        render), otherwise flushed on the next ``load-changed`` FINISHED.
+        """
+        self._pending_anchor = heading
+        # Flush now only if the page is fully rendered. While a load_html is in
+        # flight the DOM is not ready and the navigation will discard any script
+        # we run, so defer to the load-changed FINISHED handler instead.
+        if heading and self._loaded and not self._load_in_progress:
+            self._flush_pending_anchor()
+
+    def _flush_pending_anchor(self) -> None:
+        """Run the pending anchor scroll (if any) and clear it — one-shot."""
+        if self._web_view is None or not self._pending_anchor:
+            return
+        js = _anchor_scroll_js(self._pending_anchor)
+        self._pending_anchor = ""
+        if js:
+            self._run_js(js)
+
+    def _on_load_changed(self, _web_view, event) -> None:
+        """Apply a pending anchor jump once a full page load finishes.
+
+        A newly opened note loads asynchronously via ``load_html``; the target
+        heading only exists after FINISHED, so the deferred jump lands here.
+        """
+        if event == WebKit.LoadEvent.FINISHED:
+            self._load_in_progress = False
+            self._flush_pending_anchor()
 
     def can_go_back_in_page(self) -> bool:
         """True if there is in-page anchor history (footnote/TOC jumps) to unwind."""
@@ -937,10 +1071,22 @@ class Preview(Gtk.ScrolledWindow):
         if uri.startswith("vault:"):
             logger.debug("Wikilink click: %r", uri)
             resolved = self._resolve_wikilink_page(uri)
+            _, _, fragment = parse_wikilink_url(uri)
+            # A wikilink to THIS note with a heading anchor behaves like a footnote:
+            # smooth-scroll to the anchor and record an in-page nav entry, instead of
+            # "reopening" the note (which drops the fragment and does nothing). The
+            # anchor is the heading text, so slugify it to match the rendered id.
+            if (resolved and fragment and self._current_file
+                    and os.path.realpath(resolved) == os.path.realpath(self._current_file)):
+                decision.ignore()
+                self._jump_to_anchor(_heading_to_slug(fragment))
+                return True
             if resolved:
                 logger.debug("Wikilink resolved to: %s", resolved)
                 decision.ignore()
-                self._emit_link(resolved, new_tab)
+                # Cross-note link with a heading anchor: open the note and, once
+                # it has rendered, scroll to the heading (fragment carried along).
+                self._emit_link(resolved, new_tab, fragment)
                 return True
             logger.warning("Wikilink NOT resolved: %r", uri)
             decision.ignore()
@@ -1049,7 +1195,8 @@ class Preview(Gtk.ScrolledWindow):
     # Public API
     # ------------------------------------------------------------------
 
-    def update_from_text(self, text: str, base_dir: str = "") -> None:
+    def update_from_text(self, text: str, base_dir: str = "",
+                         current_file: str = "") -> None:
         """Render *text* as Markdown and display the result.
 
         On first call, loads the full HTML template.  On subsequent
@@ -1065,8 +1212,10 @@ class Preview(Gtk.ScrolledWindow):
         if not self._active:
             self._pending_text = text
             self._pending_base_dir = base_dir
+            self._pending_current_file = current_file
             return
 
+        self._current_file = current_file
         source_vault = self._resolve_source_vault(base_dir)
         extensions = [
             WikiLinkExtension(source_vault) if isinstance(e, WikiLinkExtension) else e
@@ -1117,6 +1266,9 @@ class Preview(Gtk.ScrolledWindow):
             )
             self._last_html = full_html
             self._base_uri = base_uri
+            # A pending anchor must wait for load-changed FINISHED, not the
+            # synchronous _loaded flag below (the load itself is still async).
+            self._load_in_progress = True
             self._web_view.load_html(full_html, base_uri)
             self._loaded = True
         else:

@@ -39,7 +39,7 @@ headerbar button {
 .mru-switcher {
     min-width: 300px;
     background: @card_bg_color;
-    border: 1px solid @borders_color;
+    border: 1px solid @borders;
     border-radius: 8px;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
 }
@@ -374,9 +374,11 @@ headerbar button {
     font-size: 0.85em;
 }
 
-/* Paned resize handles: one subtle, consistent 1px divider everywhere. */
+/* Paned resize handles: one subtle, consistent 1px divider everywhere.
+   Use the defined @borders token (NOT @borders_color, which does not exist in
+   this libadwaita and silently falls back). */
 paned > separator {
-    background-color: alpha(@borders_color, 0.25);
+    background-color: @borders;
     background-image: none;
     border: none;
 }
@@ -425,4 +427,21 @@ paned > separator {
 }
 .sidebar-rail-btn:checked {
     background: alpha(@window_fg_color, 0.15);
+}
+
+/* Browser-style hover-URL status line, pinned to the preview's bottom-left. */
+.preview-hover-url {
+    /* Same @borders token AS WELL AS the same backdrop as the editor/preview
+       divider (paned > separator): that separator composites @borders over the
+       paned/window background, so the label uses @window_bg_color too — a
+       semi-transparent border only matches if it sits over the same colour.
+       Adapts together in high-contrast mode. */
+    background-color: @window_bg_color;
+    color: @window_fg_color;
+    border-top: 1px solid @borders;
+    border-right: 1px solid @borders;
+    border-top-right-radius: 6px;
+    padding: 2px 10px;
+    font-size: 0.85em;
+    margin: 0;
 }

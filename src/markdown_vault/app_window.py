@@ -1835,20 +1835,36 @@ class MainWindow(Adw.ApplicationWindow):
                 text = tab.editor.get_text()
                 tab.preview.scroll_to_line(line_num - 1, text)
 
-    def _on_preview_link_clicked(self, _preview, file_path: str) -> None:
+    def _on_preview_link_clicked(self, _preview, file_path: str,
+                                 fragment: str = "") -> None:
         vault = self._find_vault_for_file(file_path)
+        post = (lambda: self._scroll_active_to_anchor(fragment)) if fragment else None
         if vault and vault != self._active_vault:
-            self._switch_vault(vault, open_file_path=file_path)
+            self._switch_vault(vault, open_file_path=file_path, post_open_fn=post)
         else:
             self._navigate_in_place(file_path)  # follow the link in the same tab
+            if post is not None:
+                post()
 
-    def _on_preview_link_new_tab(self, _preview, file_path: str) -> None:
+    def _on_preview_link_new_tab(self, _preview, file_path: str,
+                                 fragment: str = "") -> None:
         """Middle-click / Ctrl+click on a link → open it in a new tab."""
         vault = self._find_vault_for_file(file_path)
+        post = (lambda: self._scroll_active_to_anchor(fragment)) if fragment else None
         if vault and vault != self._active_vault:
-            self._switch_vault(vault, open_file_path=file_path)
+            self._switch_vault(vault, open_file_path=file_path, post_open_fn=post)
         else:
             self._open_file(file_path)  # explicit new tab
+            if post is not None:
+                post()
+
+    def _scroll_active_to_anchor(self, fragment: str) -> None:
+        """Scroll the current tab's preview to *fragment* — the heading a
+        cross-note wikilink (``[[Other#Heading]]``) pointed at. Deferred inside
+        the preview until the freshly opened note has rendered."""
+        tab = self._tab_bar.get_current_tab()
+        if tab and fragment:
+            tab.preview.scroll_to_anchor(fragment)
 
     # Matches a Markdown checkbox on a list line (group 4 = state: space or x/X).
     _CHECKBOX_RE = re.compile(r'^(>\s*)*(\s*)([-*+]|\d+\.)\s+\[([ xX])\]')
@@ -2993,7 +3009,7 @@ class MainWindow(Adw.ApplicationWindow):
                 tab.preview.update_theme()
                 text = tab.editor.get_text()
                 base_dir = str(Path(tab.editor.file_path).parent) if tab.editor.file_path else ""
-                tab.preview.update_from_text(text, base_dir)
+                tab.preview.update_from_text(text, base_dir, tab.editor.file_path or "")
         return False  # remove idle handler
 
     # ── Preferences ────────────────────────────────────────────────
@@ -3065,7 +3081,7 @@ class MainWindow(Adw.ApplicationWindow):
                     tab.preview.reset()
                     text = tab.editor.get_text()
                     base_dir = str(Path(tab.editor.file_path).parent) if tab.editor.file_path else ""
-                    tab.preview.update_from_text(text, base_dir)
+                    tab.preview.update_from_text(text, base_dir, tab.editor.file_path or "")
         # Restart autosave with new interval.
         self._autosave.update_interval(self._settings.get("autosave_interval", 30))
 

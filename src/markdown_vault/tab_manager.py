@@ -100,13 +100,15 @@ class TabOrchestrator:
 
     # ── signal forwarding (used as GTK signal handlers) ────────────
 
-    def _on_preview_link_clicked(self, _widget, file_path: str) -> None:
+    def _on_preview_link_clicked(self, _widget, file_path: str,
+                                 fragment: str = "") -> None:
         """Forward preview ``link-clicked`` signal to MainWindow callback."""
-        self._cb_call("on_preview_link_clicked", _widget, file_path)
+        self._cb_call("on_preview_link_clicked", _widget, file_path, fragment)
 
-    def _on_preview_link_new_tab(self, _widget, file_path: str) -> None:
+    def _on_preview_link_new_tab(self, _widget, file_path: str,
+                                 fragment: str = "") -> None:
         """Forward preview ``link-clicked-new-tab`` to MainWindow callback."""
-        self._cb_call("on_preview_link_new_tab", _widget, file_path)
+        self._cb_call("on_preview_link_new_tab", _widget, file_path, fragment)
 
     def _on_preview_link_not_found(self, _widget, path_str: str) -> None:
         """Forward preview ``link-not-found`` signal to MainWindow callback."""

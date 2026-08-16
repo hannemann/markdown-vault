@@ -116,7 +116,7 @@ class ViewModeManager:
             if tab.editor.file_path
             else ""
         )
-        tab.preview.update_from_text(text, base_dir)
+        tab.preview.update_from_text(text, base_dir, tab.editor.file_path or "")
 
     def _schedule_preview_refresh(self) -> None:
         """Debounce preview refresh to reduce flicker during rapid typing."""

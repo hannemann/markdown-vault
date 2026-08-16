@@ -77,6 +77,7 @@ class ContentChangeHandler:
         tab.preview.update_from_text(
             tab.editor.get_text(),
             str(Path(tab.editor.file_path).parent) if tab.editor.file_path else "",
+            tab.editor.file_path or "",
         )
         tab.external_change_pending = False
         self._tab_bar.hide_warning_banner(file_path)
