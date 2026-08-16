@@ -180,8 +180,20 @@ target exists.
 | Run the full unit test suite  | `make test`                                                  |
 | Run one test / tests by name  | `make test-one T=<module[.Class[.method]]>` or `make test-one K=<name-substring>` |
 | Code graph (see graphify)     | `make graph-update` · `graph-query Q="…"` · `graph-explain S="…"` · `graph-path A="…" B="…"` · `graph-build` |
+| Drive the running app (D-Bus) | `make dbg-ready` (wait until up, e.g. after restart) · `dbg-state` · `dbg-tabs` · `dbg-active` · `dbg-open F=…` · `dbg-close F=…` · `dbg-select F=…` · `dbg-search Q="…"` · `dbg-ask Q="…"` (open+submit+wait+print answer) · low-level `dbg-quickopen Q=…` · `dbg-submit` · `dbg-waitidle` · `dbg-answer` |
 
 Hard rules:
+
+- To automate the running app (open files, run a search, ask a question and read
+  the answer back) use the `make dbg-*` targets — NOT a bare `gdbus …` (not
+  pre-approved → prompts). They talk to the app's debug D-Bus interface, which
+  exists only when it was started via `make start`/`restart` (the dev launcher
+  sets `MDV_DEBUG_CONTROL`); the shipped app has no such interface. After a
+  `make restart`, run `make dbg-ready` before the first `dbg-*` call — the app
+  needs a moment to own the bus name (do NOT poll with a raw `gdbus` loop; that
+  is not pre-approved and prompts). Call each `make dbg-*` as its OWN command,
+  not chained with `;`/`&&` or `echo` headers — a compound command is not
+  covered by the make allow-rule and prompts (see "Compound Commands").
 
 - Run these EXACTLY as written. Do NOT construct your own `gtk-launch`,
   `python3 -m ...`, `pkill`, or `kill` commands for start/stop.

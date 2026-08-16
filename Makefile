@@ -1,5 +1,5 @@
 SHELL := /bin/bash
-.PHONY: _fetch-wheels lock-wheels download-wheels build-flatpak bundle-flatpak install-flatpak uninstall-flatpak run-flatpak test-flatpak clean clean-build clean-cache build venv venv-ai install install-ai uninstall clean-local run test test-one test-e2e graph-build graph-update graph-query graph-path graph-explain start stop restart status
+.PHONY: _fetch-wheels lock-wheels download-wheels build-flatpak bundle-flatpak install-flatpak uninstall-flatpak run-flatpak test-flatpak clean clean-build clean-cache build venv venv-ai install install-ai uninstall clean-local run test test-one test-e2e graph-build graph-update graph-query graph-path graph-explain start stop restart status dbg-ready dbg-state dbg-tabs dbg-active dbg-open dbg-close dbg-select dbg-search dbg-quickopen dbg-submit dbg-waitidle dbg-answer dbg-ask
 
 WHEEL_DIR := src/share/markdown-vault
 WHEELS_DIR := $(WHEEL_DIR)/wheels
@@ -223,3 +223,68 @@ graph-path:
 graph-explain:
 	@test -n "$(S)" || { echo 'usage: make graph-explain S="TabManager"'; exit 2; }
 	graphify explain "$(S)"
+
+# --- D-Bus debug interface (dev launcher only) ----------------------------
+# Drive the running app over its debug D-Bus interface without a per-command
+# approval prompt (make is pre-approved; a bare `gdbus ...` is not). The
+# interface only exists when the app was started via the dev launcher
+# (start/restart set MDV_DEBUG_CONTROL); it is absent from the shipped app.
+DBUS_PATH := /de/hannemann/markdown_vault/debug
+DBUS_IFACE := de.hannemann.markdown_vault.Debug
+DBUS_CALL := gdbus call --session --dest $(APP_ID) --object-path $(DBUS_PATH) --method $(DBUS_IFACE)
+
+dbg-ready:                 # block (≤10s) until the debug interface answers, e.g. after restart
+	@for i in $$(seq 1 50); do \
+		$(DBUS_CALL).ActiveFile >/dev/null 2>&1 && exit 0; \
+		sleep 0.2; \
+	done; \
+	echo "debug D-Bus interface not up — start the app with 'make start'/'make restart'" >&2; \
+	exit 1
+
+dbg-state:                 ## dump window state as JSON (active file, tabs, vault)
+	@$(DBUS_CALL).DumpState
+
+dbg-tabs:
+	@$(DBUS_CALL).ListTabs
+
+dbg-active:
+	@$(DBUS_CALL).ActiveFile
+
+dbg-open:                  # F=<abs path>: open a note in a tab
+	@test -n "$(F)" || { echo 'usage: make dbg-open F=/abs/path/note.md'; exit 2; }
+	@$(DBUS_CALL).OpenFile "$(F)"
+
+dbg-close:                 # F=<abs path>: close a tab
+	@test -n "$(F)" || { echo 'usage: make dbg-close F=/abs/path/note.md'; exit 2; }
+	@$(DBUS_CALL).CloseTab "$(F)"
+
+dbg-select:                # F=<abs path>: select a file in the vault tree
+	@test -n "$(F)" || { echo 'usage: make dbg-select F=/abs/path/note.md'; exit 2; }
+	@$(DBUS_CALL).SelectInTree "$(F)"
+
+dbg-search:                # Q=<query>: run full-text search, wait, print result paths
+	@test -n "$(Q)" || { echo 'usage: make dbg-search Q="query"'; exit 2; }
+	@$(DBUS_CALL).Search "$(Q)" >/dev/null
+	@$(DBUS_CALL).WaitIdle 10000 >/dev/null
+	@$(DBUS_CALL).SearchResults
+
+# Low-level Quick-Open/Ask steps (compose your own flow), plus the dbg-ask combo.
+dbg-quickopen:             # Q=<text>: open the palette and type the query (no submit)
+	@test -n "$(Q)" || { echo 'usage: make dbg-quickopen Q="text"'; exit 2; }
+	@$(DBUS_CALL).QuickOpen "$(Q)"
+
+dbg-submit:                # press Enter in the palette (answer / open selection)
+	@$(DBUS_CALL).Submit
+
+dbg-waitidle:              # [T=<ms>, default 120000]: block until async work settles
+	@gdbus call --timeout 130 --session --dest $(APP_ID) --object-path $(DBUS_PATH) --method $(DBUS_IFACE).WaitIdle $(or $(T),120000)
+
+dbg-answer:                # print the current (streaming) Ask answer as raw Markdown
+	@$(DBUS_CALL).AskAnswer
+
+dbg-ask:                   # Q=<question>: full Ask flow (open, submit, wait, print answer)
+	@test -n "$(Q)" || { echo 'usage: make dbg-ask Q="your question"'; exit 2; }
+	@$(DBUS_CALL).QuickOpen "$(Q)" >/dev/null
+	@$(DBUS_CALL).Submit >/dev/null
+	@gdbus call --timeout 130 --session --dest $(APP_ID) --object-path $(DBUS_PATH) --method $(DBUS_IFACE).WaitIdle 120000 >/dev/null
+	@$(DBUS_CALL).AskAnswer
