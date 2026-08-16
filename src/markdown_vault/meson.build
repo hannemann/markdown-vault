@@ -2,18 +2,13 @@ py_sources = files(
   '__init__.py',
   '__main__.py',
   'app_window.py',
-  'backlink_index.py',
   'dialog_import.py',
   'document_import.py',
-  'file_index.py',
-  'file_ops.py',
   'file_manager.py',
-  'git_integration.py',
    'input_manager.py',
    'llama_runtime.py',
    'main.py',
   'monitor_handler.py',
-  'note_writer.py',
   'preferences.py',
   'quick_open.py',
   'ask.py',
@@ -29,11 +24,8 @@ py_sources = files(
   'status_bar.py',
   'tab_manager.py',
    'view_mode_manager.py',
-   'vault_monitor.py',
   'vault_scope.py',
-  'vault_tree.py',
   'web_import.py',
-  'wikilink_autofix.py',
 )
 
 subdir('core')
@@ -42,6 +34,7 @@ subdir('graph')
 subdir('markdown')
 subdir('preview')
 subdir('uikit')
+subdir('vault')
 
 install_data(
   py_sources,

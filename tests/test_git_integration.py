@@ -1,4 +1,4 @@
-"""Tests for markdown_vault.git_integration — git CLI wrapper."""
+"""Tests for markdown_vault.vault.git_integration — git CLI wrapper."""
 
 import os
 import shutil
@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from markdown_vault.git_integration import (
+from markdown_vault.vault.git_integration import (
     is_git_repo,
     get_status,
     get_diff,

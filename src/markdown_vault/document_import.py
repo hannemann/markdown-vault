@@ -26,7 +26,7 @@ from pathlib import Path
 
 import yaml
 
-from . import note_writer
+from markdown_vault.vault import note_writer
 from markdown_vault.core import attachments
 from markdown_vault.markdown.md_fences import FenceTracker
 from markdown_vault.markdown.md_text import unwrap_bold_headings

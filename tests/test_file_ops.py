@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import MagicMock
 
-from markdown_vault.file_ops import FileOps
+from markdown_vault.vault.file_ops import FileOps
 import markdown_vault.core.config as _cfg
 
 

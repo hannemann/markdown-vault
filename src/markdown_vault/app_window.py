@@ -27,7 +27,7 @@ import faulthandler
 import threading
 
 from markdown_vault.core import logging_setup
-from .vault_tree import VaultTree
+from markdown_vault.vault.vault_tree import VaultTree
 from markdown_vault.editor.editor import Editor
 from markdown_vault.preview.preview import Preview
 from markdown_vault.editor.tabs import TabBar
@@ -38,14 +38,14 @@ from .quick_open_palette import QuickOpenPalette
 from markdown_vault.editor.paned_sizer import PanedSizer
 from .status_bar import StatusBar
 from .preferences import PreferencesDialog
-from .wikilink_autofix import WikilinkResolver, analyze_text, find_broken_ranges
+from markdown_vault.vault.wikilink_autofix import WikilinkResolver, analyze_text, find_broken_ranges
 from markdown_vault.editor.find_bar import FindBar
 from .monitor_handler import MonitorHandler
 from .tab_manager import TabOrchestrator
 from .session_manager import SessionManager
 from markdown_vault.preview.markdown_help import MarkdownHelpOverlay
 from markdown_vault.editor.autosave import AutosaveManager
-from .file_ops import FileOps
+from markdown_vault.vault.file_ops import FileOps
 from .view_mode_manager import ViewModeManager
 from markdown_vault.editor.content_changes import ContentChangeHandler
 from .input_manager import InputManager
@@ -58,10 +58,10 @@ from markdown_vault.editor import mru
 from markdown_vault.core import history
 from markdown_vault.core import path_utils
 from markdown_vault.core import validation
-from . import vault_monitor
-from .backlink_index import BacklinkIndex, scan_vaults
+from markdown_vault.vault import vault_monitor
+from markdown_vault.vault.backlink_index import BacklinkIndex, scan_vaults
 from markdown_vault.core.event_router import FileEventDispatcher
-from .file_index import FileIndex
+from markdown_vault.vault.file_index import FileIndex
 
 logger = logging.getLogger(__name__)
 

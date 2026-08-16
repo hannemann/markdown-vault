@@ -1,4 +1,4 @@
-"""Tests for markdown_vault.backlink_index — incremental backlink index."""
+"""Tests for markdown_vault.vault.backlink_index — incremental backlink index."""
 
 import shutil
 import tempfile
@@ -7,7 +7,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import markdown_vault.core.config as _cfg
-from markdown_vault.backlink_index import BacklinkIndex, scan_vaults
+from markdown_vault.vault.backlink_index import BacklinkIndex, scan_vaults
 
 
 class TestScanVaults(unittest.TestCase):

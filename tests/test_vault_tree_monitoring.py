@@ -22,7 +22,7 @@ import gi
 gi.require_version("Gtk", "4.0")
 from gi.repository import Gtk
 
-from markdown_vault.vault_tree import VaultTree, VaultNode
+from markdown_vault.vault.vault_tree import VaultTree, VaultNode
 
 
 def _file_paths(tree: VaultTree) -> list[str]:
@@ -391,7 +391,7 @@ class TestDropDeferredRefresh(unittest.TestCase):
         shutil.rmtree(self._tmpdir, ignore_errors=True)
 
     def test_drop_emits_rename_and_defers_refresh(self):
-        import markdown_vault.vault_tree as mod
+        import markdown_vault.vault.vault_tree as mod
         (self._tmpdir / "note.md").write_text("x")
         (self._tmpdir / "sub").mkdir()
         src = str(self._tmpdir / "note.md")

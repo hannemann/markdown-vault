@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from markdown_vault import note_writer as nw
+from markdown_vault.vault import note_writer as nw
 
 
 class TestSlug(unittest.TestCase):

@@ -31,7 +31,7 @@ from dataclasses import dataclass
 from html import unescape as html_unescape
 from pathlib import Path
 
-from . import note_writer
+from markdown_vault.vault import note_writer
 from markdown_vault.core.attachments import attachment_target  # re-exported: layout lives in attachments
 from markdown_vault.markdown.md_fences import FenceTracker
 from markdown_vault.markdown.md_text import unwrap_bold_headings

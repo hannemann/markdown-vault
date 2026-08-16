@@ -21,7 +21,7 @@ from gi.repository import GLib
 
 from markdown_vault.core.event_router import FileEventDispatcher
 from markdown_vault.core.path_utils import find_vault_name_for_path
-from .vault_monitor import _is_valid_md_file
+from markdown_vault.vault.vault_monitor import _is_valid_md_file
 
 logger = logging.getLogger(__name__)
 
