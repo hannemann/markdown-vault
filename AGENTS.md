@@ -81,7 +81,7 @@ Markdown Vault — a GNOME desktop app for editing and previewing Markdown files
   - Metadaten (renders the current file's YAML frontmatter as key/value rows)
   - Git panel (status, diff, commit)
   - File details (word count, last modified)
-- **Bottom bar** (Ctrl+Shift+F): live full-text search across vaults — `search.py` (UI) over `search_backend.py` (ripgrep engine with a Python fallback). Results are grouped per file and relevance-ranked (name/title > heading > body). Match modifiers `Aa` (case), `W` (whole word), `.*` (regex); non-regex queries also support operators/filters: multiple terms are AND-combined, `"phrase"` matches literally, `-term` excludes, and `tag:`/`path:`/`vault:` narrow the set. A shared **vault-scope dropdown** (`vault_scope.py`) picks the search scope — current vault (default), all vaults, or a specific vault — and is honoured by every search: full-text, semantic, Ask, and the quick-open file switcher (the same selector appears in both the search bar and the quick-open palette, backed by one `_search_scope` in `app_window`). A `?` popover shows the syntax.
+- **Bottom bar** (Ctrl+Shift+F): live full-text search across vaults — `search.py` (UI) over `search_backend.py` (ripgrep engine with a Python fallback). Results are grouped per file and relevance-ranked (name/title > heading > body). Match modifiers `Aa` (case), `W` (whole word), `.*` (regex); non-regex queries also support operators/filters: multiple terms are AND-combined, `"phrase"` matches literally, `-term` excludes, and `tag:`/`path:`/`vault:` narrow the set. A shared **vault-scope dropdown** (`search/vault_scope.py`) picks the search scope — current vault (default), all vaults, or a specific vault — and is honoured by every search: full-text, semantic, Ask, and the quick-open file switcher (the same selector appears in both the search bar and the quick-open palette, backed by one `_search_scope` in `app_window`). A `?` popover shows the syntax.
 - **Quick Open** (Ctrl+Space): fuzzy file switcher — `quick_open_palette.py` (Adw.Dialog) over `quick_open.py`. An empty query lists recent files (MRU then mtime); typing fuzzy-matches note names, frontmatter aliases, and (when the query contains a `/`) the vault-relative path, with match highlighting. Built on a provider/engine design (`QuickOpenEngine` merges providers), so more result sources — e.g. a future semantic/vector provider — slot in via `_make_quick_open_engine` in `app_window` without touching the palette.
 - **Semantic search & Ask** (opt-in): vector retrieval over the vaults. `semantic_search.py` chunks notes and embeds them — local ONNX MiniLM in-process (recommended) or an Ollama backend — and `semantic_index.py` owns the per-file cache, incremental updates, and query, plus a manual rebuild. The **Ask** mode (Quick Open toggle) answers a question *from* your notes (local RAG): `semantic_index.retrieve` returns **note-level** passages (best chunk per note → whole note, title/heading-boosted), and `ask.py` grounds a chat model in them with `[n]` source citations, answering in the OS locale via a user-editable system prompt (the prompt permits comparison/aggregation across excerpts but forbids outside knowledge). The chat backend is Ollama (`/api/chat`) or an OpenAI-compatible server such as llama.cpp (`/v1/chat/completions`), with a reasoning on/off toggle (Qwen3 etc.). All configured under Preferences → Search (Embedding / Ask subpages).
 - **In-view find** (Ctrl+F): a find bar (`find_bar.py`) that searches whichever view is focused — the editor (GtkSource search: highlight, next/prev, current/total counter) or the preview (WebKit find controller: total count). Enter / Shift+Enter step matches, Esc closes; the non-searched view is dimmed while open.
@@ -94,7 +94,7 @@ Markdown Vault — a GNOME desktop app for editing and previewing Markdown files
 - **Git integration**: status indicators in file tree, diff view, commit from app.
 - **Tags/backlinks**: wikilink-style `[[page]]` parsing and backlink discovery.
 - **Wikilink autofix**: opt-in pre-save handling of `[[wikilinks]]` (all off by default) — normalize whitespace, redirect a broken link when exactly one vault file matches the basename (moved/renamed/casing), inform after a manual save about links that stay unresolved, and mark broken links live in the editor (gutter warning triangle + red underline). Runs on manual and close saves, never on autosave. Logic in `wikilink_autofix.py`.
-- **Managed image attachments** (`attachments.py`): a note's downloaded/inserted images live under one per-vault tree mirroring the note tree — `<vault>/attachments/<note-relative-path>/<note-stem>/` — and are kept in sync with the note. Added by web import (opt-in download), paste (Ctrl+V / "Paste Image"), drag-drop onto the editor, or "Insert Image…" (hamburger + editor context menu); never by hand-copying into the tree. Deleting a note/folder removes its attachments; renaming/moving moves them and relinks the note (in the editor buffer if open, else on disk) — driven from both the in-app tree handlers and the file monitor (external), idempotent. The attachments tree shows dimmed in the sidebar with an "internal" pill, is not a drop target and blocks new-file/folder/import; its images are visible but not openable/draggable. Hand-typed image links are classified live: a broken target gets a gutter warning + red underline, a local image outside the tree gets a gutter hint + hover tooltip and adopts into the tree on a gutter double-click.
+- **Managed image attachments** (`core/attachments.py`): a note's downloaded/inserted images live under one per-vault tree mirroring the note tree — `<vault>/attachments/<note-relative-path>/<note-stem>/` — and are kept in sync with the note. Added by web import (opt-in download), paste (Ctrl+V / "Paste Image"), drag-drop onto the editor, or "Insert Image…" (hamburger + editor context menu); never by hand-copying into the tree. Deleting a note/folder removes its attachments; renaming/moving moves them and relinks the note (in the editor buffer if open, else on disk) — driven from both the in-app tree handlers and the file monitor (external), idempotent. The attachments tree shows dimmed in the sidebar with an "internal" pill, is not a drop target and blocks new-file/folder/import; its images are visible but not openable/draggable. Hand-typed image links are classified live: a broken target gets a gutter warning + red underline, a local image outside the tree gets a gutter hint + hover tooltip and adopts into the tree on a gutter double-click.
 - **Keybindings**: GNOME-style defaults, vim/emacs modes optional.
 - **Markdown + images**: `![alt](path)` with relative and absolute path resolution.
 - **Preferences dialog**: `Adw.PreferencesDialog` for autosave interval, default view mode, editor font size/tab width/wrap, preview zoom, and wikilink autofix (normalize / auto-fix moved links / warn on save / mark broken links).
@@ -116,8 +116,10 @@ key files.
 | Path | Purpose |
 | ---- | ------- |
 | `src/bin/markdown-vault.in` | launcher template; Meson substitutes interpreter + PYTHONPATH → installed `bin/markdown-vault` |
-| `src/markdown_vault/` | the Python package (`import markdown_vault`) — all app code |
-| `src/markdown_vault/meson.build` | the **manually-maintained `py_sources` list** — a new root-level `.py` MUST be added here (alphabetical) or it is not installed and the app crashes with `ModuleNotFoundError`. During the package reorg a module that lives in a subpackage (e.g. `core/`) is listed in that subpackage's own `meson.build` instead — see the conventions note |
+| `src/markdown_vault/` | the Python package (`import markdown_vault`) — organized into domain/layer **subpackages** (below); the package root holds only the loaders `__init__.py` / `__main__.py` / `main.py` |
+| `src/markdown_vault/<pkg>/` | one subpackage per domain/layer: **`core`** (config, session, paths, attachments, logging, event routing, validation, history, debug) · **`markdown`** (md primitives: fences, tags, frontmatter, LaTeX→MathML) · **`uikit`** (low-level dialogs/banners) · **`editor`** (GtkSourceView surface, tabs, autosave, find bar) · **`preview`** (WebKit rendering, markdown widgets) · **`graph`** (knowledge-graph view) · **`vault`** (file tree, monitor, git, backlinks, wikilinks, file ops) · **`search`** (full-text + semantic + Ask + quick-open + llama runtime) · **`importers`** (document/web/dialog import) · **`ui`** (sidebar/preferences/status panels) · **`app`** (window shell + `*_manager` coordinators). Imports are **absolute** (`markdown_vault.<pkg>.<mod>`); the layering is an acyclic DAG guarded by `tests/test_layering.py` |
+| `src/markdown_vault/<pkg>/meson.build` | the **manually-maintained `py_sources` list** for that subpackage — a new `.py` MUST be added to **its subpackage's** list (alphabetical) incl. `__init__.py`, or it is not installed and the app crashes with `ModuleNotFoundError`. Meson has no `glob()` |
+| `src/markdown_vault/meson.build` | root build: the three loaders' `py_sources` + one `subdir('<pkg>')` per subpackage |
 | `src/css/` | `style.css` (WebKit preview) + `gtk.css` (GTK widgets); Meson installs both into `markdown_vault/css/` |
 | `src/share/markdown-vault/` | `.desktop` / metainfo / gresource, icons, and the Flatpak manifest (`.yml`) |
 | `tests/` | unit tests (unittest); run via `make test` / `make test-one` |
@@ -125,19 +127,22 @@ key files.
 
 ### Entry points — where to start for a task
 
-- **App startup:** `__main__.py` → `main.py` (AdwApplication, logging) → `app_window.py`
-  (three-panel main window, delegates to the `*_manager.py` helpers).
-- **Add a document-import format:** `document_import.py` — add a handler and register it in
-  `_HANDLERS`; the File tab (`dialog_import.py`) surfaces it via `SUPPORTED_SUFFIXES`.
-- **Web import (URL → note):** `web_import.py`, surfaced through `dialog_import.py`.
-- **Managed image attachments:** `attachments.py` — the shared layout web import, document
-  import, paste and drag-drop all store into.
-- **Preview / rendering:** `preview.py` (Markdown → HTML via Python-Markdown + pymdownx,
-  rendered in WebKit); styling in `src/css/style.css`.
-- **Editor:** `editor.py` (GtkSourceView 5).
-- **Search:** bottom-bar `search.py` over `search_backend.py`; semantic + Ask in
-  `semantic_search.py` / `semantic_index.py` / `ask.py`.
-- **Config / session:** `config.py` (vaults.yaml + settings), `session.py` (JSON state).
+- **App startup:** `__main__.py` → `main.py` (AdwApplication, logging) → `app/app_window.py`
+  (three-panel main window, delegates to the `app/*_manager.py` helpers).
+- **Add a document-import format:** `importers/document_import.py` — add a handler and
+  register it in `_HANDLERS`; the File tab (`importers/dialog_import.py`) surfaces it via
+  `SUPPORTED_SUFFIXES`.
+- **Web import (URL → note):** `importers/web_import.py`, surfaced through
+  `importers/dialog_import.py`.
+- **Managed image attachments:** `core/attachments.py` — the shared layout web import,
+  document import, paste and drag-drop all store into.
+- **Preview / rendering:** `preview/preview.py` (Markdown → HTML via Python-Markdown +
+  pymdownx, rendered in WebKit); styling in `src/css/style.css`.
+- **Editor:** `editor/editor.py` (GtkSourceView 5).
+- **Search:** bottom-bar `search/search.py` over `search/search_backend.py`; semantic + Ask
+  in `search/semantic_search.py` / `search/semantic_index.py` / `search/ask.py`.
+- **Config / session:** `core/config.py` (vaults.yaml + settings), `core/session.py` (JSON
+  state).
 
 For anything finer-grained, query the graph rather than reading top-to-bottom.
 
@@ -301,8 +306,7 @@ opening files in editor, toggling sidebar etc.) ask the user.
 - Vault config YAML keys are case-sensitive, paths are absolute.
 - Git features must gracefully handle repos without git initialized.
 - Images in Markdown: support `![alt](path)` with both relative and absolute paths.
-- **New Python modules**: When creating a new `.py` file in `src/markdown_vault/`, it MUST be added to the `py_sources` list in `src/markdown_vault/meson.build` (alphabetically sorted). Meson has no built-in `glob()` — the list is manually maintained. Forgetting to add it means the file will not be installed and the app will crash with `ModuleNotFoundError`.
-- **During the package-structure refactoring** (`tmp/Tickets/PackageStructure/`) this applies per subpackage: a new `.py` under `src/markdown_vault/<pkg>/` belongs in `src/markdown_vault/<pkg>/meson.build`, not the root list. Already migrated: `core/`.
+- **New Python modules**: the code lives in **subpackages** (`src/markdown_vault/<pkg>/`), each with its own `meson.build`. A new `.py` MUST be added to the `py_sources` list in **its subpackage's** `meson.build` (alphabetically sorted), not the root one — the root `meson.build` only lists the loaders (`__init__`/`__main__`/`main`) and one `subdir('<pkg>')` per subpackage. A brand-new subpackage needs its own `meson.build` (with `__init__.py` in the list) plus a `subdir()` line in the root. Meson has no `glob()`; forgetting means the file is not installed and the app crashes with `ModuleNotFoundError`. Use **absolute** imports (`from markdown_vault.<pkg>.<mod> import …`); keep the package DAG acyclic (`tests/test_layering.py` guards it).
 - **GTK CSS in `css/gtk.css`**: Target GTK 4.14 / libadwaita 1.5. `var(--name)` and `color-mix()` need GTK 4.16+ and are silently dropped with "Expected a valid color" parser warnings. Use `@accent_bg_color` and `alpha(@color, 0.3)` instead. This does not apply to `css/style.css`, which is rendered by WebKit.
 - **WebKit needs an unprivileged user namespace**: WebKitGTK 2.46+ always sets up a `bwrap` sandbox and aborts the whole process if it cannot (`Failed to fully launch dbus-proxy`). On Ubuntu 24.04 this requires the AppArmor profile in `packaging/apparmor/` — see README. There is no API or env var to disable the sandbox.
 - **Test organization**: Add tests to existing test files grouped by topic (e.g. vault_monitor events → `test_vault_monitor_events.py`). Do not create new test files with arbitrary context names — distribute into the files that already cover the module under test. When in doubt, ask.
@@ -338,7 +342,7 @@ opening files in editor, toggling sidebar etc.) ask the user.
 - **Single instance**: Only one `MRUSwitcher` dialog may be open at a time. Subsequent Ctrl+Tab while open is ignored.
 - **Exclusive during open**: While the switcher is shown, no other actions (editor typing, sidebar toggling, etc.) are possible — only Tab/Ctrl+Tab navigation and Escape to close.
 - **Alt+Tab behaviour**: Starts at MRU[1] (the previously active tab; MRU[0] is always the current tab), cycles forward with Tab, backward with Ctrl+Shift+Tab. Ctrl+release commits the selection and closes the dialog.
-- **MRU list**: Maintained by `MRUManager` in `src/markdown_vault/mru.py`; rebuilt on every tab change (`_on_tab_changed` → `mru.push()`).
+- **MRU list**: Maintained by `MRUManager` in `src/markdown_vault/editor/mru.py`; rebuilt on every tab change (`_on_tab_changed` → `mru.push()`).
 - **No persistence**: The MRU list is in-memory only; it is rebuilt from session tab order on startup.
 - **Double-cycle prevention**: Application accelerators (`app.set_accels_for_action`) AND the switcher's key controller both handle Ctrl+Tab. `cycle_from_accelerator()` sets `_accel_handled` flag so the key controller skips the event. If only the key controller fires (no accelerator), it cycles normally.
 - **No ShortcutController in MRU mode**: `_update_tab_shortcuts()` skips registering shortcuts when `tab_switch_mode == "mru"` to avoid conflicts with application accelerators.
