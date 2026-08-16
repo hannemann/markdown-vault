@@ -5,7 +5,7 @@ isn't unit-tested here."""
 import datetime
 import unittest
 
-from markdown_vault import web_import as wi
+from markdown_vault.importers import web_import as wi
 
 
 class TestValidateUrl(unittest.TestCase):

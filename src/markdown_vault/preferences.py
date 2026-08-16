@@ -1247,7 +1247,7 @@ class PreferencesDialog(Adw.PreferencesDialog):
     def _refresh_whisper_status(self) -> None:
         """Show whether the configured transcription model is downloaded. Both checks
         are cheap (a find_spec and a file test), so no background thread is needed."""
-        from . import document_import
+        from markdown_vault.importers import document_import
         if document_import.is_available(".mp3"):          # faster_whisper absent
             self._whisper_status_icon.set_from_icon_name("dialog-warning-symbolic")
             self._whisper_row.set_subtitle("Needs the optional AI stack — make install-ai")
@@ -1297,7 +1297,7 @@ class PreferencesDialog(Adw.PreferencesDialog):
                          daemon=True).start()
 
     def _whisper_download_worker(self, model) -> None:
-        from . import document_import
+        from markdown_vault.importers import document_import
         try:
             document_import.download_whisper_model(
                 model, tqdm_class=self._make_whisper_tqdm())

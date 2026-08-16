@@ -1938,7 +1938,7 @@ class MainWindow(Adw.ApplicationWindow):
         # Attachments mirror the note's location under the vault's attachments/
         # tree (…/attachments/<subfolder>/<note>/), linked relative to the note.
         vault_root = path_utils.find_vault_for_dir(str(note_dir)) or str(note_dir)
-        from . import web_import
+        from markdown_vault.importers import web_import
         dest_dir, rel_prefix = web_import.attachment_target(vault_root, note_dir, stem)
         self._toast("Downloading image…")
 
@@ -1961,7 +1961,7 @@ class MainWindow(Adw.ApplicationWindow):
             return False
         if tab not in self._tab_bar._tabs.values():
             return False               # tab closed mid-download; file is on disk
-        from . import web_import
+        from markdown_vault.importers import web_import
         current = tab.editor.get_text()
         new_text = web_import.rewrite_image_url(current, uri, rel)
         if new_text != current:
@@ -2002,7 +2002,7 @@ class MainWindow(Adw.ApplicationWindow):
     def _on_import_requested(self, _tree, target_dir: str) -> None:
         """Handle 'Import…' from the vault tree context menu — fetch a URL as a
         note into *target_dir*, then open it and reveal it in the tree."""
-        from .dialog_import import ImportDialog
+        from markdown_vault.importers.dialog_import import ImportDialog
         dialog = ImportDialog(
             target_dir,
             last_dir=self._settings.get("document_import_last_dir"),

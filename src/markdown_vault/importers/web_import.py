@@ -11,7 +11,7 @@ WebKitGTK to render JS-heavy pages and feed the rendered HTML to :func:`extract`
 the extraction/assembly below is unchanged by where the HTML comes from.
 
 CLI (once ``trafilatura`` is installed in the venv):
-    python -m markdown_vault.web_import <url> [--vault DIR] [--print]
+    python -m markdown_vault.importers.web_import <url> [--vault DIR] [--print]
 """
 
 import argparse
@@ -1039,7 +1039,7 @@ def save_to_vault(result: ImportResult, vault_dir: str | Path,
 # ── CLI (prototype driver) ─────────────────────────────────────────
 
 def main(argv=None) -> int:
-    parser = argparse.ArgumentParser(prog="markdown_vault.web_import",
+    parser = argparse.ArgumentParser(prog="markdown_vault.importers.web_import",
                                      description="Import a web page as a Markdown note.")
     parser.add_argument("url")
     parser.add_argument("--vault", help="vault directory to write the note into")
