@@ -33,6 +33,7 @@ class _DialogTest(unittest.TestCase):
 
     def setUp(self):
         self._patchers = []
+        self._dialogs = []
         self.saved = []
 
         def _p(target):
@@ -65,12 +66,29 @@ class _DialogTest(unittest.TestCase):
         _p("markdown_vault.core.secret_store.set_secret").side_effect = _store
 
     def tearDown(self):
+        # Cancel debounced writes BEFORE the patches go away. A pending
+        # GLib.timeout from _persist_debounced / _on_secret_changed would
+        # otherwise fire once some later test runs a main loop — by then
+        # config.save_settings is the real one again, and it would persist this
+        # dialog's tiny snapshot over the developer's actual vaults.yaml,
+        # wiping every setting not in it (that really happened).
+        from gi.repository import GLib  # type: ignore[attr-defined]
+        for dlg in self._dialogs:
+            for attr in ("_persist_id", "_secret_persist_id"):
+                source = getattr(dlg, attr, None)
+                if source is not None:
+                    GLib.source_remove(source)
+                    setattr(dlg, attr, None)
+            dlg._pending_secret = None
+        self._dialogs.clear()
         for m in reversed(self._patchers):
             m.stop()
 
     def _dialog(self, **settings):
         self.load.return_value = dict(settings)
-        return PreferencesDialog()
+        dlg = PreferencesDialog()
+        self._dialogs.append(dlg)   # so tearDown can cancel its pending writes
+        return dlg
 
     def _assert_persisted(self, dlg, key, value):
         self.assertEqual(dlg._settings[key], value)
