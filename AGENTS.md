@@ -361,6 +361,20 @@ opening files in editor, toggling sidebar etc.) ask the user.
   change onto an approved one. When unsure whether something is authorized, STOP and
   ask instead of assuming. Make changes only when the user has actually and clearly
   asked for them.
+- **Present the plan BEFORE implementing, and wait for the go-ahead.** Anything
+  beyond a trivial, unambiguous edit starts with a short plan — what you will
+  change, where, and what it means for the user — not with an edit. Do not start
+  implementing while the plan is still being discussed, and do not "just prepare"
+  files in the meantime: an unapproved change on disk is an approval you granted
+  yourself.
+  **An approval covers the plan that was approved, and nothing else.** The moment
+  you want a different approach — a different mechanism, a different place, extra
+  moving parts, or dropping a part the user said yes to — the old approval is
+  **void**: say what changed and why, and get a new yes. This holds even when the
+  new approach is better and even when the user's own follow-up prompted it;
+  their new requirement is an argument for a new plan, not consent to it. The
+  approval also lapses when the plan turns out to rest on a wrong premise —
+  re-present, don't improvise.
 - **NEVER commit without explicit user request**: NEVER run `git commit` unless the user explicitly asks for it. Not after editing files, not after testing, not ever. The user will say "commit" when ready.
 - **Commit at topic boundaries — cut in front, never carve up afterwards**: as soon as
   one topic is finished (a feature, a bugfix in a distinct area, a review finding that
