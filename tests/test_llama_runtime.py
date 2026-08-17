@@ -9,6 +9,11 @@ import unittest
 
 from markdown_vault.search import llama_runtime as L
 
+# NOTE: the skipUnless below calls L.is_available(), which imports llama_cpp at
+# collection time — and llama_cpp leaks two /dev/null handles by design. The
+# ResourceWarning that causes is filtered in the Makefile (TEST_WARN), not here: a
+# module-level filterwarnings() would be reset by unittest's own warnings handling.
+
 
 class _StubModel:
     def __init__(self, reply="hi"):

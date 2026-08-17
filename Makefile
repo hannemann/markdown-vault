@@ -22,6 +22,17 @@ TEST_HOME := $(CURDIR)/tmp/test-home
 TEST_ENV := MDV_CONFIG_DIR=$(TEST_HOME)/config XDG_STATE_HOME=$(TEST_HOME)/state \
             XDG_CACHE_HOME=$(TEST_HOME)/cache XDG_DATA_HOME=$(TEST_HOME)/data
 
+# A suite that ends silent is what makes a NEW warning noticeable — habituation to
+# noise is how the settings reset stayed unexplained for an afternoon. CPython ignores
+# ResourceWarning by default and unittest switches it on for a run, but stops doing so
+# as soon as any -W is passed: so enable it explicitly, then silence the single
+# third-party leak that is there by design — llama_cpp opens two module-level /dev/null
+# handles at import (llama_cpp/_utils.py:7-8) and keeps them for the process lifetime;
+# closing them would break its suppress_stdout_stderr. Order matters, the last -W wins.
+# An unclosed file of *ours* still warns.
+TEST_WARN := -W default::ResourceWarning \
+             -W "ignore:unclosed file <_io.TextIOWrapper name='/dev/null':ResourceWarning"
+
 REQUIREMENTS := requirements.txt
 REQUIREMENTS_AI := requirements-ai.txt
 LOCK := requirements.lock
@@ -147,7 +158,7 @@ import pymdownx; print('pymdownx: OK')"
 test:
 	@echo "=> Running tests..."
 	@PY=$$([ -x "$(VENV)/bin/python" ] && echo "$(VENV)/bin/python" || echo "$(PYTHON)"); \
-	$(TEST_ENV) PYTHONPATH=$(PYTHONPATH_DIR) "$$PY" -m unittest discover -s tests -v
+	$(TEST_ENV) PYTHONPATH=$(PYTHONPATH_DIR) "$$PY" $(TEST_WARN) -m unittest discover -s tests -v
 
 # Run a single test target instead of the whole suite. Pass T= a dotted path
 # (module, class, or method) and/or K= a name substring (unittest -k):
@@ -160,16 +171,16 @@ test-one:
 	@PY=$$([ -x "$(VENV)/bin/python" ] && echo "$(VENV)/bin/python" || echo "$(PYTHON)"); \
 	if [ -n "$(T)" ]; then \
 	  echo "=> Running $(T)..."; \
-	  $(TEST_ENV) PYTHONPATH=$(PYTHONPATH_DIR):tests "$$PY" -m unittest -v $(T); \
+	  $(TEST_ENV) PYTHONPATH=$(PYTHONPATH_DIR):tests "$$PY" $(TEST_WARN) -m unittest -v $(T); \
 	else \
 	  echo "=> Running tests matching '$(K)'..."; \
-	  $(TEST_ENV) PYTHONPATH=$(PYTHONPATH_DIR) "$$PY" -m unittest discover -s tests -v -k "$(K)"; \
+	  $(TEST_ENV) PYTHONPATH=$(PYTHONPATH_DIR) "$$PY" $(TEST_WARN) -m unittest discover -s tests -v -k "$(K)"; \
 	fi
 
 coverage:
 	@test -n "$(FILE)" || { echo "usage: make coverage FILE=<src-file> [T=<test_module ...>]"; exit 2; }
 	@PY=$$([ -x "$(VENV)/bin/python" ] && echo "$(VENV)/bin/python" || echo "$(PYTHON)"); \
-	$(TEST_ENV) "$$PY" scripts/coverage.py "$(FILE)" $(T)
+	$(TEST_ENV) "$$PY" $(TEST_WARN) scripts/coverage.py "$(FILE)" $(T)
 
 # Full-app E2E smoke tests: spawn the app on an ISOLATED session bus
 # (dbus-run-session — so the developer's running instance is not activated
