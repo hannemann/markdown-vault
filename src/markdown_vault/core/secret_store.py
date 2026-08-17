@@ -15,7 +15,11 @@ headless run, locked keyring, libsecret missing — reads return ``""`` and writ
 return ``False`` instead of falling back to plaintext on disk. The caller treats
 "no key" as "re-enter it".
 
-Secrets are keyed by a short logical name (``"ask_api_key"``) under a single schema.
+Secrets are keyed by a short logical name under a single schema. The name is the
+caller's to choose and may carry scope — the Ask API key uses
+``"ask_api_key:<backend>|<url>"`` so a key stays with the server it belongs to
+(see :func:`markdown_vault.search.ask_models.secret_name`), and shows up under
+that name in a keyring manager.
 """
 import logging
 

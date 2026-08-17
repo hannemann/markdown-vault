@@ -131,7 +131,12 @@ class PreferencesDialog(Adw.PreferencesDialog):
         # separate so a secret never lands in self._settings / vaults.yaml.
         self._secret_persist_id = None
         self._pending_secret = None
+        self._secret_updating = False
         self.connect("closed", self._flush_secret)
+        # Debounced model-list refresh: the list belongs to the server URL, so
+        # editing that URL re-fetches — but not on every keystroke.
+        self._ask_models_id = None
+        self.connect("closed", self._cancel_ask_models_refresh)
 
         # ── General page ────────────────────────────────────────────
         general = Adw.PreferencesPage(title="General", icon_name="preferences-other-symbolic")
@@ -595,6 +600,12 @@ class PreferencesDialog(Adw.PreferencesDialog):
         row.set_child(box)
         return row, entry
 
+    @staticmethod
+    def _secret_name_of(secret_key) -> str:
+        """*secret_key* may be a fixed name or a callable resolving one — the Ask
+        key's name depends on the configured endpoint and changes with it."""
+        return secret_key() if callable(secret_key) else secret_key
+
     def _key_row(self, title, secret_key):
         """Like :meth:`_entry_row`, but the value is a **secret in the OS keyring**
         (libsecret), never in settings — so it stays out of vaults.yaml and the
@@ -608,7 +619,7 @@ class PreferencesDialog(Adw.PreferencesDialog):
                              width_request=self._LABEL_WIDTH))
         entry = Gtk.Entry(hexpand=True, valign=Gtk.Align.CENTER, visibility=False)
         if secret_store.available():
-            entry.set_text(secret_store.get_secret(secret_key))
+            entry.set_text(secret_store.get_secret(self._secret_name_of(secret_key)))
         else:
             entry.set_placeholder_text("no keyring available — key won't be saved")
             entry.set_sensitive(False)
@@ -618,7 +629,11 @@ class PreferencesDialog(Adw.PreferencesDialog):
         return row, entry
 
     def _on_secret_changed(self, entry, secret_key):
-        self._pending_secret = (secret_key, entry.get_text())
+        if self._secret_updating:      # reloading the field, not a user edit
+            return
+        # Resolve the name NOW: if the endpoint changes before the debounce fires,
+        # the key must still land on the server it was typed for.
+        self._pending_secret = (self._secret_name_of(secret_key), entry.get_text())
         if self._secret_persist_id is not None:
             GLib.source_remove(self._secret_persist_id)
         self._secret_persist_id = GLib.timeout_add(
@@ -1057,16 +1072,21 @@ class PreferencesDialog(Adw.PreferencesDialog):
         self._ask_url_row, self._ask_url_entry = self._entry_row(
             "Server URL", "ask_ollama_url")
         # Hint the saved backend's port immediately (not only on a later switch).
-        saved_url = self._ASK_BACKEND_URLS.get(self._settings.get("ask_backend"))
+        from markdown_vault.search import ask_models
+        saved_url = ask_models.DEFAULT_URLS.get(self._settings.get("ask_backend"))
         if saved_url:
             self._ask_url_entry.set_placeholder_text(f"{saved_url} (default)")
         # A non-local URL means note content leaves the device — re-check the warning
         # as the URL is typed (localhost llama.cpp/ollama stay local).
-        self._ask_url_entry.connect("changed", lambda *_: self._update_external_warning())
+        self._ask_url_entry.connect("changed", lambda *_: self._on_ask_url_changed())
         group.add(self._ask_url_row)
         # API key (OpenAI-compatible servers that require auth). Stored in the OS
         # keyring, never in vaults.yaml or the logs — see _key_row.
-        self._ask_key_row, self._ask_key_entry = self._key_row("API key", "ask_api_key")
+        # The key belongs to the server it was entered for, so the keyring name is
+        # resolved per endpoint at read/write time, not fixed at build time.
+        ask_models.adopt_legacy_key(self._settings)
+        self._ask_key_row, self._ask_key_entry = self._key_row(
+            "API key", self._ask_secret_name)
         group.add(self._ask_key_row)
         # Privacy: shown ONLY when the server is non-local (any server backend) —
         # a local llama.cpp/ollama sends nothing out; a remote one ships note text.
@@ -1210,12 +1230,69 @@ class PreferencesDialog(Adw.PreferencesDialog):
     def _on_ask_model_selected(self, combo, _pspec) -> None:
         item = combo.get_selected_item()
         if item is not None:
-            self._settings["ask_model"] = item.get_string()
+            self._remember_ask_model(item.get_string())
             self._persist_debounced()
 
-    # Typical server URL per backend — llama.cpp serves :8080, Ollama :11434.
-    _ASK_BACKEND_URLS = {"ollama": "http://localhost:11434",
-                         "openai": "http://localhost:8080"}
+    def _remember_ask_model(self, model: str) -> None:
+        """Record the choice for the *current* server, so switching provider and
+        back restores it instead of sending it to a server that lacks it."""
+        from markdown_vault.search import ask_models
+        ask_models.remember(self._settings, self._ask_backend(), self._ask_url(), model)
+
+    def _ask_backend(self) -> str:
+        return self._settings.get("ask_backend") or config.default("ask_backend")
+
+    def _ask_url(self) -> str:
+        return self._settings.get("ask_ollama_url") or config.default("ask_ollama_url")
+
+    def _ask_secret_name(self) -> str:
+        """Keyring name of the API key for the currently configured server."""
+        from markdown_vault.search import ask_models
+        return ask_models.secret_name(self._ask_backend(), self._ask_url())
+
+    def _reload_ask_key(self) -> None:
+        """Show the key of the server that is configured now. A pending edit is
+        flushed first, so it still reaches the server it was typed for."""
+        from markdown_vault.core import secret_store
+        if not self._ask_key_entry.get_sensitive():
+            return                      # no keyring — the field is disabled
+        self._flush_secret()
+        self._secret_updating = True
+        try:
+            self._ask_key_entry.set_text(
+                secret_store.get_secret(self._ask_secret_name()))
+        finally:
+            self._secret_updating = False
+
+    def _on_ask_url_changed(self) -> None:
+        """The URL identifies the server: warn (or stop warning) about notes
+        leaving the device, and re-fetch that server's models once typing stops."""
+        self._update_external_warning()
+        self._schedule_ask_models_refresh()
+
+    def _schedule_ask_models_refresh(self, delay_ms: int = 700) -> None:
+        if self._ask_backend() not in ("ollama", "openai"):
+            return
+        self._cancel_ask_models_refresh()
+        self._ask_models_id = GLib.timeout_add(delay_ms, self._ask_models_timeout)
+
+    def _ask_models_timeout(self) -> bool:
+        """The URL has settled — it now identifies a (possibly different) server,
+        so file it under this backend and pick up that server's model and key."""
+        self._ask_models_id = None
+        from markdown_vault.search import ask_models
+        backend, url = self._ask_backend(), self._ask_url()
+        ask_models.remember_url(self._settings, backend, url)
+        ask_models.activate(self._settings, backend, url)
+        self._persist_debounced()
+        self._reload_ask_key()
+        self._refresh_ask_models()
+        return False
+
+    def _cancel_ask_models_refresh(self, *_args) -> None:
+        if self._ask_models_id is not None:
+            GLib.source_remove(self._ask_models_id)
+            self._ask_models_id = None
 
     def _on_ask_engine_changed(self, row, _pspec) -> None:
         self._settings["ask_engine"] = self._ask_engines[row.get_selected()]
@@ -1223,21 +1300,25 @@ class PreferencesDialog(Adw.PreferencesDialog):
         self._update_ask_rows()
 
     def _on_ask_backend_changed(self, row, _pspec) -> None:
+        from markdown_vault.search import ask_models
         backend = self._ask_backends[row.get_selected()]
-        self._settings["ask_backend"] = backend
+        previous = self._settings.get("ask_backend") or config.default("ask_backend")
+        self._flush_secret()          # the pending key still belongs to `previous`
+        # URL, model and key belong to the provider: file the old one's, restore
+        # the new one's. Without this, a hand-typed URL is carried over and the
+        # new backend talks to the previous one's host.
+        url = ask_models.switch_backend(self._settings, previous, backend)
         self._update_ask_rows()
-        # Point the URL hint (and an empty/other-default value) at the new
-        # backend's port, so switching to llama.cpp doesn't silently keep :11434.
-        default_url = self._ASK_BACKEND_URLS.get(backend)
+        default_url = ask_models.DEFAULT_URLS.get(backend)
         if default_url:
             self._ask_url_entry.set_placeholder_text(f"{default_url} (default)")
-            cur = self._ask_url_entry.get_text().strip()
-            if not cur or cur in self._ASK_BACKEND_URLS.values():
-                self._ask_url_entry.set_text(default_url)  # fires changed → saves
+            self._ask_url_entry.set_text(url)          # fires changed → saves
+        self._reload_ask_key()
         self._update_external_warning()
         self._persist()
         if backend != "local":
-            self._refresh_ask_models()  # different endpoint per server backend
+            self._cancel_ask_models_refresh()   # the URL change scheduled one
+            self._refresh_ask_models()          # different endpoint per backend
 
     @staticmethod
     def _is_local_url(url: str) -> bool:
@@ -1523,30 +1604,23 @@ class PreferencesDialog(Adw.PreferencesDialog):
         self._ask_gpu_row.set_subtitle(f"{base} {advice}" if advice else base)
 
     def _refresh_ask_models(self) -> None:
-        """Fetch the model list off the main thread — from Ollama's /api/tags or
-        the OpenAI-compatible /v1/models, depending on the selected backend."""
-        import json
-        import urllib.request
+        """Fetch the model list off the main thread. Endpoint and parsing live in
+        ask_models (shared with the Ask footer picker); the result also fills that
+        module's cache, so the palette shows the same list without a second fetch.
+        Errors are surfaced inline here — unlike the background refresh, this is a
+        thing the user asked for and wants an answer to."""
         from markdown_vault.core import secret_store
-        from markdown_vault.search.ask import openai_base
-        raw_url = self._settings.get("ask_ollama_url") or config.default("ask_ollama_url")
-        openai = self._settings.get("ask_backend") == "openai"
-        # openai appends /v1 itself (like the chat call); ollama uses the raw base.
-        url = openai_base(raw_url) if openai else raw_url.rstrip("/")
-        endpoint = "/v1/models" if openai else "/api/tags"
-        key = secret_store.get_secret("ask_api_key")   # also for a proxied Ollama
+        from markdown_vault.search import ask_models
+        backend, url = self._ask_backend(), self._ask_url()
+        if backend not in ask_models.SERVER_BACKENDS:
+            return
+        key = secret_store.get_secret(self._ask_secret_name())  # also proxied Ollama
         self._ask_model_combo.set_subtitle("Loading…")
 
         def worker():
             try:
-                headers = {"Authorization": f"Bearer {key}"} if key else {}
-                req = urllib.request.Request(url + endpoint, headers=headers)
-                data = json.loads(urllib.request.urlopen(req, timeout=6).read())
-                # Ollama: {"models":[{"name":…}]}; OpenAI/llama.cpp:
-                # {"data":[{"id":…}]} or {"models":[{"name"/"id":…}]}.
-                items = data.get("models") or data.get("data") or []
-                models = [m.get("name") or m.get("id") for m in items
-                          if (m.get("name") or m.get("id"))]
+                models = ask_models.fetch(backend, url, key)
+                ask_models.cache_put(backend, url, models)
                 GLib.idle_add(self._populate_ask_models, models, None)
             except Exception as exc:  # noqa: BLE001 — surface any failure inline
                 GLib.idle_add(self._populate_ask_models, None, str(exc))
@@ -1562,14 +1636,17 @@ class PreferencesDialog(Adw.PreferencesDialog):
         if not models:
             self._ask_model_combo.set_subtitle("No models on the server")
             return False
-        current = self._settings.get("ask_model") or config.default("ask_model")
-        if current and current not in models:
-            models = [current] + models  # keep the saved choice selectable
+        # Only ever offer what this server actually has: a model kept from another
+        # provider (or one that has since been removed) would be sent to a server
+        # that does not know it. If the stored choice is gone, adopt a real one.
+        current = self._settings.get("ask_model")
         self._ask_model_list.splice(0, self._ask_model_list.get_n_items(), models)
-        try:
+        if current in models:
             self._ask_model_combo.set_selected(models.index(current))
-        except ValueError:
+        else:
             self._ask_model_combo.set_selected(0)
+            self._remember_ask_model(models[0])
+            self._persist_debounced()
         self._ask_model_combo.set_subtitle(f"{len(models)} models")
         return False
 

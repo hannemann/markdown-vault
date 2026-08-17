@@ -306,9 +306,15 @@ class QuickOpenPalette(Adw.Dialog):
             self._scope_dropdown.refresh()
         self._refresh_models()
 
+    def refresh_models(self) -> None:
+        """Repopulate the footer picker — also called when a background fetch of
+        a server's model list has arrived. Safe to call when it is hidden."""
+        self._refresh_models()
+        return False        # usable directly as a GLib.idle_add callback
+
     def _refresh_models(self) -> None:
         """Populate and show the footer model picker only when Ask mode is on and
-        more than one model is downloaded."""
+        more than one model is available for the active backend."""
         if self._model_dropdown is None:
             return
         models = self._list_ask_models() if self._list_ask_models else []

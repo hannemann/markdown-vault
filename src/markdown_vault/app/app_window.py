@@ -448,7 +448,7 @@ class MainWindow(Adw.ApplicationWindow):
                 should_cancel=should_cancel),
             list_ask_models=self._list_ask_models,
             set_ask_model=self._set_ask_model,
-            current_ask_model=lambda: config.resolve_model_path(self._settings),
+            current_ask_model=self._current_ask_model,
             get_top_k=lambda: int(self._settings.get("ask_top_k")
                                   or config.default("ask_top_k")),
             can_ask=lambda: bool(self._settings.get("semantic_search_enabled"))
@@ -1520,14 +1520,29 @@ class MainWindow(Adw.ApplicationWindow):
             should_cancel=should_cancel)
 
     def _list_ask_models(self):
-        """``(name, path)`` for each downloaded GGUF — feeds the palette's footer
-        model picker (only shown when there is more than one)."""
-        from pathlib import Path
-        return [(Path(p).name, str(p)) for p in config.list_models()]
+        """``(label, value)`` for the palette's footer model picker — downloaded
+        GGUFs or, for a server backend, the models that server offers."""
+        from markdown_vault.search import ask_models
+        return ask_models.list_for(self._settings, on_refresh=self._ask_models_arrived)
 
-    def _set_ask_model(self, path: str) -> None:
-        """Select a model from the footer picker; the next answer uses it."""
-        self._settings["ask_gguf_path"] = path
+    def _ask_models_arrived(self, _models) -> None:
+        """A background model fetch finished (worker thread) — repopulate the
+        footer picker on the main loop."""
+        GLib.idle_add(self._quick_open.refresh_models)
+
+    def _current_ask_model(self) -> str:
+        """The model the next answer would use — a GGUF path or a server model."""
+        from markdown_vault.search import ask_models
+        return ask_models.current(self._settings)
+
+    def _set_ask_model(self, value: str) -> None:
+        """Select a model from the footer picker; the next answer uses it. Which
+        setting that writes depends on the backend, so ask_models decides."""
+        from markdown_vault.search import ask_models
+        backend = ask_models.effective_backend(self._settings)
+        url = (self._settings.get("ask_ollama_url")
+               or config.default("ask_ollama_url"))
+        ask_models.remember(self._settings, backend, url, value)
         config.save_settings(self._settings)
 
     def _ask_candidates(self, question: str):

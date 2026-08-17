@@ -41,6 +41,13 @@ class _DialogTest(unittest.TestCase):
             self._patchers.append(m)
             return m.start()
 
+        # Never fetch a real model list: construction and every backend/URL change
+        # would otherwise start a network thread whose GLib.idle_add callback fires
+        # in a later test, with these mocks already gone.
+        m = patch.object(PreferencesDialog, "_refresh_ask_models")
+        self._patchers.append(m)
+        m.start()
+
         self.load = _p("markdown_vault.ui.preferences.config.load_settings")
         self.load.return_value = {}
         _p("markdown_vault.ui.preferences.config.save_settings").side_effect = (
@@ -74,7 +81,7 @@ class _DialogTest(unittest.TestCase):
         # wiping every setting not in it (that really happened).
         from gi.repository import GLib  # type: ignore[attr-defined]
         for dlg in self._dialogs:
-            for attr in ("_persist_id", "_secret_persist_id"):
+            for attr in ("_persist_id", "_secret_persist_id", "_ask_models_id"):
                 source = getattr(dlg, attr, None)
                 if source is not None:
                     GLib.source_remove(source)
@@ -289,19 +296,42 @@ class TestSearchAndAskHandlers(_DialogTest):
 
 
 class TestApiKeyInKeyring(_DialogTest):
-    """The API key lives in the keyring (secret_store), never in settings."""
+    """The API key lives in the keyring (secret_store), never in settings — and
+    under a name that carries the endpoint, so it is only ever sent to the server
+    it was entered for."""
+
+    _SERVER = dict(ask_engine="manual", ask_backend="openai",
+                   ask_ollama_url="https://llm.example.com")
+
+    def _name(self, backend="openai", url="https://llm.example.com"):
+        from markdown_vault.search import ask_models
+        return ask_models.secret_name(backend, url)
 
     def test_read_from_keyring_on_open(self):
-        self.secrets["ask_api_key"] = "sk-stored"
-        dlg = self._dialog()
+        self.secrets[self._name()] = "sk-stored"
+        dlg = self._dialog(**self._SERVER)
         self.assertEqual(dlg._ask_key_entry.get_text(), "sk-stored")
 
     def test_change_writes_to_keyring_not_settings(self):
-        dlg = self._dialog()
+        dlg = self._dialog(**self._SERVER)
         dlg._ask_key_entry.set_text("sk-new")
         dlg._flush_secret()                       # force the debounced keyring write
-        self.assertEqual(self.secrets.get("ask_api_key"), "sk-new")
+        self.assertEqual(self.secrets.get(self._name()), "sk-new")
         self.assertNotIn("ask_api_key", dlg._settings)   # never in vaults.yaml
+
+    def test_key_of_another_server_is_not_shown_or_reused(self):
+        self.secrets[self._name("ollama", "http://localhost:11434")] = "sk-ollama"
+        dlg = self._dialog(**self._SERVER)
+        self.assertEqual(dlg._ask_key_entry.get_text(), "")
+
+    def test_app_wide_key_is_adopted_for_the_configured_server(self):
+        # Pre-per-endpoint installs have one "ask_api_key"; it was already being
+        # sent to exactly this server, so it is moved there and nowhere else.
+        self.secrets["ask_api_key"] = "sk-old"
+        dlg = self._dialog(**self._SERVER)
+        self.assertEqual(dlg._ask_key_entry.get_text(), "sk-old")
+        self.assertEqual(self.secrets.get(self._name()), "sk-old")
+        self.assertFalse(self.secrets.get("ask_api_key"))
 
     def test_no_keyring_disables_the_field(self):
         with patch("markdown_vault.core.secret_store.available", return_value=False):
@@ -317,6 +347,75 @@ class TestApiKeyInKeyring(_DialogTest):
         err.assert_called_once()
 
 
+class TestAskModelPerEndpoint(_DialogTest):
+    """The model belongs to the server, not to the app: switching provider must
+    not leave the previous provider's model selected — it would be sent to a
+    server that does not have it."""
+
+    def _switch_backend(self, dlg, backend):
+        dlg._ask_backend_row.set_selected(dlg._ask_backends.index(backend))
+
+    def test_switching_backend_drops_the_other_servers_model(self):
+        dlg = self._dialog(ask_engine="manual", ask_backend="ollama",
+                           ask_ollama_url="http://localhost:11434",
+                           ask_model="llama3.2")
+        dlg._remember_ask_model("llama3.2")
+        self._switch_backend(dlg, "openai")
+        self.assertEqual(dlg._settings["ask_model"], "")
+
+    def test_switching_back_restores_the_earlier_choice(self):
+        dlg = self._dialog(ask_engine="manual", ask_backend="ollama",
+                           ask_ollama_url="http://localhost:11434",
+                           ask_model="llama3.2")
+        dlg._remember_ask_model("llama3.2")
+        self._switch_backend(dlg, "openai")
+        dlg._remember_ask_model("Qwen3.5-122B")
+        self._switch_backend(dlg, "ollama")
+        self.assertEqual(dlg._settings["ask_model"], "llama3.2")
+        self._switch_backend(dlg, "openai")
+        self.assertEqual(dlg._settings["ask_model"], "Qwen3.5-122B")
+
+    def test_a_hand_typed_url_is_not_carried_to_the_other_backend(self):
+        # Previously only the known default ports were swapped, so a custom URL
+        # travelled along and Ollama ended up talking to the OpenAI host.
+        dlg = self._dialog(ask_engine="manual", ask_backend="openai",
+                           ask_ollama_url="https://llm.example.com")
+        self._switch_backend(dlg, "ollama")
+        self.assertEqual(dlg._settings["ask_ollama_url"], "http://localhost:11434")
+        self._switch_backend(dlg, "openai")
+        self.assertEqual(dlg._settings["ask_ollama_url"], "https://llm.example.com")
+        self.assertEqual(dlg._ask_url_entry.get_text(), "https://llm.example.com")
+
+    def test_key_field_follows_the_backend(self):
+        from markdown_vault.search import ask_models
+        self.secrets[ask_models.secret_name("openai", "https://llm.example.com")] = "sk-a"
+        self.secrets[ask_models.secret_name("ollama", "http://localhost:11434")] = "sk-b"
+        dlg = self._dialog(ask_engine="manual", ask_backend="openai",
+                           ask_ollama_url="https://llm.example.com")
+        self.assertEqual(dlg._ask_key_entry.get_text(), "sk-a")
+        self._switch_backend(dlg, "ollama")
+        self.assertEqual(dlg._ask_key_entry.get_text(), "sk-b")
+
+    def test_list_never_offers_a_model_the_server_lacks(self):
+        dlg = self._dialog(ask_engine="manual", ask_backend="openai",
+                           ask_ollama_url="https://llm.example.com",
+                           ask_model="llama3.2")     # left over from Ollama
+        dlg._populate_ask_models(["Qwen3.5-122B", "gpt-oss"], None)
+        names = [dlg._ask_model_list.get_string(i)
+                 for i in range(dlg._ask_model_list.get_n_items())]
+        self.assertEqual(names, ["Qwen3.5-122B", "gpt-oss"])
+        # …and the active value is a real one, not the stale name.
+        self.assertEqual(dlg._settings["ask_model"], "Qwen3.5-122B")
+
+    def test_list_keeps_the_choice_the_server_has(self):
+        dlg = self._dialog(ask_engine="manual", ask_backend="ollama",
+                           ask_ollama_url="http://localhost:11434",
+                           ask_model="llama3.2")
+        dlg._populate_ask_models(["qwen3", "llama3.2"], None)
+        self.assertEqual(dlg._ask_model_combo.get_selected(), 1)
+        self.assertEqual(dlg._settings["ask_model"], "llama3.2")
+
+
 class TestExternalWarning(_DialogTest):
     """The 'notes leave the device' warning tracks the URL, not the backend name:
     it shows for any server backend with a non-local URL, and hides for localhost."""
@@ -325,7 +424,7 @@ class TestExternalWarning(_DialogTest):
         for u in ("http://localhost:8080", "http://127.0.0.1:11434",
                   "http://[::1]:8080", ""):
             self.assertTrue(PreferencesDialog._is_local_url(u), u)
-        for u in ("https://llm.aihosting.mittwald.de", "http://192.168.1.5:8080",
+        for u in ("https://llm.example.com", "http://192.168.1.5:8080",
                   "https://api.openai.com"):
             self.assertFalse(PreferencesDialog._is_local_url(u), u)
 
@@ -335,7 +434,7 @@ class TestExternalWarning(_DialogTest):
 
     def test_remote_openai_shows_warning(self):
         dlg = self._dialog(ask_backend="openai",
-                           ask_ollama_url="https://llm.aihosting.mittwald.de")
+                           ask_ollama_url="https://llm.example.com")
         self.assertTrue(dlg._ask_external_row.get_visible())
 
     def test_remote_ollama_shows_warning(self):

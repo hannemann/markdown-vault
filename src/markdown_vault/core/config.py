@@ -312,6 +312,13 @@ _DEFAULT_SETTINGS = {
     "ask_backend": "local",
     "ask_ollama_url": "http://localhost:11434",
     "ask_model": "llama3.2",
+    # The model choice belongs to the server, not to the app: "<backend>|<url>" →
+    # model name, so switching provider restores that provider's model instead of
+    # sending the previous one to a server that does not have it.
+    "ask_model_by_endpoint": {},
+    # Same for the server URL: one per backend, so switching does not point the
+    # new backend at the previous one's host. ask_ollama_url is the active value.
+    "ask_url_by_backend": {},
     # Local (in-process) GGUF model. The .gguf file is both the download target
     # and the load source; empty → the app state dir default. The URL pre-fills
     # the download button with a small llama3.2-3B instruct build.

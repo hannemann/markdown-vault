@@ -505,8 +505,8 @@ def answer_question(question: str, semantic_index, settings: dict, vaults,
     if engine == "off":
         return Answer(text="Answers are turned off. Turn the answer engine on in "
                            "Preferences → Search → Ask.")
-    backend = "local" if engine == "auto" else (
-        settings.get("ask_backend") or config.default("ask_backend"))
+    from markdown_vault.search import ask_models   # local: ask_models imports us
+    backend = ask_models.effective_backend(settings)
     # Build the chat backend and decide whether we cap the context ourselves. We
     # size the window for the in-process and Ollama backends (so the prompt fits
     # instead of being silently truncated); the OpenAI-compatible server sizes
@@ -550,17 +550,18 @@ def answer_question(question: str, semantic_index, settings: dict, vaults,
             on_phase=on_phase, on_token=on_token, should_cancel=should_cancel)
         char_budget = context_char_budget(num_ctx)
     elif backend == "openai":
-        from markdown_vault.core import secret_store
-        chat = OpenAIChat(model=settings.get("ask_model") or config.default("ask_model"),
+        # No fallback to the default model name here: that default belongs to
+        # Ollama, and sending it to an OpenAI-compatible server would be a model
+        # it does not have. Empty means "the server's own default".
+        chat = OpenAIChat(model=settings.get("ask_model") or "",
                           url=settings.get("ask_ollama_url") or config.default("ask_ollama_url"),
-                          think=think, api_key=secret_store.get_secret("ask_api_key"))
+                          think=think, api_key=ask_models.api_key(settings))
         char_budget = None
     else:  # ollama
-        from markdown_vault.core import secret_store
         chat = OllamaChat(model=settings.get("ask_model") or config.default("ask_model"),
                           url=settings.get("ask_ollama_url") or config.default("ask_ollama_url"),
                           think=think, num_ctx=num_ctx,
-                          api_key=secret_store.get_secret("ask_api_key"))
+                          api_key=ask_models.api_key(settings))
         char_budget = context_char_budget(num_ctx)
     # Apply the budget once here (not again in answer()): the log and the warning
     # both need the post-budget set, so fit, then hand the fitted hits down.

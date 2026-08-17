@@ -2,6 +2,7 @@ install_data(
   files(
     '__init__.py',
     'ask.py',
+    'ask_models.py',
     'lexical_search.py',
     'llama_runtime.py',
     'quick_open.py',
