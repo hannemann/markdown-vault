@@ -84,6 +84,33 @@ class TestConstants(unittest.TestCase):
             self.assertEqual(getattr(paths, name).name, "markdown-vault", name)
 
 
+class TestRunIsolation(unittest.TestCase):
+    """The suite must not be able to reach the developer's real directories.
+
+    A leaked debounced write once replaced the whole settings block in the real
+    ``vaults.yaml``; the trigger was fixed, but the *exposure* is what this asserts.
+    `make test` / `test-one` / `coverage` pin all four base dirs at ./tmp/test-home,
+    so a forgotten mock, thread or timer writes there instead of into the real config.
+    """
+
+    def test_not_running_against_the_real_dirs(self):
+        home = Path.home()
+        real = {
+            "config": home / ".config" / "markdown-vault",
+            "state": home / ".local" / "state" / "markdown-vault",
+            "cache": home / ".cache" / "markdown-vault",
+            "data": home / ".local" / "share" / "markdown-vault",
+        }
+        actual = {"config": paths.CONFIG_DIR, "state": paths.STATE_DIR,
+                  "cache": paths.CACHE_DIR, "data": paths.DATA_DIR}
+        for kind, path in actual.items():
+            self.assertNotEqual(
+                path, real[kind],
+                f"the test run resolves {kind} to the real {real[kind]} — run the suite "
+                f"via `make test` (it pins MDV_CONFIG_DIR and the XDG_*_HOME vars), or "
+                f"set those yourself before running unittest directly")
+
+
 class TestPlacement(unittest.TestCase):
     """Each data kind sits in its XDG directory — the point of the whole change, so
     pinned where the owning module resolves it (not just in the docstring table)."""

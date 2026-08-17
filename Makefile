@@ -13,6 +13,15 @@ PYTHONPATH_DIR := src
 # A python3 earlier in PATH (e.g. Homebrew) usually lacks PyGObject.
 PYTHON := $(shell python3 -c 'import gi' 2>/dev/null && echo python3 || echo /usr/bin/python3)
 VENV := $(HOME)/.local/share/markdown-vault/venv
+# Tests must never be able to reach the developer's real directories: a leaked
+# debounced write once replaced the whole settings block in the real vaults.yaml.
+# Pin all four base dirs (like tests-e2e/harness.py does) at a throwaway tree, so
+# isolation is a property of the run instead of per-test discipline. Free: the suite
+# stays green, and ./tmp is gitignored.
+TEST_HOME := $(CURDIR)/tmp/test-home
+TEST_ENV := MDV_CONFIG_DIR=$(TEST_HOME)/config XDG_STATE_HOME=$(TEST_HOME)/state \
+            XDG_CACHE_HOME=$(TEST_HOME)/cache XDG_DATA_HOME=$(TEST_HOME)/data
+
 REQUIREMENTS := requirements.txt
 REQUIREMENTS_AI := requirements-ai.txt
 LOCK := requirements.lock
@@ -138,7 +147,7 @@ import pymdownx; print('pymdownx: OK')"
 test:
 	@echo "=> Running tests..."
 	@PY=$$([ -x "$(VENV)/bin/python" ] && echo "$(VENV)/bin/python" || echo "$(PYTHON)"); \
-	PYTHONPATH=$(PYTHONPATH_DIR) "$$PY" -m unittest discover -s tests -v
+	$(TEST_ENV) PYTHONPATH=$(PYTHONPATH_DIR) "$$PY" -m unittest discover -s tests -v
 
 # Run a single test target instead of the whole suite. Pass T= a dotted path
 # (module, class, or method) and/or K= a name substring (unittest -k):
@@ -151,16 +160,16 @@ test-one:
 	@PY=$$([ -x "$(VENV)/bin/python" ] && echo "$(VENV)/bin/python" || echo "$(PYTHON)"); \
 	if [ -n "$(T)" ]; then \
 	  echo "=> Running $(T)..."; \
-	  PYTHONPATH=$(PYTHONPATH_DIR):tests "$$PY" -m unittest -v $(T); \
+	  $(TEST_ENV) PYTHONPATH=$(PYTHONPATH_DIR):tests "$$PY" -m unittest -v $(T); \
 	else \
 	  echo "=> Running tests matching '$(K)'..."; \
-	  PYTHONPATH=$(PYTHONPATH_DIR) "$$PY" -m unittest discover -s tests -v -k "$(K)"; \
+	  $(TEST_ENV) PYTHONPATH=$(PYTHONPATH_DIR) "$$PY" -m unittest discover -s tests -v -k "$(K)"; \
 	fi
 
 coverage:
 	@test -n "$(FILE)" || { echo "usage: make coverage FILE=<src-file> [T=<test_module ...>]"; exit 2; }
 	@PY=$$([ -x "$(VENV)/bin/python" ] && echo "$(VENV)/bin/python" || echo "$(PYTHON)"); \
-	"$$PY" scripts/coverage.py "$(FILE)" $(T)
+	$(TEST_ENV) "$$PY" scripts/coverage.py "$(FILE)" $(T)
 
 # Full-app E2E smoke tests: spawn the app on an ISOLATED session bus
 # (dbus-run-session — so the developer's running instance is not activated
