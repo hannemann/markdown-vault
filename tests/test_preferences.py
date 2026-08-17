@@ -54,6 +54,16 @@ class _DialogTest(unittest.TestCase):
         doc.whisper_model_ready.return_value = True
         doc.SUPPORTED_SUFFIXES = [".pdf"]
 
+        # Keyring: back it with an in-memory dict so no real Secret Service is touched.
+        self.secrets = {}
+        _p("markdown_vault.core.secret_store.available").return_value = True
+        _p("markdown_vault.core.secret_store.get_secret").side_effect = (
+            lambda k: self.secrets.get(k, ""))
+        def _store(k, v):
+            self.secrets[k] = v
+            return True                                   # write succeeded
+        _p("markdown_vault.core.secret_store.set_secret").side_effect = _store
+
     def tearDown(self):
         for m in reversed(self._patchers):
             m.stop()
@@ -258,6 +268,66 @@ class TestSearchAndAskHandlers(_DialogTest):
         dlg = self._dialog()
         dlg._ask_prompt_view.get_buffer().set_text("You are a helpful assistant.")
         self.assertEqual(dlg._settings["ask_system_prompt"], "")
+
+
+class TestApiKeyInKeyring(_DialogTest):
+    """The API key lives in the keyring (secret_store), never in settings."""
+
+    def test_read_from_keyring_on_open(self):
+        self.secrets["ask_api_key"] = "sk-stored"
+        dlg = self._dialog()
+        self.assertEqual(dlg._ask_key_entry.get_text(), "sk-stored")
+
+    def test_change_writes_to_keyring_not_settings(self):
+        dlg = self._dialog()
+        dlg._ask_key_entry.set_text("sk-new")
+        dlg._flush_secret()                       # force the debounced keyring write
+        self.assertEqual(self.secrets.get("ask_api_key"), "sk-new")
+        self.assertNotIn("ask_api_key", dlg._settings)   # never in vaults.yaml
+
+    def test_no_keyring_disables_the_field(self):
+        with patch("markdown_vault.core.secret_store.available", return_value=False):
+            dlg = self._dialog()
+        self.assertFalse(dlg._ask_key_entry.get_sensitive())
+
+    def test_failed_write_surfaces_an_error(self):
+        dlg = self._dialog()
+        with patch("markdown_vault.core.secret_store.set_secret", return_value=False), \
+                patch("markdown_vault.ui.preferences.dialogs.show_error") as err:
+            dlg._ask_key_entry.set_text("sk-nope")
+            dlg._flush_secret()
+        err.assert_called_once()
+
+
+class TestExternalWarning(_DialogTest):
+    """The 'notes leave the device' warning tracks the URL, not the backend name:
+    it shows for any server backend with a non-local URL, and hides for localhost."""
+
+    def test_is_local_url(self):
+        for u in ("http://localhost:8080", "http://127.0.0.1:11434",
+                  "http://[::1]:8080", ""):
+            self.assertTrue(PreferencesDialog._is_local_url(u), u)
+        for u in ("https://llm.aihosting.mittwald.de", "http://192.168.1.5:8080",
+                  "https://api.openai.com"):
+            self.assertFalse(PreferencesDialog._is_local_url(u), u)
+
+    def test_local_llama_cpp_no_warning(self):
+        dlg = self._dialog(ask_backend="openai", ask_ollama_url="http://localhost:8080")
+        self.assertFalse(dlg._ask_external_row.get_visible())
+
+    def test_remote_openai_shows_warning(self):
+        dlg = self._dialog(ask_backend="openai",
+                           ask_ollama_url="https://llm.aihosting.mittwald.de")
+        self.assertTrue(dlg._ask_external_row.get_visible())
+
+    def test_remote_ollama_shows_warning(self):
+        dlg = self._dialog(ask_backend="ollama",
+                           ask_ollama_url="http://192.168.1.5:11434")
+        self.assertTrue(dlg._ask_external_row.get_visible())
+
+    def test_local_backend_no_warning(self):
+        dlg = self._dialog(ask_backend="local")
+        self.assertFalse(dlg._ask_external_row.get_visible())
 
 
 if __name__ == "__main__":

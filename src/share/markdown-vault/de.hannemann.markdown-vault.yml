@@ -11,6 +11,18 @@ finish-args:
   - --socket=wayland
   - --filesystem=home
   - --talk-name=org.freedesktop.portal.FileChooser
+  # No permission is needed for the Ask API key (core/secret_store.py, libsecret):
+  # inside a sandbox libsecret picks its *file* backend — it takes that branch when
+  # /.flatpak-info exists AND the Secret portal answers, and portals are reachable by
+  # default (measured: org.freedesktop.portal.Secret version=1 with no grant at all).
+  # SECRET_BACKEND cannot override it; the env var is only read on the non-sandbox
+  # branch. So the key is stored app-private and encrypted with the portal's
+  # per-application master key under ~/.var/app/<app-id>/, NOT in the host keyring.
+  # A --talk-name=org.freedesktop.secrets grant was tried and removed again: libsecret
+  # never uses it here, and it is the widest possible grant (read access to the user's
+  # whole default collection) for nothing. Consequence to know: Flatpak users do not
+  # see the key in Seahorse (a local/meson install does) — clearing the field in
+  # Preferences → Search → Ask deletes it either way.
 
 modules:
   - name: python3-dependencies

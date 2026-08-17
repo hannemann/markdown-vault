@@ -499,5 +499,18 @@ class TestDefaultAndMigration(unittest.TestCase):
         self.assertEqual(s["semantic_onnx_dir"], "")
 
 
+class TestSettingsSecretMasking(_TempConfigMixin, unittest.TestCase):
+    """A secret in settings (legacy plaintext) must not reach the debug log."""
+
+    def test_api_key_masked_in_debug_dump(self):
+        _cfg.save_settings({"ask_api_key": "sk-super-secret", "autosave_interval": 30})
+        _cfg._last_logged_settings = None                 # force the debug dump
+        with self.assertLogs("markdown_vault.core.config", level="DEBUG") as cm:
+            _cfg.load_settings()
+        blob = "\n".join(cm.output)
+        self.assertNotIn("sk-super-secret", blob)
+        self.assertIn("***", blob)
+
+
 if __name__ == "__main__":
     unittest.main()

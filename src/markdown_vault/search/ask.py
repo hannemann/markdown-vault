@@ -222,12 +222,13 @@ class OllamaChat:
 
     def __init__(self, model: str, url: str = "http://localhost:11434",
                  timeout: float = 120.0, think: bool | None = None,
-                 num_ctx: int = DEFAULT_NUM_CTX) -> None:
+                 num_ctx: int = DEFAULT_NUM_CTX, api_key: str = "") -> None:
         self.model = model
         self.url = url.rstrip("/")
         self.timeout = timeout
         self.think = think
         self.num_ctx = num_ctx
+        self.api_key = api_key
 
     def chat(self, system: str, user: str) -> str:
         payload = {
@@ -242,14 +243,27 @@ class OllamaChat:
         if self.think is not None:   # Ollama's reasoning toggle; None = model default
             payload["think"] = self.think
         body = json.dumps(payload).encode()
+        headers = {"Content-Type": "application/json"}
+        if self.api_key:             # for an Ollama put behind an auth proxy
+            headers["Authorization"] = f"Bearer {self.api_key}"
         req = urllib.request.Request(
-            self.url + "/api/chat", data=body,
-            headers={"Content-Type": "application/json"},
+            self.url + "/api/chat", data=body, headers=headers,
         )
         with urllib.request.urlopen(req, timeout=self.timeout) as resp:
             data = json.loads(resp.read())
         text = ((data.get("message") or {}).get("content") or "")
         return _THINK_RE.sub("", text).strip()
+
+
+def openai_base(url: str) -> str:
+    """Normalise an OpenAI-compatible base URL: drop a trailing slash and a
+    trailing ``/v1``, because callers append ``/v1/chat/completions`` and
+    ``/v1/models`` themselves. So ``https://host/v1`` and ``https://host`` both
+    work and no one produces ``…/v1/v1/…`` (404)."""
+    url = (url or "").rstrip("/")
+    if url.endswith("/v1"):
+        url = url[:-3].rstrip("/")
+    return url
 
 
 class OpenAIChat:
@@ -259,11 +273,13 @@ class OpenAIChat:
     via ``chat_template_kwargs`` (llama.cpp / Qwen3)."""
 
     def __init__(self, model: str, url: str = "http://localhost:8080",
-                 timeout: float = 120.0, think: bool | None = None) -> None:
+                 timeout: float = 120.0, think: bool | None = None,
+                 api_key: str = "") -> None:
         self.model = model
-        self.url = url.rstrip("/")
+        self.url = openai_base(url)
         self.timeout = timeout
         self.think = think
+        self.api_key = api_key
 
     def chat(self, system: str, user: str) -> str:
         payload = {
@@ -278,9 +294,11 @@ class OpenAIChat:
         if self.think is False:
             payload["chat_template_kwargs"] = {"enable_thinking": False}
         body = json.dumps(payload).encode()
+        headers = {"Content-Type": "application/json"}
+        if self.api_key:                       # auth only when a key is configured
+            headers["Authorization"] = f"Bearer {self.api_key}"
         req = urllib.request.Request(
-            self.url + "/v1/chat/completions", data=body,
-            headers={"Content-Type": "application/json"},
+            self.url + "/v1/chat/completions", data=body, headers=headers,
         )
         with urllib.request.urlopen(req, timeout=self.timeout) as resp:
             data = json.loads(resp.read())
@@ -532,14 +550,17 @@ def answer_question(question: str, semantic_index, settings: dict, vaults,
             on_phase=on_phase, on_token=on_token, should_cancel=should_cancel)
         char_budget = context_char_budget(num_ctx)
     elif backend == "openai":
+        from markdown_vault.core import secret_store
         chat = OpenAIChat(model=settings.get("ask_model") or config.default("ask_model"),
                           url=settings.get("ask_ollama_url") or config.default("ask_ollama_url"),
-                          think=think)
+                          think=think, api_key=secret_store.get_secret("ask_api_key"))
         char_budget = None
     else:  # ollama
+        from markdown_vault.core import secret_store
         chat = OllamaChat(model=settings.get("ask_model") or config.default("ask_model"),
                           url=settings.get("ask_ollama_url") or config.default("ask_ollama_url"),
-                          think=think, num_ctx=num_ctx)
+                          think=think, num_ctx=num_ctx,
+                          api_key=secret_store.get_secret("ask_api_key"))
         char_budget = context_char_budget(num_ctx)
     # Apply the budget once here (not again in answer()): the log and the warning
     # both need the post-budget set, so fit, then hand the fitted hits down.

@@ -594,5 +594,90 @@ class TestAnswerQuestionLocalBackend(unittest.TestCase):
         self.assertEqual([s.n for s in a.sources], [1])
 
 
+class TestOpenAIBase(unittest.TestCase):
+    """Base-URL normalisation: the caller appends /v1/... itself."""
+
+    def test_strips_trailing_slash_and_v1(self):
+        self.assertEqual(ask.openai_base("http://x/v1/"), "http://x")
+        self.assertEqual(ask.openai_base("http://x/v1"), "http://x")
+        self.assertEqual(ask.openai_base("http://x/"), "http://x")
+        self.assertEqual(ask.openai_base("http://x"), "http://x")
+        self.assertEqual(ask.openai_base(""), "")
+
+
+class TestOpenAIChatAuth(unittest.TestCase):
+    """OpenAIChat sends a bearer token only when a key is configured."""
+
+    def _capture_request(self, chat):
+        import io
+        import json
+        from unittest import mock
+        cap = {}
+
+        def fake_request(url, **kw):
+            cap["url"] = url
+            cap["headers"] = kw.get("headers", {})
+            return mock.MagicMock()
+
+        payload = json.dumps({"choices": [{"message": {"content": "hi"}}]}).encode()
+        with mock.patch("urllib.request.Request", side_effect=fake_request), \
+                mock.patch("urllib.request.urlopen") as uo:
+            uo.return_value.__enter__ = lambda s: io.BytesIO(payload)
+            uo.return_value.__exit__ = lambda s, *a: None
+            chat.chat("sys", "user")
+        return cap
+
+    def test_sends_bearer_when_key_set(self):
+        chat = ask.OpenAIChat(model="m", url="http://srv", api_key="sk-secret")
+        cap = self._capture_request(chat)
+        self.assertEqual(cap["headers"].get("Authorization"), "Bearer sk-secret")
+        self.assertEqual(cap["url"], "http://srv/v1/chat/completions")
+
+    def test_no_auth_header_without_key(self):
+        chat = ask.OpenAIChat(model="m", url="http://srv")
+        cap = self._capture_request(chat)
+        self.assertNotIn("Authorization", cap["headers"])
+
+    def test_url_with_v1_not_doubled(self):
+        chat = ask.OpenAIChat(model="m", url="http://srv/v1/")
+        self.assertEqual(chat.url, "http://srv")
+        cap = self._capture_request(chat)
+        self.assertEqual(cap["url"], "http://srv/v1/chat/completions")
+
+
+class TestOllamaChatAuth(unittest.TestCase):
+    """Ollama sends a bearer token too (for an Ollama behind an auth proxy)."""
+
+    def _capture_request(self, chat):
+        import io
+        import json
+        from unittest import mock
+        cap = {}
+
+        def fake_request(url, **kw):
+            cap["url"] = url
+            cap["headers"] = kw.get("headers", {})
+            return mock.MagicMock()
+
+        payload = json.dumps({"message": {"content": "hi"}}).encode()
+        with mock.patch("urllib.request.Request", side_effect=fake_request), \
+                mock.patch("urllib.request.urlopen") as uo:
+            uo.return_value.__enter__ = lambda s: io.BytesIO(payload)
+            uo.return_value.__exit__ = lambda s, *a: None
+            chat.chat("sys", "user")
+        return cap
+
+    def test_sends_bearer_when_key_set(self):
+        chat = ask.OllamaChat(model="m", url="http://srv", api_key="sk-o")
+        cap = self._capture_request(chat)
+        self.assertEqual(cap["headers"].get("Authorization"), "Bearer sk-o")
+        self.assertEqual(cap["url"], "http://srv/api/chat")
+
+    def test_no_auth_header_without_key(self):
+        chat = ask.OllamaChat(model="m", url="http://srv")
+        cap = self._capture_request(chat)
+        self.assertNotIn("Authorization", cap["headers"])
+
+
 if __name__ == "__main__":
     unittest.main()
