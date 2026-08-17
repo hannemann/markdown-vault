@@ -52,7 +52,7 @@ Markdown Vault — a GNOME desktop app for editing and previewing Markdown files
 - **UI toolkit**: GTK 4 + libadwaita
 - **Markdown rendering**: HTML/CSS via WebKitGTK (WebView)
 - **Config**: `~/.config/markdown-vault/vaults.yaml` (vaults + settings)
-- **Session**: `~/.config/markdown-vault/session.json` (window geometry, tabs, view modes, split positions, sidebar, expanded_vaults, editor_zoom, preview_zoom)
+- **Session**: `session.json` in the XDG **state** dir (default `~/.local/state/markdown-vault/`) — window geometry, tabs, view modes, split positions, sidebar, expanded_vaults, editor_zoom, preview_zoom. It is view/layout state, not configuration.
 
 ## Tech decisions
 
@@ -160,8 +160,18 @@ For anything finer-grained, query the graph rather than reading top-to-bottom.
   interpreter's `site-packages`, which may sit outside the install prefix. The generated launcher puts
   it on `PYTHONPATH`.
 - **Data files:** `~/.local/share/markdown-vault/` or `/usr/share/markdown-vault/`
-- **Config:** `~/.config/markdown-vault/` (identical for all installations)
-- **State/Logs:** `~/.local/state/markdown-vault/` (identical for all installations)
+- **Base directories follow the XDG Base Directory Specification** — one definition for
+  the whole app in `core/paths.py`, re-exported by `core.config` (`CONFIG_DIR`,
+  `STATE_DIR`, `CACHE_DIR`, `DATA_DIR`). Each honours its `XDG_*_HOME` variable (an unset,
+  empty or relative value falls back to the spec default), so a sandboxed build gets the
+  sandbox's dirs and a normal install the usual ones:
+  - **Config** (`vaults.yaml`): `$XDG_CONFIG_HOME/markdown-vault/`, default `~/.config/…`.
+    `MDV_CONFIG_DIR` overrides it verbatim (isolated runs, E2E harness).
+  - **State** (logs, `session.json`, debug dumps): `$XDG_STATE_HOME/…`, default `~/.local/state/…`
+  - **Cache** (semantic index — regenerates): `$XDG_CACHE_HOME/…`, default `~/.cache/…`
+  - **Data** (downloaded ONNX/GGUF models): `$XDG_DATA_HOME/…`, default `~/.local/share/…`
+  Under Flatpak all of these land in `~/.var/app/<app-id>/…`, so a sandboxed build keeps
+  its own config, models and logs — do not expect to debug it through the host's log.
 
 ## Running the app — agents MUST use ONLY these commands
 
@@ -214,7 +224,10 @@ Hard rules:
   backups. Logging is set up by the app itself as the first action in
   `main.py`, so it works identically regardless of the launcher (app.sh,
   gtk-launch, terminal). On a terminal, messages ≤ INFO additionally appear on
-  stdout and ≥ WARNING on stderr.
+  stdout and ≥ WARNING on stderr. Those paths are the **default** state dir; the
+  logs follow `$XDG_STATE_HOME` (`core/paths.py`), so a **Flatpak** build logs to
+  `~/.var/app/de.hannemann.markdown-vault/.local/state/markdown-vault/` and an E2E run
+  to its throwaway dir — check there, not in the host's log, when diagnosing those.
 - NEVER use `killall python3` — that also kills firewalld and other system
   Python processes.
 

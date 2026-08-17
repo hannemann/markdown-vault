@@ -1,7 +1,8 @@
 """Central logging setup for Markdown Vault.
 
 Sets up:
-- Two rotated log files in ~/.local/state/markdown-vault/:
+- Two rotated log files in the XDG state dir (``core.paths.STATE_DIR``, by default
+  ~/.local/state/markdown-vault/; inside a Flatpak the sandbox's own state dir):
   - markdown-vault.log         (level <= INFO)
   - markdown-vault.stderr.log  (level >= WARNING)
 - Console logging (stdout <= INFO, stderr >= WARNING) when the app is run
@@ -23,7 +24,9 @@ import traceback
 
 from gi.repository import GLib
 
-_STATE_DIR = os.path.join(os.path.expanduser("~"), ".local/state/markdown-vault")
+from markdown_vault.core import paths   # stdlib-only, safe this early
+
+_STATE_DIR = str(paths.STATE_DIR)
 _LOG_FILE = os.path.join(_STATE_DIR, "markdown-vault.log")
 _STDERR_LOG_FILE = os.path.join(_STATE_DIR, "markdown-vault.stderr.log")
 _LLAMA_LOG_FILE = os.path.join(_STATE_DIR, "markdown-vault.llama.log")

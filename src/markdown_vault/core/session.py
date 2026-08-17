@@ -4,7 +4,8 @@ Saves and restores the full application state (window geometry, open tabs,
 view modes, split positions, sidebar visibility) to a JSON file so that
 restoring the app recreates the exact previous session.
 
-Session file: ``~/.config/markdown-vault/session.json``
+Session file: ``session.json`` in the XDG state dir (``core.paths.STATE_DIR``) —
+view/layout state, not configuration.
 
 Per-vault sessions store tabs, active tab, and MRU state separately so
 that switching vaults can save and restore tab groups.
@@ -19,7 +20,7 @@ from markdown_vault.core import config
 
 logger = logging.getLogger(__name__)
 
-SESSION_FILE = config.CONFIG_DIR / "session.json"
+SESSION_FILE = config.STATE_DIR / "session.json"
 
 
 def _is_canonical_note_path(p) -> bool:
@@ -101,7 +102,7 @@ def save_session(
     *sidebar_paned_position* width of the sidebar.
     *main_paned_position* width of the vault tree panel.
     """
-    config._ensure_config_dir()
+    config._ensure_state_dir()
     data = {
         "window": {"width": width, "height": height},
         "sidebar_visible": sidebar_visible,

@@ -3,8 +3,9 @@ over the D-Bus debug interface (debug_control, gated by MDV_DEBUG_CONTROL).
 
 Isolation matters twice: an isolated session bus (dbus-run-session) keeps the
 GApplication single-instance from just activating the developer's running app
-instead of a fresh one, and MDV_CONFIG_DIR / XDG_STATE_HOME point config, state
-and vault at throwaway dirs so a test never touches real notes.
+instead of a fresh one, and MDV_CONFIG_DIR / XDG_STATE_HOME / XDG_CACHE_HOME /
+XDG_DATA_HOME point config, state, cache, data and the vault at throwaway dirs so a
+test never touches real notes, logs, index or models.
 
 Run via ``make test-e2e`` (which sets up the bus and, if available, xvfb).
 Directly-run without a display or session bus, the tests skip.
@@ -65,8 +66,13 @@ class AppSession(unittest.TestCase):
                 "  autosave_interval: 3600\n" % cls._vault)
 
         env = dict(os.environ)
+        # All four base dirs, or the run reaches into the developer's real ones:
+        # config (vaults.yaml), state (logs, session), cache (semantic index),
+        # data (downloaded models). Pinning only some is how the log leak happened.
         env["MDV_CONFIG_DIR"] = cls._cfg
         env["XDG_STATE_HOME"] = os.path.join(cls._tmp, "state")
+        env["XDG_CACHE_HOME"] = os.path.join(cls._tmp, "cache")
+        env["XDG_DATA_HOME"] = os.path.join(cls._tmp, "data")
         env["MDV_DEBUG_CONTROL"] = "1"
         repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         env["PYTHONPATH"] = (os.path.join(repo, "src") + os.pathsep
