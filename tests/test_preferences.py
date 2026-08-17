@@ -295,6 +295,34 @@ class TestSearchAndAskHandlers(_DialogTest):
         self.assertEqual(dlg._settings["ask_system_prompt"], "")
 
 
+class TestSemanticDisabledGreysOutItsSettings(_DialogTest):
+    """With semantic search off, nothing below the master switch has any effect —
+    the rows must be greyed out rather than accept changes that do nothing (the
+    rebuild button used to only object *after* it was pressed)."""
+
+    def _gated(self, dlg):
+        return [dlg._sem_backend_row, dlg._sem_score_row, dlg._sem_rebuild_row,
+                dlg._emb_nav_row, dlg._ask_nav_row]
+
+    def test_disabled_greys_out_the_rows_and_both_subpages(self):
+        dlg = self._dialog(semantic_search_enabled=False)
+        for row in self._gated(dlg):
+            self.assertFalse(row.get_sensitive(), row.get_title())
+        self.assertTrue(dlg._sem_enabled_row.get_sensitive())   # the way back on
+
+    def test_enabled_keeps_them_usable(self):
+        dlg = self._dialog(semantic_search_enabled=True)
+        for row in self._gated(dlg):
+            self.assertTrue(row.get_sensitive(), row.get_title())
+
+    def test_toggling_takes_effect_immediately(self):
+        dlg = self._dialog(semantic_search_enabled=True)
+        dlg._sem_enabled_row.set_active(False)
+        self.assertFalse(dlg._sem_backend_row.get_sensitive())
+        dlg._sem_enabled_row.set_active(True)
+        self.assertTrue(dlg._sem_backend_row.get_sensitive())
+
+
 class TestApiKeyInKeyring(_DialogTest):
     """The API key lives in the keyring (secret_store), never in settings — and
     under a name that carries the endpoint, so it is only ever sent to the server

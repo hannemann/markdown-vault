@@ -39,9 +39,10 @@ class QuickOpenPalette(Adw.Dialog):
 
     MAX_RESULTS = 40
     _SEMANTIC_MIN_CHARS = 2
+    _ASK_TOOLTIP = "Ask — answer from your notes (instead of jumping to a file)"
 
     def __init__(self, make_engine, semantic_query=None, ask_answer=None,
-                 scope=None, can_ask=None, ask_candidates=None,
+                 scope=None, can_ask=None, ask_hint=None, ask_candidates=None,
                  ask_answer_selected=None, get_top_k=None,
                  list_ask_models=None, set_ask_model=None,
                  current_ask_model=None, hide_deprecated=None,
@@ -55,6 +56,8 @@ class QuickOpenPalette(Adw.Dialog):
         self._raw_sem_results: list = []  # unfiltered semantic hits (for re-render)
         self._ask_answer = ask_answer          # callable(question) -> ask.Answer
         self._can_ask = can_ask                # () -> bool: is Ask usable right now?
+        self._ask_hint = ask_hint              # () -> str: why it is not, if not
+        self._ask_toggle = None                # built only when Ask is wired up
         # "Pick your own sources": candidates() -> [(path, score)], and
         # answer_selected(question, paths) -> ask.Answer; get_top_k() -> int cap.
         self._ask_candidates = ask_candidates
@@ -238,8 +241,7 @@ class QuickOpenPalette(Adw.Dialog):
         if ask_answer is not None:
             self._ask_toggle = Gtk.ToggleButton()
             self._ask_toggle.set_icon_name("dialog-question-symbolic")
-            self._ask_toggle.set_tooltip_text(
-                "Ask — answer from your notes (instead of jumping to a file)")
+            self._ask_toggle.set_tooltip_text(self._ASK_TOOLTIP)
             self._ask_toggle.connect("toggled", self._on_ask_toggled)
             footer.append(self._ask_toggle)
         if self._scope or ask_answer is not None:
@@ -250,9 +252,29 @@ class QuickOpenPalette(Adw.Dialog):
     # Lifecycle
     # ------------------------------------------------------------------
 
+    def refresh_ask_availability(self) -> None:
+        """Grey the Ask toggle out while Ask cannot answer, and say why.
+
+        A control that takes the click and only then explains itself is worse than
+        one that shows up front it is unavailable — and a mode the user picked
+        earlier must not strand the palette in Ask once it stops working.
+        """
+        if self._ask_toggle is None:
+            return
+        usable = bool(self._can_ask()) if self._can_ask else True
+        hint = (self._ask_hint() if self._ask_hint else "") if not usable else ""
+        self._ask_toggle.set_sensitive(usable)
+        self._ask_toggle.set_tooltip_text(
+            f"{self._ASK_TOOLTIP}\n{hint}" if hint else self._ASK_TOOLTIP)
+        if not usable and self._ask_mode:
+            self._suppress_toggle = True         # not the user's choice — no lock
+            self._ask_toggle.set_active(False)   # updates mode + chrome
+            self._suppress_toggle = False
+
     def open(self, parent: Gtk.Widget) -> None:
         """Build a fresh index, show recent files and present over *parent*."""
         self._engine = self._make_engine()
+        self.refresh_ask_availability()
         # Default to Ask mode only when it can actually work (semantic search
         # enabled AND the index is built) and the user hasn't picked a mode this
         # session — otherwise the file switcher stays the default it always was.

@@ -1,4 +1,5 @@
-"""Tests for async semantic append in the quick-open palette."""
+"""Tests for the quick-open palette: async semantic append, and the Ask toggle's
+availability (it must not offer a mode that cannot answer)."""
 
 import unittest
 
@@ -344,6 +345,48 @@ class TestAskAnswerAccessor(unittest.TestCase):
         self.assertFalse(p.is_idle())
         p._show_candidates()
         self.assertTrue(p.is_idle())
+
+
+class TestAskAvailability(unittest.TestCase):
+    """With semantic search off (or the index/engine unavailable) Ask cannot
+    answer, so the toggle must be greyed out and say why — instead of accepting
+    the click and explaining itself afterwards in the result area."""
+
+    def _palette(self, reason=""):
+        return QuickOpenPalette(make_engine=lambda: None,
+                                semantic_query=lambda q: [],
+                                ask_answer=lambda *a, **k: None,
+                                can_ask=lambda: not reason,
+                                ask_hint=lambda: reason)
+
+    def test_toggle_is_disabled_and_names_the_reason(self):
+        p = self._palette("Semantic search is off.")
+        p.refresh_ask_availability()
+        self.assertFalse(p._ask_toggle.get_sensitive())
+        self.assertIn("Semantic search is off.", p._ask_toggle.get_tooltip_text())
+
+    def test_toggle_stays_usable_when_ask_works(self):
+        p = self._palette()
+        p.refresh_ask_availability()
+        self.assertTrue(p._ask_toggle.get_sensitive())
+
+    def test_ask_mode_is_left_even_after_the_user_chose_it(self):
+        # _mode_locked keeps the user's choice across opens — but a locked choice
+        # of a mode that cannot answer would strand the palette in Ask.
+        p = self._palette()
+        p._ask_toggle.set_active(True)
+        self.assertTrue(p._ask_mode)
+        p._can_ask = lambda: False
+        p._ask_hint = lambda: "Semantic search is off."
+        p.refresh_ask_availability()
+        self.assertFalse(p._ask_mode)
+        self.assertFalse(p._ask_toggle.get_active())
+
+    def test_no_ask_configured_is_not_an_error(self):
+        # Without an ask_answer callback there is no toggle at all.
+        p = QuickOpenPalette(make_engine=lambda: None)
+        p.refresh_ask_availability()
+        self.assertIsNone(p._ask_toggle)
 
 
 if __name__ == "__main__":

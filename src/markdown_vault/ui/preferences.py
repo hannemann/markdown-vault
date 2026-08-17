@@ -384,11 +384,13 @@ class PreferencesDialog(Adw.PreferencesDialog):
 
         # Navigation into the detailed configuration subpages.
         cfg_group = Adw.PreferencesGroup(title="Configuration")
-        cfg_group.add(self._nav_row(
-            "Embedding", "Model that turns notes into vectors", self._emb_subpage))
-        cfg_group.add(self._nav_row(
+        self._emb_nav_row = self._nav_row(
+            "Embedding", "Model that turns notes into vectors", self._emb_subpage)
+        cfg_group.add(self._emb_nav_row)
+        self._ask_nav_row = self._nav_row(
             "Ask (answers from your notes)",
-            "Chat model + prompt for synthesized answers", self._ask_subpage))
+            "Chat model + prompt for synthesized answers", self._ask_subpage)
+        cfg_group.add(self._ask_nav_row)
         search.add(cfg_group)
 
         # ── Audio transcription (used by the document importer's File tab) ──
@@ -437,6 +439,7 @@ class PreferencesDialog(Adw.PreferencesDialog):
         audio_group.add(self._whisper_row)
         search.add(audio_group)
 
+        self._update_semantic_sensitivity()
         self._update_sem_backend_sensitivity()
         self._refresh_onnx_status()
         self._refresh_ask_models()
@@ -1212,6 +1215,10 @@ class PreferencesDialog(Adw.PreferencesDialog):
     def _on_toggle_setting(self, row, _pspec, key) -> None:
         self._settings[key] = row.get_active()
         self._persist()
+        if key == "semantic_search_enabled":
+            # Takes effect right away: leaving the dependent rows live until the
+            # next restart would invite changes that do nothing.
+            self._update_semantic_sensitivity()
 
     def _on_entry_setting(self, row, key) -> None:
         self._settings[key] = row.get_text().strip()
@@ -1689,6 +1696,19 @@ class PreferencesDialog(Adw.PreferencesDialog):
         the whole dialog fails to open."""
         backend = self._settings.get("semantic_backend", self._SEM_BACKEND_DEFAULT)
         return self._sem_backends.index(backend) if backend in self._sem_backends else 0
+
+    def _update_semantic_sensitivity(self) -> None:
+        """Grey out everything that only works with semantic search on.
+
+        Nothing below the master switch has any effect while it is off — down to
+        the two subpages, which is why the nav rows go dead too (their content is
+        embedding and Ask configuration). The switch itself stays live, or there
+        would be no way back.
+        """
+        on = bool(self._settings.get("semantic_search_enabled"))
+        for row in (self._sem_backend_row, self._sem_score_row,
+                    self._sem_rebuild_row, self._emb_nav_row, self._ask_nav_row):
+            row.set_sensitive(on)
 
     def _update_sem_backend_sensitivity(self) -> None:
         """Grey out the rows the selected backend does not use."""

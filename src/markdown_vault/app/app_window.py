@@ -451,10 +451,8 @@ class MainWindow(Adw.ApplicationWindow):
             current_ask_model=self._current_ask_model,
             get_top_k=lambda: int(self._settings.get("ask_top_k")
                                   or config.default("ask_top_k")),
-            can_ask=lambda: bool(self._settings.get("semantic_search_enabled"))
-            and self._semantic_index is not None
-            and (self._settings.get("ask_engine") or config.default("ask_engine"))
-            != "off",
+            can_ask=lambda: not self._ask_unavailable_reason(),
+            ask_hint=self._ask_unavailable_reason,
             scope=self._scope_callbacks(),
             hide_deprecated=self.hide_deprecated,
             set_hide_deprecated=self.set_hide_deprecated,
@@ -1529,6 +1527,19 @@ class MainWindow(Adw.ApplicationWindow):
         """A background model fetch finished (worker thread) — repopulate the
         footer picker on the main loop."""
         GLib.idle_add(self._quick_open.refresh_models)
+
+    def _ask_unavailable_reason(self) -> str:
+        """Why Ask cannot answer right now — ``""`` when it can. One source for
+        both the toggle's state and its tooltip, so they can't disagree."""
+        if not self._settings.get("semantic_search_enabled"):
+            return "Semantic search is off — turn it on in Preferences → Search."
+        if self._semantic_index is None:
+            return "The semantic index is not ready yet."
+        engine = self._settings.get("ask_engine") or config.default("ask_engine")
+        if engine == "off":
+            return ("The answer engine is off — turn it on in "
+                    "Preferences → Search → Ask.")
+        return ""
 
     def _current_ask_model(self) -> str:
         """The model the next answer would use — a GGUF path or a server model."""
