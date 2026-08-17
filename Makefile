@@ -1,5 +1,5 @@
 SHELL := /bin/bash
-.PHONY: _fetch-wheels lock-wheels download-wheels build-flatpak bundle-flatpak install-flatpak uninstall-flatpak run-flatpak test-flatpak clean clean-build clean-cache build venv venv-ai install install-ai uninstall clean-local run test test-one test-e2e graph-build graph-update graph-query graph-path graph-explain start stop restart status dbg-ready dbg-state dbg-tabs dbg-active dbg-open dbg-close dbg-select dbg-search dbg-quickopen dbg-submit dbg-waitidle dbg-answer dbg-ask
+.PHONY: _fetch-wheels lock-wheels download-wheels build-flatpak bundle-flatpak install-flatpak uninstall-flatpak run-flatpak test-flatpak clean clean-build clean-cache build venv venv-ai install install-ai uninstall clean-local run test test-one coverage test-e2e graph-build graph-update graph-query graph-path graph-explain start stop restart status dbg-ready dbg-state dbg-tabs dbg-active dbg-open dbg-close dbg-select dbg-search dbg-quickopen dbg-submit dbg-waitidle dbg-answer dbg-ask
 
 WHEEL_DIR := src/share/markdown-vault
 WHEELS_DIR := $(WHEEL_DIR)/wheels
@@ -156,6 +156,11 @@ test-one:
 	  echo "=> Running tests matching '$(K)'..."; \
 	  PYTHONPATH=$(PYTHONPATH_DIR) "$$PY" -m unittest discover -s tests -v -k "$(K)"; \
 	fi
+
+coverage:
+	@test -n "$(FILE)" || { echo "usage: make coverage FILE=<src-file> [T=<test_module ...>]"; exit 2; }
+	@PY=$$([ -x "$(VENV)/bin/python" ] && echo "$(VENV)/bin/python" || echo "$(PYTHON)"); \
+	"$$PY" scripts/coverage.py "$(FILE)" $(T)
 
 # Full-app E2E smoke tests: spawn the app on an ISOLATED session bus
 # (dbus-run-session — so the developer's running instance is not activated
