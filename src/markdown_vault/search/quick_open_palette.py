@@ -462,15 +462,24 @@ class QuickOpenPalette(Adw.Dialog):
         self._last_question = text or ""
 
     def _on_scope_changed(self) -> None:
-        """Scope changed via the dropdown: re-run the current search so it takes
-        effect immediately — in Ask mode, re-answer the current/last question
-        (instead of _refresh, which no-ops in Ask mode and looks inert)."""
+        """Scope changed via the dropdown.
+
+        In **Ask mode** nothing is answered: that would be a full model run —
+        minutes of work and a request to the server — started by a dropdown. The
+        question stays in the entry and the user submits it (the submit button, or
+        Enter while the entry has the focus). The previous answer is dropped, because
+        it was computed over the vaults that are no longer selected, and the palette
+        falls back to its plain Ask state — no separate sentence narrating a change
+        the user just made themselves.
+
+        In **file mode** the list is refreshed right away: no model, no network, just
+        a filter over the loaded candidates — and leaving it would show files from
+        the vault that was just deselected.
+        """
         if self._ask_mode:
-            question = self._entry.get_text().strip() or self._last_question
-            if question:
-                self._entry.set_text(question)
-                self._run_ask()
-                return
+            self._abandon_answer()      # a running answer belongs to the old scope
+            self._show_ask_idle()
+            return
         self._refresh()
 
     def _scope_filter(self, results):
@@ -829,9 +838,14 @@ class QuickOpenPalette(Adw.Dialog):
 
     def _show_ask_idle(self) -> None:
         """The plain Ask-mode state — nothing asked, nothing to report. One place,
-        so every path that has to drop a stale row lands on the same screen."""
+        so every path that has to drop a stale row lands on the same screen.
+
+        The hint names ``↵`` rather than "Enter": that is the submit button's own
+        label, so it covers both ways of running the question. Promising the key
+        alone would be false as soon as the focus leaves the entry.
+        """
         self._clear()
-        self._results.append(self._message_row("Type a question, then Enter."))
+        self._results.append(self._message_row("Type a question, then ↵"))
 
     def _hold_question(self) -> None:
         """Keep the typed question until the server check settles, instead of firing

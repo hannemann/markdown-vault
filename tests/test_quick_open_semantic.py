@@ -389,6 +389,59 @@ class TestAskAvailability(unittest.TestCase):
         self.assertIsNone(p._ask_toggle)
 
 
+class TestScopeChangeInAskMode(unittest.TestCase):
+    """Switching the vault scope must not start an answer by itself — that is a
+    full model run (minutes, and a request to the server) triggered by a dropdown.
+    The user submits: the submit button, or Enter in the question field."""
+
+    def _palette(self):
+        return QuickOpenPalette(make_engine=lambda: None,
+                                semantic_query=lambda q: [],
+                                ask_answer=lambda *a, **k: None,
+                                scope=None)
+
+    def _row_texts(self, p):
+        texts, row = [], p._results.get_first_child()
+        while row is not None:
+            child = row.get_child()
+            texts.append(child.get_label() if isinstance(child, Gtk.Label) else "")
+            row = row.get_next_sibling()
+        return texts
+
+    def test_scope_change_does_not_answer_by_itself(self):
+        p = self._palette()
+        p._ask_toggle.set_active(True)
+        asked = []
+        p._run_ask = lambda: asked.append(1)
+        p._entry.set_text("which planet is heaviest?")
+        p._on_scope_changed()
+        self.assertEqual(asked, [])
+        # The question is kept — submitting is one keystroke away.
+        self.assertEqual(p._entry.get_text(), "which planet is heaviest?")
+
+    def test_the_answer_of_the_previous_scope_is_not_left_standing(self):
+        from markdown_vault.search.ask import Answer
+        p = self._palette()
+        p._ask_toggle.set_active(True)
+        p._ask_started = 0.0
+        p._show_answer(p._ask_generation, Answer(text="Jupiter"))
+        self.assertTrue(p._has_answer)
+        p._on_scope_changed()
+        texts = self._row_texts(p)
+        self.assertFalse(any("Jupiter" in t for t in texts), texts)
+        self.assertFalse(p._has_answer)          # nothing stale left to copy
+        self.assertTrue(any("Type a question" in t for t in texts), texts)
+
+    def test_file_mode_still_filters_immediately(self):
+        # Not a model run but a filter over the loaded list: leaving it stale would
+        # show files from the vault that was just deselected.
+        p = self._palette()
+        refreshed = []
+        p._refresh = lambda: refreshed.append(1)
+        p._on_scope_changed()
+        self.assertEqual(refreshed, [1])
+
+
 class TestEndpointStatusInPalette(unittest.TestCase):
     """What the server said about itself, shown where the question is typed.
 
