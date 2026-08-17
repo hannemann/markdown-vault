@@ -19,14 +19,19 @@ class _TempSessionMixin:
         self._orig_dir = _cfg.CONFIG_DIR
         self._orig_file = _cfg.CONFIG_FILE
         self._orig_session = _ses.SESSION_FILE
+        # session.json lives in STATE_DIR now, and saving creates it — redirect that
+        # too, or the test would mkdir the developer's real state dir.
+        self._orig_state = _cfg.STATE_DIR
         _cfg.CONFIG_DIR = Path(self._tmpdir)
         _cfg.CONFIG_FILE = Path(self._tmpdir) / "vaults.yaml"
+        _cfg.STATE_DIR = Path(self._tmpdir) / "state"
         _ses.SESSION_FILE = Path(self._tmpdir) / "session.json"
         _cfg._vaults_cache = None
 
     def tearDown(self):
         _cfg.CONFIG_DIR = self._orig_dir
         _cfg.CONFIG_FILE = self._orig_file
+        _cfg.STATE_DIR = self._orig_state
         _ses.SESSION_FILE = self._orig_session
         _cfg._vaults_cache = None
         shutil.rmtree(self._tmpdir, ignore_errors=True)

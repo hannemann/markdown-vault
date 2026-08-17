@@ -13,29 +13,32 @@ from pathlib import Path
 
 import yaml
 
-from markdown_vault.core import validation
+from markdown_vault.core import paths, validation
 
 logger = logging.getLogger(__name__)
 
 # In-memory cache for vaults loaded from vaults.yaml.
 _vaults_cache: list[dict[str, str]] | None = None
 
-# MDV_CONFIG_DIR overrides the config location (isolated runs / E2E tests point it
-# at a throwaway dir); default is the XDG config path.
-CONFIG_DIR = Path(
-    os.environ.get("MDV_CONFIG_DIR") or (Path.home() / ".config" / "markdown-vault")
-)
+# The base directories live in core.paths (one definition for the whole app, shared
+# with logging_setup); re-exported here so existing call sites keep working.
+CONFIG_DIR = paths.CONFIG_DIR      # honours MDV_CONFIG_DIR, else XDG_CONFIG_HOME
 CONFIG_FILE = CONFIG_DIR / "vaults.yaml"
 
-STATE_DIR = Path(
-    os.environ.get("XDG_STATE_HOME", str(Path.home() / ".local" / "state"))
-) / "markdown-vault"
+STATE_DIR = paths.STATE_DIR        # logs, debug dumps, session.json
+CACHE_DIR = paths.CACHE_DIR        # regenerable: the semantic index
+DATA_DIR = paths.DATA_DIR          # downloaded models (ONNX, GGUF)
 LOG_FILE = STATE_DIR / "markdown-vault.log"
 
 
 def _ensure_config_dir() -> None:
     """Create the configuration directory if it does not exist."""
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def _ensure_state_dir() -> None:
+    """Create the state directory if it does not exist (session.json, dumps)."""
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def check_config_access() -> None:
@@ -380,7 +383,7 @@ def default(key):
 
 def models_dir() -> Path:
     """Folder holding the downloaded GGUF models (one file per model)."""
-    return STATE_DIR / "models"
+    return DATA_DIR / "models"
 
 
 def default_gguf_path() -> str:

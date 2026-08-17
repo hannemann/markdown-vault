@@ -1578,7 +1578,7 @@ class MainWindow(Adw.ApplicationWindow):
                 from markdown_vault.search.semantic_index import SemanticIndexManager
                 embedder, tag = self._build_semantic_embedder()
                 manager = SemanticIndexManager(
-                    embedder, self._vault_tree.get_vault_paths, config.STATE_DIR,
+                    embedder, self._vault_tree.get_vault_paths, config.CACHE_DIR,
                     tag,
                     min_score=float(self._settings.get("semantic_min_score", 0.35)),
                     on_busy=self._on_index_busy,
@@ -1665,7 +1665,7 @@ class MainWindow(Adw.ApplicationWindow):
         if backend == "onnx":
             from markdown_vault.search.semantic_search import OnnxEmbedder
             onnx_dir = (self._settings.get("semantic_onnx_dir")
-                        or str(config.STATE_DIR / "onnx"))
+                        or str(config.DATA_DIR / "onnx"))
             model = str(Path(onnx_dir) / "model.onnx")
             tokenizer = str(Path(onnx_dir) / "tokenizer.json")
             logger.info("semantic search: onnx backend (model=%s)", model)

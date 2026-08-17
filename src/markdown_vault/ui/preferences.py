@@ -1576,7 +1576,7 @@ class PreferencesDialog(Adw.PreferencesDialog):
     def _refresh_onnx_dir_row(self) -> None:
         """Show the active ONNX folder (and mark when it's the default)."""
         d = self._onnx_dir()
-        default = config.STATE_DIR / "onnx"
+        default = config.DATA_DIR / "onnx"
         suffix = "  (default)" if d == default else ""
         self._sem_onnx_dir_row.set_subtitle(str(d) + suffix)
 
@@ -1657,7 +1657,7 @@ class PreferencesDialog(Adw.PreferencesDialog):
         """The folder the backend loads model.onnx + tokenizer.json from (and the
         download writes to). Blank setting → the app data dir default."""
         return Path(self._settings.get("semantic_onnx_dir")
-                    or str(config.STATE_DIR / "onnx"))
+                    or str(config.DATA_DIR / "onnx"))
 
     def _onnx_paths(self):
         """Resolve the ONNX model + tokenizer file paths inside the folder."""
