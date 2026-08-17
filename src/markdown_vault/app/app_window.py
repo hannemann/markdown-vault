@@ -453,6 +453,8 @@ class MainWindow(Adw.ApplicationWindow):
                                   or config.default("ask_top_k")),
             can_ask=lambda: not self._ask_unavailable_reason(),
             ask_hint=self._ask_unavailable_reason,
+            ask_status=self._ask_endpoint_status,
+            ask_recheck=self._recheck_ask_endpoint,
             scope=self._scope_callbacks(),
             hide_deprecated=self.hide_deprecated,
             set_hide_deprecated=self.set_hide_deprecated,
@@ -1523,10 +1525,36 @@ class MainWindow(Adw.ApplicationWindow):
         from markdown_vault.search import ask_models
         return ask_models.list_for(self._settings, on_refresh=self._ask_models_arrived)
 
-    def _ask_models_arrived(self, _models) -> None:
-        """A background model fetch finished (worker thread) — repopulate the
-        footer picker on the main loop."""
-        GLib.idle_add(self._quick_open.refresh_models)
+    def _ask_models_arrived(self, _status) -> None:
+        """A background probe of the Ask server settled (worker thread) — update the
+        palette on the main loop: picker, warning banner, submit lock, and a question
+        that was held while the check was out."""
+        GLib.idle_add(self._quick_open.refresh_endpoint_status)
+
+    def _ask_server_url(self) -> str:
+        return (self._settings.get("ask_ollama_url")
+                or config.default("ask_ollama_url"))
+
+    def _ask_endpoint_status(self):
+        """The Ask server's last verdict about itself, or ``None`` when no server is
+        involved (local backend) — which the palette reads as "nothing to check"."""
+        from markdown_vault.search import ask_models
+        backend = ask_models.effective_backend(self._settings)
+        if backend not in ask_models.SERVER_BACKENDS:
+            return None
+        return ask_models.status(backend, self._ask_server_url())
+
+    def _recheck_ask_endpoint(self) -> None:
+        """Probe the Ask server again — the palette's "Try again", so a server that
+        was started in the meantime becomes usable without restarting the app."""
+        from markdown_vault.search import ask_models
+        backend = ask_models.effective_backend(self._settings)
+        if backend not in ask_models.SERVER_BACKENDS:
+            return
+        ask_models.refresh_async(backend, self._ask_server_url(),
+                                 ask_models.api_key(self._settings),
+                                 on_settled=self._ask_models_arrived)
+        self._quick_open.refresh_endpoint_status()   # show the check is running
 
     def _ask_unavailable_reason(self) -> str:
         """Why Ask cannot answer right now — ``""`` when it can. One source for

@@ -214,6 +214,10 @@ class OllamaChat:
     we ignore); the field is harmless for models without a thinking mode.
     """
 
+    #: Endpoint identity, so a failed request can be classified the same way the
+    #: model list is (see :func:`_explain_chat_error`).
+    backend_name = "ollama"
+
     #: Context window requested from Ollama.  Its default (num_ctx=2048) silently
     #: truncates the prompt, and note-level retrieval (whole notes) routinely
     #: exceeds that — a truncated prompt makes the model refuse or drop its
@@ -271,6 +275,9 @@ class OpenAIChat:
     ``POST /v1/chat/completions``. *url* is the server base (e.g.
     ``http://host:8080``). *think=False* disables a reasoning model's thinking
     via ``chat_template_kwargs`` (llama.cpp / Qwen3)."""
+
+    #: Endpoint identity — see :func:`_explain_chat_error`.
+    backend_name = "openai"
 
     def __init__(self, model: str, url: str = "http://localhost:8080",
                  timeout: float = 120.0, think: bool | None = None,
@@ -401,6 +408,24 @@ def _no_context_answer() -> Answer:
              f"window in {_CTX_WINDOW_PATH}.")
 
 
+def _explain_chat_error(chat, exc: Exception) -> str:
+    """Turn a failed chat request into a sentence.
+
+    A server backend carries its identity (``backend_name`` + ``url``), so the same
+    classification as the model list applies and the wording matches the palette's
+    banner. The in-process backend has no endpoint to blame, so it gets the plain
+    reason — still a sentence, not a raw repr.
+    """
+    backend = getattr(chat, "backend_name", "")
+    url = getattr(chat, "url", "")
+    if backend and url:
+        from markdown_vault.search import ask_models   # local: ask_models imports us
+        # Records the verdict as well as wording it: a server that died while the
+        # palette was open must not keep its earlier "all good" status.
+        return ask_models.note_chat_failure(backend, url, exc)
+    return f"The model could not answer: {exc}"
+
+
 def answer(question: str, hits, chat: ChatBackend, language: str = "English",
            system_template: str | None = None, char_budget: int | None = None,
            extra_warnings: list | None = None) -> Answer:
@@ -437,8 +462,8 @@ def answer(question: str, hits, chat: ChatBackend, language: str = "English",
                  "Reasoning off.",
             considered=sources, warnings=extra)
     except (OSError, ValueError) as exc:  # URLError is an OSError subclass
-        logger.warning("ollama chat failed: %s", exc)
-        return Answer(text="", sources=sources, error=str(exc))
+        logger.warning("chat request failed: %s", exc)
+        return Answer(text="", sources=sources, error=_explain_chat_error(chat, exc))
     cleaned, cited, warnings = verify_citations(text, sources)
     cited_ns = {s.n for s in cited}
     considered = [s for s in sources if s.n not in cited_ns]

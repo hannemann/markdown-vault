@@ -383,6 +383,43 @@ class TestOllamaChatPayload(unittest.TestCase):
         self.assertIs(body.get("think"), True)
 
 
+class TestChatFailureIsReadable(unittest.TestCase):
+    """A failed chat request must reach the user as a sentence, not as
+    `<urlopen error [Errno 111] Connection refused>` — and in the same words the
+    palette's banner uses, so the two cannot contradict each other."""
+
+    def _hits(self):
+        return [(_chunk("/v/a.md", 1, "Jupiter is the fifth planet"), 0.9)]
+
+    def test_unreachable_server_names_the_url(self):
+        import urllib.error
+        chat = SimpleNamespace(
+            backend_name="openai", url="http://h:8080",
+            chat=lambda system, user: (_ for _ in ()).throw(
+                urllib.error.URLError("Connection refused")))
+        a = ask.answer("q", self._hits(), chat=chat)
+        self.assertIn("http://h:8080", a.error)
+        self.assertIn("not reachable", a.error)
+        self.assertNotIn("urlopen error", a.error)
+
+    def test_rejected_key_says_so(self):
+        import urllib.error
+        chat = SimpleNamespace(
+            backend_name="openai", url="http://h:8080",
+            chat=lambda system, user: (_ for _ in ()).throw(
+                urllib.error.HTTPError("http://h:8080", 401, "no", {}, None)))
+        a = ask.answer("q", self._hits(), chat=chat)
+        self.assertIn("key", a.error.lower())
+
+    def test_in_process_backend_has_no_endpoint_to_blame(self):
+        # The local GGUF backend has no URL; the message must still be a sentence.
+        chat = SimpleNamespace(
+            chat=lambda system, user: (_ for _ in ()).throw(OSError("mmap failed")))
+        a = ask.answer("q", self._hits(), chat=chat)
+        self.assertIn("mmap failed", a.error)
+        self.assertTrue(a.error[0].isupper(), a.error)
+
+
 class TestAnswer(unittest.TestCase):
     def test_no_hits_returns_grounded_fallback(self):
         a = ask.answer("q", [], chat=None)  # chat must not be called with no hits

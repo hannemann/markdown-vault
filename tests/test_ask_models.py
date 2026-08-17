@@ -6,7 +6,9 @@ a lookup may block* all depend on the active backend.
 """
 import io
 import json
+import threading
 import unittest
+import urllib.error
 from unittest.mock import patch
 
 from markdown_vault.search import ask_models
@@ -106,7 +108,8 @@ class TestListFor(unittest.TestCase):
         started = []
         with patch("urllib.request.urlopen",
                    side_effect=AssertionError("must not fetch synchronously")), \
-                patch.object(ask_models, "prime", side_effect=lambda *a, **k: started.append(a)):
+                patch.object(ask_models, "refresh_async",
+                             side_effect=lambda *a, **k: started.append(a)):
             models = ask_models.list_for({"ask_engine": "manual", "ask_backend": "openai",
                                           "ask_ollama_url": "http://h:8080",
                                           "ask_model": "Qwen"})
@@ -116,7 +119,8 @@ class TestListFor(unittest.TestCase):
     def test_server_uses_cache_when_present(self):
         ask_models.cache_put("openai", "http://h:8080", ["m1", "m2"])
         with patch("urllib.request.urlopen",
-                   side_effect=AssertionError("must not fetch synchronously")):
+                   side_effect=AssertionError("must not fetch synchronously")), \
+                patch.object(ask_models, "refresh_async"):  # the probe is a thread
             models = ask_models.list_for({"ask_engine": "manual", "ask_backend": "openai",
                                           "ask_ollama_url": "http://h:8080"})
         self.assertEqual(models, [("m1", "m1"), ("m2", "m2")])
@@ -131,6 +135,191 @@ class TestListFor(unittest.TestCase):
                                           "ask_ollama_url": "http://h:11434"})
         self.assertEqual(server, [("llama3.2", "llama3.2")])
         self.assertNotIn("a.gguf", [n for n, _ in server])
+
+
+class TestEndpointStatus(unittest.TestCase):
+    """The server's answer to the model-list request is classified once, here, and
+    both surfaces read the result. The distinction that matters: a server that is
+    *unreachable* or *rejects the key* cannot answer a question either — anything
+    else it says may warn, but must never take asking away (llama.cpp lists no
+    models at all and answers perfectly well).
+    """
+
+    def setUp(self):
+        ask_models.clear_cache()
+
+    def _settle(self, side_effect):
+        done = threading.Event()
+        with patch("urllib.request.urlopen", side_effect=side_effect):
+            ask_models.refresh_async("openai", "http://h:8080",
+                                     on_settled=lambda st: done.set())
+            self.assertTrue(done.wait(3), "must report back in every path")
+        return ask_models.status("openai", "http://h:8080")
+
+    def _http_error(self, code):
+        return urllib.error.HTTPError("http://h:8080/v1/models", code, "nope", {}, None)
+
+    def test_unknown_before_anything_happened(self):
+        st = ask_models.status("openai", "http://nothing-probed-yet")
+        self.assertEqual(st.state, ask_models.UNKNOWN)
+        self.assertTrue(st.can_ask)          # never block on an unprobed endpoint
+        self.assertEqual(st.message, "")
+
+    def test_models_listed_is_ok_and_silent(self):
+        st = self._settle(lambda *a, **k: _response({"data": [{"id": "m1"}]}))
+        self.assertEqual(st.state, ask_models.OK)
+        self.assertEqual(st.models, ["m1"])
+        self.assertEqual(st.message, "")
+        self.assertTrue(st.can_ask)
+        self.assertTrue(st.models_usable)
+
+    def test_empty_list_warns_but_still_allows_asking(self):
+        # An OpenAI-compatible gateway may serve a fixed model and list nothing.
+        st = self._settle(lambda *a, **k: _response({"data": []}))
+        self.assertEqual(st.state, ask_models.EMPTY)
+        self.assertTrue(st.can_ask)
+        self.assertFalse(st.models_usable)
+        self.assertTrue(st.message)
+
+    def test_missing_list_endpoint_is_not_an_error(self):
+        # llama.cpp loads one model at startup and has no list — asking must work,
+        # and there is nothing to warn about.
+        st = self._settle(self._http_error(404))
+        self.assertEqual(st.state, ask_models.NO_LIST)
+        self.assertTrue(st.can_ask)
+        self.assertFalse(st.models_usable)
+        self.assertEqual(st.message, "")
+
+    def test_unreadable_answer_is_treated_as_no_list(self):
+        st = self._settle(lambda *a, **k: io.BytesIO(b"<html>nope</html>"))
+        self.assertEqual(st.state, ask_models.NO_LIST)
+        self.assertTrue(st.can_ask)
+
+    def test_rejected_key_blocks_asking(self):
+        # The same auth guards the chat endpoint, so this is certain to fail.
+        st = self._settle(self._http_error(401))
+        self.assertEqual(st.state, ask_models.UNAUTHORIZED)
+        self.assertFalse(st.can_ask)
+        self.assertIn("key", st.message.lower())
+
+    def test_forbidden_is_also_unauthorized(self):
+        self.assertEqual(self._settle(self._http_error(403)).state,
+                         ask_models.UNAUTHORIZED)
+
+    def test_no_answer_at_all_blocks_asking(self):
+        st = self._settle(urllib.error.URLError("Connection refused"))
+        self.assertEqual(st.state, ask_models.UNREACHABLE)
+        self.assertFalse(st.can_ask)
+        self.assertIn("http://h:8080", st.message)
+
+    def test_other_http_errors_warn_but_do_not_block(self):
+        # 500/429/redirect loop: the server answered, but said nothing about the
+        # chat endpoint. Warning is right, taking asking away is not.
+        for code in (429, 500):
+            st = self._settle(self._http_error(code))
+            self.assertEqual(st.state, ask_models.LIST_ERROR, code)
+            self.assertTrue(st.can_ask, code)
+            self.assertTrue(st.message, code)
+
+    def test_probing_while_the_request_is_out(self):
+        started, release, settled = (threading.Event(), threading.Event(),
+                                     threading.Event())
+
+        def slow(*a, **k):
+            started.set()
+            release.wait(3)
+            return _response({"data": [{"id": "m1"}]})
+
+        with patch("urllib.request.urlopen", side_effect=slow):
+            ask_models.refresh_async("openai", "http://h:8080",
+                                     on_settled=lambda st: settled.set())
+            self.assertTrue(started.wait(3))
+            st = ask_models.status("openai", "http://h:8080")
+            self.assertEqual(st.state, ask_models.PROBING)
+            self.assertTrue(st.can_ask)     # not decided yet — the palette waits
+            self.assertEqual(st.message, "")
+            release.set()
+            # Wait for the worker before leaving: the status store is module state,
+            # and a thread finishing after the next test's setUp would write into
+            # that test's endpoint. (It did — one run failed on a leaked "ok".)
+            self.assertTrue(settled.wait(3))
+
+    def test_a_failure_supersedes_a_previously_cached_list(self):
+        # Otherwise a server that died keeps looking healthy for the whole session.
+        ask_models.cache_put("openai", "http://h:8080", ["m1"])
+        st = self._settle(urllib.error.URLError("refused"))
+        self.assertEqual(st.state, ask_models.UNREACHABLE)
+        self.assertEqual(ask_models.cache_get("openai", "http://h:8080"), [])
+
+    def test_a_later_success_clears_the_failure(self):
+        self._settle(urllib.error.URLError("refused"))
+        st = self._settle(lambda *a, **k: _response({"data": [{"id": "m1"}]}))
+        self.assertEqual(st.state, ask_models.OK)
+        self.assertTrue(st.can_ask)
+        self.assertEqual(st.message, "")
+
+    def test_a_settled_verdict_does_not_trigger_another_probe(self):
+        # The settle callback refreshes the picker, which calls list_for again. If
+        # that probed whenever the cache is empty, a failed endpoint would restart
+        # itself every ~5 s for as long as the app runs. Only an endpoint nobody has
+        # asked yet gets probed from here; a re-check is an explicit act (open the
+        # palette again, or "Try again").
+        settings = {"ask_engine": "manual", "ask_backend": "openai",
+                    "ask_ollama_url": "http://h:8080"}
+        self._settle(urllib.error.URLError("refused"))
+        with patch.object(ask_models, "refresh_async") as again:
+            ask_models.list_for(settings)
+        again.assert_not_called()
+
+    def test_only_verdicts_that_can_change_are_worth_rechecking(self):
+        # A server without a list endpoint will not grow one while the app runs, so
+        # re-probing it on every palette open is a wasted round trip on the hot
+        # path — for the configuration the design calls healthy.
+        stable = (ask_models.OK, ask_models.NO_LIST)
+        changeable = (ask_models.EMPTY, ask_models.UNREACHABLE,
+                      ask_models.UNAUTHORIZED, ask_models.LIST_ERROR,
+                      ask_models.UNKNOWN)
+        for state in stable:
+            self.assertFalse(ask_models.EndpointStatus(state).transient, state)
+        for state in changeable:
+            self.assertTrue(ask_models.EndpointStatus(state).transient, state)
+
+    def test_a_failed_chat_request_updates_the_verdict(self):
+        # The chat call failing is the most authoritative evidence there is — more
+        # than the model list, which is only a proxy. Without recording it, the
+        # palette stays cheerful while every question fails.
+        ask_models.cache_put("openai", "http://h:8080", ["m1"])
+        message = ask_models.note_chat_failure(
+            "openai", "http://h:8080", urllib.error.URLError("refused"))
+        st = ask_models.status("openai", "http://h:8080")
+        self.assertEqual(st.state, ask_models.UNREACHABLE)
+        self.assertFalse(st.can_ask)
+        self.assertIn("not reachable", message)
+        self.assertEqual(ask_models.cache_get("openai", "http://h:8080"), [])
+
+    def test_a_rejected_key_during_chat_updates_the_verdict(self):
+        ask_models.note_chat_failure("openai", "http://h:8080",
+                                     self._http_error(401))
+        self.assertEqual(ask_models.status("openai", "http://h:8080").state,
+                         ask_models.UNAUTHORIZED)
+
+    def test_a_chat_specific_failure_does_not_rewrite_the_endpoint_verdict(self):
+        # A chat 404 means "no such model", not "no list endpoint"; a 500 is the
+        # request, not the server's reachability. Recording those through the
+        # list vocabulary would put a wrong label on the endpoint.
+        with patch("urllib.request.urlopen",
+                   return_value=_response({"data": [{"id": "m1"}]})):
+            ask_models.probe("openai", "http://h:8080")
+        for code in (404, 500):
+            ask_models.note_chat_failure("openai", "http://h:8080",
+                                         self._http_error(code))
+            self.assertEqual(ask_models.status("openai", "http://h:8080").state,
+                             ask_models.OK, code)
+
+    def test_status_is_per_endpoint(self):
+        self._settle(urllib.error.URLError("refused"))
+        self.assertEqual(ask_models.status("ollama", "http://h:11434").state,
+                         ask_models.UNKNOWN)
 
 
 class TestPerEndpointMemory(unittest.TestCase):

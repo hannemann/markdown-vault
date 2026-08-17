@@ -7,7 +7,7 @@ import gi
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
-from gi.repository import Adw
+from gi.repository import Adw, Gtk
 
 Adw.init()
 
@@ -387,6 +387,257 @@ class TestAskAvailability(unittest.TestCase):
         p = QuickOpenPalette(make_engine=lambda: None)
         p.refresh_ask_availability()
         self.assertIsNone(p._ask_toggle)
+
+
+class TestEndpointStatusInPalette(unittest.TestCase):
+    """What the server said about itself, shown where the question is typed.
+
+    The rule under test: warn about anything odd, but take asking away *only* when
+    it is certain to fail (server unreachable, credentials rejected). A server
+    without a list endpoint answers fine and must stay usable.
+    """
+
+    def _status(self, state, models=(), error=""):
+        from markdown_vault.search import ask_models
+        return ask_models.EndpointStatus(state, "http://h:8080",
+                                         models=list(models), error=error)
+
+    def _palette(self, status, models=(("m1", "m1"), ("m2", "m2"))):
+        self.rechecked = []
+        p = QuickOpenPalette(make_engine=lambda: None,
+                             ask_answer=lambda *a, **k: None,
+                             ask_status=lambda: status,
+                             ask_recheck=lambda: self.rechecked.append(1),
+                             list_ask_models=lambda: list(models),
+                             current_ask_model=lambda: "m1")
+        p._ask_toggle.set_active(True)          # Ask mode: this is where it shows
+        return p
+
+    def _st(self, name):
+        from markdown_vault.search import ask_models
+        return getattr(ask_models, name)
+
+    # ── the banner ────────────────────────────────────────────────
+    def test_silent_when_the_server_listed_models(self):
+        p = self._palette(self._status(self._st("OK"), ["m1", "m2"]))
+        self.assertFalse(p._banner.get_revealed())
+
+    def test_silent_while_the_probe_is_still_out(self):
+        # Otherwise a warning flashes up on every open before the answer arrives.
+        p = self._palette(self._status(self._st("PROBING")))
+        self.assertFalse(p._banner.get_revealed())
+
+    def test_silent_when_the_server_has_no_list_endpoint(self):
+        # llama.cpp serves one model and lists nothing — nothing is wrong.
+        p = self._palette(self._status(self._st("NO_LIST")))
+        self.assertFalse(p._banner.get_revealed())
+
+    def test_warns_when_unreachable_and_names_the_url(self):
+        p = self._palette(self._status(self._st("UNREACHABLE"), error="refused"))
+        self.assertTrue(p._banner.get_revealed())
+        self.assertIn("http://h:8080", p._banner.get_title())
+
+    def test_warns_on_an_empty_list_and_on_a_list_error(self):
+        for name in ("EMPTY", "LIST_ERROR"):
+            p = self._palette(self._status(self._st(name), error="HTTP 500"))
+            self.assertTrue(p._banner.get_revealed(), name)
+
+    def test_no_banner_outside_ask_mode(self):
+        p = self._palette(self._status(self._st("UNREACHABLE")))
+        p._ask_toggle.set_active(False)
+        self.assertFalse(p._banner.get_revealed())
+
+    def test_try_again_triggers_a_recheck(self):
+        p = self._palette(self._status(self._st("UNREACHABLE")))
+        p._on_banner_retry()
+        self.assertTrue(self.rechecked)
+
+    # ── submitting ────────────────────────────────────────────────
+    def test_submit_blocked_only_when_asking_cannot_work(self):
+        for name in ("UNREACHABLE", "UNAUTHORIZED"):
+            p = self._palette(self._status(self._st(name)))
+            self.assertFalse(p._submit.get_sensitive(), name)
+        for name in ("OK", "EMPTY", "NO_LIST", "PROBING"):
+            p = self._palette(self._status(self._st(name), ["m1"]))
+            self.assertTrue(p._submit.get_sensitive(), name)
+
+    def test_enter_sends_nothing_when_asking_cannot_work(self):
+        p = self._palette(self._status(self._st("UNREACHABLE")))
+        asked = []
+        p._run_ask = lambda: asked.append(1)
+        p._entry.set_text("a question worth minutes")
+        p._on_entry_activate(p._entry)
+        self.assertEqual(asked, [])
+        self.assertEqual(p._entry.get_text(), "a question worth minutes")
+
+    def test_enter_while_probing_waits_for_the_verdict(self):
+        # Ctrl+Space, Enter takes under a second; the probe up to five. Asking
+        # blind would run a dead server into the 120 s chat timeout.
+        p = self._palette(self._status(self._st("PROBING")))
+        asked = []
+        p._run_ask = lambda: asked.append(1)
+        p._entry.set_text("held question")
+        p._on_entry_activate(p._entry)
+        self.assertEqual(asked, [])
+        self.assertEqual(p._pending_question, "held question")
+
+    def test_a_held_question_runs_once_the_server_turns_out_fine(self):
+        p = self._palette(self._status(self._st("PROBING")))
+        asked = []
+        p._run_ask = lambda: asked.append(1)
+        p._entry.set_text("held question")
+        p._on_entry_activate(p._entry)
+        p._ask_status = lambda: self._status(self._st("OK"), ["m1"])
+        p.refresh_endpoint_status()
+        self.assertEqual(asked, [1])
+        self.assertEqual(p._pending_question, "")
+
+    def test_a_held_question_is_dropped_when_the_server_is_dead(self):
+        p = self._palette(self._status(self._st("PROBING")))
+        asked = []
+        p._run_ask = lambda: asked.append(1)
+        p._entry.set_text("held question")
+        p._on_entry_activate(p._entry)
+        p._ask_status = lambda: self._status(self._st("UNREACHABLE"))
+        p.refresh_endpoint_status()
+        self.assertEqual(asked, [])
+        self.assertTrue(p._banner.get_revealed())
+        self.assertEqual(p._entry.get_text(), "held question")   # not lost
+
+    def test_closing_discards_a_held_question(self):
+        # A late verdict must not fire a question into a dialog the user left —
+        # that is 120 s of model time for an answer nobody sees.
+        p = self._palette(self._status(self._st("PROBING")))
+        asked = []
+        p._run_ask = lambda: asked.append(1)
+        p._entry.set_text("held question")
+        p._on_entry_activate(p._entry)
+        p._on_closed()
+        p._ask_status = lambda: self._status(self._st("OK"), ["m1"])
+        p.refresh_endpoint_status()
+        self.assertEqual(asked, [])
+
+    # ── the model picker ──────────────────────────────────────────
+    def test_picker_stays_visible_but_dead_without_a_usable_list(self):
+        # Hiding it made "server unreachable" look like "one local GGUF".
+        p = self._palette(self._status(self._st("UNREACHABLE")), models=[("m1", "m1")])
+        self.assertTrue(p._model_dropdown.get_visible())
+        self.assertFalse(p._model_dropdown.get_sensitive())
+
+    def test_picker_is_usable_when_the_server_listed_models(self):
+        p = self._palette(self._status(self._st("OK"), ["m1", "m2"]))
+        self.assertTrue(p._model_dropdown.get_visible())
+        self.assertTrue(p._model_dropdown.get_sensitive())
+
+    def test_a_failed_answer_locks_submitting_right_away(self):
+        # Observed: with the palette already open, stopping the server left it
+        # cheerful — no banner, and the same question could be sent again and again.
+        from markdown_vault.search.ask import Answer
+        state = [self._status(self._st("OK"), ["m1", "m2"])]
+        p = self._palette(state[0])
+        p._ask_status = lambda: state[0]
+        self.assertTrue(p._submit.get_sensitive())
+        state[0] = self._status(self._st("UNREACHABLE"), error="refused")
+        p._ask_started = 0.0
+        p._show_answer(p._ask_generation, Answer(text="", error="not reachable"))
+        self.assertTrue(p._banner.get_revealed())
+        self.assertFalse(p._submit.get_sensitive())
+
+    def _row_texts(self, p):
+        def text_of(widget):
+            # The status row wraps its label in a box (label + spinner), so read
+            # nested labels too, not just a row's direct child.
+            if isinstance(widget, Gtk.Label):
+                return widget.get_label() or ""
+            parts, child = [], widget.get_first_child()
+            while child is not None:
+                parts.append(text_of(child))
+                child = child.get_next_sibling()
+            return " ".join(part for part in parts if part)
+
+        texts, row = [], p._results.get_first_child()
+        while row is not None:
+            texts.append(text_of(row.get_child()))
+            row = row.get_next_sibling()
+        return texts
+
+    def test_try_again_clears_the_error_from_the_last_attempt(self):
+        from markdown_vault.search.ask import Answer
+        state = [self._status(self._st("UNREACHABLE"), error="refused")]
+        p = self._palette(state[0])
+        p._ask_status = lambda: state[0]
+        p._ask_started = 0.0
+        p._show_answer(p._ask_generation, Answer(text="", error="not reachable"))
+        self.assertTrue(any("not reachable" in t for t in self._row_texts(p)))
+        state[0] = self._status(self._st("PROBING"))
+        p._on_banner_retry()
+        texts = self._row_texts(p)
+        self.assertFalse(any("not reachable" in t for t in texts), texts)
+        self.assertTrue(any("Checking the server" in t for t in texts), texts)
+
+    def test_after_a_recheck_succeeds_the_palette_is_plain_again(self):
+        # Neither the old error nor a stale "Checking…" row may survive the verdict.
+        state = [self._status(self._st("PROBING"))]
+        p = self._palette(state[0])
+        p._ask_status = lambda: state[0]
+        p._on_banner_retry()
+        state[0] = self._status(self._st("OK"), ["m1", "m2"])
+        p.refresh_endpoint_status()
+        texts = self._row_texts(p)
+        self.assertFalse(any("Checking the server" in t for t in texts), texts)
+        self.assertTrue(any("Type a question" in t for t in texts), texts)
+        self.assertFalse(p._banner.get_revealed())
+
+    def test_a_dropped_held_question_leaves_no_stale_checking_row(self):
+        state = [self._status(self._st("PROBING"))]
+        p = self._palette(state[0])
+        p._ask_status = lambda: state[0]
+        p._run_ask = lambda: None
+        p._entry.set_text("held question")
+        p._on_entry_activate(p._entry)
+        state[0] = self._status(self._st("UNREACHABLE"), error="refused")
+        p.refresh_endpoint_status()
+        texts = self._row_texts(p)
+        self.assertFalse(any("Checking the server" in t for t in texts), texts)
+
+    def test_opening_does_not_recheck_a_server_without_a_list_endpoint(self):
+        # F1: llama.cpp never lists models — probing it on every Ctrl+Space is a
+        # round trip for a configuration the design calls healthy.
+        p = self._palette(self._status(self._st("NO_LIST")))
+        self.rechecked.clear()
+        p.recheck_if_stale()
+        self.assertEqual(self.rechecked, [])
+
+    def test_opening_rechecks_a_server_that_last_failed(self):
+        # A server started in the meantime must become usable by reopening the
+        # palette — without this, the failed verdict would stick for the session.
+        p = self._palette(self._status(self._st("UNREACHABLE")))
+        self.rechecked.clear()
+        p.recheck_if_stale()
+        self.assertTrue(self.rechecked)
+
+    def test_opening_does_not_recheck_a_healthy_server(self):
+        p = self._palette(self._status(self._st("OK"), ["m1", "m2"]))
+        self.rechecked.clear()
+        p.recheck_if_stale()
+        self.assertEqual(self.rechecked, [])
+
+    def test_opening_does_not_restart_a_running_check(self):
+        p = self._palette(self._status(self._st("PROBING")))
+        self.rechecked.clear()
+        p.recheck_if_stale()
+        self.assertEqual(self.rechecked, [])
+
+    def test_local_backend_keeps_the_two_model_rule(self):
+        # No endpoint to check (ask_status returns None) → one model is no choice.
+        p = QuickOpenPalette(make_engine=lambda: None,
+                             ask_answer=lambda *a, **k: None,
+                             ask_status=lambda: None,
+                             list_ask_models=lambda: [("a.gguf", "/m/a.gguf")],
+                             current_ask_model=lambda: "/m/a.gguf")
+        p._ask_toggle.set_active(True)
+        self.assertFalse(p._model_dropdown.get_visible())
+        self.assertFalse(p._banner.get_revealed())
 
 
 if __name__ == "__main__":

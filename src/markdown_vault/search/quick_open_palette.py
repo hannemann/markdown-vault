@@ -42,7 +42,8 @@ class QuickOpenPalette(Adw.Dialog):
     _ASK_TOOLTIP = "Ask — answer from your notes (instead of jumping to a file)"
 
     def __init__(self, make_engine, semantic_query=None, ask_answer=None,
-                 scope=None, can_ask=None, ask_hint=None, ask_candidates=None,
+                 scope=None, can_ask=None, ask_hint=None, ask_status=None,
+                 ask_recheck=None, ask_candidates=None,
                  ask_answer_selected=None, get_top_k=None,
                  list_ask_models=None, set_ask_model=None,
                  current_ask_model=None, hide_deprecated=None,
@@ -58,6 +59,14 @@ class QuickOpenPalette(Adw.Dialog):
         self._can_ask = can_ask                # () -> bool: is Ask usable right now?
         self._ask_hint = ask_hint              # () -> str: why it is not, if not
         self._ask_toggle = None                # built only when Ask is wired up
+        # The Ask server's own verdict about itself: ask_status() -> EndpointStatus
+        # (None when no server is involved, i.e. the local backend), ask_recheck()
+        # probes again. Shown as a banner, and it gates submitting.
+        self._ask_status = ask_status
+        self._ask_recheck = ask_recheck
+        self._banner = None
+        self._pending_question = ""     # held until a running probe has settled
+        self._checking = False          # a "Try again" check is showing its row
         # "Pick your own sources": candidates() -> [(path, score)], and
         # answer_selected(question, paths) -> ask.Answer; get_top_k() -> int cap.
         self._ask_candidates = ask_candidates
@@ -137,6 +146,14 @@ class QuickOpenPalette(Adw.Dialog):
         self._close_btn.connect("clicked", lambda *_: self.close())
         header.append(self._close_btn)
         box.append(header)
+
+        # What the Ask server said about itself — a banner rather than a result row,
+        # because _clear() wipes the result list on every question, and this notice
+        # must survive exactly the moment the user asks anyway.
+        self._banner = Adw.Banner(revealed=False)
+        self._banner.set_button_label("Try again")
+        self._banner.connect("button-clicked", lambda *_: self._on_banner_retry())
+        box.append(self._banner)
 
         box.append(Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL))
 
@@ -271,6 +288,73 @@ class QuickOpenPalette(Adw.Dialog):
             self._ask_toggle.set_active(False)   # updates mode + chrome
             self._suppress_toggle = False
 
+    def refresh_endpoint_status(self) -> bool:
+        """Reflect what the Ask server answered: banner, picker, submit lock — and
+        release a question that was held while the probe was still out.
+
+        Called on open and whenever a probe settles, so a verdict that arrives while
+        the user is still typing takes effect there and then. Returns ``False`` so it
+        can be handed to ``GLib.idle_add`` directly.
+        """
+        st = self._ask_status() if self._ask_status else None
+        if self._banner is not None:
+            message = st.message if (st is not None and self._ask_mode) else ""
+            self._banner.set_title(message)
+            self._banner.set_revealed(bool(message))
+        self._update_submit_state(st)
+        self._refresh_models()
+        if st is None or st.pending:
+            return False
+        # The verdict is in. A question typed while the check was out runs now — or
+        # is dropped, because the verdict is that asking cannot work (the banner says
+        # so). Either way nothing stale may be left standing: not a "Checking the
+        # server…" row, and not the error of the attempt the user just re-checked.
+        question, self._pending_question = self._pending_question, ""
+        was_checking, self._checking = self._checking, False
+        if question and st.can_ask:
+            self._entry.set_text(question)
+            self._run_ask()
+        elif question or was_checking:
+            self._show_ask_idle()
+        return False
+
+    def _update_submit_state(self, st) -> None:
+        """Submit and Enter are locked only when asking is certain to fail — an
+        empty list or a missing list endpoint still answers questions."""
+        blocked = bool(self._ask_mode and st is not None and not st.can_ask)
+        self._submit.set_sensitive(not blocked)
+        self._submit.set_tooltip_text(
+            st.message if blocked else "Run — search or ask (Enter)")
+
+    def recheck_if_stale(self) -> None:
+        """On opening, probe again unless the last verdict was "models listed".
+
+        A verdict that can change must not stick for the session — starting the
+        server and reopening the palette is the natural retry. Verdicts that are
+        properties of the server (a usable list, or no list endpoint at all) are
+        left alone: re-probing them would cost a round trip on the Ctrl+Space path
+        for a configuration that is working.
+        """
+        st = self._ask_status() if self._ask_status else None
+        if st is None or st.pending or not st.transient:
+            return
+        self._on_banner_retry()
+
+    def _on_banner_retry(self) -> None:
+        """"Try again": probe the server once more without leaving the palette.
+
+        The error of the previous attempt goes away with the click — re-checking is
+        the user saying "that was then", so keeping the old message on screen while a
+        new check runs would be one more stale statement.
+        """
+        if self._ask_recheck is None:
+            return
+        self._checking = True
+        self._phase_key = "checking"
+        self._clear()
+        self._results.append(self._status_row())
+        self._ask_recheck()
+
     def open(self, parent: Gtk.Widget) -> None:
         """Build a fresh index, show recent files and present over *parent*."""
         self._engine = self._make_engine()
@@ -292,6 +376,8 @@ class QuickOpenPalette(Adw.Dialog):
         else:
             self._entry.set_text("")
         self.refresh_scope()
+        self.recheck_if_stale()          # a server started since must become usable
+        self.refresh_endpoint_status()   # list_for's probe may already be out
         self._refresh()
         self.present(parent)
         self._entry.grab_focus()
@@ -335,12 +421,18 @@ class QuickOpenPalette(Adw.Dialog):
         return False        # usable directly as a GLib.idle_add callback
 
     def _refresh_models(self) -> None:
-        """Populate and show the footer model picker only when Ask mode is on and
-        more than one model is available for the active backend."""
+        """Populate and show the footer model picker.
+
+        For a **server** backend it stays visible whenever Ask mode is on, and goes
+        insensitive when there is no usable list — hiding it made "the server is
+        unreachable" indistinguishable from "one local model". For the **local**
+        backend one downloaded model is no choice, so the picker stays hidden.
+        """
         if self._model_dropdown is None:
             return
         models = self._list_ask_models() if self._list_ask_models else []
-        if len(models) < 2:
+        st = self._ask_status() if self._ask_status else None
+        if st is None and len(models) < 2:
             self._model_dropdown.set_visible(False)
             return
         self._model_updating = True
@@ -351,6 +443,7 @@ class QuickOpenPalette(Adw.Dialog):
         if current in self._model_paths:
             self._model_dropdown.set_selected(self._model_paths.index(current))
         self._model_updating = False
+        self._model_dropdown.set_sensitive(st is None or st.models_usable)
         self._model_dropdown.set_visible(self._ask_mode)
 
     def _on_model_selected(self, dropdown, _pspec) -> None:
@@ -540,7 +633,7 @@ class QuickOpenPalette(Adw.Dialog):
     #: 'thinking' is a fallback (servers).
     _PHASE_TEXT = {"initializing": "Initializing…", "loading": "Loading model…",
                    "reading": "Reading your notes…", "writing": "Writing the answer…",
-                   "thinking": "Thinking…"}
+                   "thinking": "Thinking…", "checking": "Checking the server…"}
 
     def _status_row(self) -> Gtk.ListBoxRow:
         """The running-status row with a spinner — its label reflects the current
@@ -684,6 +777,12 @@ class QuickOpenPalette(Adw.Dialog):
 
     def _on_entry_activate(self, _entry) -> None:
         if self._ask_mode:
+            st = self._ask_status() if self._ask_status else None
+            if st is not None and not st.can_ask:
+                return              # the banner already says why; keep the question
+            if st is not None and st.pending:
+                self._hold_question()   # the check is out — wait for the verdict
+                return
             if self._pick_active():
                 self._show_candidates()
             else:
@@ -720,20 +819,43 @@ class QuickOpenPalette(Adw.Dialog):
         self._clear()
         if self._ask_mode:
             self._entry.set_placeholder_text("Ask a question and press Enter…")
-            self._results.append(self._message_row("Type a question, then Enter."))
+            self._show_ask_idle()
         else:
             self._entry.set_placeholder_text("Go to file…")
             self._refresh()
-        self._refresh_models()          # model picker is Ask-mode only
+        # Banner, picker and submit lock are all Ask-mode only.
+        self.refresh_endpoint_status()
         self._entry.grab_focus()
+
+    def _show_ask_idle(self) -> None:
+        """The plain Ask-mode state — nothing asked, nothing to report. One place,
+        so every path that has to drop a stale row lands on the same screen."""
+        self._clear()
+        self._results.append(self._message_row("Type a question, then Enter."))
+
+    def _hold_question(self) -> None:
+        """Keep the typed question until the server check settles, instead of firing
+        it blind: a dead host would take it into the chat call's 120 s timeout."""
+        question = self._entry.get_text().strip()
+        if not question:
+            return
+        self._pending_question = question
+        self._phase_key = "checking"
+        self._clear()
+        self._results.append(self._status_row())
 
     def _abandon_answer(self) -> None:
         """Discard any in-flight answer: bump the generation (so a late worker's
         _show_answer fails the supersede check) *and* clear the busy flag, in one
         place. Every abandon and every restart goes through here, so "generation
-        bumped" and "no answer in flight" can never drift apart again."""
+        bumped" and "no answer in flight" can never drift apart again.
+
+        A question held for a pending server check is dropped here too — same path,
+        so "held question" and "running answer" cannot grow separate abort routes. A
+        late verdict must not fire a question into a dialog the user has left."""
         self._ask_generation += 1
         self._ask_busy = False
+        self._pending_question = ""
 
     def _run_ask(self) -> None:
         question = self._entry.get_text().strip()
@@ -814,6 +936,10 @@ class QuickOpenPalette(Adw.Dialog):
         if ans.error:
             self._results.append(self._message_row(f"Error: {ans.error}"))
             self._results.append(self._duration_row("Failed after", elapsed))
+            # The failure may have proved the server is gone (the answer path
+            # records that): show the banner and lock submitting now, instead of
+            # letting the user fire the same question again and again.
+            self.refresh_endpoint_status()
             return False
         self._answer_text = ans.text or "(empty answer)"
         self._results.append(self._answer_row(self._answer_text))
@@ -835,8 +961,7 @@ class QuickOpenPalette(Adw.Dialog):
 
     def _on_pick_toggled(self, _btn) -> None:
         if self._ask_mode:
-            self._clear()
-            self._results.append(self._message_row("Type a question, then Enter."))
+            self._show_ask_idle()
 
     def _show_candidates(self) -> None:
         question = self._entry.get_text().strip()

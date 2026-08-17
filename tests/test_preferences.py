@@ -383,6 +383,12 @@ class TestAskModelPerEndpoint(_DialogTest):
     def _switch_backend(self, dlg, backend):
         dlg._ask_backend_row.set_selected(dlg._ask_backends.index(backend))
 
+    def _listed(self, models):
+        """The status a server that listed *models* would produce."""
+        from markdown_vault.search import ask_models
+        return ask_models.EndpointStatus(ask_models.OK, "https://llm.example.com",
+                                         models=models)
+
     def test_switching_backend_drops_the_other_servers_model(self):
         dlg = self._dialog(ask_engine="manual", ask_backend="ollama",
                            ask_ollama_url="http://localhost:11434",
@@ -428,7 +434,7 @@ class TestAskModelPerEndpoint(_DialogTest):
         dlg = self._dialog(ask_engine="manual", ask_backend="openai",
                            ask_ollama_url="https://llm.example.com",
                            ask_model="llama3.2")     # left over from Ollama
-        dlg._populate_ask_models(["Qwen3.5-122B", "gpt-oss"], None)
+        dlg._populate_ask_models(self._listed(["Qwen3.5-122B", "gpt-oss"]))
         names = [dlg._ask_model_list.get_string(i)
                  for i in range(dlg._ask_model_list.get_n_items())]
         self.assertEqual(names, ["Qwen3.5-122B", "gpt-oss"])
@@ -439,7 +445,7 @@ class TestAskModelPerEndpoint(_DialogTest):
         dlg = self._dialog(ask_engine="manual", ask_backend="ollama",
                            ask_ollama_url="http://localhost:11434",
                            ask_model="llama3.2")
-        dlg._populate_ask_models(["qwen3", "llama3.2"], None)
+        dlg._populate_ask_models(self._listed(["qwen3", "llama3.2"]))
         self.assertEqual(dlg._ask_model_combo.get_selected(), 1)
         self.assertEqual(dlg._settings["ask_model"], "llama3.2")
 

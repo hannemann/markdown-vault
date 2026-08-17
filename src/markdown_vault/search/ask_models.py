@@ -24,6 +24,7 @@ import logging
 import threading
 import urllib.error
 import urllib.request
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from markdown_vault.core import config, secret_store
@@ -50,8 +51,170 @@ DEFAULT_URLS = {"ollama": "http://localhost:11434",
 LEGACY_KEY_NAME = "ask_api_key"
 
 _cache: dict = {}
+_status_by_endpoint: dict = {}
 _inflight: set = set()
 _lock = threading.Lock()
+
+# ---------------------------------------------------------------- endpoint status
+
+#: Nothing asked yet.
+UNKNOWN = "unknown"
+#: A request is out; the answer is not in.
+PROBING = "probing"
+#: Models listed.
+OK = "ok"
+#: HTTP 200 with an empty list.
+EMPTY = "empty"
+#: No list endpoint (404) or an unreadable answer — llama.cpp serves one model and
+#: lists nothing, which is normal, not broken.
+NO_LIST = "no_list"
+#: The server refused the credentials (401/403).
+UNAUTHORIZED = "unauthorized"
+#: Any other HTTP error (500, 429, redirect loop): the server answered, but said
+#: nothing about whether it can chat.
+LIST_ERROR = "list_error"
+#: No answer at all — refused, DNS failure, timeout.
+UNREACHABLE = "unreachable"
+
+#: States in which asking is certain to fail: there is no server, or it rejects the
+#: credentials the chat endpoint needs just as much. Everything else may warn.
+_BLOCKING = (UNAUTHORIZED, UNREACHABLE)
+
+
+@dataclass
+class EndpointStatus:
+    """What the last model-list request says about one endpoint.
+
+    The distinction the UI needs is *not* "did we get models" but "can a question
+    work at all" — a server may legitimately have no list endpoint. So the class
+    answers three separate questions: may we ask (:attr:`can_ask`), is there a list
+    to choose from (:attr:`models_usable`), and is there something to tell the user
+    (:attr:`message`).
+    """
+
+    state: str = UNKNOWN
+    url: str = ""
+    models: list = field(default_factory=list)
+    error: str = ""            # the raw exception text, for the log and the detail
+
+    @property
+    def can_ask(self) -> bool:
+        """False only when a question is certain to fail. An endpoint nobody has
+        probed yet (or is being probed) does not block — the caller waits instead."""
+        return self.state not in _BLOCKING
+
+    @property
+    def pending(self) -> bool:
+        """A request is out and the verdict is not in — a caller with something to
+        send should wait for it rather than fire blind."""
+        return self.state == PROBING
+
+    @property
+    def transient(self) -> bool:
+        """Whether re-probing could change this verdict.
+
+        ``ok`` and ``no_list`` are properties of the server, not of its mood: a
+        server without a list endpoint will not grow one while the app runs, so
+        checking again on every palette open would just cost a round trip. An empty
+        list, a rejected key, an unreachable host or a server error can all change
+        under the running app, so those are worth another look.
+        """
+        return self.state not in (OK, NO_LIST)
+
+    @property
+    def models_usable(self) -> bool:
+        """Whether there is a real list to pick from."""
+        return self.state == OK and bool(self.models)
+
+    @property
+    def message(self) -> str:
+        """One sentence for the user, or ``""`` when there is nothing to say.
+
+        Silent for ``ok``/``unknown``/``probing`` (nothing is wrong or nothing is
+        known yet) and for ``no_list`` — a server without a list endpoint works
+        fine, so warning about it would train the user to ignore warnings.
+        """
+        if self.state == UNREACHABLE:
+            return (f"{self.url} is not reachable — a question cannot be answered. "
+                    f"Check the server URL in Preferences → Search → Ask. "
+                    f"({self.error})")
+        if self.state == UNAUTHORIZED:
+            return ("The server rejected the API key — a question cannot be "
+                    "answered. Add or fix the key in Preferences → Search → Ask.")
+        if self.state == EMPTY:
+            return (f"{self.url} reports no models. Asking may still work if the "
+                    f"server serves a fixed model; otherwise install or configure "
+                    f"one.")
+        if self.state == LIST_ERROR:
+            return (f"{self.url} could not list its models ({self.error}). Asking "
+                    f"may still work.")
+        return ""
+
+
+def note_chat_failure(backend: str, url: str, exc: Exception) -> str:
+    """Record what a failed **chat** request proves about the endpoint, and return
+    the sentence for the user.
+
+    The chat call is the most authoritative evidence there is — the model list is
+    only a proxy for it. Without this, a server that dies while the palette is open
+    keeps its cheerful verdict: no warning, submitting stays enabled, and every
+    question fails one after another.
+
+    Only endpoint-level verdicts are recorded (``unreachable``, ``unauthorized``).
+    A chat-specific failure must not be relabelled through the list vocabulary: a
+    chat 404 means "no such model", not "this server has no list endpoint", and a
+    500 is about the request, not about reachability.
+    """
+    st = _classify(backend, url, exc)
+    if st.state in _BLOCKING:
+        _set_status(backend, url, st)
+        cache_put(backend, url, [])       # the cached list is no longer trustworthy
+    return st.message or f"The server could not answer: {_reason(exc)}"
+
+
+def explain(backend: str, url: str, exc: Exception) -> str:
+    """A readable sentence for a failed **chat** request, from the same
+    classification as the model list — so the answer area and the palette's banner
+    speak one language instead of one saying "not reachable" and the other printing
+    ``<urlopen error [Errno 111]>``. Falls back to the raw text for states that
+    carry no message (a server without a list endpoint can still fail a chat)."""
+    st = _classify(backend, url, exc)
+    return st.message or f"The server could not answer: {exc}"
+
+
+def status(backend: str, url: str) -> EndpointStatus:
+    """The last known status of this endpoint — ``UNKNOWN`` if never probed."""
+    with _lock:
+        st = _status_by_endpoint.get(endpoint_key(backend, url))
+    return st or EndpointStatus(url=_norm_url(backend, url))
+
+
+def _set_status(backend: str, url: str, st: EndpointStatus) -> None:
+    with _lock:
+        _status_by_endpoint[endpoint_key(backend, url)] = st
+
+
+def _classify(backend: str, url: str, exc: Exception) -> EndpointStatus:
+    """Turn a failed list request into a state. One place, so the palette and
+    Preferences cannot disagree about what a 404 means."""
+    norm = _norm_url(backend, url)
+    if isinstance(exc, urllib.error.HTTPError):
+        if exc.code in (401, 403):
+            return EndpointStatus(UNAUTHORIZED, norm, error=f"HTTP {exc.code}")
+        if exc.code == 404:
+            return EndpointStatus(NO_LIST, norm, error="HTTP 404")
+        return EndpointStatus(LIST_ERROR, norm, error=f"HTTP {exc.code}")
+    if isinstance(exc, ValueError):        # JSON garbage, or not JSON at all
+        return EndpointStatus(NO_LIST, norm, error=_reason(exc))
+    return EndpointStatus(UNREACHABLE, norm, error=_reason(exc))
+
+
+def _reason(exc: Exception) -> str:
+    """The readable part of a network error. ``URLError`` stringifies as
+    ``<urlopen error Connection refused>`` — repr noise in a user-facing sentence —
+    while its ``reason`` is the plain cause."""
+    reason = getattr(exc, "reason", None)
+    return str(reason) if reason else str(exc)
 
 
 def effective_backend(settings: dict) -> str:
@@ -122,15 +285,19 @@ def cache_get(backend: str, url: str) -> list:
 def clear_cache() -> None:
     with _lock:
         _cache.clear()
+        _status_by_endpoint.clear()
         _inflight.clear()
 
 
-def prime(backend: str, url: str, api_key: str = "", on_done=None) -> None:
-    """Refresh the cached list for a server in the background.
+def refresh_async(backend: str, url: str, api_key: str = "", on_settled=None) -> None:
+    """Ask the server for its models in the background and record what came back.
 
-    *on_done* is called with the model list when the fetch succeeded — from the
-    worker thread, so a GTK caller must marshal it (``GLib.idle_add``). A fetch
-    already running for the same endpoint is not started twice.
+    *on_settled* is called with the resulting :class:`EndpointStatus` when the
+    request **finished, whatever the outcome** — from the worker thread, so a GTK
+    caller must marshal it (``GLib.idle_add``). Reporting failures too is the whole
+    point: it is what lets the UI say "not reachable" instead of silently keeping a
+    stale list. A request already running for the same endpoint is not started
+    twice.
     """
     if backend not in SERVER_BACKENDS:
         return
@@ -139,24 +306,42 @@ def prime(backend: str, url: str, api_key: str = "", on_done=None) -> None:
         if key in _inflight:
             return
         _inflight.add(key)
+    _set_status(backend, url, EndpointStatus(PROBING, _norm_url(backend, url)))
 
     def work():
         try:
-            models = fetch(backend, url, api_key)
-            cache_put(backend, url, models)
-            if on_done is not None:
-                on_done(models)
-        except (urllib.error.URLError, OSError, ValueError) as exc:
-            # Unreachable server / garbage answer: keep whatever we had and stay
-            # quiet in the UI — the picker still offers the configured model.
-            logger.info("model list unavailable for %s: %s", key, exc)
-        except Exception:
-            logger.warning("model list fetch failed for %s", key, exc_info=True)
+            st = probe(backend, url, api_key)
         finally:
             with _lock:
                 _inflight.discard(key)
+        if on_settled is not None:
+            on_settled(st)
 
     threading.Thread(target=work, daemon=True, name="ask-models").start()
+
+
+def probe(backend: str, url: str, api_key: str = "") -> EndpointStatus:
+    """Ask the server for its models **now** and record the outcome.
+
+    Blocking — for a caller that already runs its own worker thread (the explicit
+    refresh in Preferences). Deliberately not deduplicated: it is a thing the user
+    asked for. Both entry points end up here, so the two surfaces cannot disagree
+    about what the server said.
+    """
+    try:
+        models = fetch(backend, url, api_key)
+        st = EndpointStatus(OK if models else EMPTY,
+                            _norm_url(backend, url), models=models)
+        cache_put(backend, url, models)
+    except Exception as exc:  # noqa: BLE001 — every outcome becomes a state
+        st = _classify(backend, url, exc)
+        # A failure supersedes an earlier list: keeping it would make a server that
+        # has since died look healthy for the rest of the session.
+        cache_put(backend, url, [])
+        logger.info("model list for %s|%s: %s (%s)",
+                    backend, _norm_url(backend, url), st.state, st.error)
+    _set_status(backend, url, st)
+    return st
 
 
 # ---------------------------------------------------------------------- selection
@@ -178,7 +363,8 @@ def list_for(settings: dict, on_refresh=None) -> list:
 
     Never blocks: for a server backend an empty cache yields the configured model
     alone and schedules a refresh. *on_refresh* is then called (from the worker
-    thread) once the real list has arrived, so the picker can repopulate.
+    thread) with the resulting :class:`EndpointStatus`, so the picker can
+    repopulate and the UI can show what the server said.
     """
     backend = effective_backend(settings)
     if backend not in SERVER_BACKENDS:
@@ -188,7 +374,13 @@ def list_for(settings: dict, on_refresh=None) -> list:
     models = cache_get(backend, url)
     if models:
         return [(m, m) for m in models]
-    prime(backend, url, api_key(settings), on_done=on_refresh)
+    if status(backend, url).state == UNKNOWN:
+        # Only probe an endpoint nobody has asked yet. Probing "whenever the cache
+        # is empty" would loop: a failure clears the cache, the settle callback
+        # refreshes the picker, which lands here again — one 5 s attempt after
+        # another for as long as the app runs. Re-checking is an explicit act
+        # (reopening the palette, or "Try again").
+        refresh_async(backend, url, api_key(settings), on_settled=on_refresh)
     cur = current(settings)
     return [(cur, cur)] if cur else []
 

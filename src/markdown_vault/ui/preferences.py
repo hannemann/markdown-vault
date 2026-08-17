@@ -1625,21 +1625,29 @@ class PreferencesDialog(Adw.PreferencesDialog):
         self._ask_model_combo.set_subtitle("Loading…")
 
         def worker():
-            try:
-                models = ask_models.fetch(backend, url, key)
-                ask_models.cache_put(backend, url, models)
-                GLib.idle_add(self._populate_ask_models, models, None)
-            except Exception as exc:  # noqa: BLE001 — surface any failure inline
-                GLib.idle_add(self._populate_ask_models, None, str(exc))
+            # probe() classifies and records the status, so the palette sees the
+            # same verdict as this dialog — including a failure.
+            GLib.idle_add(self._populate_ask_models,
+                          ask_models.probe(backend, url, key))
 
         threading.Thread(target=worker, daemon=True).start()
 
-    def _populate_ask_models(self, models, error) -> bool:
-        if error is not None:
-            self._ask_model_combo.set_subtitle(f"Not reachable: {error}")
+    def _populate_ask_models(self, status) -> bool:
+        """Show what the server answered — *status* is an ``ask_models``
+        :class:`EndpointStatus`, so the wording here and the palette's warning come
+        from the same verdict."""
+        from markdown_vault.search import ask_models
+        models = status.models
+        if status.state in (ask_models.UNREACHABLE, ask_models.UNAUTHORIZED,
+                            ask_models.LIST_ERROR):
+            self._ask_model_combo.set_subtitle(f"Not reachable: {status.error}")
             self._ask_model_combo.add_css_class("error")
             return False
         self._ask_model_combo.remove_css_class("error")
+        if status.state == ask_models.NO_LIST:
+            self._ask_model_combo.set_subtitle(
+                "This server does not list models — it serves a fixed one")
+            return False
         if not models:
             self._ask_model_combo.set_subtitle("No models on the server")
             return False
