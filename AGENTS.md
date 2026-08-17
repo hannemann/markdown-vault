@@ -252,11 +252,17 @@ Hard rules:
   portal is the problem). Storage differing by install type is expected, not a defect:
   a sandboxed build uses libsecret's app-private file backend (so no Seahorse entry),
   a local install the host keyring — the manifest comment explains why.
-- **Verify a sandbox assumption in a sandbox, cheaply.** `org.gnome.Sdk` is installed,
-  so `flatpak run --command=bash org.gnome.Sdk//<ver>` (plus `--talk-name=…` to model a
-  grant) answers "does this permission/API behave as assumed inside the sandbox?" in
-  seconds — no app build needed. That is how the keyring assumption above was falsified
-  before it shipped: libsecret ignores a Secret Service grant in a sandbox.
+- **Verify a sandbox assumption in a sandbox, cheaply — but know what the probe can
+  answer.** `org.gnome.Sdk` is installed, so `flatpak run --command=bash
+  org.gnome.Sdk//<ver>` (plus `--talk-name=…` to model a grant) answers **permission and
+  API** questions — "is this D-Bus service/portal reachable, does this library behave as
+  assumed?" — in seconds, no app build needed. That is how the keyring assumption above
+  was falsified before it shipped: libsecret ignores a Secret Service grant in a sandbox.
+  It does **not** answer **path or environment** questions: a runtime run has no
+  application identity (`/.flatpak-info` says `[Runtime]`, no app-id), so Flatpak sets up
+  no per-app XDG dirs and the probe sees the **host** ones (`XDG_STATE_HOME=~/.local/state`)
+  — whereas the packaged app gets `~/.var/app/<app-id>/…`. For those, build and run the
+  app itself.
 
 ## Test driven development
 
