@@ -9,6 +9,7 @@ by relative path notation.
 import logging
 import os
 import tempfile
+import traceback
 from pathlib import Path
 
 import yaml
@@ -524,7 +525,18 @@ def load_settings() -> dict:
     """Load app settings from vaults.yaml, with safe defaults."""
     try:
         if not CONFIG_FILE.exists():
-            logger.debug("No config file, using default settings")
+            # On a genuine first run there is no config dir either — that is normal
+            # and stays quiet. But a *missing file next to an existing dir* means it
+            # vanished, and every setting silently becomes a default: the likeliest
+            # route to an unexplained reset. Warn, because a reset restores
+            # loglevel: info and would hide a DEBUG line (it once did).
+            if CONFIG_DIR.exists():
+                logger.warning(
+                    "config file %s is missing though %s exists — falling back to "
+                    "default settings; a write from here would persist those defaults",
+                    CONFIG_FILE, CONFIG_DIR)
+            else:
+                logger.debug("No config file, using default settings")
             return dict(_DEFAULT_SETTINGS)
         with open(CONFIG_FILE, "r", encoding="utf-8") as fh:
             data = yaml.safe_load(fh) or {}
@@ -546,6 +558,39 @@ def load_settings() -> dict:
     return settings
 
 
+def _log_settings_write(before: dict, after: dict) -> None:
+    """Report what a write changes, at a level a settings reset cannot hide.
+
+    ``save_settings`` replaces the whole block, so a caller holding a stale or partial
+    snapshot silently erases everything not in it — that is how a leaked timer once
+    wiped 50 settings. Dropped keys are therefore a WARNING, ordinary changes an INFO;
+    both survive the ``loglevel: info`` a reset restores.
+    """
+    # Which of the five writers this is. The logger name is core.config for all of
+    # them and _FORMAT carries no filename, so without this a DROPS warning says what
+    # was lost but not who lost it — the exact question the reset investigation could
+    # not answer. (logging's stacklevel= cannot help: the format has no %(filename)s.)
+    stack = traceback.extract_stack(limit=3)
+    frame = stack[0] if len(stack) >= 3 else None
+    where = f"{os.path.basename(frame.filename)}:{frame.lineno}" if frame else "?"
+
+    dropped = sorted(set(before) - set(after))
+    changed = sorted(k for k in after if k in before and before[k] != after[k])
+    added = sorted(set(after) - set(before))
+
+    def _v(key, value):
+        return "***" if key in _SECRET_KEYS and value else value
+
+    if dropped:
+        logger.warning(
+            "settings write from %s DROPS %d key(s) — the caller's snapshot is partial "
+            "or stale: %s", where, len(dropped), ", ".join(dropped))
+    if changed or added:
+        parts = [f"{k}: {_v(k, before[k])!r} -> {_v(k, after[k])!r}" for k in changed]
+        parts += [f"{k}: (new) {_v(k, after[k])!r}" for k in added]
+        logger.info("settings write from %s: %s", where, "; ".join(parts))
+
+
 def save_settings(settings: dict) -> None:
     """Persist settings into vaults.yaml (merged with existing vaults)."""
     _invalidate_cache()
@@ -557,6 +602,7 @@ def save_settings(settings: dict) -> None:
                 existing = yaml.safe_load(fh) or {}
         except (yaml.YAMLError, OSError):
             existing = {}
+    _log_settings_write(existing.get("settings") or {}, settings)
     existing["settings"] = settings
     yaml_str = yaml.dump(existing, default_flow_style=False, sort_keys=False)
     try:

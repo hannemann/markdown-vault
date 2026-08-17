@@ -512,5 +512,75 @@ class TestSettingsSecretMasking(_TempConfigMixin, unittest.TestCase):
         self.assertIn("***", blob)
 
 
+class TestSettingsWriteProvenance(_TempConfigMixin, unittest.TestCase):
+    """A settings write must say what it changed — the missing piece that made an
+    unexplained reset take an afternoon to track down. INFO, so it survives a reset
+    (which restores loglevel: info and would silence DEBUG)."""
+
+    def test_changed_keys_are_logged(self):
+        _cfg.save_settings({"autosave_interval": 30, "loglevel": "info"})
+        with self.assertLogs("markdown_vault.core.config", level="INFO") as cm:
+            _cfg.save_settings({"autosave_interval": 90, "loglevel": "info"})
+        blob = "\n".join(cm.output)
+        self.assertIn("autosave_interval", blob)
+        self.assertIn("90", blob)
+        self.assertNotIn("loglevel", blob)      # unchanged keys are not noise
+
+    def test_secret_values_are_masked(self):
+        _cfg.save_settings({})
+        with self.assertLogs("markdown_vault.core.config", level="INFO") as cm:
+            _cfg.save_settings({"ask_api_key": "sk-super-secret"})
+        blob = "\n".join(cm.output)
+        self.assertNotIn("sk-super-secret", blob)
+        self.assertIn("ask_api_key", blob)
+
+    def test_dropping_keys_warns(self):
+        # Exactly the shape of the leaked-timer write: a tiny snapshot replacing a
+        # full settings block. It must not pass silently.
+        _cfg.save_settings({"autosave_interval": 30, "loglevel": "debug",
+                            "semantic_search_enabled": True})
+        with self.assertLogs("markdown_vault.core.config", level="WARNING") as cm:
+            _cfg.save_settings({"ask_system_prompt": ""})
+        blob = "\n".join(cm.output)
+        self.assertIn("semantic_search_enabled", blob)
+        self.assertIn("loglevel", blob)
+
+    def test_log_names_the_caller(self):
+        # "which keys" without "from where" leaves the five writers indistinguishable —
+        # exactly the question the reset investigation could not answer.
+        _cfg.save_settings({"autosave_interval": 30})
+        with self.assertLogs("markdown_vault.core.config", level="INFO") as cm:
+            _cfg.save_settings({"autosave_interval": 90})
+        self.assertIn("test_config.py:", "\n".join(cm.output))
+
+    def test_drop_warning_names_the_caller(self):
+        _cfg.save_settings({"autosave_interval": 30, "loglevel": "debug"})
+        with self.assertLogs("markdown_vault.core.config", level="WARNING") as cm:
+            _cfg.save_settings({"autosave_interval": 30})
+        self.assertIn("test_config.py:", "\n".join(cm.output))
+
+    def test_no_log_when_nothing_changed(self):
+        _cfg.save_settings({"autosave_interval": 30})
+        with self.assertNoLogs("markdown_vault.core.config", level="INFO"):
+            _cfg.save_settings({"autosave_interval": 30})
+
+
+class TestMissingConfigVisibility(_TempConfigMixin, unittest.TestCase):
+    """A config file that vanished is the likeliest silent-reset route, so it must be
+    visible at a level that a reset (loglevel -> info) does not hide."""
+
+    def test_missing_file_with_existing_dir_warns(self):
+        _cfg.CONFIG_DIR.mkdir(parents=True, exist_ok=True)   # we have run before
+        with self.assertLogs("markdown_vault.core.config", level="WARNING") as cm:
+            _cfg.load_settings()
+        self.assertIn("config", "\n".join(cm.output).lower())
+
+    def test_genuine_first_run_stays_quiet(self):
+        import shutil
+        shutil.rmtree(_cfg.CONFIG_DIR, ignore_errors=True)   # nothing has run yet
+        with self.assertNoLogs("markdown_vault.core.config", level="WARNING"):
+            _cfg.load_settings()
+
+
 if __name__ == "__main__":
     unittest.main()
