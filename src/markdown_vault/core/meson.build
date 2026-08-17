@@ -8,6 +8,7 @@ install_data(
     'history.py',
     'logging_setup.py',
     'path_utils.py',
+    'secret_store.py',
     'session.py',
     'validation.py',
   ),

@@ -127,6 +127,11 @@ class PreferencesDialog(Adw.PreferencesDialog):
         # must not rewrite vaults.yaml on every keystroke.
         self._persist_id = None
         self.connect("closed", self._flush_persist)
+        # Same debounce for the keyring-backed API key (secret_store), kept
+        # separate so a secret never lands in self._settings / vaults.yaml.
+        self._secret_persist_id = None
+        self._pending_secret = None
+        self.connect("closed", self._flush_secret)
 
         # ── General page ────────────────────────────────────────────
         general = Adw.PreferencesPage(title="General", icon_name="preferences-other-symbolic")
@@ -590,6 +595,55 @@ class PreferencesDialog(Adw.PreferencesDialog):
         row.set_child(box)
         return row, entry
 
+    def _key_row(self, title, secret_key):
+        """Like :meth:`_entry_row`, but the value is a **secret in the OS keyring**
+        (libsecret), never in settings — so it stays out of vaults.yaml and the
+        logs. Masked, and written **debounced** on a background flush, because a
+        keyring write can prompt/unlock and must not fire per keystroke."""
+        from markdown_vault.core import secret_store
+        row = Adw.PreferencesRow(activatable=False)
+        box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12,
+                      margin_start=12, margin_end=12, margin_top=10, margin_bottom=10)
+        box.append(Gtk.Label(label=title, xalign=0.0, valign=Gtk.Align.CENTER,
+                             width_request=self._LABEL_WIDTH))
+        entry = Gtk.Entry(hexpand=True, valign=Gtk.Align.CENTER, visibility=False)
+        if secret_store.available():
+            entry.set_text(secret_store.get_secret(secret_key))
+        else:
+            entry.set_placeholder_text("no keyring available — key won't be saved")
+            entry.set_sensitive(False)
+        entry.connect("changed", self._on_secret_changed, secret_key)
+        box.append(entry)
+        row.set_child(box)
+        return row, entry
+
+    def _on_secret_changed(self, entry, secret_key):
+        self._pending_secret = (secret_key, entry.get_text())
+        if self._secret_persist_id is not None:
+            GLib.source_remove(self._secret_persist_id)
+        self._secret_persist_id = GLib.timeout_add(
+            self._PERSIST_DEBOUNCE_MS, self._persist_secret_now)
+
+    def _persist_secret_now(self) -> bool:
+        self._secret_persist_id = None
+        if self._pending_secret is not None:
+            from markdown_vault.core import secret_store
+            # A write can fail even when the service was reachable at open (the store
+            # call is what triggers the unlock prompt; the user may cancel it). Surface
+            # it like a failed settings save, so it isn't a silent no-op that only
+            # shows up later as a 401 pointing at the server instead of the save.
+            if not secret_store.set_secret(*self._pending_secret):
+                dialogs.show_error(self.get_root(), "Keyring",
+                                   "Could not store the API key in the keyring.")
+            self._pending_secret = None
+        return False
+
+    def _flush_secret(self, *_args) -> None:
+        """Write a pending keyring change immediately (on dialog close)."""
+        if self._secret_persist_id is not None:
+            GLib.source_remove(self._secret_persist_id)
+        self._persist_secret_now()
+
     def _nav_row(self, title, subtitle, subpage):
         """An activatable row with a chevron that pushes *subpage*."""
         row = Adw.ActionRow(title=title, subtitle=subtitle, activatable=True)
@@ -1006,12 +1060,21 @@ class PreferencesDialog(Adw.PreferencesDialog):
         saved_url = self._ASK_BACKEND_URLS.get(self._settings.get("ask_backend"))
         if saved_url:
             self._ask_url_entry.set_placeholder_text(f"{saved_url} (default)")
+        # A non-local URL means note content leaves the device — re-check the warning
+        # as the URL is typed (localhost llama.cpp/ollama stay local).
+        self._ask_url_entry.connect("changed", lambda *_: self._update_external_warning())
         group.add(self._ask_url_row)
-        # Privacy: unlike the in-process backend ("nothing leaves your machine"),
-        # a server backend ships note content out — say so where the leak is.
-        group.add(self._caption_row(
-            "A non-local server receives the full text of every retrieved note "
-            "with each question."))
+        # API key (OpenAI-compatible servers that require auth). Stored in the OS
+        # keyring, never in vaults.yaml or the logs — see _key_row.
+        self._ask_key_row, self._ask_key_entry = self._key_row("API key", "ask_api_key")
+        group.add(self._ask_key_row)
+        # Privacy: shown ONLY when the server is non-local (any server backend) —
+        # a local llama.cpp/ollama sends nothing out; a remote one ships note text.
+        self._ask_external_row = self._caption_row(
+            "⚠ This server is not local — the full text of every retrieved note "
+            "is sent to it with each question.")
+        self._ask_external_row.set_visible(False)
+        group.add(self._ask_external_row)
 
         # The model list is fetched from the server; a refresh icon sits in the
         # row next to the selected model, and the subtitle carries the status
@@ -1028,7 +1091,8 @@ class PreferencesDialog(Adw.PreferencesDialog):
         ask_refresh_btn.connect("clicked", lambda *_: self._refresh_ask_models())
         self._ask_model_combo.add_suffix(ask_refresh_btn)
         group.add(self._ask_model_combo)
-        self._ask_server_rows = [self._ask_url_row, self._ask_model_combo]
+        self._ask_server_rows = [self._ask_url_row, self._ask_key_row,
+                                 self._ask_model_combo]
 
         self._ask_reasoning_row = Adw.SwitchRow(
             title="Reasoning",
@@ -1087,6 +1151,7 @@ class PreferencesDialog(Adw.PreferencesDialog):
         self._refresh_gguf_models()
         self._refresh_gguf_status()
         self._update_ask_rows()          # show only the rows the engine/backend use
+        self._update_external_warning()  # reveal the leak warning iff URL is non-local
         subpage = self._subpage("Ask", page)
         subpage.connect("shown", lambda *_: self.set_focus(None))  # see Embedding
         return subpage
@@ -1169,9 +1234,28 @@ class PreferencesDialog(Adw.PreferencesDialog):
             cur = self._ask_url_entry.get_text().strip()
             if not cur or cur in self._ASK_BACKEND_URLS.values():
                 self._ask_url_entry.set_text(default_url)  # fires changed → saves
+        self._update_external_warning()
         self._persist()
         if backend != "local":
             self._refresh_ask_models()  # different endpoint per server backend
+
+    @staticmethod
+    def _is_local_url(url: str) -> bool:
+        """True if *url* points at this machine (or is empty/unset)."""
+        from urllib.parse import urlparse
+        host = (urlparse(url).hostname or "").lower() if url else ""
+        return host in ("", "localhost", "127.0.0.1", "::1", "0.0.0.0")
+
+    def _update_external_warning(self) -> None:
+        """Reveal the 'notes leave the device' warning only for a server backend
+        with a **non-local** URL — a local llama.cpp/ollama sends nothing out."""
+        row = getattr(self, "_ask_external_row", None)
+        if row is None:
+            return
+        backend = self._settings.get("ask_backend")
+        url = (self._ask_url_entry.get_text().strip()
+               or self._settings.get("ask_ollama_url", ""))
+        row.set_visible(backend in ("ollama", "openai") and not self._is_local_url(url))
 
     def _ask_effective_backend(self) -> str:
         """The backend the current engine will actually use: Automatic is always
@@ -1443,15 +1527,20 @@ class PreferencesDialog(Adw.PreferencesDialog):
         the OpenAI-compatible /v1/models, depending on the selected backend."""
         import json
         import urllib.request
-        url = (self._settings.get("ask_ollama_url")
-               or config.default("ask_ollama_url")).rstrip("/")
+        from markdown_vault.core import secret_store
+        from markdown_vault.search.ask import openai_base
+        raw_url = self._settings.get("ask_ollama_url") or config.default("ask_ollama_url")
         openai = self._settings.get("ask_backend") == "openai"
+        # openai appends /v1 itself (like the chat call); ollama uses the raw base.
+        url = openai_base(raw_url) if openai else raw_url.rstrip("/")
         endpoint = "/v1/models" if openai else "/api/tags"
+        key = secret_store.get_secret("ask_api_key")   # also for a proxied Ollama
         self._ask_model_combo.set_subtitle("Loading…")
 
         def worker():
             try:
-                req = urllib.request.Request(url + endpoint)
+                headers = {"Authorization": f"Bearer {key}"} if key else {}
+                req = urllib.request.Request(url + endpoint, headers=headers)
                 data = json.loads(urllib.request.urlopen(req, timeout=6).read())
                 # Ollama: {"models":[{"name":…}]}; OpenAI/llama.cpp:
                 # {"data":[{"id":…}]} or {"models":[{"name"/"id":…}]}.

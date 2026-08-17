@@ -240,6 +240,23 @@ Hard rules:
   And run the suite in the **base-only** state too: it MUST stay green, with tests
   that need the optional stack `skipUnless`-guarded (e.g. `llama_runtime.is_available()`)
   so they skip rather than error — a base install must never produce a red suite.
+- **Flatpak-manifest changes (permissions, runtime version) are invisible to the
+  suite** — the source tree cannot see a packaging mistake, and the only gate is a
+  manual `make build-flatpak` + run. So after touching
+  `src/share/markdown-vault/*.yml`, verify the affected capability **in the packaged
+  app**, not just on the host. A wrong `--talk-name` or a runtime bump that drops a
+  typelib degrades *gracefully* and therefore looks like a legitimate environment
+  result, not a bug. Current instance: secret storage — open **Preferences → Search →
+  Ask** in the Flatpak build and confirm the **API key field is enabled** (if it shows
+  "no keyring available — key won't be saved", libsecret's file backend or the Secret
+  portal is the problem). Storage differing by install type is expected, not a defect:
+  a sandboxed build uses libsecret's app-private file backend (so no Seahorse entry),
+  a local install the host keyring — the manifest comment explains why.
+- **Verify a sandbox assumption in a sandbox, cheaply.** `org.gnome.Sdk` is installed,
+  so `flatpak run --command=bash org.gnome.Sdk//<ver>` (plus `--talk-name=…` to model a
+  grant) answers "does this permission/API behave as assumed inside the sandbox?" in
+  seconds — no app build needed. That is how the keyring assumption above was falsified
+  before it shipped: libsecret ignores a Secret Service grant in a sandbox.
 
 ## Test driven development
 

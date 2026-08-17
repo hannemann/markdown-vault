@@ -494,6 +494,11 @@ _WEBKIT_ENV_KEYS = {
 # Last settings dict logged by load_settings(), so we dump the full dict only
 # when it changes — startup calls load_settings() ~7 times and logging the whole
 # config each time is pure noise.
+# Settings keys whose value is a secret and must never be logged verbatim. The
+# value lives in the OS keyring (secret_store), not here; this only guards a legacy
+# plaintext copy that a hand-edited vaults.yaml might still hold.
+_SECRET_KEYS = {"ask_api_key"}
+
 _last_logged_settings = None
 
 
@@ -527,7 +532,11 @@ def load_settings() -> dict:
     settings.update(data.get("settings") or {})
     _migrate_settings(settings)
     global _last_logged_settings
-    loggable = {k: v for k, v in settings.items() if k != "loglevel"}
+    # Secrets belong in the keyring, not settings — but mask them in the debug
+    # dump anyway (defence in depth: a legacy vaults.yaml may still carry one, and
+    # loglevel: debug is what the manual-testing loop sets).
+    loggable = {k: ("***" if k in _SECRET_KEYS and v else v)
+                for k, v in settings.items() if k != "loglevel"}
     if loggable != _last_logged_settings:
         logger.debug("Loaded settings: %s", loggable)
         _last_logged_settings = loggable
