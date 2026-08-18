@@ -199,6 +199,7 @@ target exists.
 | Run the full unit test suite  | `make test`                                                  |
 | Run one test / tests by name  | `make test-one T=<module[.Class[.method]]>` or `make test-one K=<name-substring>` |
 | Measure one file's line coverage | `make coverage FILE=<src-file> [T=<test_module…>]` (`sys.monitoring`, no `coverage.py` dep; fails on a red suite) |
+| Measure one file's coupling | `make callbacks FILE=<src-file>` — how many of its own methods it hands to other objects (pure AST, no test run). The metric a split is judged by: moving code between files does not change it, extracting state and responsibility does. Counting rule in `scripts/count_callbacks.py`; take before/after with this same target, never with an ad-hoc counter. |
 | Code graph (see graphify)     | `make graph-update` · `graph-query Q="…"` · `graph-explain S="…"` · `graph-path A="…" B="…"` · `graph-build` |
 | Drive the running app (D-Bus) | `make dbg-ready` (wait until up, e.g. after restart) · `dbg-state` · `dbg-tabs` · `dbg-active` · `dbg-open F=…` · `dbg-close F=…` · `dbg-select F=…` · `dbg-search Q="…"` · `dbg-ask Q="…"` (open+submit+wait+print answer) · low-level `dbg-quickopen Q=…` · `dbg-submit` · `dbg-waitidle` · `dbg-answer` |
 

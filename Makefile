@@ -1,5 +1,5 @@
 SHELL := /bin/bash
-.PHONY: _fetch-wheels lock-wheels download-wheels build-flatpak bundle-flatpak install-flatpak uninstall-flatpak run-flatpak test-flatpak clean clean-build clean-cache build venv venv-ai install install-ai uninstall clean-local run test test-one coverage test-e2e graph-build graph-update graph-query graph-path graph-explain start stop restart status dbg-ready dbg-state dbg-tabs dbg-active dbg-open dbg-close dbg-select dbg-search dbg-quickopen dbg-submit dbg-waitidle dbg-answer dbg-ask
+.PHONY: _fetch-wheels lock-wheels download-wheels build-flatpak bundle-flatpak install-flatpak uninstall-flatpak run-flatpak test-flatpak clean clean-build clean-cache build venv venv-ai install install-ai uninstall clean-local run test test-one coverage callbacks test-e2e graph-build graph-update graph-query graph-path graph-explain start stop restart status dbg-ready dbg-state dbg-tabs dbg-active dbg-open dbg-close dbg-select dbg-search dbg-quickopen dbg-submit dbg-waitidle dbg-answer dbg-ask
 
 WHEEL_DIR := src/share/markdown-vault
 WHEELS_DIR := $(WHEEL_DIR)/wheels
@@ -181,6 +181,12 @@ coverage:
 	@test -n "$(FILE)" || { echo "usage: make coverage FILE=<src-file> [T=<test_module ...>]"; exit 2; }
 	@PY=$$([ -x "$(VENV)/bin/python" ] && echo "$(VENV)/bin/python" || echo "$(PYTHON)"); \
 	$(TEST_ENV) "$$PY" $(TEST_WARN) scripts/coverage.py "$(FILE)" $(T)
+
+# Coupling of one module: how many of its own methods it hands to other objects.
+# Pure AST, no test run — see scripts/count_callbacks.py for the counting rule.
+callbacks:
+	@test -n "$(FILE)" || { echo "usage: make callbacks FILE=<src-file>"; exit 2; }
+	@$(PYTHON) scripts/count_callbacks.py "$(FILE)"
 
 # Full-app E2E smoke tests: spawn the app on an ISOLATED session bus
 # (dbus-run-session — so the developer's running instance is not activated
