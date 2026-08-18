@@ -134,6 +134,25 @@ class TestZoom(AppWindowTest):
             self.win._zoom_reset()
 
 
+class TestViewMode(AppWindowTest):
+    """Edit / Render / Split. The window delegates the mode itself, but keeps one
+    rule of its own — and that rule is the kind a split drops, because it looks
+    like an unrelated line in the middle of a delegation."""
+
+    def test_switching_the_mode_closes_the_find_bar_first(self):
+        # The find bar targets and dims one specific view; after a mode switch it
+        # would point at a hidden one (R21.5).
+        self.win._find_bar.set_visible(True)
+        with unittest.mock.patch.object(self.win, "_view_mode_manager"):
+            self.win._set_view_mode("render")
+        self.assertFalse(self.win._find_bar.get_visible())
+
+    def test_the_mode_is_handed_to_the_manager(self):
+        with unittest.mock.patch.object(self.win, "_view_mode_manager") as manager:
+            self.win._set_view_mode("split")
+        manager.set_view_mode.assert_called_once_with("split")
+
+
 class TestPreferencesReactions(AppWindowTest):
     """What the window *does* when a setting changes — the part that is not
     visible in the settings file and broke silently once already.
