@@ -221,71 +221,13 @@ class TestTabBarCloseTabSignal(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# AppWindow: _on_tab_close_request dirty-check
+# AppWindow: closing tabs with unsaved changes
 # ---------------------------------------------------------------------------
-
-class TestAppWindowTabCloseRequest(unittest.TestCase):
-    """AppWindow: _on_tab_close_request checks dirty state."""
-
-    def setUp(self):
-        self._tmp = tempfile.mkdtemp()
-        self._md = os.path.join(self._tmp, "note.md")
-        with open(self._md, "w") as f:
-            f.write("# Note")
-
-    def tearDown(self):
-        shutil.rmtree(self._tmp, ignore_errors=True)
-
-    def _make_window(self):
-        """Creates an AppWindow without display (structural)."""
-        import markdown_vault.app.app_window as aw
-        with unittest.mock.patch.object(aw.Gio.SimpleAction, 'new'):
-            with unittest.mock.patch.object(aw.Adw.StyleManager, 'get_default') as sm:
-                sm.return_value.set_color_scheme = unittest.mock.Mock()
-                with unittest.mock.patch.object(aw, '_load_gtk_css'):
-                    app = unittest.mock.Mock()
-                    win = aw.MainWindow(app)
-                    return win
-
-    def test_source_has_on_tab_close_request(self):
-        """_on_tab_close_request existiert in app_window.py."""
-        src = os.path.join(
-            os.path.dirname(__file__),
-            "..", "src",
-            "markdown_vault", "app", "app_window.py",
-        )
-        source = Path(src).read_text()
-        self.assertIn("def _on_tab_close_request", source)
-
-    def test_source_has_show_save_dialog(self):
-        """_show_save_dialog existiert in app_window.py."""
-        src = os.path.join(
-            os.path.dirname(__file__),
-            "..", "src",
-            "markdown_vault", "app", "app_window.py",
-        )
-        source = Path(src).read_text()
-        self.assertIn("def _show_save_dialog", source)
-
-    def test_source_has_save_dialog_response_handler(self):
-        """_on_save_dialog_response existiert in app_window.py."""
-        src = os.path.join(
-            os.path.dirname(__file__),
-            "..", "src",
-            "markdown_vault", "app", "app_window.py",
-        )
-        source = Path(src).read_text()
-        self.assertIn("def _on_save_dialog_response", source)
-
-    def test_source_has_save_dirty_tabs(self):
-        """_save_dirty_tabs existiert in app_window.py."""
-        src = os.path.join(
-            os.path.dirname(__file__),
-            "..", "src",
-            "markdown_vault", "app", "app_window.py",
-        )
-        source = Path(src).read_text()
-        self.assertIn("def _save_dirty_tabs", source)
+# Covered by behaviour in tests/test_app_window_close.py, on the real window.
+# What stood here were four tests that read app_window.py as text and asserted
+# that a method NAME exists — they would have kept passing after the dirty check
+# itself was deleted. They also carried a _make_window() helper that was never
+# called (it could not work: GTK refuses a Mock as `application`).
 
 
 from pathlib import Path
