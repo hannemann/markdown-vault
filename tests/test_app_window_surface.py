@@ -151,13 +151,18 @@ class TestViewMode(AppWindowTest):
         # would point at a hidden one (R21.5).
         self.win._find_bar.set_visible(True)
         with unittest.mock.patch.object(self.win, "_view_mode_manager"):
-            self.win._set_view_mode("render")
+            self.activate("view-render")
         self.assertFalse(self.win._find_bar.get_visible())
 
-    def test_the_mode_is_handed_to_the_manager(self):
-        with unittest.mock.patch.object(self.win, "_view_mode_manager") as manager:
-            self.win._set_view_mode("split")
-        manager.set_view_mode.assert_called_once_with("split")
+    def test_each_action_carries_its_own_mode(self):
+        # The three view actions are built in a loop over `mode`, so the binding
+        # `m=mode` is the one place a copy-paste would point all three at the same
+        # view — invisible from the outside, and nothing else checks it.
+        for action, mode in (("view-edit", "edit"), ("view-render", "render"),
+                             ("view-split", "split")):
+            with unittest.mock.patch.object(self.win, "_view_mode_manager") as manager:
+                self.activate(action)
+            manager.set_view_mode.assert_called_once_with(mode)
 
 
 class TestPreferencesReactions(AppWindowTest):

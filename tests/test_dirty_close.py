@@ -11,7 +11,6 @@ Verifies:
 - R6.2: ``_on_close_request`` dirty-check prevents window close
 """
 
-import os
 import tempfile
 import shutil
 import unittest
@@ -233,9 +232,6 @@ class TestTabBarCloseTabSignal(unittest.TestCase):
 # that a method NAME exists — they would have kept passing after the dirty check
 # itself was deleted. They also carried a _make_window() helper that was never
 # called (it could not work: GTK refuses a Mock as `application`).
-
-
-from pathlib import Path
 
 
 # ---------------------------------------------------------------------------
