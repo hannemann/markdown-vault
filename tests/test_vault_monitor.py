@@ -15,6 +15,30 @@ import time
 import unittest
 from unittest.mock import MagicMock, patch
 
+import gi.repository
+# Import them, don't just reach for the attribute: PyGObject creates
+# gi.repository.Gio on first import, so the attribute does not exist yet.
+from gi.repository import Gio as _REAL_GIO, GLib as _REAL_GLIB
+
+
+def tearDownModule():
+    """Put ``gi.repository`` back the way it was found.
+
+    ``_load_monitor`` replaces ``gi.repository.Gio``/``GLib`` wholesale so the
+    reimported vault_monitor binds to the mocks. That is fine inside this file
+    and poison outside it: whatever runs next and imports Gio *lazily* — inside a
+    function rather than at module level — gets the mock and fails with
+    "Expected Gio.Action, but got MagicMock", pointing at innocent code. It cost
+    an afternoon once; restoring here keeps the blast radius at this module.
+
+    The reimported module goes too, so the next importer builds a fresh one
+    against the real Gio.
+    """
+    gi.repository.Gio = _REAL_GIO
+    gi.repository.GLib = _REAL_GLIB
+    sys.modules.pop("markdown_vault.vault.vault_monitor", None)
+
+
 # Gio.FileMonitorEvent constants
 _CRE = 3
 _DEL = 2
@@ -715,6 +739,33 @@ class TestCleanup(unittest.TestCase):
                 monitor._debounce_timers["test"] = 123
                 monitor.cleanup()
                 self.assertEqual(len(monitor._debounce_timers), 0)
+
+
+class TestTeardownLeavesGiAlone(unittest.TestCase):
+    """The cleanup this file owes every test that runs after it."""
+
+    def test_the_mock_modules_do_not_survive_this_file(self):
+        # Reproduce the swap, then run the teardown by hand — asserting the
+        # promise instead of trusting that it happens once the file is done.
+        _load_monitor(_make_mock_gio(), _make_mock_glib())
+        self.assertIsNot(gi.repository.Gio, _REAL_GIO)      # swapped, as designed
+        tearDownModule()
+        self.assertIs(gi.repository.Gio, _REAL_GIO)
+        self.assertIs(gi.repository.GLib, _REAL_GLIB)
+        self.assertNotIn("markdown_vault.vault.vault_monitor", sys.modules)
+
+    def test_a_lazy_import_gets_the_real_module_afterwards(self):
+        # The failure mode itself: a function-level `from gi.repository import
+        # Gio` elsewhere used to pick up the mock and die with "Expected
+        # Gio.Action, but got MagicMock" in code that had nothing to do with it.
+        _load_monitor(_make_mock_gio(), _make_mock_glib())
+        tearDownModule()
+
+        def lazy_importer():
+            from gi.repository import Gio
+            return Gio.SimpleAction.new("probe", None)
+
+        self.assertIsNotNone(lazy_importer())
 
 
 if __name__ == "__main__":

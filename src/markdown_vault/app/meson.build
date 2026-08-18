@@ -2,12 +2,18 @@ install_data(
   files(
     '__init__.py',
     'app_window.py',
+    'ask_controller.py',
     'file_manager.py',
+    'find_controller.py',
     'input_manager.py',
+    'link_navigator.py',
     'monitor_handler.py',
+    'preview_actions.py',
     'session_manager.py',
     'tab_manager.py',
     'view_mode_manager.py',
+    'zen_controller.py',
+    'zoom_controller.py',
   ),
   install_dir: pythondir / 'markdown_vault' / 'app',
 )

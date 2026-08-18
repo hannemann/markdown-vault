@@ -58,3 +58,25 @@ def unwrap_bold_headings(md: str) -> str:
                 line = m.group(1) + bold.group(2)
         out.append(line)
     return "\n".join(out)
+
+
+# A task-list checkbox on a list line; group 4 is the state (space or x/X).
+# Quotes and ordered lists count, so a checkbox inside a blockquote or a
+# numbered list can be ticked in the preview like any other.
+_CHECKBOX_RE = re.compile(r'^(>\s*)*(\s*)([-*+]|\d+\.)\s+\[([ xX])\]')
+
+
+def set_checkbox_state(line: str, checked: bool) -> str | None:
+    """Return *line* with its checkbox set to *checked*, or ``None``.
+
+    ``None`` means "nothing to do": the line carries no checkbox, or it already
+    has the requested state. Returning that instead of the unchanged line lets
+    the caller skip an undo step for a click that changes nothing.
+    """
+    match = _CHECKBOX_RE.match(line)
+    if not match:
+        return None
+    new_state = "x" if checked else " "
+    if match.group(4).lower() == new_state:
+        return None
+    return line[:match.start(4)] + new_state + line[match.end(4):]

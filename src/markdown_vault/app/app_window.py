@@ -50,6 +50,12 @@ from markdown_vault.app.view_mode_manager import ViewModeManager
 from markdown_vault.editor.content_changes import ContentChangeHandler
 from markdown_vault.app.input_manager import InputManager
 from markdown_vault.app.file_manager import FileManager
+from markdown_vault.app.zoom_controller import ZoomController
+from markdown_vault.app.zen_controller import ZenController
+from markdown_vault.app.find_controller import FindController
+from markdown_vault.app.ask_controller import AskController
+from markdown_vault.app.link_navigator import LinkNavigator
+from markdown_vault.app.preview_actions import PreviewActions
 from markdown_vault.core import config
 from markdown_vault.uikit import dialogs
 from markdown_vault.uikit import banners as banner_mod
@@ -96,8 +102,6 @@ def _make_theme_handler(scheme: int):
         _apply_theme(scheme)
     return _handler
 
-
-_ZOOM_STEP = 0.1
 
 # R17.1: debounce window for coalescing backlink-build reschedules, so a
 # sustained burst of incremental edits cannot livelock the async build.
@@ -150,10 +154,6 @@ class MainWindow(Adw.ApplicationWindow):
         self._sem_busy = False
         self._sem_progress = None
         # Zen mode: hide chrome and restore the previous visibility on exit.
-        # Level "panels" hides the side/bottom panels; "total" also hides the
-        # header and tab bar. None means not in zen.
-        self._zen_level: str | None = None
-        self._zen_saved: dict | None = None
         self._close_window_pending: bool = False
         self._switch_vault_pending: bool = False
 
@@ -190,10 +190,9 @@ class MainWindow(Adw.ApplicationWindow):
         self._vault_tree.connect("file-selected", self._on_file_selected_from_tree)
         self._vault_tree.connect("vault-activated", self._on_vault_activated)
         self._vault_tree.connect("vault-added", self._on_vault_added)
-        self._vault_tree.connect("new-file-requested", self._on_new_file_requested)
-        self._vault_tree.connect("new-folder-requested", self._on_new_folder_requested)
+        # New file / New folder / Delete are wired by the FileManager itself —
+        # see wire_tree_context_menu, called once it exists.
         self._vault_tree.connect("import-requested", self._on_import_requested)
-        self._vault_tree.connect("delete-requested", self._on_delete_requested)
         self._vault_tree.connect("close-file-requested", self._on_close_file_requested)
         self._vault_tree.connect("file-renamed", self._on_file_renamed)
         self._vault_tree.connect("vault-renamed", self._on_vault_renamed)
@@ -228,16 +227,10 @@ class MainWindow(Adw.ApplicationWindow):
         # In-view find bar (Ctrl+F), under the tabs. While it is open the
         # view that is NOT being searched is dimmed so it reads as inactive.
         self._find_bar = FindBar()
-        self._find_target = None
-        self._find_info_handler = 0
-        self._find_dimmed = None
-        self._find_bar.connect("search-changed", self._on_find_text_changed)
-        self._find_bar.connect("search-next", lambda *_: self._on_find_nav(True))
-        self._find_bar.connect("search-prev", lambda *_: self._on_find_nav(False))
-        self._find_bar.connect("options-changed", self._on_find_options_changed)
-        self._find_bar.connect("replace-one", lambda *_: self._on_find_replace(False))
-        self._find_bar.connect("replace-all", lambda *_: self._on_find_replace(True))
-        self._find_bar.connect("closed", self._on_find_closed)
+        self._find = FindController(
+            self._find_bar,
+            get_current_tab=self._tab_bar.get_current_tab,
+            get_focus=self.get_focus)
         centre.append(self._find_bar)
 
         # Close the find bar / global search with Esc even when focus has left
@@ -354,6 +347,36 @@ class MainWindow(Adw.ApplicationWindow):
             tab_bar=self._tab_bar, parent=self
         )
 
+        # Input manager (shortcuts + navigation). Built before the orchestrator,
+        # which is handed its history methods directly.
+        self._input_manager = InputManager(
+            application=self,
+            on_nav_file_opened=self._open_from_history,
+            nav_history=self._nav_history,
+            back_btn=self._back_btn,
+            forward_btn=self._forward_btn,
+            settings=self._settings,
+            in_page_state_fn=self._in_page_nav_state,
+        )
+
+        # Ticking a checkbox and downloading an image both edit the note's source
+        # and then re-sync the other views — see PreviewActions.
+        self._preview_actions = PreviewActions(
+            tab_bar=self._tab_bar,
+            sidebar=self._sidebar,
+            refresh_preview=self._view_mode_manager.refresh_preview,
+            toast=self._toast)
+
+        # Following a link: one rule for "cross-vault → switch first" and the
+        # anchor jump, instead of three near-identical handlers.
+        self._links = LinkNavigator(
+            parent=self,
+            get_current_tab=self._tab_bar.get_current_tab,
+            get_active_vault=lambda: self._active_vault,
+            open_in_place=self._navigate_in_place,
+            open_in_new_tab=self._open_file,
+            switch_vault=self._switch_vault)
+
         # Tab lifecycle orchestrator.
         self._tab_orchestrator = TabOrchestrator(
             tab_bar=self._tab_bar,
@@ -365,34 +388,26 @@ class MainWindow(Adw.ApplicationWindow):
             backlink_index=self._backlink_index,
             vault_tree=self._vault_tree,
             callbacks={
-                "on_preview_link_clicked": self._on_preview_link_clicked,
-                "on_preview_link_new_tab": self._on_preview_link_new_tab,
-                "on_preview_link_not_found": self._on_preview_link_not_found,
-                "on_preview_checkbox_toggled": self._on_preview_checkbox_toggled,
-                "on_preview_image_download": self._on_preview_image_download,
-                "on_preview_in_page_nav": self._update_nav_buttons,
+                "on_preview_link_clicked": self._links.on_link_clicked,
+                "on_preview_link_new_tab": self._links.on_link_new_tab,
+                "on_preview_link_not_found": self._links.on_link_not_found,
+                "on_preview_checkbox_toggled": self._preview_actions.on_checkbox_toggled,
+                "on_preview_image_download": self._preview_actions.on_image_download,
+                # Straight to the InputManager: the history and its buttons are
+                # its property, and routing through a window forwarder only hides
+                # who actually answers.
+                "on_preview_in_page_nav": self._input_manager.update_nav_buttons,
                 "on_editor_text_changed": self._on_editor_text_changed,
                 "on_editor_modified": self._on_editor_modified,
                 "on_editor_attachment_added": self._on_editor_attachment_added,
                 "apply_view_mode": self._view_mode_manager.apply_view_mode,
                 "sync_view_toggle": self._view_mode_manager.sync_view_toggle,
                 "refresh_preview": self._view_mode_manager.refresh_preview,
-                "push_history": self._push_history,
+                "push_history": self._input_manager.push_history,
                 "on_banner_reload": self._content_change_handler.reload_content,
                 "on_banner_dismiss": self._content_change_handler.dismiss_content,
                 "dump_debug": self._dump_debug,
             },
-        )
-
-        # Input manager (shortcuts + navigation).
-        self._input_manager = InputManager(
-            application=self,
-            on_nav_file_opened=self._open_from_history,
-            nav_history=self._nav_history,
-            back_btn=self._back_btn,
-            forward_btn=self._forward_btn,
-            settings=self._settings,
-            in_page_state_fn=self._in_page_nav_state,
         )
 
         # Session persistence manager.
@@ -412,6 +427,7 @@ class MainWindow(Adw.ApplicationWindow):
             mru=self.mru,
             nav_history=self._nav_history,
         )
+        self._file_manager.wire_tree_context_menu(self)
 
         self._sidebar_paned = Gtk.Paned(orientation=Gtk.Orientation.HORIZONTAL)
         self._sidebar_paned.add_css_class("sidebar-divider")
@@ -437,30 +453,36 @@ class MainWindow(Adw.ApplicationWindow):
         )
         self._search_bar.connect("file-selected", self._on_search_result_selected)
 
+        # The semantic index comes and goes at runtime (Preferences toggles it),
+        # hence a getter rather than a reference.
+        self._ask = AskController(
+            self._settings,
+            get_semantic_index=lambda: self._semantic_index,
+            get_scope_paths=self._scope_vault_paths)
+
         self._quick_open = QuickOpenPalette(
             make_engine=self._make_quick_open_engine,
             semantic_query=lambda q: (
                 self._semantic_index.query_open(q) if self._semantic_index else []
             ),
-            ask_answer=self._ask_answer,
-            ask_candidates=self._ask_candidates,
-            ask_answer_selected=lambda q, paths, on_phase=None, on_token=None,
-            should_cancel=None: self._ask_answer(
-                q, note_paths=paths, on_phase=on_phase, on_token=on_token,
-                should_cancel=should_cancel),
-            list_ask_models=self._list_ask_models,
-            set_ask_model=self._set_ask_model,
-            current_ask_model=self._current_ask_model,
-            get_top_k=lambda: int(self._settings.get("ask_top_k")
-                                  or config.default("ask_top_k")),
-            can_ask=lambda: not self._ask_unavailable_reason(),
-            ask_hint=self._ask_unavailable_reason,
-            ask_status=self._ask_endpoint_status,
-            ask_recheck=self._recheck_ask_endpoint,
+            # The Ask surface comes from one object, not from fourteen window
+            # methods — see AskController.
+            ask_answer=self._ask.answer,
+            ask_candidates=self._ask.candidates,
+            ask_answer_selected=self._ask.answer_from,
+            list_ask_models=self._ask.list_models,
+            set_ask_model=self._ask.select_model,
+            current_ask_model=self._ask.current_model,
+            get_top_k=self._ask.top_k,
+            can_ask=self._ask.can_ask,
+            ask_hint=self._ask.unavailable_reason,
+            ask_status=self._ask.endpoint_status,
+            ask_recheck=self._ask.recheck_endpoint,
             scope=self._scope_callbacks(),
             hide_deprecated=self.hide_deprecated,
             set_hide_deprecated=self.set_hide_deprecated,
         )
+        self._ask.bind_palette(self._quick_open)
         self._quick_open.connect("file-selected", self._on_search_result_selected)
         # Restore the last Ask question so the palette reopens pre-filled.
         self._quick_open.set_last_question(_ses.get("ask_last_question", ""))
@@ -492,6 +514,18 @@ class MainWindow(Adw.ApplicationWindow):
         self._tab_shortcut_ctrl = Gtk.ShortcutController.new()
         self._tab_shortcut_ctrl.set_scope(Gtk.ShortcutScope.GLOBAL)
         self._tab_shortcuts: list[Gtk.Shortcut] = []
+
+        # Zoom owns its own state (the pointer position), its event controllers
+        # and its actions — see ZoomController. Built before _register_actions,
+        # which asks it to add its own.
+        self._zoom = ZoomController(self._content_stack,
+                                    self._tab_bar.get_current_tab)
+        # Zen borrows the six elements it hides; the level and the pre-zen
+        # visibility live in the controller.
+        self._zen = ZenController(
+            header=self._header, tab_bar=self._tab_bar,
+            vault_tree=self._vault_tree, sidebar_toggle=self._sidebar_toggle,
+            search_toggle=self._search_toggle, status_bar=self._status_bar)
 
         self._register_actions()
         self._load_vaults()
@@ -530,7 +564,7 @@ class MainWindow(Adw.ApplicationWindow):
             self._session_mgr.restore_vault_session(
                 self._active_vault,
                 open_file_fn=self._open_file,
-                push_history_fn=self._push_history,
+                push_history_fn=self._input_manager.push_history,
                 suppress_nav_fn=lambda s: setattr(self._nav_history, "suppress", s),
                 mru_push_fn=self.mru.push,
             )
@@ -570,20 +604,6 @@ class MainWindow(Adw.ApplicationWindow):
         )
 
         # Ctrl+Wheel zoom on the centre content area.
-        self._scroll_ctrl = Gtk.EventControllerScroll.new(
-            Gtk.EventControllerScrollFlags.VERTICAL
-        )
-        self._scroll_ctrl.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
-        self._scroll_ctrl.connect("scroll", self._on_scroll)
-        self._content_stack.add_controller(self._scroll_ctrl)
-
-        # Track pointer position for keyboard zoom.
-        self._ptr_x: float = 0.0
-        self._ptr_y: float = 0.0
-        self._motion_ctrl = Gtk.EventControllerMotion.new()
-        self._motion_ctrl.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
-        self._motion_ctrl.connect("motion", self._on_motion)
-        self._content_stack.add_controller(self._motion_ctrl)
 
         self._update_tab_shortcuts()
         self.add_controller(self._tab_shortcut_ctrl)
@@ -808,13 +828,7 @@ class MainWindow(Adw.ApplicationWindow):
         action.connect("activate", lambda *_: self._toggle_sidebar())
         self.add_action(action)
 
-        action = Gio.SimpleAction.new("toggle-zen", None)
-        action.connect("activate", lambda *_: self._cycle_zen())
-        self.add_action(action)
-
-        action = Gio.SimpleAction.new("toggle-zen-total", None)
-        action.connect("activate", lambda *_: self._toggle_zen("total"))
-        self.add_action(action)
+        self._zen.register_actions(self)
 
         action = Gio.SimpleAction.new("toggle-search", None)
         action.connect("activate", lambda *_: self._toggle_search())
@@ -824,20 +838,10 @@ class MainWindow(Adw.ApplicationWindow):
         action.connect("activate", lambda *_: self._quick_open.open(self))
         self.add_action(action)
 
-        action = Gio.SimpleAction.new("find-in-view", None)
-        action.connect("activate", lambda *_: self._find_in_view())
-        self.add_action(action)
-
-        action = Gio.SimpleAction.new("replace-in-view", None)
-        action.connect("activate", lambda *_: self._replace_in_view())
-        self.add_action(action)
+        self._find.register_actions(self)
 
         action = Gio.SimpleAction.new("save", None)
         action.connect("activate", lambda *_: self._save_current())
-        self.add_action(action)
-
-        action = Gio.SimpleAction.new("close-tab", None)
-        action.connect("activate", lambda *_: self._close_current_tab())
         self.add_action(action)
 
         action = Gio.SimpleAction.new("preferences", None)
@@ -848,17 +852,7 @@ class MainWindow(Adw.ApplicationWindow):
         action.connect("activate", lambda *_: self._open_about())
         self.add_action(action)
 
-        action = Gio.SimpleAction.new("zoom-in", None)
-        action.connect("activate", lambda *_: self._zoom_active(+1))
-        self.add_action(action)
-
-        action = Gio.SimpleAction.new("zoom-out", None)
-        action.connect("activate", lambda *_: self._zoom_active(-1))
-        self.add_action(action)
-
-        action = Gio.SimpleAction.new("zoom-reset", None)
-        action.connect("activate", lambda *_: self._zoom_reset())
-        self.add_action(action)
+        self._zoom.register_actions(self)
 
         action = Gio.SimpleAction.new("nav-back", None)
         action.connect("activate", lambda *_: self._nav_back())
@@ -868,13 +862,7 @@ class MainWindow(Adw.ApplicationWindow):
         action.connect("activate", lambda *_: self._nav_forward())
         self.add_action(action)
 
-        action = Gio.SimpleAction.new("next-tab", None)
-        action.connect("activate", lambda *_: self._next_tab())
-        self.add_action(action)
-
-        action = Gio.SimpleAction.new("prev-tab", None)
-        action.connect("activate", lambda *_: self._prev_tab())
-        self.add_action(action)
+        self._tab_orchestrator.register_actions(self)
 
         action = Gio.SimpleAction.new("mru-switcher-next", None)
         action.connect("activate", lambda *_: self._show_mru_switcher(+1))
@@ -1119,7 +1107,7 @@ class MainWindow(Adw.ApplicationWindow):
         self._session_mgr.restore_vault_session(
             new_vault,
             open_file_fn=self._open_file,
-            push_history_fn=self._push_history,
+            push_history_fn=self._input_manager.push_history,
             suppress_nav_fn=lambda s: setattr(self._nav_history, "suppress", s),
             mru_push_fn=self.mru.push,
         )
@@ -1184,8 +1172,8 @@ class MainWindow(Adw.ApplicationWindow):
     def _on_tab_changed(self, _tab_bar, file_path: str) -> None:
         """Handle tab change — delegates to :class:`TabOrchestrator`."""
         # The find bar lives in the outgoing tab's overlay — close it first.
-        if self._find_bar.get_visible():
-            self._find_bar.close()
+        if self._find.visible:
+            self._find.close()
         self._tab_orchestrator.on_tab_changed(file_path)
         # Mark the open file in the tree.
         self._vault_tree.set_open_file(file_path)
@@ -1214,8 +1202,8 @@ class MainWindow(Adw.ApplicationWindow):
     def _on_tab_closed(self, _tab_bar, file_path: str) -> None:
         """Cleanup after a tab has been closed (tab-closed signal)."""
         # The find bar may target the closed tab's editor/preview — close it.
-        if self._find_bar.get_visible():
-            self._find_bar.close()
+        if self._find.visible:
+            self._find.close()
         self.mru.remove(file_path)
         child = self._content_stack.get_child_by_name(file_path)
         if child:
@@ -1449,24 +1437,6 @@ class MainWindow(Adw.ApplicationWindow):
         text = tab.editor.get_text()
         tab.preview.scroll_to_line(line, text)
 
-    # Locale code → English language name for the "answer in {language}" prompt.
-    _LANG_NAMES = {
-        "de": "German", "en": "English", "fr": "French", "es": "Spanish",
-        "it": "Italian", "pt": "Portuguese", "nl": "Dutch", "pl": "Polish",
-        "ru": "Russian", "tr": "Turkish", "cs": "Czech", "sv": "Swedish",
-        "da": "Danish", "fi": "Finnish", "no": "Norwegian", "uk": "Ukrainian",
-        "ja": "Japanese", "zh": "Chinese", "ko": "Korean",
-    }
-
-    def _answer_language(self) -> str:
-        """The language the answer should be written in — the user's OS UI
-        language (falls back to English)."""
-        for loc in GLib.get_language_names():
-            code = loc.split(".")[0].split("_")[0].lower()
-            if code and code not in ("c", "posix"):
-                return self._LANG_NAMES.get(code, code)
-        return "English"
-
     # ── Search scope (shared by full-text, semantic, Ask) ───────────
 
     def _scope_callbacks(self) -> dict:
@@ -1504,98 +1474,6 @@ class MainWindow(Adw.ApplicationWindow):
             return [self._active_vault] if self._active_vault else allv
         return [scope] if scope in allv else (
             [self._active_vault] if self._active_vault else allv)
-
-    def _ask_answer(self, question: str, note_paths=None, on_phase=None,
-                    on_token=None, should_cancel=None):
-        """RAG: retrieve passages and let the configured local model write a
-        grounded answer.  Runs off the main thread (quick-open worker); returns
-        an :class:`ask.Answer`.  The retrieval/backend/budget wiring lives in
-        :func:`ask.answer_question`.  *note_paths*, if given, uses exactly those
-        user-picked notes as context instead of retrieving.  *on_phase* is the
-        UI status hook (loading/thinking).
-        """
-        from markdown_vault.search import ask
-        return ask.answer_question(
-            question, self._semantic_index, self._settings,
-            self._scope_vault_paths(), self._answer_language(),
-            note_paths=note_paths, on_phase=on_phase, on_token=on_token,
-            should_cancel=should_cancel)
-
-    def _list_ask_models(self):
-        """``(label, value)`` for the palette's footer model picker — downloaded
-        GGUFs or, for a server backend, the models that server offers."""
-        from markdown_vault.search import ask_models
-        return ask_models.list_for(self._settings, on_refresh=self._ask_models_arrived)
-
-    def _ask_models_arrived(self, _status) -> None:
-        """A background probe of the Ask server settled (worker thread) — update the
-        palette on the main loop: picker, warning banner, submit lock, and a question
-        that was held while the check was out."""
-        GLib.idle_add(self._quick_open.refresh_endpoint_status)
-
-    def _ask_server_url(self) -> str:
-        return (self._settings.get("ask_ollama_url")
-                or config.default("ask_ollama_url"))
-
-    def _ask_endpoint_status(self):
-        """The Ask server's last verdict about itself, or ``None`` when no server is
-        involved (local backend) — which the palette reads as "nothing to check"."""
-        from markdown_vault.search import ask_models
-        backend = ask_models.effective_backend(self._settings)
-        if backend not in ask_models.SERVER_BACKENDS:
-            return None
-        return ask_models.status(backend, self._ask_server_url())
-
-    def _recheck_ask_endpoint(self) -> None:
-        """Probe the Ask server again — the palette's "Try again", so a server that
-        was started in the meantime becomes usable without restarting the app."""
-        from markdown_vault.search import ask_models
-        backend = ask_models.effective_backend(self._settings)
-        if backend not in ask_models.SERVER_BACKENDS:
-            return
-        ask_models.refresh_async(backend, self._ask_server_url(),
-                                 ask_models.api_key(self._settings),
-                                 on_settled=self._ask_models_arrived)
-        self._quick_open.refresh_endpoint_status()   # show the check is running
-
-    def _ask_unavailable_reason(self) -> str:
-        """Why Ask cannot answer right now — ``""`` when it can. One source for
-        both the toggle's state and its tooltip, so they can't disagree."""
-        if not self._settings.get("semantic_search_enabled"):
-            return "Semantic search is off — turn it on in Preferences → Search."
-        if self._semantic_index is None:
-            return "The semantic index is not ready yet."
-        engine = self._settings.get("ask_engine") or config.default("ask_engine")
-        if engine == "off":
-            return ("The answer engine is off — turn it on in "
-                    "Preferences → Search → Ask.")
-        return ""
-
-    def _current_ask_model(self) -> str:
-        """The model the next answer would use — a GGUF path or a server model."""
-        from markdown_vault.search import ask_models
-        return ask_models.current(self._settings)
-
-    def _set_ask_model(self, value: str) -> None:
-        """Select a model from the footer picker; the next answer uses it. Which
-        setting that writes depends on the backend, so ask_models decides."""
-        from markdown_vault.search import ask_models
-        backend = ask_models.effective_backend(self._settings)
-        url = (self._settings.get("ask_ollama_url")
-               or config.default("ask_ollama_url"))
-        ask_models.remember(self._settings, backend, url, value)
-        config.save_settings(self._settings)
-
-    def _ask_candidates(self, question: str):
-        """Top-20 candidate notes (path, score) for the 'pick your own sources'
-        Ask flow — same scoped, hybrid retrieval, just wider and without the LLM.
-        """
-        if self._semantic_index is None:
-            return []
-        hits = self._semantic_index.retrieve(
-            question, top_k=20, vaults=self._scope_vault_paths(),
-            hybrid=bool(self._settings.get("ask_hybrid")))
-        return [(c.path, s) for c, s in hits]
 
     def _start_semantic_search(self) -> None:
         """Build the semantic index in the background when enabled (opt-in).
@@ -1821,7 +1699,7 @@ class MainWindow(Adw.ApplicationWindow):
         new_prefix = attachments.link_prefix(new_vault, new_note)
         if old_prefix == new_prefix:
             return
-        tab = next((t for t in self._tab_bar._tabs.values()
+        tab = next((t for t in self._tab_bar.all_tabs()
                     if t.editor.file_path in (new_note, old_note)), None)
         if tab is None:
             attachments.relink_file(new_note, old_prefix, new_prefix)
@@ -1890,169 +1768,7 @@ class MainWindow(Adw.ApplicationWindow):
                 text = tab.editor.get_text()
                 tab.preview.scroll_to_line(line_num - 1, text)
 
-    def _on_preview_link_clicked(self, _preview, file_path: str,
-                                 fragment: str = "") -> None:
-        vault = self._find_vault_for_file(file_path)
-        post = (lambda: self._scroll_active_to_anchor(fragment)) if fragment else None
-        if vault and vault != self._active_vault:
-            self._switch_vault(vault, open_file_path=file_path, post_open_fn=post)
-        else:
-            self._navigate_in_place(file_path)  # follow the link in the same tab
-            if post is not None:
-                post()
-
-    def _on_preview_link_new_tab(self, _preview, file_path: str,
-                                 fragment: str = "") -> None:
-        """Middle-click / Ctrl+click on a link → open it in a new tab."""
-        vault = self._find_vault_for_file(file_path)
-        post = (lambda: self._scroll_active_to_anchor(fragment)) if fragment else None
-        if vault and vault != self._active_vault:
-            self._switch_vault(vault, open_file_path=file_path, post_open_fn=post)
-        else:
-            self._open_file(file_path)  # explicit new tab
-            if post is not None:
-                post()
-
-    def _scroll_active_to_anchor(self, fragment: str) -> None:
-        """Scroll the current tab's preview to *fragment* — the heading a
-        cross-note wikilink (``[[Other#Heading]]``) pointed at. Deferred inside
-        the preview until the freshly opened note has rendered."""
-        tab = self._tab_bar.get_current_tab()
-        if tab and fragment:
-            tab.preview.scroll_to_anchor(fragment)
-
-    # Matches a Markdown checkbox on a list line (group 4 = state: space or x/X).
-    _CHECKBOX_RE = re.compile(r'^(>\s*)*(\s*)([-*+]|\d+\.)\s+\[([ xX])\]')
-
-    def _on_preview_checkbox_toggled(self, preview, line: int, checked: bool) -> None:
-        """Handle checkbox toggle — flip the checkbox at the given source line."""
-        logger.debug("Checkbox toggled: line=%s checked=%s", line, checked)
-        # Resolve the tab from the emitting preview, not the current tab (R7.4).
-        tab = None
-        for t in self._tab_bar._tabs.values():
-            if t.preview is preview:
-                tab = t
-                break
-        if not tab or not tab.editor.file_path:
-            return
-
-        text = tab.editor.get_text()
-        lines = text.split('\n')
-
-        if line < 0 or line >= len(lines):
-            logger.debug("Checkbox line %s out of range (total %s)", line, len(lines))
-            return
-
-        original_line = lines[line]
-        match = self._CHECKBOX_RE.match(original_line)
-        if not match:
-            logger.debug("Line %s is not a checkbox line", line)
-            return
-
-        new_state = "x" if checked else " "
-        old_state = match.group(4)
-        if old_state.lower() == new_state:
-            return
-
-        new_line = (
-            original_line[:match.start(4)]
-            + new_state
-            + original_line[match.end(4):]
-        )
-
-        # Replace the line in the buffer (undoable via begin_user_action).
-        buffer = tab.editor._buffer
-        _ok, line_start = buffer.get_iter_at_line(line)
-        _ok, line_end = buffer.get_iter_at_line(line)
-        line_end.forward_to_line_end()
-        buffer.begin_user_action()
-        buffer.delete(line_start, line_end)
-        buffer.insert(line_start, new_line)
-        buffer.end_user_action()
-
-        logger.debug("Checkbox toggled on line %s: %s -> %s", line, old_state, new_state)
-
-        # Schedule preview refresh if visible.
-        if tab.preview.get_visible():
-            self._refresh_preview()
-
-        # Update sidebar if visible.
-        if self._sidebar.get_visible():
-            self._sidebar.update_text_only(tab.editor.file_path, tab.editor.get_text())
-
-    def _on_preview_image_download(self, preview, uri: str) -> None:
-        """Right-click "Download Image": fetch a remote image into the note's
-        ``attachments/<note-name>/`` and rewrite its source links to the local
-        path. Runs on a worker thread so the UI never blocks."""
-        tab = next((t for t in self._tab_bar._tabs.values() if t.preview is preview), None)
-        if not tab or not tab.editor.file_path:
-            return
-        file_path = tab.editor.file_path
-        stem = Path(file_path).stem
-        note_dir = Path(file_path).parent
-        # Attachments mirror the note's location under the vault's attachments/
-        # tree (…/attachments/<subfolder>/<note>/), linked relative to the note.
-        vault_root = path_utils.find_vault_for_dir(str(note_dir)) or str(note_dir)
-        from markdown_vault.importers import web_import
-        dest_dir, rel_prefix = web_import.attachment_target(vault_root, note_dir, stem)
-        self._toast("Downloading image…")
-
-        def worker():
-            try:
-                rel = web_import.save_one_image(uri, dest_dir, rel_prefix)
-            except Exception as exc:   # never let a worker crash the app
-                logger.warning("Image download failed for %s: %s", uri, exc, exc_info=True)
-                GLib.idle_add(self._on_image_downloaded, tab, uri, None, str(exc))
-                return
-            GLib.idle_add(self._on_image_downloaded, tab, uri, rel, None)
-
-        threading.Thread(target=worker, daemon=True).start()
-
-    def _on_image_downloaded(self, tab, uri: str, rel, error) -> bool:
-        """Back on the main thread: rewrite the source (if the tab still exists)
-        and report via a toast. Error toasts stay until dismissed."""
-        if rel is None:
-            self._toast(f"Image download failed{': ' + error if error else ''}", timeout=0)
-            return False
-        if tab not in self._tab_bar._tabs.values():
-            return False               # tab closed mid-download; file is on disk
-        from markdown_vault.importers import web_import
-        current = tab.editor.get_text()
-        new_text = web_import.rewrite_image_url(current, uri, rel)
-        if new_text != current:
-            buffer = tab.editor._buffer
-            buffer.begin_user_action()
-            buffer.set_text(new_text)
-            buffer.end_user_action()
-            if tab.preview.get_visible():
-                self._refresh_preview()
-            if self._sidebar.get_visible():
-                self._sidebar.update_text_only(tab.editor.file_path, tab.editor.get_text())
-        self._toast("Image downloaded")
-        return False
-
-    def _on_preview_link_not_found(self, _preview, path_str: str) -> None:
-        """Show a dialog when a wikilink cannot be resolved."""
-        dialogs.show_link_not_found(self, self._wikilink_display_name(path_str))
-
-    def _wikilink_display_name(self, uri: str) -> str:
-        """Render a user-friendly target name from a ``vault:`` URI."""
-        if not uri.startswith("vault:"):
-            return uri
-        vault, rel, _fragment = path_utils.parse_wikilink_url(uri)
-        if not rel:
-            return vault
-        return f"{vault}>{rel}"
-
     # ── Vault tree file operations ───────────────────────────────
-
-    def _on_new_file_requested(self, _tree, parent_dir: str) -> None:
-        """Handle 'New File' from the vault tree context menu."""
-        self._file_manager.prompt_new_file(self, None, parent_dir)
-
-    def _on_new_folder_requested(self, _tree, parent_dir: str) -> None:
-        """Handle 'New Folder' from the vault tree context menu."""
-        self._file_manager.prompt_new_folder(self, parent_dir)
 
     def _on_import_requested(self, _tree, target_dir: str) -> None:
         """Handle 'Import…' from the vault tree context menu — fetch a URL as a
@@ -2137,10 +1853,6 @@ class MainWindow(Adw.ApplicationWindow):
     def _show_error(self, heading: str, body: str) -> None:
         """Show an error dialog with the given message."""
         dialogs.show_error(self, heading, body)
-
-    def _on_delete_requested(self, _tree, path: str) -> None:
-        """Handle 'Delete' from the vault tree context menu."""
-        self._file_manager.prompt_delete(self, path)
 
     def _on_close_file_requested(self, _tree, file_path: str) -> None:
         """Handle 'Close File' from the vault tree context menu."""
@@ -2268,11 +1980,6 @@ class MainWindow(Adw.ApplicationWindow):
 
     # ── Navigation history ─────────────────────────────────────────
 
-    def _push_history(self, file_path: str) -> None:
-        """Append *file_path* to the navigation history — delegates to
-        :class:`InputManager`."""
-        self._input_manager.push_history(file_path)
-
     def _open_from_history(self, file_path: str, *, _from_nav: bool = False) -> None:
         """Open a history entry, switching vault first if it lives elsewhere
         (the global history spans vaults now)."""
@@ -2344,14 +2051,6 @@ class MainWindow(Adw.ApplicationWindow):
     def _update_nav_buttons(self) -> None:
         """Update navigation button state — delegates to :class:`InputManager`."""
         self._input_manager.update_nav_buttons()
-
-    def _next_tab(self) -> None:
-        """Switch to the next tab — delegates to :class:`TabOrchestrator`."""
-        self._tab_orchestrator.next_tab()
-
-    def _prev_tab(self) -> None:
-        """Switch to the previous tab — delegates to :class:`TabOrchestrator`."""
-        self._tab_orchestrator.prev_tab()
 
     def _mru_next(self) -> None:
         """Ctrl+Tab: switch to the previously active tab (Alt+Tab style)."""
@@ -2463,8 +2162,8 @@ class MainWindow(Adw.ApplicationWindow):
     def _set_view_mode(self, mode: str) -> None:
         # Find targets/dims a specific view; a mode switch would leave it
         # pointing at (or dimming) a now-hidden view — close it first (R21.5).
-        if self._find_bar.get_visible():
-            self._find_bar.close()
+        if self._find.visible:
+            self._find.close()
         self._view_mode_manager.set_view_mode(mode)
 
     # ── Editor callbacks ────────────────────────────────────────────
@@ -2539,74 +2238,6 @@ class MainWindow(Adw.ApplicationWindow):
 
     def _on_sidebar_toggled(self, btn: Gtk.ToggleButton) -> None:
         self._sidebar.set_visible(btn.get_active())
-
-    # Elements zen can hide, and which ones each level hides.
-    _ZEN_ELEMENTS = ("header", "tab_bar", "tree", "sidebar", "search", "statusbar")
-    _ZEN_LEVELS = {
-        "panels": ("tree", "sidebar", "search", "statusbar"),
-        "total": ("header", "tab_bar", "tree", "sidebar", "search", "statusbar"),
-    }
-
-    def _zen_get(self, name: str) -> bool:
-        if name == "header":
-            return self._header.get_visible()
-        if name == "tab_bar":
-            return self._tab_bar.get_visible()
-        if name == "tree":
-            return self._vault_tree.get_visible()
-        if name == "sidebar":
-            return self._sidebar_toggle.get_active()
-        if name == "statusbar":
-            return self._status_bar.get_visible()
-        return self._search_toggle.get_active()  # "search"
-
-    def _zen_set(self, name: str, shown: bool) -> None:
-        if name == "header":
-            self._header.set_visible(shown)
-        elif name == "tab_bar":
-            self._tab_bar.set_visible(shown)
-        elif name == "tree":
-            self._vault_tree.set_visible(shown)
-        elif name == "sidebar":
-            self._sidebar_toggle.set_active(shown)  # drives the sidebar
-        elif name == "statusbar":
-            self._status_bar.set_visible(shown)
-        else:  # "search"
-            self._search_toggle.set_active(shown)   # drives the search bar
-
-    def _set_zen_level(self, level) -> None:
-        """Enter or switch to *level* (or exit when ``None``).
-
-        The pre-zen visibility is captured on first entry and restored on exit;
-        switching between levels re-derives from that same saved baseline.
-        """
-        if level is None:
-            saved = self._zen_saved or {}
-            for name in self._ZEN_ELEMENTS:
-                self._zen_set(name, saved.get(name, True))
-            self._zen_level = None
-            self._zen_saved = None
-            return
-        if self._zen_level is None:
-            self._zen_saved = {n: self._zen_get(n) for n in self._ZEN_ELEMENTS}
-        self._apply_zen_level(level)
-        self._zen_level = level
-
-    def _apply_zen_level(self, level: str) -> None:
-        """Hide the level's elements; restore the rest to their saved state."""
-        hide = self._ZEN_LEVELS[level]
-        saved = self._zen_saved or {}
-        for name in self._ZEN_ELEMENTS:
-            self._zen_set(name, False if name in hide else saved.get(name, True))
-
-    def _cycle_zen(self) -> None:
-        """Ctrl+B cycles: normal → panels → total → normal."""
-        nxt = {None: "panels", "panels": "total", "total": None}
-        self._set_zen_level(nxt[self._zen_level])
-
-    def _toggle_zen(self, level: str) -> None:
-        """Toggle *level* directly (Ctrl+Shift+B for total); off restores."""
-        self._set_zen_level(None if self._zen_level == level else level)
 
     def _get_active_tab_info(self) -> tuple[str | None, str]:
         """Return ``(file_path, text)`` for the currently active tab."""
@@ -2736,152 +2367,17 @@ class MainWindow(Adw.ApplicationWindow):
 
     # ── In-view find (Ctrl+F) ───────────────────────────────────────
 
-    def _active_find_target(self):
-        """Return the editor or preview to search — whichever is focused,
-        falling back to the current tab's view mode."""
-        tab = self._tab_bar.get_current_tab()
-        if not tab:
-            return None
-        widget = self.get_focus()
-        while widget is not None:
-            if widget is tab.preview:
-                return tab.preview
-            if widget is tab.editor:
-                return tab.editor
-            widget = widget.get_parent()
-        mode = getattr(tab, "view_mode", "edit")
-        return tab.preview if mode == "render" else tab.editor
-
-    def _find_in_view(self) -> None:
-        # Already open: just refocus the entry — don't recompute the target
-        # (focus is in the find entry, which would flip the target — R21.11).
-        if self._find_bar.get_visible() and self._find_target is not None:
-            self._find_bar.open()
-            return
-        target = self._active_find_target()
-        if target is None:
-            return
-        self._set_find_target(target)
-        tab = self._tab_bar.get_current_tab()
-        is_editor = tab is not None and target is tab.editor
-        self._find_bar.set_editor_mode(is_editor)
-        self._find_bar.set_replace_visible(False)  # Ctrl+F = search only
-        if is_editor:
-            self._apply_find_options()
-        self._dim_inactive_view(target)
-        self._find_bar.open()
-
-    def _replace_in_view(self) -> None:
-        """Ctrl+R: find + replace when the editor is the active view.
-
-        Works in the editor — including the edit pane of a split — but is a
-        no-op when the preview is the active view (it is read-only)."""
-        tab = self._tab_bar.get_current_tab()
-        if tab is None:
-            return
-        target = self._active_find_target()
-        if target is not tab.editor:
-            return  # preview is the active view — replace doesn't apply
-        self._set_find_target(target)
-        self._find_bar.set_editor_mode(True)
-        self._apply_find_options()
-        self._dim_inactive_view(target)
-        self._find_bar.open()
-        self._find_bar.focus_replace()
-
-    def _dim_inactive_view(self, target) -> None:
-        """Fade the view that is NOT being searched so it reads as inactive."""
-        self._restore_dimmed()
-        tab = self._tab_bar.get_current_tab()
-        if tab is None:
-            return
-        other = tab.preview if target is tab.editor else tab.editor
-        other.set_opacity(0.35)
-        self._find_dimmed = other
-
-    def _restore_dimmed(self) -> None:
-        """Un-dim the exact widget we dimmed (independent of the current tab)."""
-        if self._find_dimmed is not None:
-            self._find_dimmed.set_opacity(1.0)
-            self._find_dimmed = None
-
-    def _set_find_target(self, target) -> None:
-        if target is self._find_target:
-            return
-        if self._find_target is not None:
-            self._find_target.search_clear()  # drop the old pane's highlight (R21.10)
-            if self._find_info_handler:
-                self._find_target.disconnect(self._find_info_handler)
-        self._find_target = target
-        self._find_info_handler = target.connect(
-            "search-info-changed", lambda *_: self._update_find_count(),
-        )
-
-    def _update_find_count(self) -> None:
-        if self._find_target is not None:
-            current, total = self._find_target.search_info()
-            self._find_bar.set_count(current, total)
-
-    def _on_find_text_changed(self, _bar, text: str) -> None:
-        if self._find_target is None:
-            return
-        # search_set_text already positions on the first match; do NOT advance
-        # again or refining the query walks matches away (R21.9).
-        self._find_target.search_set_text(text)
-        self._update_find_count()
-
-    def _on_find_nav(self, forward: bool) -> None:
-        if self._find_target is None:
-            return
-        if forward:
-            self._find_target.search_next()
-        else:
-            self._find_target.search_prev()
-        self._update_find_count()
-
-    def _apply_find_options(self) -> None:
-        """Push the find bar's case/word/regex toggles onto the editor target."""
-        if self._find_target is not None and hasattr(self._find_target, "set_search_options"):
-            self._find_target.set_search_options(*self._find_bar.get_options())
-
-    def _on_find_options_changed(self, _bar) -> None:
-        if self._find_target is None:
-            return
-        self._apply_find_options()
-        # Re-run the query so the highlight and selection reflect the new mode.
-        self._find_target.search_set_text(self._find_bar.get_text())
-        self._update_find_count()
-
-    def _on_find_replace(self, all_matches: bool) -> None:
-        target = self._find_target
-        if target is None or not hasattr(target, "replace_current"):
-            return
-        replacement = self._find_bar.get_replace_text()
-        if all_matches:
-            target.replace_all(replacement)
-        else:
-            target.replace_current(replacement)
-        self._update_find_count()
-
     def _on_window_esc(self, _ctrl, keyval, _keycode, _state) -> bool:
+        """Esc closes whichever bar is open — find first, then global search."""
         if keyval != Gdk.KEY_Escape:
             return False
-        if self._find_bar.get_visible():
-            self._find_bar.close()
+        if self._find.visible:
+            self._find.close()
             return True
         if self._search_bar.get_visible():
             self._on_search_close_requested(self._search_bar)
             return True
         return False
-
-    def _on_find_closed(self, _bar) -> None:
-        if self._find_target is not None:
-            self._find_target.search_clear()
-            if self._find_info_handler:
-                self._find_target.disconnect(self._find_info_handler)
-                self._find_info_handler = 0
-            self._find_target = None
-        self._restore_dimmed()
 
     def _on_search_toggled(self, btn: Gtk.ToggleButton) -> None:
         self._search_bar.set_visible(btn.get_active())
@@ -2934,11 +2430,6 @@ class MainWindow(Adw.ApplicationWindow):
                 buttons=[("Dismiss", lambda: self._tab_bar.hide_error_banner(tab.file_path))],
             )
             dialogs.show_error(self, "Save Failed", msg)
-
-    def _close_current_tab(self) -> None:
-        path = self._tab_bar.get_current_path()
-        if path:
-            self._tab_bar._on_close_button_clicked(path)
 
     # ── Session persistence ────────────────────────────────────────
 
@@ -3153,76 +2644,6 @@ class MainWindow(Adw.ApplicationWindow):
                     tab.preview.update_from_text(text, base_dir, tab.editor.file_path or "")
         # Restart autosave with new interval.
         self._autosave.update_interval(self._settings.get("autosave_interval", 30))
-
-    # ── Zoom ────────────────────────────────────────────────────────
-
-    def _on_motion(self, _ctrl, x: float, y: float) -> None:
-        """Track pointer position inside _content_stack."""
-        self._ptr_x = x
-        self._ptr_y = y
-
-    def _widget_origin_in_stack(self, widget: Gtk.Widget) -> tuple[int, int]:
-        """Walk up from *widget* to _content_stack, accumulating offsets."""
-        x, y = 0, 0
-        cur = widget
-        while cur is not None and cur is not self._content_stack:
-            a = cur.get_allocation()
-            x += a.x
-            y += a.y
-            cur = cur.get_parent()
-        return x, y
-
-    def _is_pointer_over_preview(self, tab, px: float, py: float) -> bool:
-        """Check if (px, py) in _content_stack coords is over the preview."""
-        if not tab.preview.get_visible():
-            return False
-        ox, oy = self._widget_origin_in_stack(tab.preview)
-        return ox <= px < ox + tab.preview.get_width() and oy <= py < oy + tab.preview.get_height()
-
-    def _zoom_active(self, direction: int) -> None:
-        """Zoom the widget under the mouse pointer (keyboard shortcut)."""
-        tab = self._tab_bar.get_current_tab()
-        if not tab:
-            return
-        if self._is_pointer_over_preview(tab, self._ptr_x, self._ptr_y):
-            tab.preview.zoom_level = round(
-                tab.preview.zoom_level + direction * _ZOOM_STEP, 2,
-            )
-        else:
-            tab.editor.zoom_factor = round(
-                tab.editor.zoom_factor + direction * _ZOOM_STEP, 2,
-            )
-
-    def _zoom_reset(self) -> None:
-        tab = self._tab_bar.get_current_tab()
-        if not tab:
-            return
-        if self._is_pointer_over_preview(tab, self._ptr_x, self._ptr_y):
-            tab.preview.zoom_level = 1.0
-        else:
-            tab.editor.zoom_factor = 1.0
-
-    def _on_scroll(self, _ctrl, _dx, dy: float) -> bool:
-        """Ctrl+Wheel zoom handler."""
-        event = _ctrl.get_current_event()
-        if event is None:
-            return False
-        state = event.get_modifier_state()
-        if not (state & Gdk.ModifierType.CONTROL_MASK):
-            return False
-        tab = self._tab_bar.get_current_tab()
-        if not tab:
-            return False
-        direction = -1 if dy > 0 else 1
-        if self._is_pointer_over_preview(tab, self._ptr_x, self._ptr_y):
-            tab.preview.zoom_level = round(
-                tab.preview.zoom_level + direction * _ZOOM_STEP, 2,
-            )
-        else:
-            tab.editor.zoom_factor = round(
-                tab.editor.zoom_factor + direction * _ZOOM_STEP, 2,
-            )
-        return True
 
     # ── AppWindow alias (for tests) ────────────────────────────────
 

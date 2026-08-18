@@ -418,6 +418,15 @@ class TabBar(Gtk.Box):
         """Return the ``Tab`` for *file_path*, or ``None``."""
         return self._tabs.get(file_path)
 
+    def all_tabs(self) -> list[Tab]:
+        """Every open tab, as a snapshot.
+
+        The only way to answer "which tab owns this widget?" — a preview signal
+        carries no path, and the emitting tab is often not the current one.
+        Callers used to answer it by reaching into the private ``_tabs``.
+        """
+        return list(self._tabs.values())
+
     def get_current_tab(self) -> Tab | None:
         """Return the ``Tab`` for the active tab, or ``None``."""
         if self._current_path and self._current_path in self._tabs:

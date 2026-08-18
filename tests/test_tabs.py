@@ -57,6 +57,31 @@ class TestTabBar(_TabBarTestBase):
         bar = TabBar()
         self.assertEqual(bar.get_all_paths(), [])
 
+    def test_all_tabs_empty(self):
+        bar = TabBar()
+        self.assertEqual(bar.all_tabs(), [])
+
+    def test_all_tabs_answers_which_tab_owns_a_widget(self):
+        # The reason this exists: a preview signal names no path, so the caller
+        # has to find the tab that owns the emitting widget. Without it, callers
+        # reached into the private `_tabs` dict from another package.
+        bar = TabBar()
+        first = bar.add_tab("/tmp/a.md", editor=None, preview=unittest.mock.Mock())
+        second = bar.add_tab("/tmp/b.md", editor=None, preview=unittest.mock.Mock())
+        self.assertEqual(bar.all_tabs(), [first, second])
+        owner = next(t for t in bar.all_tabs() if t.preview is second.preview)
+        self.assertIs(owner, second)
+
+    def test_all_tabs_is_a_copy(self):
+        # Callers iterate while closing tabs; handing out the live dict view
+        # would raise "dictionary changed size during iteration".
+        bar = TabBar()
+        bar.add_tab("/tmp/a.md", editor=None, preview=None)
+        tabs = bar.all_tabs()
+        bar.close_tab("/tmp/a.md")
+        self.assertEqual(len(tabs), 1)
+        self.assertEqual(bar.all_tabs(), [])
+
     def test_update_path_renames_tab(self):
         bar = TabBar()
         tab = bar.add_tab("/tmp/old.md", editor=None, preview=None)

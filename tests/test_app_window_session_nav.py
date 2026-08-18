@@ -85,10 +85,16 @@ class TestNavigation(AppWindowTest):
             tabs.get_current_tab.return_value = None      # no in-page history
             self.activate("nav-back")
             self.activate("nav-forward")
-            self.win._push_history("/tmp/a.md")
         inputs.nav_back.assert_called_once()
         inputs.nav_forward.assert_called_once()
-        inputs.push_history.assert_called_once_with("/tmp/a.md")
+
+    def test_pushing_history_is_the_input_managers_job_not_the_windows(self):
+        # The window used to carry a forwarder that every caller went through.
+        # Collaborators now call the InputManager directly, so the forwarder is
+        # gone — asserted, because "we removed a method" is exactly the kind of
+        # thing that silently comes back.
+        self.assertFalse(hasattr(self.win, "_push_history"))
+        self.assertTrue(callable(self.win._input_manager.push_history))
 
     def test_an_in_page_anchor_is_unwound_before_the_note_history(self):
         # Ctrl+Alt+Left inside a long note with footnotes must first return to
@@ -110,6 +116,81 @@ class TestNavigation(AppWindowTest):
             self.win._open_from_history("/tmp/other-vault/note.md")
         switch.assert_called_once_with("/tmp/other-vault",
                                        open_file_path="/tmp/other-vault/note.md")
+
+
+class TestLinkNavigator(unittest.TestCase):
+    """Following a link — the rule that used to be written out three times.
+
+    A plain object, so it is tested as one: no window needed, which is itself the
+    point of having pulled it out.
+    """
+
+    def _navigator(self, *, active_vault="/v"):
+        from markdown_vault.app.link_navigator import LinkNavigator
+        self.calls = unittest.mock.Mock()
+        self.tab = unittest.mock.Mock()
+        return LinkNavigator(
+            parent=None,
+            get_current_tab=lambda: self.tab,
+            get_active_vault=lambda: active_vault,
+            open_in_place=self.calls.in_place,
+            open_in_new_tab=self.calls.new_tab,
+            switch_vault=self.calls.switch)
+
+    def test_a_link_inside_the_active_vault_opens_in_place(self):
+        nav = self._navigator()
+        with unittest.mock.patch(
+                "markdown_vault.core.path_utils.find_vault_for_dir", return_value="/v"):
+            nav.follow("/v/note.md", new_tab=False)
+        self.calls.in_place.assert_called_once_with("/v/note.md")
+        self.calls.switch.assert_not_called()
+
+    def test_ctrl_click_opens_a_new_tab_instead(self):
+        nav = self._navigator()
+        with unittest.mock.patch(
+                "markdown_vault.core.path_utils.find_vault_for_dir", return_value="/v"):
+            nav.follow("/v/note.md", new_tab=True)
+        self.calls.new_tab.assert_called_once_with("/v/note.md")
+        self.calls.in_place.assert_not_called()
+
+    def test_a_target_in_another_vault_switches_first(self):
+        # And the anchor jump is handed along rather than run now: there is
+        # nothing to scroll to until the switch has opened and rendered the note.
+        nav = self._navigator(active_vault="/v")
+        with unittest.mock.patch(
+                "markdown_vault.core.path_utils.find_vault_for_dir", return_value="/other"):
+            nav.follow("/other/note.md", "Heading", new_tab=False)
+        self.calls.switch.assert_called_once()
+        args, kwargs = self.calls.switch.call_args
+        self.assertEqual(args[0], "/other")
+        self.assertEqual(kwargs["open_file_path"], "/other/note.md")
+        self.assertTrue(callable(kwargs["post_open_fn"]))
+        self.tab.preview.scroll_to_anchor.assert_not_called()   # deferred
+        kwargs["post_open_fn"]()                                 # …until run
+        self.tab.preview.scroll_to_anchor.assert_called_once_with("Heading")
+
+    def test_an_anchor_in_the_same_vault_is_scrolled_to_right_away(self):
+        nav = self._navigator()
+        with unittest.mock.patch(
+                "markdown_vault.core.path_utils.find_vault_for_dir", return_value="/v"):
+            nav.follow("/v/note.md", "Heading", new_tab=False)
+        self.tab.preview.scroll_to_anchor.assert_called_once_with("Heading")
+
+    def test_a_link_without_an_anchor_scrolls_nothing(self):
+        nav = self._navigator()
+        with unittest.mock.patch(
+                "markdown_vault.core.path_utils.find_vault_for_dir", return_value="/v"):
+            nav.follow("/v/note.md", "", new_tab=False)
+        self.tab.preview.scroll_to_anchor.assert_not_called()
+
+    def test_the_not_found_dialog_gets_a_readable_name(self):
+        from markdown_vault.app.link_navigator import LinkNavigator
+        self.assertEqual(LinkNavigator.display_name("/plain/path.md"), "/plain/path.md")
+        with unittest.mock.patch(
+                "markdown_vault.core.path_utils.parse_wikilink_url",
+                return_value=("Notes", "sub/Other.md", "")):
+            self.assertEqual(LinkNavigator.display_name("vault:Notes/sub/Other.md"),
+                             "Notes>sub/Other.md")
 
 
 if __name__ == "__main__":
