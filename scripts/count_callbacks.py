@@ -25,6 +25,12 @@ readings are defensible and mixing them is how two people get two numbers:
     Weaker (the receiver does not know the method) but still a line into this
     object.
 
+A hand-over counts wherever it sits in the argument, including inside a dict,
+list, tuple or set literal: ``TabOrchestrator(callbacks={"push_history":
+self._push_history, …})`` hands over seventeen of them in one argument, and a
+counter that only looks at top-level arguments misses precisely the manager
+wiring a split is about.
+
 Hand-overs to ``self`` (``self.connect("closed", self._flush)``) are internal
 wiring, not coupling to another module, and are reported apart from both.
 
@@ -58,19 +64,28 @@ def analyse(path: Path) -> dict:
     methods = {n.name for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)}
     out = {k: defaultdict(list) for k in ("direct", "wrapped", "internal")}
 
+    def record(node, kind_when_direct):
+        """Collect hand-overs in *node*, descending into literal containers."""
+        if isinstance(node, ast.Lambda):
+            for attr in _self_attrs(node.body):
+                if attr.attr in methods:
+                    out["internal" if kind_when_direct == "internal"
+                        else "wrapped"][attr.attr].append(attr.lineno)
+            return
+        if isinstance(node, (ast.Dict, ast.List, ast.Tuple, ast.Set)):
+            values = node.values if isinstance(node, ast.Dict) else node.elts
+            for value in values:
+                record(value, kind_when_direct)
+            return
+        if isinstance(node, ast.Attribute):
+            for attr in _self_attrs(node):
+                if attr.attr in methods:
+                    out[kind_when_direct][attr.attr].append(attr.lineno)
+
     for call in (n for n in ast.walk(tree) if isinstance(n, ast.Call)):
-        to_self = _receiver_is_self(call)
+        kind = "internal" if _receiver_is_self(call) else "direct"
         for arg in list(call.args) + [kw.value for kw in call.keywords]:
-            if isinstance(arg, ast.Attribute):
-                for attr in _self_attrs(arg):
-                    if attr.attr in methods:
-                        kind = "internal" if to_self else "direct"
-                        out[kind][attr.attr].append(attr.lineno)
-            elif isinstance(arg, ast.Lambda):
-                for attr in _self_attrs(arg.body):
-                    if attr.attr in methods:
-                        kind = "internal" if to_self else "wrapped"
-                        out[kind][attr.attr].append(attr.lineno)
+            record(arg, kind)
     return out
 
 
