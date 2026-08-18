@@ -813,10 +813,6 @@ class MainWindow(Adw.ApplicationWindow):
         action.connect("activate", lambda *_: self._save_current())
         self.add_action(action)
 
-        action = Gio.SimpleAction.new("close-tab", None)
-        action.connect("activate", lambda *_: self._close_current_tab())
-        self.add_action(action)
-
         action = Gio.SimpleAction.new("preferences", None)
         action.connect("activate", lambda *_: self._open_preferences())
         self.add_action(action)
@@ -835,13 +831,7 @@ class MainWindow(Adw.ApplicationWindow):
         action.connect("activate", lambda *_: self._nav_forward())
         self.add_action(action)
 
-        action = Gio.SimpleAction.new("next-tab", None)
-        action.connect("activate", lambda *_: self._next_tab())
-        self.add_action(action)
-
-        action = Gio.SimpleAction.new("prev-tab", None)
-        action.connect("activate", lambda *_: self._prev_tab())
-        self.add_action(action)
+        self._tab_orchestrator.register_actions(self)
 
         action = Gio.SimpleAction.new("mru-switcher-next", None)
         action.connect("activate", lambda *_: self._show_mru_switcher(+1))
@@ -2300,14 +2290,6 @@ class MainWindow(Adw.ApplicationWindow):
         """Update navigation button state — delegates to :class:`InputManager`."""
         self._input_manager.update_nav_buttons()
 
-    def _next_tab(self) -> None:
-        """Switch to the next tab — delegates to :class:`TabOrchestrator`."""
-        self._tab_orchestrator.next_tab()
-
-    def _prev_tab(self) -> None:
-        """Switch to the previous tab — delegates to :class:`TabOrchestrator`."""
-        self._tab_orchestrator.prev_tab()
-
     def _mru_next(self) -> None:
         """Ctrl+Tab: switch to the previously active tab (Alt+Tab style)."""
         self._tab_orchestrator._mru_next()
@@ -2686,11 +2668,6 @@ class MainWindow(Adw.ApplicationWindow):
                 buttons=[("Dismiss", lambda: self._tab_bar.hide_error_banner(tab.file_path))],
             )
             dialogs.show_error(self, "Save Failed", msg)
-
-    def _close_current_tab(self) -> None:
-        path = self._tab_bar.get_current_path()
-        if path:
-            self._tab_bar._on_close_button_clicked(path)
 
     # ── Session persistence ────────────────────────────────────────
 

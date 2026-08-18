@@ -14,7 +14,7 @@ import gi
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 
-from gi.repository import Gtk
+from gi.repository import Gtk, Gio
 
 from markdown_vault.editor.editor import Editor
 from markdown_vault.preview.preview import Preview
@@ -275,6 +275,28 @@ class TabOrchestrator:
         self._mru.push(file_path)
 
     # ── tab navigation ─────────────────────────────────────────────
+
+    def register_actions(self, window) -> None:
+        """Add next-tab / prev-tab / close-tab to *window*.
+
+        These were three window methods that forwarded here unchanged. Tab
+        lifecycle is this object's job, so the actions are registered where the
+        behaviour lives instead of being handed over.
+        """
+        for name, handler in (
+            ("next-tab", lambda *_: self.next_tab()),
+            ("prev-tab", lambda *_: self.prev_tab()),
+            ("close-tab", lambda *_: self.close_current_tab()),
+        ):
+            action = Gio.SimpleAction.new(name, None)
+            action.connect("activate", handler)
+            window.add_action(action)
+
+    def close_current_tab(self) -> None:
+        """Close the active tab through the same path its close button uses."""
+        path = self._tab_bar.get_current_path()
+        if path:
+            self._tab_bar._on_close_button_clicked(path)
 
     def next_tab(self) -> None:
         """Switch to the next tab (linear or MRU depending on settings)."""
