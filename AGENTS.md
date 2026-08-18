@@ -51,8 +51,9 @@ Markdown Vault — a GNOME desktop app for editing and previewing Markdown files
 - **Language**: Python 3
 - **UI toolkit**: GTK 4 + libadwaita
 - **Markdown rendering**: HTML/CSS via WebKitGTK (WebView)
-- **Config**: `~/.config/markdown-vault/vaults.yaml` (vaults + settings)
-- **Session**: `session.json` in the XDG **state** dir (default `~/.local/state/markdown-vault/`) — window geometry, tabs, view modes, split positions, sidebar, expanded_vaults, editor_zoom, preview_zoom. It is view/layout state, not configuration.
+- **Config**: `~/.config/de.hannemann.markdown-vault/vaults.yaml` (vaults + settings)
+- **Session**: `session.json` in the XDG **state** dir (default
+  `~/.local/state/de.hannemann.markdown-vault/`) — window geometry, tabs, view modes, split positions, sidebar, expanded_vaults, editor_zoom, preview_zoom. It is view/layout state, not configuration.
 
 ## Tech decisions
 
@@ -160,17 +161,28 @@ For anything finer-grained, query the graph rather than reading top-to-bottom.
 **Installation paths:**
 
 - **Binaries:** `~/.local/bin/` (user) or `/usr/bin/` (system)
-- **Python code:** `<datadir>/markdown-vault/python/markdown_vault/` — a private directory, not the
-  interpreter's `site-packages`, which may sit outside the install prefix. The generated launcher puts
-  it on `PYTHONPATH`.
-- **Data files:** `~/.local/share/markdown-vault/` or `/usr/share/markdown-vault/`
+- **Python code:** `<datadir>/de.hannemann.markdown-vault/python/markdown_vault/` — a private
+  directory, not the interpreter's `site-packages`, which may sit outside the install prefix. The
+  generated launcher puts it on `PYTHONPATH`.
+- **Data files:** `~/.local/share/de.hannemann.markdown-vault/` or
+  `/usr/share/de.hannemann.markdown-vault/`
+- **Every directory the app owns is named after the application ID**
+  (`de.hannemann.markdown-vault`) — the installed tree (`meson.build`, `pkgdatadir`) and all
+  four XDG dirs (`core/paths.py`, `_APP`). One name for the app everywhere; reverse-DNS keeps
+  it unique among all programs sharing these bases. **File** names stay short
+  (`markdown-vault.log`), as does the **binary** `bin/markdown-vault` — it is the command
+  users type, the path `scripts/app.sh` starts (`BIN`), and the path the AppArmor profile
+  is bound to (`packaging/apparmor/markdown-vault:9`), without which WebKitGTK aborts the
+  process on Ubuntu 24.04. It does **not** decide where WebKit puts its own directories:
+  the launcher execs the interpreter, so `g_get_prgname()` is `python3` and WebKit writes
+  to `~/.local/share/python3/`.
 - **Base directories follow the XDG Base Directory Specification** — one definition for
   the whole app in `core/paths.py`, re-exported by `core.config` (`CONFIG_DIR`,
   `STATE_DIR`, `CACHE_DIR`, `DATA_DIR`). Each honours its `XDG_*_HOME` variable (an unset,
   empty or relative value falls back to the spec default), so a sandboxed build gets the
   sandbox's dirs and a normal install the usual ones:
-  - **Config** (`vaults.yaml`): `$XDG_CONFIG_HOME/markdown-vault/`, default `~/.config/…`.
-    `MDV_CONFIG_DIR` overrides it verbatim (isolated runs, E2E harness).
+  - **Config** (`vaults.yaml`): `$XDG_CONFIG_HOME/de.hannemann.markdown-vault/`, default
+    `~/.config/…`. `MDV_CONFIG_DIR` overrides it verbatim (isolated runs, E2E harness).
   - **State** (logs, `session.json`, debug dumps): `$XDG_STATE_HOME/…`, default `~/.local/state/…`
   - **Cache** (semantic index — regenerates): `$XDG_CACHE_HOME/…`, default `~/.cache/…`
   - **Data** (downloaded ONNX/GGUF models): `$XDG_DATA_HOME/…`, default `~/.local/share/…`
@@ -223,15 +235,15 @@ Hard rules:
   (the app runs the installed copy, not the source tree).
 - `make restart` is idempotent and exits 0 on success — a "not
   running" stop is normal, not an error, so do not retry with other commands.
-- App logs: `~/.local/state/markdown-vault/markdown-vault.log` (level ≤ INFO)
-  and `~/.local/state/markdown-vault/markdown-vault.stderr.log` (level ≥ WARNING
+- App logs: `~/.local/state/de.hannemann.markdown-vault/markdown-vault.log` (level ≤ INFO)
+  and `~/.local/state/de.hannemann.markdown-vault/markdown-vault.stderr.log` (level ≥ WARNING
   plus native/child stderr via fd redirect). The app rotates them at 1 MB, 3
   backups. Logging is set up by the app itself as the first action in
   `main.py`, so it works identically regardless of the launcher (app.sh,
   gtk-launch, terminal). On a terminal, messages ≤ INFO additionally appear on
   stdout and ≥ WARNING on stderr. Those paths are the **default** state dir; the
   logs follow `$XDG_STATE_HOME` (`core/paths.py`), so a **Flatpak** build logs to
-  `~/.var/app/de.hannemann.markdown-vault/.local/state/markdown-vault/` and an E2E run
+  `~/.var/app/de.hannemann.markdown-vault/.local/state/de.hannemann.markdown-vault/` and an E2E run
   to its throwaway dir — check there, not in the host's log, when diagnosing those.
 - NEVER use `killall python3` — that also kills firewalld and other system
   Python processes.
@@ -297,8 +309,8 @@ with `unittest`:
 If any exist, warn the user explicitly — changes may be lost during loop resets.
 
 1. Close the app: `make stop`
-2. Delete debug dumps: `rm ~/.local/state/markdown-vault/debug-*`
-3. In `~/.config/markdown-vault/vaults.yaml` set `loglevel: debug`,
+2. Delete debug dumps: `rm ~/.local/state/de.hannemann.markdown-vault/debug-*`
+3. In `~/.config/de.hannemann.markdown-vault/vaults.yaml` set `loglevel: debug`,
    `debug_active: true` and enable required `debug_dump_*` flags
 
 **Loop:**

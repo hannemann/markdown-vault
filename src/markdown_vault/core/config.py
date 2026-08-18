@@ -1,7 +1,7 @@
 """Markdown Vault — configuration management.
 
 Handles reading and writing of vault configuration stored in
-``~/.config/markdown-vault/vaults.yaml``.  All paths are resolved to
+``~/.config/de.hannemann.markdown-vault/vaults.yaml``.  All paths are resolved to
 absolute form on load and save to avoid duplicates that differ only
 by relative path notation.
 """

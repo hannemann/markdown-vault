@@ -6,7 +6,7 @@
 # The app is a GTK GUI that never exits on its own. Starting it in the
 # foreground would block the caller forever, so `start` fully detaches the
 # process (no controlling TTY). Logging is handled entirely by the app itself
-# (log files under ~/.local/state/markdown-vault/ + fd redirect on headless
+# (log files under ~/.local/state/de.hannemann.markdown-vault/ + fd redirect on headless
 # launches), so app.sh does not need to do anything for logging. Every
 # subcommand returns immediately and exits 0 on success, so callers do not
 # hang and do not mistake "nothing to kill" for a failure.
@@ -14,7 +14,7 @@ set -u
 
 PATTERN="markdown_vault.main"
 BIN="$HOME/.local/bin/markdown-vault"
-STDERR_LOG="$HOME/.local/state/markdown-vault/markdown-vault.stderr.log"
+STDERR_LOG="$HOME/.local/state/de.hannemann.markdown-vault/markdown-vault.stderr.log"
 
 stop() {
     pgrep -f "$PATTERN" >/dev/null 2>&1 || return 0    # nothing to stop

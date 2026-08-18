@@ -13,28 +13,28 @@ from markdown_vault.core import paths
 
 
 class TestResolve(unittest.TestCase):
-    """`resolve(env_var, default)` → <env or ~/default>/markdown-vault."""
+    """`resolve(env_var, default)` → <env or ~/default>/de.hannemann.markdown-vault."""
 
     def test_env_var_wins(self):
         with patch.dict(os.environ, {"XDG_STATE_HOME": "/tmp/xdg-state"}):
             self.assertEqual(paths.resolve("XDG_STATE_HOME", ".local/state"),
-                             Path("/tmp/xdg-state/markdown-vault"))
+                             Path("/tmp/xdg-state/de.hannemann.markdown-vault"))
 
     def test_falls_back_to_home_default(self):
         with patch.dict(os.environ, {}, clear=True):
             self.assertEqual(paths.resolve("XDG_STATE_HOME", ".local/state"),
-                             Path.home() / ".local/state" / "markdown-vault")
+                             Path.home() / ".local/state" / "de.hannemann.markdown-vault")
 
     def test_empty_env_var_falls_back(self):
         with patch.dict(os.environ, {"XDG_STATE_HOME": ""}):
             self.assertEqual(paths.resolve("XDG_STATE_HOME", ".local/state"),
-                             Path.home() / ".local/state" / "markdown-vault")
+                             Path.home() / ".local/state" / "de.hannemann.markdown-vault")
 
     def test_relative_env_var_is_ignored(self):
         # XDG spec: a relative path in one of these variables is invalid and ignored.
         with patch.dict(os.environ, {"XDG_STATE_HOME": "relative/dir"}):
             self.assertEqual(paths.resolve("XDG_STATE_HOME", ".local/state"),
-                             Path.home() / ".local/state" / "markdown-vault")
+                             Path.home() / ".local/state" / "de.hannemann.markdown-vault")
 
 
 class TestDefaults(unittest.TestCase):
@@ -45,13 +45,13 @@ class TestDefaults(unittest.TestCase):
         with patch.dict(os.environ, {}, clear=True):
             home = Path.home()
             self.assertEqual(paths.resolve("XDG_STATE_HOME", ".local/state"),
-                             home / ".local/state/markdown-vault")
+                             home / ".local/state/de.hannemann.markdown-vault")
             self.assertEqual(paths.resolve("XDG_CONFIG_HOME", ".config"),
-                             home / ".config/markdown-vault")
+                             home / ".config/de.hannemann.markdown-vault")
             self.assertEqual(paths.resolve("XDG_CACHE_HOME", ".cache"),
-                             home / ".cache/markdown-vault")
+                             home / ".cache/de.hannemann.markdown-vault")
             self.assertEqual(paths.resolve("XDG_DATA_HOME", ".local/share"),
-                             home / ".local/share/markdown-vault")
+                             home / ".local/share/de.hannemann.markdown-vault")
 
 
 class TestConfigDirOverride(unittest.TestCase):
@@ -64,10 +64,10 @@ class TestConfigDirOverride(unittest.TestCase):
 
     def test_xdg_used_without_override(self):
         with patch.dict(os.environ, {"XDG_CONFIG_HOME": "/tmp/xdg-cfg"}, clear=True):
-            self.assertEqual(paths.config_dir(), Path("/tmp/xdg-cfg/markdown-vault"))
+            self.assertEqual(paths.config_dir(), Path("/tmp/xdg-cfg/de.hannemann.markdown-vault"))
 
     def test_override_is_used_verbatim(self):
-        # It names the directory itself, so no "markdown-vault" is appended.
+        # It names the directory itself, so no "de.hannemann.markdown-vault" is appended.
         with patch.dict(os.environ, {"MDV_CONFIG_DIR": "/tmp/throwaway"}):
             self.assertEqual(paths.config_dir(), Path("/tmp/throwaway"))
 
@@ -79,9 +79,11 @@ class TestConstants(unittest.TestCase):
         for name in ("STATE_DIR", "CONFIG_DIR", "CACHE_DIR", "DATA_DIR"):
             self.assertIsInstance(getattr(paths, name), Path, name)
 
-    def test_each_ends_in_markdown_vault(self):
+    def test_each_ends_in_the_app_id(self):
+        # One name for the app everywhere: the XDG dirs carry the application ID,
+        # the same string as `main.py`'s application_id and the .desktop file.
         for name in ("STATE_DIR", "CACHE_DIR", "DATA_DIR"):
-            self.assertEqual(getattr(paths, name).name, "markdown-vault", name)
+            self.assertEqual(getattr(paths, name).name, "de.hannemann.markdown-vault", name)
 
 
 class TestRunIsolation(unittest.TestCase):
@@ -96,10 +98,10 @@ class TestRunIsolation(unittest.TestCase):
     def test_not_running_against_the_real_dirs(self):
         home = Path.home()
         real = {
-            "config": home / ".config" / "markdown-vault",
-            "state": home / ".local" / "state" / "markdown-vault",
-            "cache": home / ".cache" / "markdown-vault",
-            "data": home / ".local" / "share" / "markdown-vault",
+            "config": home / ".config" / "de.hannemann.markdown-vault",
+            "state": home / ".local" / "state" / "de.hannemann.markdown-vault",
+            "cache": home / ".cache" / "de.hannemann.markdown-vault",
+            "data": home / ".local" / "share" / "de.hannemann.markdown-vault",
         }
         actual = {"config": paths.CONFIG_DIR, "state": paths.STATE_DIR,
                   "cache": paths.CACHE_DIR, "data": paths.DATA_DIR}

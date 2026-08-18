@@ -22,7 +22,12 @@ endif
 
 # Modules are installed into a private directory instead of the interpreter's
 # site-packages, which may live outside the install prefix.
-pkgdatadir = get_option('prefix') / get_option('datadir') / 'markdown-vault'
+# One definition for the installed tree's name; must match core/paths.py's _APP,
+# main.py's application_id and the .desktop file. subdir() inherits it, so the
+# share/ install_dirs use this variable rather than repeating the literal.
+# tests/test_app_id.py compares every place that names the id.
+app_id = 'de.hannemann.markdown-vault'
+pkgdatadir = get_option('prefix') / get_option('datadir') / app_id
 pythondir = pkgdatadir / 'python'
 # The launcher runs the app through this venv interpreter (created by
 # `make install`), so pip-resolved dependencies are on its path. The venv is

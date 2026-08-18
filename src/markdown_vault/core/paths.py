@@ -25,11 +25,14 @@ harness point it at a throwaway dir) and takes precedence over ``XDG_CONFIG_HOME
 import os
 from pathlib import Path
 
-_APP = "markdown-vault"
+#: The application ID — the same string as ``main.py``'s ``application_id``, the
+#: ``.desktop`` file and the installed data directory. One name for the app
+#: everywhere; reverse-DNS keeps it unique among all programs sharing these bases.
+_APP = "de.hannemann.markdown-vault"
 
 
 def resolve(env_var: str, default: str) -> Path:
-    """Return ``<$env_var or ~/default>/markdown-vault``.
+    """Return ``<$env_var or ~/default>/de.hannemann.markdown-vault``.
 
     Per the XDG spec a relative path in one of these variables is invalid and must be
     ignored, so an unset, empty or relative value falls back to *default*.

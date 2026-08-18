@@ -12,10 +12,10 @@ install_data(
 
 install_data(
   'de.hannemann.markdown-vault.gresource.xml',
-  install_dir: get_option('datadir') / 'markdown-vault',
+  install_dir: get_option('datadir') / app_id,
 )
 
 install_data(
   'de.hannemann.markdown-vault.yml',
-  install_dir: get_option('datadir') / 'markdown-vault',
+  install_dir: get_option('datadir') / app_id,
 )

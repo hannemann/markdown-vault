@@ -2,7 +2,8 @@
 
 Sets up:
 - Two rotated log files in the XDG state dir (``core.paths.STATE_DIR``, by default
-  ~/.local/state/markdown-vault/; inside a Flatpak the sandbox's own state dir):
+  ~/.local/state/de.hannemann.markdown-vault/; inside a Flatpak the sandbox's own
+  state dir):
   - markdown-vault.log         (level <= INFO)
   - markdown-vault.stderr.log  (level >= WARNING)
 - Console logging (stdout <= INFO, stderr >= WARNING) when the app is run

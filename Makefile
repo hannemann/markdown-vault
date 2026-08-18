@@ -12,7 +12,7 @@ APP_ID := de.hannemann.markdown-vault
 PYTHONPATH_DIR := src
 # A python3 earlier in PATH (e.g. Homebrew) usually lacks PyGObject.
 PYTHON := $(shell python3 -c 'import gi' 2>/dev/null && echo python3 || echo /usr/bin/python3)
-VENV := $(HOME)/.local/share/markdown-vault/venv
+VENV := $(HOME)/.local/share/$(APP_ID)/venv
 # Tests must never be able to reach the developer's real directories: a leaked
 # debounced write once replaced the whole settings block in the real vaults.yaml.
 # Pin all four base dirs (like tests-e2e/harness.py does) at a throwaway tree, so

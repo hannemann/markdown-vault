@@ -203,7 +203,8 @@ make install     # builds, creates the venv, and installs to ~/.local
 markdown-vault   # launcher installed to ~/.local/bin (make run does the same)
 ```
 
-`make install` also creates a private venv at `~/.local/share/markdown-vault/venv`
+`make install` also creates a private venv at
+`~/.local/share/de.hannemann.markdown-vault/venv`
 (with `--system-site-packages`, so the system PyGObject/GTK stay visible) and
 installs the Python packages from `requirements.txt` into it; the generated
 launcher runs the app through that venv interpreter. The first install needs
@@ -223,7 +224,7 @@ make run-flatpak
 
 ## Vault Configuration
 
-Vaults are stored in `~/.config/markdown-vault/vaults.yaml`:
+Vaults are stored in `~/.config/de.hannemann.markdown-vault/vaults.yaml`:
 
 ```yaml
 vaults:

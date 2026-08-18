@@ -9,11 +9,13 @@ def main():
     prefix = os.environ.get('MESON_INSTALL_PREFIX', os.path.expanduser('~/.local'))
     
     # Our Python modules are installed in:
-    # $prefix/share/markdown-vault/python/markdown_vault/
+    # $prefix/share/de.hannemann.markdown-vault/python/markdown_vault/
+    # (the directory is named after the application ID — see meson.build's
+    # pkgdatadir and core/paths.py; keep the three in step).
     app_python_dir = os.path.join(
         prefix,
         'share',
-        'markdown-vault',
+        'de.hannemann.markdown-vault',
         'python',
         'markdown_vault'
     )

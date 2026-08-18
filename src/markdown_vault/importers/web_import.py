@@ -41,7 +41,8 @@ logger = logging.getLogger(__name__)
 
 _INSTALL_HINT = ("Web import needs Trafilatura, which isn't installed. Install it "
                  "into the app venv:\n"
-                 "  ~/.local/share/markdown-vault/venv/bin/pip install trafilatura")
+                 "  ~/.local/share/de.hannemann.markdown-vault/venv/bin/pip install "
+                 "trafilatura")
 
 
 @dataclass
