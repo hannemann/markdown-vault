@@ -8,6 +8,7 @@ install_data(
     'session_manager.py',
     'tab_manager.py',
     'view_mode_manager.py',
+    'zoom_controller.py',
   ),
   install_dir: pythondir / 'markdown_vault' / 'app',
 )

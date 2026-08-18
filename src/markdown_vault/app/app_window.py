@@ -50,6 +50,7 @@ from markdown_vault.app.view_mode_manager import ViewModeManager
 from markdown_vault.editor.content_changes import ContentChangeHandler
 from markdown_vault.app.input_manager import InputManager
 from markdown_vault.app.file_manager import FileManager
+from markdown_vault.app.zoom_controller import ZoomController
 from markdown_vault.core import config
 from markdown_vault.uikit import dialogs
 from markdown_vault.uikit import banners as banner_mod
@@ -96,8 +97,6 @@ def _make_theme_handler(scheme: int):
         _apply_theme(scheme)
     return _handler
 
-
-_ZOOM_STEP = 0.1
 
 # R17.1: debounce window for coalescing backlink-build reschedules, so a
 # sustained burst of incremental edits cannot livelock the async build.
@@ -493,6 +492,12 @@ class MainWindow(Adw.ApplicationWindow):
         self._tab_shortcut_ctrl.set_scope(Gtk.ShortcutScope.GLOBAL)
         self._tab_shortcuts: list[Gtk.Shortcut] = []
 
+        # Zoom owns its own state (the pointer position), its event controllers
+        # and its actions — see ZoomController. Built before _register_actions,
+        # which asks it to add its own.
+        self._zoom = ZoomController(self._content_stack,
+                                    self._tab_bar.get_current_tab)
+
         self._register_actions()
         self._load_vaults()
         self._tab_bar.set_tab_min_width(self._settings.get("tab_min_width", 100))
@@ -570,20 +575,6 @@ class MainWindow(Adw.ApplicationWindow):
         )
 
         # Ctrl+Wheel zoom on the centre content area.
-        self._scroll_ctrl = Gtk.EventControllerScroll.new(
-            Gtk.EventControllerScrollFlags.VERTICAL
-        )
-        self._scroll_ctrl.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
-        self._scroll_ctrl.connect("scroll", self._on_scroll)
-        self._content_stack.add_controller(self._scroll_ctrl)
-
-        # Track pointer position for keyboard zoom.
-        self._ptr_x: float = 0.0
-        self._ptr_y: float = 0.0
-        self._motion_ctrl = Gtk.EventControllerMotion.new()
-        self._motion_ctrl.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
-        self._motion_ctrl.connect("motion", self._on_motion)
-        self._content_stack.add_controller(self._motion_ctrl)
 
         self._update_tab_shortcuts()
         self.add_controller(self._tab_shortcut_ctrl)
@@ -848,17 +839,7 @@ class MainWindow(Adw.ApplicationWindow):
         action.connect("activate", lambda *_: self._open_about())
         self.add_action(action)
 
-        action = Gio.SimpleAction.new("zoom-in", None)
-        action.connect("activate", lambda *_: self._zoom_active(+1))
-        self.add_action(action)
-
-        action = Gio.SimpleAction.new("zoom-out", None)
-        action.connect("activate", lambda *_: self._zoom_active(-1))
-        self.add_action(action)
-
-        action = Gio.SimpleAction.new("zoom-reset", None)
-        action.connect("activate", lambda *_: self._zoom_reset())
-        self.add_action(action)
+        self._zoom.register_actions(self)
 
         action = Gio.SimpleAction.new("nav-back", None)
         action.connect("activate", lambda *_: self._nav_back())
@@ -3153,76 +3134,6 @@ class MainWindow(Adw.ApplicationWindow):
                     tab.preview.update_from_text(text, base_dir, tab.editor.file_path or "")
         # Restart autosave with new interval.
         self._autosave.update_interval(self._settings.get("autosave_interval", 30))
-
-    # ── Zoom ────────────────────────────────────────────────────────
-
-    def _on_motion(self, _ctrl, x: float, y: float) -> None:
-        """Track pointer position inside _content_stack."""
-        self._ptr_x = x
-        self._ptr_y = y
-
-    def _widget_origin_in_stack(self, widget: Gtk.Widget) -> tuple[int, int]:
-        """Walk up from *widget* to _content_stack, accumulating offsets."""
-        x, y = 0, 0
-        cur = widget
-        while cur is not None and cur is not self._content_stack:
-            a = cur.get_allocation()
-            x += a.x
-            y += a.y
-            cur = cur.get_parent()
-        return x, y
-
-    def _is_pointer_over_preview(self, tab, px: float, py: float) -> bool:
-        """Check if (px, py) in _content_stack coords is over the preview."""
-        if not tab.preview.get_visible():
-            return False
-        ox, oy = self._widget_origin_in_stack(tab.preview)
-        return ox <= px < ox + tab.preview.get_width() and oy <= py < oy + tab.preview.get_height()
-
-    def _zoom_active(self, direction: int) -> None:
-        """Zoom the widget under the mouse pointer (keyboard shortcut)."""
-        tab = self._tab_bar.get_current_tab()
-        if not tab:
-            return
-        if self._is_pointer_over_preview(tab, self._ptr_x, self._ptr_y):
-            tab.preview.zoom_level = round(
-                tab.preview.zoom_level + direction * _ZOOM_STEP, 2,
-            )
-        else:
-            tab.editor.zoom_factor = round(
-                tab.editor.zoom_factor + direction * _ZOOM_STEP, 2,
-            )
-
-    def _zoom_reset(self) -> None:
-        tab = self._tab_bar.get_current_tab()
-        if not tab:
-            return
-        if self._is_pointer_over_preview(tab, self._ptr_x, self._ptr_y):
-            tab.preview.zoom_level = 1.0
-        else:
-            tab.editor.zoom_factor = 1.0
-
-    def _on_scroll(self, _ctrl, _dx, dy: float) -> bool:
-        """Ctrl+Wheel zoom handler."""
-        event = _ctrl.get_current_event()
-        if event is None:
-            return False
-        state = event.get_modifier_state()
-        if not (state & Gdk.ModifierType.CONTROL_MASK):
-            return False
-        tab = self._tab_bar.get_current_tab()
-        if not tab:
-            return False
-        direction = -1 if dy > 0 else 1
-        if self._is_pointer_over_preview(tab, self._ptr_x, self._ptr_y):
-            tab.preview.zoom_level = round(
-                tab.preview.zoom_level + direction * _ZOOM_STEP, 2,
-            )
-        else:
-            tab.editor.zoom_factor = round(
-                tab.editor.zoom_factor + direction * _ZOOM_STEP, 2,
-            )
-        return True
 
     # ── AppWindow alias (for tests) ────────────────────────────────
 
