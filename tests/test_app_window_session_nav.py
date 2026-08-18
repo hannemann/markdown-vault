@@ -125,7 +125,7 @@ class TestLinkNavigator(unittest.TestCase):
     point of having pulled it out.
     """
 
-    def _navigator(self, *, active_vault="/v"):
+    def _navigator(self, *, active_vault="/v", already_open=False):
         from markdown_vault.app.link_navigator import LinkNavigator
         self.calls = unittest.mock.Mock()
         self.tab = unittest.mock.Mock()
@@ -135,7 +135,8 @@ class TestLinkNavigator(unittest.TestCase):
             get_active_vault=lambda: active_vault,
             open_in_place=self.calls.in_place,
             open_in_new_tab=self.calls.new_tab,
-            switch_vault=self.calls.switch)
+            switch_vault=self.calls.switch,
+            is_open=lambda _path: already_open)
 
     def test_a_link_inside_the_active_vault_opens_in_place(self):
         nav = self._navigator()
@@ -165,9 +166,9 @@ class TestLinkNavigator(unittest.TestCase):
         self.assertEqual(args[0], "/other")
         self.assertEqual(kwargs["open_file_path"], "/other/note.md")
         self.assertTrue(callable(kwargs["post_open_fn"]))
-        self.tab.preview.scroll_to_anchor.assert_not_called()   # deferred
+        self.tab.preview.arm_anchor.assert_not_called()          # deferred
         kwargs["post_open_fn"]()                                 # …until run
-        self.tab.preview.scroll_to_anchor.assert_called_once_with("Heading")
+        self.tab.preview.arm_anchor.assert_called_once_with("Heading")
 
     def test_an_anchor_is_armed_on_the_preview_that_ends_up_showing_the_note(self):
         # Which preview that is only becomes clear *after* opening: depending on
@@ -192,6 +193,31 @@ class TestLinkNavigator(unittest.TestCase):
                 "markdown_vault.core.path_utils.find_vault_for_dir", return_value="/v"):
             nav.follow("/v/note.md", "Heading", new_tab=True)
         self.calls.new_tab.assert_called_once_with("/v/note.md")
+        self.tab.preview.arm_anchor.assert_called_once_with("Heading")
+
+    def test_an_already_open_note_is_scrolled_instead_of_armed(self):
+        # Opening a note that is already in a tab only activates that tab —
+        # nothing renders, so no FINISHED ever arrives and an armed jump would
+        # sit unspent (and fire on some later, unrelated load). Its content is
+        # on screen, so scroll straight away. This is the second click on the
+        # same note, and it is the common case, not an edge one.
+        nav = self._navigator(already_open=True)
+        with unittest.mock.patch(
+                "markdown_vault.core.path_utils.find_vault_for_dir", return_value="/v"):
+            nav.follow("/v/note.md", "Heading", new_tab=False)
+        self.tab.preview.scroll_to_anchor.assert_called_once_with("Heading")
+        self.tab.preview.arm_anchor.assert_not_called()
+
+    def test_the_cross_vault_case_uses_the_same_rule(self):
+        # The switch opens the note itself, so its post-open callback goes
+        # through the same decision instead of scrolling unconditionally.
+        nav = self._navigator(active_vault="/other")
+        with unittest.mock.patch(
+                "markdown_vault.core.path_utils.find_vault_for_dir", return_value="/v"):
+            nav.follow("/v/note.md", "Heading", new_tab=False)
+        _args, kwargs = self.calls.switch.call_args
+        self.tab.preview.arm_anchor.assert_not_called()
+        kwargs["post_open_fn"]()
         self.tab.preview.arm_anchor.assert_called_once_with("Heading")
 
     def test_a_link_without_an_anchor_scrolls_nothing(self):

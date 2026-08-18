@@ -28,9 +28,10 @@ class LinkNavigator:
     """Turns a clicked link into "open this, there, and scroll to that"."""
 
     def __init__(self, *, parent, get_current_tab, get_active_vault,
-                 open_in_place, open_in_new_tab, switch_vault) -> None:
+                 open_in_place, open_in_new_tab, switch_vault, is_open) -> None:
         self._parent = parent                    # dialog parent for "not found"
         self._get_current_tab = get_current_tab
+        self._is_open = is_open                  # note already in some tab?
         self._get_active_vault = get_active_vault
         self._open_in_place = open_in_place
         self._open_in_new_tab = open_in_new_tab
@@ -55,12 +56,17 @@ class LinkNavigator:
     def follow(self, file_path: str, fragment: str = "", *, new_tab: bool) -> None:
         """Open *file_path*, switching vaults first when it lives in another one.
 
-        The anchor jump is deferred in the cross-vault case: the switch opens the
-        note itself and runs *post* afterwards, because there is nothing to
-        scroll to until the target has rendered.
+        The anchor jump is handed to the preview *after* opening, because only
+        then is it clear which one shows the target: depending on the view mode a
+        link reuses the tab or opens a new one. The cross-vault case defers it
+        the same way, via the switch's post-open callback.
         """
         vault = path_utils.find_vault_for_dir(str(Path(file_path).parent))
-        post = (lambda: self.scroll_to_anchor(fragment)) if fragment else None
+        # Whether the note is already open decides how the jump gets there, and
+        # opening changes the answer — so ask now, for both routes.
+        was_open = self._is_open(file_path)
+        post = ((lambda: self._jump(fragment, rendered=not was_open))
+                if fragment else None)
         if vault and vault != self._get_active_vault():
             self._switch_vault(vault, open_file_path=file_path, post_open_fn=post)
             return
@@ -68,19 +74,29 @@ class LinkNavigator:
             self._open_in_new_tab(file_path)
         else:
             self._open_in_place(file_path)
-        if fragment:
-            # Arm the jump on whichever preview now shows the target — opening a
-            # link reuses the tab or spawns a new one depending on the view mode,
-            # so the preview to scroll is only known afterwards. Arming rather
-            # than scrolling: the window rebuilds the stack right after this and
-            # reloads the preview, which would discard an immediate scroll. The
-            # jump runs when that load reports FINISHED.
-            tab = self._get_current_tab()
-            if tab:
-                tab.preview.arm_anchor(fragment)
-            return
         if post is not None:
-            post()
+            self._jump(fragment, rendered=not was_open)
+
+    def _jump(self, fragment: str, *, rendered: bool = True) -> None:
+        """Get *fragment* to the preview that now shows the note.
+
+        Two cases, and taking the wrong one loses the jump:
+
+        * The note was **not** open, so opening it renders — and the window then
+          rebuilds the stack and reloads the preview, discarding any scroll made
+          now. The jump is *armed* and runs when that load reports FINISHED.
+        * The note **was** already open, so the tab is merely activated: nothing
+          renders, no FINISHED arrives, and an armed jump would sit there
+          unspent (and fire on some later, unrelated load). Its content is on
+          screen already, so scroll right away.
+        """
+        tab = self._get_current_tab()
+        if not tab or not fragment:
+            return
+        if rendered:
+            tab.preview.arm_anchor(fragment)
+        else:
+            tab.preview.scroll_to_anchor(fragment)
 
     def scroll_to_anchor(self, fragment: str) -> None:
         """Scroll the current tab's preview to *fragment* — the heading a

@@ -1280,11 +1280,15 @@ class TestArmedAnchorRidesWithTheContent(unittest.TestCase):
         return sent
 
     @staticmethod
-    def _drain():
-        from gi.repository import GLib
-        ctx = GLib.MainContext.default()
-        while ctx.pending():
-            ctx.iteration(False)
+    def _render_now():
+        """Run what the preview queues, without touching the global main loop.
+
+        Iterating the default context would also run callbacks other tests have
+        pending — patching the queue instead keeps this test to its own work.
+        """
+        return unittest.mock.patch(
+            "markdown_vault.preview.preview.GLib.idle_add",
+            side_effect=lambda fn, *args: bool(fn(*args)) and False)
 
     def test_arming_never_scrolls_on_its_own(self):
         self._preview.arm_anchor("Kapitel Zwei")
@@ -1298,8 +1302,8 @@ class TestArmedAnchorRidesWithTheContent(unittest.TestCase):
         # here is how the jump got lost.
         sent = self._scripts()
         self._preview.arm_anchor("Kapitel Zwei")
-        self._preview.update_from_text("## Kapitel Zwei\n", "/v", "/v/note.md")
-        self._drain()
+        with self._render_now():
+            self._preview.update_from_text("## Kapitel Zwei\n", "/v", "/v/note.md")
         self.assertEqual(len(sent), 1, sent)
         self.assertIn("innerHTML", sent[0])
         self.assertNotIn("scrollIntoView", sent[0])
@@ -1318,6 +1322,20 @@ class TestArmedAnchorRidesWithTheContent(unittest.TestCase):
     def test_reset_keeps_the_armed_jump(self):
         self._preview.arm_anchor("Kapitel Zwei")
         self._preview.reset()
+        self.assertEqual(self._preview._pending_anchor, "Kapitel Zwei")
+
+    def test_arming_without_a_following_render_is_never_spent(self):
+        # The reason LinkNavigator must not arm when the note is already open:
+        # re-rendering identical content is skipped by the hash guard, so no
+        # script runs and nothing clears the anchor. It would then fire on the
+        # next unrelated load of this preview.
+        text = "## Kapitel Zwei\n"
+        with self._render_now():
+            self._preview.update_from_text(text, "/v", "/v/note.md")
+            self._ran.clear()
+            self._preview.arm_anchor("Kapitel Zwei")
+            self._preview.update_from_text(text, "/v", "/v/note.md")   # unchanged
+        self.assertEqual(self._ran, [])
         self.assertEqual(self._preview._pending_anchor, "Kapitel Zwei")
 
     def test_a_settled_preview_still_jumps_right_away(self):

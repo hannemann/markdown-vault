@@ -375,7 +375,8 @@ class MainWindow(Adw.ApplicationWindow):
             get_active_vault=lambda: self._active_vault,
             open_in_place=self._navigate_in_place,
             open_in_new_tab=self._open_file,
-            switch_vault=self._switch_vault)
+            switch_vault=self._switch_vault,
+            is_open=lambda path: self._tab_bar.get_tab(path) is not None)
 
         # Tab lifecycle orchestrator.
         self._tab_orchestrator = TabOrchestrator(

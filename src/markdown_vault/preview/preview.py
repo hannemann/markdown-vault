@@ -879,10 +879,11 @@ class Preview(Gtk.ScrolledWindow):
         """Remember *heading* for the content that is **about to** be rendered.
 
         Unlike :meth:`scroll_to_anchor` this never scrolls right away: the target
-        does not exist yet. The jump is emitted together with the content — in
-        the same script for an innerHTML swap, on ``load-changed FINISHED`` for a
-        full load. Callers that open a note and want it scrolled to a heading arm
-        the jump *before* opening it.
+        does not exist yet. The jump runs when the next **full** load reports
+        ``load-changed FINISHED`` — the render that comes last and would discard
+        anything scrolled before it. Only arm a jump when a load actually
+        follows; where nothing renders (an already-open tab is merely activated)
+        use :meth:`scroll_to_anchor`, or the jump is never spent.
         """
         logger.debug("preview: anchor armed %r on %s", heading, self._current_file)
         self._pending_anchor = heading
@@ -1292,12 +1293,6 @@ class Preview(Gtk.ScrolledWindow):
                 'document.querySelector(".markdown-body").innerHTML '
                 f'= {html_json}'
             )
-            # An armed anchor jump rides along in the *same* script: the heading
-            # it targets is created by the line above, so running both in one
-            # turn removes the question of when the new DOM is ready. Sending the
-            # jump separately means it either finds the previous note's markup or
-            # its stale layout — that is what used to make cross-note anchors
-            # silently do nothing.
             # An armed anchor is deliberately NOT spent here. Navigating inside a
             # tab reaches this swap first, but the window then rebuilds the stack
             # and calls reset() + refresh_preview(), so a full load follows and
