@@ -85,10 +85,16 @@ class TestNavigation(AppWindowTest):
             tabs.get_current_tab.return_value = None      # no in-page history
             self.activate("nav-back")
             self.activate("nav-forward")
-            self.win._push_history("/tmp/a.md")
         inputs.nav_back.assert_called_once()
         inputs.nav_forward.assert_called_once()
-        inputs.push_history.assert_called_once_with("/tmp/a.md")
+
+    def test_pushing_history_is_the_input_managers_job_not_the_windows(self):
+        # The window used to carry a forwarder that every caller went through.
+        # Collaborators now call the InputManager directly, so the forwarder is
+        # gone — asserted, because "we removed a method" is exactly the kind of
+        # thing that silently comes back.
+        self.assertFalse(hasattr(self.win, "_push_history"))
+        self.assertTrue(callable(self.win._input_manager.push_history))
 
     def test_an_in_page_anchor_is_unwound_before_the_note_history(self):
         # Ctrl+Alt+Left inside a long note with footnotes must first return to

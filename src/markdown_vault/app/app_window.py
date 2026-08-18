@@ -345,6 +345,18 @@ class MainWindow(Adw.ApplicationWindow):
             tab_bar=self._tab_bar, parent=self
         )
 
+        # Input manager (shortcuts + navigation). Built before the orchestrator,
+        # which is handed its history methods directly.
+        self._input_manager = InputManager(
+            application=self,
+            on_nav_file_opened=self._open_from_history,
+            nav_history=self._nav_history,
+            back_btn=self._back_btn,
+            forward_btn=self._forward_btn,
+            settings=self._settings,
+            in_page_state_fn=self._in_page_nav_state,
+        )
+
         # Tab lifecycle orchestrator.
         self._tab_orchestrator = TabOrchestrator(
             tab_bar=self._tab_bar,
@@ -361,29 +373,21 @@ class MainWindow(Adw.ApplicationWindow):
                 "on_preview_link_not_found": self._on_preview_link_not_found,
                 "on_preview_checkbox_toggled": self._on_preview_checkbox_toggled,
                 "on_preview_image_download": self._on_preview_image_download,
-                "on_preview_in_page_nav": self._update_nav_buttons,
+                # Straight to the InputManager: the history and its buttons are
+                # its property, and routing through a window forwarder only hides
+                # who actually answers.
+                "on_preview_in_page_nav": self._input_manager.update_nav_buttons,
                 "on_editor_text_changed": self._on_editor_text_changed,
                 "on_editor_modified": self._on_editor_modified,
                 "on_editor_attachment_added": self._on_editor_attachment_added,
                 "apply_view_mode": self._view_mode_manager.apply_view_mode,
                 "sync_view_toggle": self._view_mode_manager.sync_view_toggle,
                 "refresh_preview": self._view_mode_manager.refresh_preview,
-                "push_history": self._push_history,
+                "push_history": self._input_manager.push_history,
                 "on_banner_reload": self._content_change_handler.reload_content,
                 "on_banner_dismiss": self._content_change_handler.dismiss_content,
                 "dump_debug": self._dump_debug,
             },
-        )
-
-        # Input manager (shortcuts + navigation).
-        self._input_manager = InputManager(
-            application=self,
-            on_nav_file_opened=self._open_from_history,
-            nav_history=self._nav_history,
-            back_btn=self._back_btn,
-            forward_btn=self._forward_btn,
-            settings=self._settings,
-            in_page_state_fn=self._in_page_nav_state,
         )
 
         # Session persistence manager.
@@ -540,7 +544,7 @@ class MainWindow(Adw.ApplicationWindow):
             self._session_mgr.restore_vault_session(
                 self._active_vault,
                 open_file_fn=self._open_file,
-                push_history_fn=self._push_history,
+                push_history_fn=self._input_manager.push_history,
                 suppress_nav_fn=lambda s: setattr(self._nav_history, "suppress", s),
                 mru_push_fn=self.mru.push,
             )
@@ -1083,7 +1087,7 @@ class MainWindow(Adw.ApplicationWindow):
         self._session_mgr.restore_vault_session(
             new_vault,
             open_file_fn=self._open_file,
-            push_history_fn=self._push_history,
+            push_history_fn=self._input_manager.push_history,
             suppress_nav_fn=lambda s: setattr(self._nav_history, "suppress", s),
             mru_push_fn=self.mru.push,
         )
@@ -2109,11 +2113,6 @@ class MainWindow(Adw.ApplicationWindow):
         GLib.idle_add(_deferred)
 
     # ── Navigation history ─────────────────────────────────────────
-
-    def _push_history(self, file_path: str) -> None:
-        """Append *file_path* to the navigation history — delegates to
-        :class:`InputManager`."""
-        self._input_manager.push_history(file_path)
 
     def _open_from_history(self, file_path: str, *, _from_nav: bool = False) -> None:
         """Open a history entry, switching vault first if it lives elsewhere
