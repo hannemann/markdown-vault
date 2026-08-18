@@ -245,12 +245,19 @@ class AskSubpageMixin:
         if not self._ask_key_entry.get_sensitive():
             return                      # no keyring — the field is disabled
         self._flush_secret()
+        name = self._ask_secret_name()
+        stored = secret_store.get_secret(name)
         self._secret_updating = True
         try:
-            self._ask_key_entry.set_text(
-                secret_store.get_secret(self._ask_secret_name()))
+            self._ask_key_entry.set_text(stored)
         finally:
             self._secret_updating = False
+        # Same bookkeeping as when the row was built: only a key we have actually
+        # seen may later be deleted by clearing the field.
+        if stored:
+            self._known_secrets.add(name)
+        else:
+            self._known_secrets.discard(name)
 
     def _on_ask_url_changed(self) -> None:
         """The URL identifies the server: warn (or stop warning) about notes

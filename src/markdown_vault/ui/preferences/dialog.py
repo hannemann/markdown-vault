@@ -82,6 +82,9 @@ class PreferencesDialog(
         self._secret_persist_id = None
         self._pending_secret = None
         self._secret_updating = False
+        # Keyring names we know hold a value — only those may be cleared by an
+        # empty field (see _persist_secret_now).
+        self._known_secrets: set = set()
         self.connect("closed", self._flush_secret)
         # Debounced model-list refresh: the list belongs to the server URL, so
         # editing that URL re-fetches — but not on every keystroke.
@@ -165,7 +168,11 @@ class PreferencesDialog(
                              width_request=self._LABEL_WIDTH))
         entry = Gtk.Entry(hexpand=True, valign=Gtk.Align.CENTER, visibility=False)
         if secret_store.available():
-            entry.set_text(secret_store.get_secret(self._secret_name_of(secret_key)))
+            name = self._secret_name_of(secret_key)
+            stored = secret_store.get_secret(name)
+            entry.set_text(stored)
+            if stored:
+                self._known_secrets.add(name)   # so clearing it may delete it
         else:
             entry.set_placeholder_text("no keyring available — key won't be saved")
             entry.set_sensitive(False)
@@ -189,14 +196,32 @@ class PreferencesDialog(
         self._secret_persist_id = None
         if self._pending_secret is not None:
             from markdown_vault.core import secret_store
+            name, value = self._pending_secret
+            self._pending_secret = None
+            if not value and name not in self._known_secrets:
+                # An empty field is only an instruction to delete when it once
+                # held something. The keyring can answer "available" and still
+                # return nothing (locked between probe and read) — the field then
+                # looks empty although a key is stored, and touching it would
+                # destroy a credential the user never saw. Logged rather than
+                # swallowed: if this ever fires, that hiccup is real and worth
+                # knowing about.
+                logger.warning("not clearing %s: the field never showed a value, "
+                               "so an empty write is not a deletion", name)
+                return False
             # A write can fail even when the service was reachable at open (the store
             # call is what triggers the unlock prompt; the user may cancel it). Surface
             # it like a failed settings save, so it isn't a silent no-op that only
             # shows up later as a 401 pointing at the server instead of the save.
-            if not secret_store.set_secret(*self._pending_secret):
+            if not secret_store.set_secret(name, value):
                 dialogs.show_error(self.get_root(), "Keyring",
                                    "Could not store the API key in the keyring.")
-            self._pending_secret = None
+                return False
+            # Track what we know is stored: a key set here may be cleared here.
+            if value:
+                self._known_secrets.add(name)
+            else:
+                self._known_secrets.discard(name)
         return False
 
     def _flush_secret(self, *_args) -> None:

@@ -70,7 +70,12 @@ class _DialogTest(unittest.TestCase):
         _p("markdown_vault.core.secret_store.get_secret").side_effect = (
             lambda k: self.secrets.get(k, ""))
         def _store(k, v):
-            self.secrets[k] = v
+            # Mirror secret_store.set_secret: an empty value CLEARS the entry
+            # (password_clear_sync), it does not store "".
+            if v:
+                self.secrets[k] = v
+            else:
+                self.secrets.pop(k, None)
             return True                                   # write succeeded
         _p("markdown_vault.core.secret_store.set_secret").side_effect = _store
 
@@ -348,6 +353,37 @@ class TestApiKeyInKeyring(_DialogTest):
         dlg._flush_secret()                       # force the debounced keyring write
         self.assertEqual(self.secrets.get(self._name()), "sk-new")
         self.assertNotIn("ask_api_key", dlg._settings)   # never in vaults.yaml
+
+    def test_clearing_a_key_that_was_shown_deletes_it(self):
+        dlg = self._dialog(**self._SERVER)
+        self.secrets[self._name()] = "sk-a"
+        dlg._ask_key_entry.set_text("sk-a")
+        dlg._flush_secret()
+        dlg._ask_key_entry.set_text("")          # the user clears it
+        dlg._flush_secret()
+        self.assertNotIn(self._name(), self.secrets)
+
+    def test_an_empty_write_cannot_delete_a_key_the_field_never_showed(self):
+        # The keyring can answer "available" and still return nothing (locked
+        # between probe and read). The field then looks empty although a key is
+        # stored — and touching it would delete a credential the user never saw.
+        dlg = self._dialog(**self._SERVER)        # opened with an empty field
+        self.secrets[self._name()] = "sk-stored"  # …but a key does exist
+        dlg._ask_key_entry.set_text("x")
+        dlg._ask_key_entry.set_text("")
+        dlg._flush_secret()
+        self.assertEqual(self.secrets.get(self._name()), "sk-stored")
+
+    def test_a_key_entered_and_cleared_in_the_same_session_is_removed(self):
+        # The guard must not be "the field was empty at open" alone: once a key
+        # has been stored from here, clearing it has to delete it again.
+        dlg = self._dialog(**self._SERVER)
+        dlg._ask_key_entry.set_text("sk-new")
+        dlg._flush_secret()
+        self.assertEqual(self.secrets.get(self._name()), "sk-new")
+        dlg._ask_key_entry.set_text("")
+        dlg._flush_secret()
+        self.assertNotIn(self._name(), self.secrets)
 
     def test_key_of_another_server_is_not_shown_or_reused(self):
         self.secrets[self._name("ollama", "http://localhost:11434")] = "sk-ollama"
