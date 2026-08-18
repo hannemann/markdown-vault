@@ -10,6 +10,7 @@ install_data(
     'view_mode_manager.py',
     'ask_controller.py',
     'find_controller.py',
+    'link_navigator.py',
     'zen_controller.py',
     'zoom_controller.py',
   ),

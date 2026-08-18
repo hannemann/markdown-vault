@@ -54,6 +54,7 @@ from markdown_vault.app.zoom_controller import ZoomController
 from markdown_vault.app.zen_controller import ZenController
 from markdown_vault.app.find_controller import FindController
 from markdown_vault.app.ask_controller import AskController
+from markdown_vault.app.link_navigator import LinkNavigator
 from markdown_vault.core import config
 from markdown_vault.uikit import dialogs
 from markdown_vault.uikit import banners as banner_mod
@@ -357,6 +358,16 @@ class MainWindow(Adw.ApplicationWindow):
             in_page_state_fn=self._in_page_nav_state,
         )
 
+        # Following a link: one rule for "cross-vault → switch first" and the
+        # anchor jump, instead of three near-identical handlers.
+        self._links = LinkNavigator(
+            parent=self,
+            get_current_tab=self._tab_bar.get_current_tab,
+            get_active_vault=lambda: self._active_vault,
+            open_in_place=self._navigate_in_place,
+            open_in_new_tab=self._open_file,
+            switch_vault=self._switch_vault)
+
         # Tab lifecycle orchestrator.
         self._tab_orchestrator = TabOrchestrator(
             tab_bar=self._tab_bar,
@@ -368,9 +379,9 @@ class MainWindow(Adw.ApplicationWindow):
             backlink_index=self._backlink_index,
             vault_tree=self._vault_tree,
             callbacks={
-                "on_preview_link_clicked": self._on_preview_link_clicked,
-                "on_preview_link_new_tab": self._on_preview_link_new_tab,
-                "on_preview_link_not_found": self._on_preview_link_not_found,
+                "on_preview_link_clicked": self._links.on_link_clicked,
+                "on_preview_link_new_tab": self._links.on_link_new_tab,
+                "on_preview_link_not_found": self._links.on_link_not_found,
                 "on_preview_checkbox_toggled": self._on_preview_checkbox_toggled,
                 "on_preview_image_download": self._on_preview_image_download,
                 # Straight to the InputManager: the history and its buttons are
@@ -1748,37 +1759,6 @@ class MainWindow(Adw.ApplicationWindow):
                 text = tab.editor.get_text()
                 tab.preview.scroll_to_line(line_num - 1, text)
 
-    def _on_preview_link_clicked(self, _preview, file_path: str,
-                                 fragment: str = "") -> None:
-        vault = self._find_vault_for_file(file_path)
-        post = (lambda: self._scroll_active_to_anchor(fragment)) if fragment else None
-        if vault and vault != self._active_vault:
-            self._switch_vault(vault, open_file_path=file_path, post_open_fn=post)
-        else:
-            self._navigate_in_place(file_path)  # follow the link in the same tab
-            if post is not None:
-                post()
-
-    def _on_preview_link_new_tab(self, _preview, file_path: str,
-                                 fragment: str = "") -> None:
-        """Middle-click / Ctrl+click on a link → open it in a new tab."""
-        vault = self._find_vault_for_file(file_path)
-        post = (lambda: self._scroll_active_to_anchor(fragment)) if fragment else None
-        if vault and vault != self._active_vault:
-            self._switch_vault(vault, open_file_path=file_path, post_open_fn=post)
-        else:
-            self._open_file(file_path)  # explicit new tab
-            if post is not None:
-                post()
-
-    def _scroll_active_to_anchor(self, fragment: str) -> None:
-        """Scroll the current tab's preview to *fragment* — the heading a
-        cross-note wikilink (``[[Other#Heading]]``) pointed at. Deferred inside
-        the preview until the freshly opened note has rendered."""
-        tab = self._tab_bar.get_current_tab()
-        if tab and fragment:
-            tab.preview.scroll_to_anchor(fragment)
-
     # Matches a Markdown checkbox on a list line (group 4 = state: space or x/X).
     _CHECKBOX_RE = re.compile(r'^(>\s*)*(\s*)([-*+]|\d+\.)\s+\[([ xX])\]')
 
@@ -1888,19 +1868,6 @@ class MainWindow(Adw.ApplicationWindow):
                 self._sidebar.update_text_only(tab.editor.file_path, tab.editor.get_text())
         self._toast("Image downloaded")
         return False
-
-    def _on_preview_link_not_found(self, _preview, path_str: str) -> None:
-        """Show a dialog when a wikilink cannot be resolved."""
-        dialogs.show_link_not_found(self, self._wikilink_display_name(path_str))
-
-    def _wikilink_display_name(self, uri: str) -> str:
-        """Render a user-friendly target name from a ``vault:`` URI."""
-        if not uri.startswith("vault:"):
-            return uri
-        vault, rel, _fragment = path_utils.parse_wikilink_url(uri)
-        if not rel:
-            return vault
-        return f"{vault}>{rel}"
 
     # ── Vault tree file operations ───────────────────────────────
 
