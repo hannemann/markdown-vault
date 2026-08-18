@@ -53,6 +53,7 @@ from markdown_vault.app.file_manager import FileManager
 from markdown_vault.app.zoom_controller import ZoomController
 from markdown_vault.app.zen_controller import ZenController
 from markdown_vault.app.find_controller import FindController
+from markdown_vault.app.ask_controller import AskController
 from markdown_vault.core import config
 from markdown_vault.uikit import dialogs
 from markdown_vault.uikit import banners as banner_mod
@@ -428,30 +429,36 @@ class MainWindow(Adw.ApplicationWindow):
         )
         self._search_bar.connect("file-selected", self._on_search_result_selected)
 
+        # The semantic index comes and goes at runtime (Preferences toggles it),
+        # hence a getter rather than a reference.
+        self._ask = AskController(
+            self._settings,
+            get_semantic_index=lambda: self._semantic_index,
+            get_scope_paths=self._scope_vault_paths)
+
         self._quick_open = QuickOpenPalette(
             make_engine=self._make_quick_open_engine,
             semantic_query=lambda q: (
                 self._semantic_index.query_open(q) if self._semantic_index else []
             ),
-            ask_answer=self._ask_answer,
-            ask_candidates=self._ask_candidates,
-            ask_answer_selected=lambda q, paths, on_phase=None, on_token=None,
-            should_cancel=None: self._ask_answer(
-                q, note_paths=paths, on_phase=on_phase, on_token=on_token,
-                should_cancel=should_cancel),
-            list_ask_models=self._list_ask_models,
-            set_ask_model=self._set_ask_model,
-            current_ask_model=self._current_ask_model,
-            get_top_k=lambda: int(self._settings.get("ask_top_k")
-                                  or config.default("ask_top_k")),
-            can_ask=lambda: not self._ask_unavailable_reason(),
-            ask_hint=self._ask_unavailable_reason,
-            ask_status=self._ask_endpoint_status,
-            ask_recheck=self._recheck_ask_endpoint,
+            # The Ask surface comes from one object, not from fourteen window
+            # methods — see AskController.
+            ask_answer=self._ask.answer,
+            ask_candidates=self._ask.candidates,
+            ask_answer_selected=self._ask.answer_from,
+            list_ask_models=self._ask.list_models,
+            set_ask_model=self._ask.select_model,
+            current_ask_model=self._ask.current_model,
+            get_top_k=self._ask.top_k,
+            can_ask=self._ask.can_ask,
+            ask_hint=self._ask.unavailable_reason,
+            ask_status=self._ask.endpoint_status,
+            ask_recheck=self._ask.recheck_endpoint,
             scope=self._scope_callbacks(),
             hide_deprecated=self.hide_deprecated,
             set_hide_deprecated=self.set_hide_deprecated,
         )
+        self._ask.bind_palette(self._quick_open)
         self._quick_open.connect("file-selected", self._on_search_result_selected)
         # Restore the last Ask question so the palette reopens pre-filled.
         self._quick_open.set_last_question(_ses.get("ask_last_question", ""))
@@ -1406,24 +1413,6 @@ class MainWindow(Adw.ApplicationWindow):
         text = tab.editor.get_text()
         tab.preview.scroll_to_line(line, text)
 
-    # Locale code → English language name for the "answer in {language}" prompt.
-    _LANG_NAMES = {
-        "de": "German", "en": "English", "fr": "French", "es": "Spanish",
-        "it": "Italian", "pt": "Portuguese", "nl": "Dutch", "pl": "Polish",
-        "ru": "Russian", "tr": "Turkish", "cs": "Czech", "sv": "Swedish",
-        "da": "Danish", "fi": "Finnish", "no": "Norwegian", "uk": "Ukrainian",
-        "ja": "Japanese", "zh": "Chinese", "ko": "Korean",
-    }
-
-    def _answer_language(self) -> str:
-        """The language the answer should be written in — the user's OS UI
-        language (falls back to English)."""
-        for loc in GLib.get_language_names():
-            code = loc.split(".")[0].split("_")[0].lower()
-            if code and code not in ("c", "posix"):
-                return self._LANG_NAMES.get(code, code)
-        return "English"
-
     # ── Search scope (shared by full-text, semantic, Ask) ───────────
 
     def _scope_callbacks(self) -> dict:
@@ -1461,98 +1450,6 @@ class MainWindow(Adw.ApplicationWindow):
             return [self._active_vault] if self._active_vault else allv
         return [scope] if scope in allv else (
             [self._active_vault] if self._active_vault else allv)
-
-    def _ask_answer(self, question: str, note_paths=None, on_phase=None,
-                    on_token=None, should_cancel=None):
-        """RAG: retrieve passages and let the configured local model write a
-        grounded answer.  Runs off the main thread (quick-open worker); returns
-        an :class:`ask.Answer`.  The retrieval/backend/budget wiring lives in
-        :func:`ask.answer_question`.  *note_paths*, if given, uses exactly those
-        user-picked notes as context instead of retrieving.  *on_phase* is the
-        UI status hook (loading/thinking).
-        """
-        from markdown_vault.search import ask
-        return ask.answer_question(
-            question, self._semantic_index, self._settings,
-            self._scope_vault_paths(), self._answer_language(),
-            note_paths=note_paths, on_phase=on_phase, on_token=on_token,
-            should_cancel=should_cancel)
-
-    def _list_ask_models(self):
-        """``(label, value)`` for the palette's footer model picker — downloaded
-        GGUFs or, for a server backend, the models that server offers."""
-        from markdown_vault.search import ask_models
-        return ask_models.list_for(self._settings, on_refresh=self._ask_models_arrived)
-
-    def _ask_models_arrived(self, _status) -> None:
-        """A background probe of the Ask server settled (worker thread) — update the
-        palette on the main loop: picker, warning banner, submit lock, and a question
-        that was held while the check was out."""
-        GLib.idle_add(self._quick_open.refresh_endpoint_status)
-
-    def _ask_server_url(self) -> str:
-        return (self._settings.get("ask_ollama_url")
-                or config.default("ask_ollama_url"))
-
-    def _ask_endpoint_status(self):
-        """The Ask server's last verdict about itself, or ``None`` when no server is
-        involved (local backend) — which the palette reads as "nothing to check"."""
-        from markdown_vault.search import ask_models
-        backend = ask_models.effective_backend(self._settings)
-        if backend not in ask_models.SERVER_BACKENDS:
-            return None
-        return ask_models.status(backend, self._ask_server_url())
-
-    def _recheck_ask_endpoint(self) -> None:
-        """Probe the Ask server again — the palette's "Try again", so a server that
-        was started in the meantime becomes usable without restarting the app."""
-        from markdown_vault.search import ask_models
-        backend = ask_models.effective_backend(self._settings)
-        if backend not in ask_models.SERVER_BACKENDS:
-            return
-        ask_models.refresh_async(backend, self._ask_server_url(),
-                                 ask_models.api_key(self._settings),
-                                 on_settled=self._ask_models_arrived)
-        self._quick_open.refresh_endpoint_status()   # show the check is running
-
-    def _ask_unavailable_reason(self) -> str:
-        """Why Ask cannot answer right now — ``""`` when it can. One source for
-        both the toggle's state and its tooltip, so they can't disagree."""
-        if not self._settings.get("semantic_search_enabled"):
-            return "Semantic search is off — turn it on in Preferences → Search."
-        if self._semantic_index is None:
-            return "The semantic index is not ready yet."
-        engine = self._settings.get("ask_engine") or config.default("ask_engine")
-        if engine == "off":
-            return ("The answer engine is off — turn it on in "
-                    "Preferences → Search → Ask.")
-        return ""
-
-    def _current_ask_model(self) -> str:
-        """The model the next answer would use — a GGUF path or a server model."""
-        from markdown_vault.search import ask_models
-        return ask_models.current(self._settings)
-
-    def _set_ask_model(self, value: str) -> None:
-        """Select a model from the footer picker; the next answer uses it. Which
-        setting that writes depends on the backend, so ask_models decides."""
-        from markdown_vault.search import ask_models
-        backend = ask_models.effective_backend(self._settings)
-        url = (self._settings.get("ask_ollama_url")
-               or config.default("ask_ollama_url"))
-        ask_models.remember(self._settings, backend, url, value)
-        config.save_settings(self._settings)
-
-    def _ask_candidates(self, question: str):
-        """Top-20 candidate notes (path, score) for the 'pick your own sources'
-        Ask flow — same scoped, hybrid retrieval, just wider and without the LLM.
-        """
-        if self._semantic_index is None:
-            return []
-        hits = self._semantic_index.retrieve(
-            question, top_k=20, vaults=self._scope_vault_paths(),
-            hybrid=bool(self._settings.get("ask_hybrid")))
-        return [(c.path, s) for c, s in hits]
 
     def _start_semantic_search(self) -> None:
         """Build the semantic index in the background when enabled (opt-in).

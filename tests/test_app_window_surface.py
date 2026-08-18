@@ -50,42 +50,54 @@ class TestActions(AppWindowTest):
 
 
 class TestAskWiring(AppWindowTest):
-    """The window answers three questions for the Ask palette. They are pure
-    functions over the settings, they decide whether the user may ask at all, and
-    a split moving them into another object must keep every answer."""
+    """The Ask surface the palette is handed. These decide whether the user may
+    ask at all, so every answer has to survive being moved — they now live on the
+    controller (`win._ask`), reached the same way the palette reaches them."""
 
     def test_no_reason_to_block_when_everything_is_configured(self):
         self.win._settings["semantic_search_enabled"] = True
         self.win._settings["ask_engine"] = "auto"
         self.win._semantic_index = unittest.mock.Mock()
-        self.assertEqual(self.win._ask_unavailable_reason(), "")
+        self.assertEqual(self.win._ask.unavailable_reason(), "")
+        self.assertTrue(self.win._ask.can_ask())
 
     def test_semantic_search_off_is_named_first(self):
         self.win._settings["semantic_search_enabled"] = False
-        reason = self.win._ask_unavailable_reason()
+        reason = self.win._ask.unavailable_reason()
         self.assertIn("Semantic search", reason)
         self.assertIn("Preferences", reason)          # says where to fix it
 
     def test_a_missing_index_and_a_disabled_engine_each_give_their_own_reason(self):
         self.win._settings["semantic_search_enabled"] = True
         self.win._semantic_index = None
-        self.assertIn("index", self.win._ask_unavailable_reason().lower())
+        self.assertIn("index", self.win._ask.unavailable_reason().lower())
 
         self.win._semantic_index = unittest.mock.Mock()
         self.win._settings["ask_engine"] = "off"
-        self.assertIn("engine", self.win._ask_unavailable_reason().lower())
+        self.assertIn("engine", self.win._ask.unavailable_reason().lower())
+
+    def test_the_index_is_read_live_not_captured(self):
+        # The controller gets a getter, not the index itself: Preferences drops
+        # and rebuilds it at runtime, and a captured reference would keep
+        # answering from an index the app has already discarded.
+        self.win._settings["semantic_search_enabled"] = True
+        self.win._settings["ask_engine"] = "auto"
+        self.win._semantic_index = None
+        self.assertFalse(self.win._ask.can_ask())
+        self.win._semantic_index = unittest.mock.Mock()
+        self.assertTrue(self.win._ask.can_ask())
 
     def test_endpoint_status_is_none_for_a_backend_without_a_server(self):
         # None is the palette's signal for "nothing to check" — a local model has
         # no endpoint that could be unreachable.
         self.win._settings["ask_engine"] = "auto"        # auto is always local
-        self.assertIsNone(self.win._ask_endpoint_status())
+        self.assertIsNone(self.win._ask.endpoint_status())
 
     def test_endpoint_status_is_reported_for_a_server_backend(self):
         self.win._settings["ask_engine"] = "manual"
         self.win._settings["ask_backend"] = "openai"
         self.win._settings["ask_ollama_url"] = "http://localhost:8080"
-        status = self.win._ask_endpoint_status()
+        status = self.win._ask.endpoint_status()
         self.assertIsNotNone(status)
         self.assertTrue(hasattr(status, "can_ask"))
 
