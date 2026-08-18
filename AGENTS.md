@@ -380,6 +380,16 @@ opening files in editor, toggling sidebar etc.) ask the user.
   their new requirement is an argument for a new plan, not consent to it. The
   approval also lapses when the plan turns out to rest on a wrong premise —
   re-present, don't improvise.
+- **NEVER edit files through a shell script.** File changes go through the `Edit` /
+  `Write` tools — never `python3 - <<'EOF'`, never `sed -i`, never `cat > file`, never
+  any other heredoc or redirection that rewrites a file. This is not a style
+  preference: `Edit` refuses to touch a file that was not read first and fails loudly
+  when the expected text is not there, so a stale assumption becomes an error instead
+  of a silent no-op — a scripted `.replace()` that matched nothing has already gone
+  unnoticed here. It also keeps every change visible in the transcript as a diff
+  instead of hiding it inside a script. If you believe an edit is too mechanical for
+  `Edit` (a line-range carve across a thousand lines), **ask first** and say why;
+  the answer may be yes, but it is the user's call, not yours.
 - **NEVER commit without explicit user request**: NEVER run `git commit` unless the user explicitly asks for it. Not after editing files, not after testing, not ever. The user will say "commit" when ready.
 - **Commit at topic boundaries — cut in front, never carve up afterwards**: as soon as
   one topic is finished (a feature, a bugfix in a distinct area, a review finding that
