@@ -83,8 +83,8 @@ class TestNavigation(AppWindowTest):
         with unittest.mock.patch.object(self.win, "_input_manager") as inputs, \
                 unittest.mock.patch.object(self.win, "_tab_bar") as tabs:
             tabs.get_current_tab.return_value = None      # no in-page history
-            self.win._nav_back()
-            self.win._nav_forward()
+            self.activate("nav-back")
+            self.activate("nav-forward")
             self.win._push_history("/tmp/a.md")
         inputs.nav_back.assert_called_once()
         inputs.nav_forward.assert_called_once()
@@ -98,7 +98,7 @@ class TestNavigation(AppWindowTest):
         with unittest.mock.patch.object(self.win, "_input_manager") as inputs, \
                 unittest.mock.patch.object(self.win, "_tab_bar") as tabs:
             tabs.get_current_tab.return_value = tab
-            self.win._nav_back()
+            self.activate("nav-back")
         inputs.nav_back.assert_not_called()
 
     def test_opening_a_history_entry_from_another_vault_switches_first(self):

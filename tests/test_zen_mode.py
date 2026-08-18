@@ -61,7 +61,7 @@ class TestPanelsZen(ZenTest):
 class TestTotalZen(ZenTest):
     def test_hides_everything(self):
         self._open()
-        self.win._toggle_zen("total")
+        self.activate("toggle-zen-total")
         self.assertEqual(self.win._zen_level, "total")
         for widget in (self.win._header, self.win._tab_bar, self.win._vault_tree):
             self.assertFalse(widget.get_visible())
@@ -70,8 +70,8 @@ class TestTotalZen(ZenTest):
     def test_toggle_off_restores(self):
         self._open(sidebar_open=False, search_open=True)
         before = self._state()
-        self.win._toggle_zen("total")
-        self.win._toggle_zen("total")
+        self.activate("toggle-zen-total")
+        self.activate("toggle-zen-total")
         self.assertEqual(self._state(), before)
 
 
@@ -80,24 +80,24 @@ class TestCycle(ZenTest):
         self._open(sidebar_open=True, search_open=True)
         before = self._state()
 
-        self.win._cycle_zen()  # → panels
+        self.activate("toggle-zen")  # → panels
         self.assertEqual(self.win._zen_level, "panels")
         self.assertTrue(self.win._header.get_visible())       # header still up
         self.assertFalse(self.win._vault_tree.get_visible())
 
-        self.win._cycle_zen()  # → total
+        self.activate("toggle-zen")  # → total
         self.assertEqual(self.win._zen_level, "total")
         self.assertFalse(self.win._header.get_visible())      # header now hidden
 
-        self.win._cycle_zen()  # → normal
+        self.activate("toggle-zen")  # → normal
         self.assertIsNone(self.win._zen_level)
         self.assertEqual(self._state(), before)
 
     def test_shift_shortcut_still_toggles_total(self):
         self._open()
-        self.win._toggle_zen("total")
+        self.activate("toggle-zen-total")
         self.assertEqual(self.win._zen_level, "total")
-        self.win._toggle_zen("total")
+        self.activate("toggle-zen-total")
         self.assertIsNone(self.win._zen_level)
 
 
@@ -106,13 +106,13 @@ class TestLevelSwitching(ZenTest):
         self._open()
         self.win._toggle_zen("panels")            # header still visible
         self.assertTrue(self.win._header.get_visible())
-        self.win._toggle_zen("total")             # switch → header hidden
+        self.activate("toggle-zen-total")             # switch → header hidden
         self.assertEqual(self.win._zen_level, "total")
         self.assertFalse(self.win._header.get_visible())
 
     def test_total_then_panels_restores_header(self):
         self._open()
-        self.win._toggle_zen("total")             # header hidden
+        self.activate("toggle-zen-total")             # header hidden
         self.win._toggle_zen("panels")            # switch → header back
         self.assertEqual(self.win._zen_level, "panels")
         self.assertTrue(self.win._header.get_visible())
@@ -121,8 +121,8 @@ class TestLevelSwitching(ZenTest):
         self._open(sidebar_open=True, search_open=True)
         before = self._state()
         self.win._toggle_zen("panels")
-        self.win._toggle_zen("total")             # switch levels
-        self.win._toggle_zen("total")             # exit
+        self.activate("toggle-zen-total")             # switch levels
+        self.activate("toggle-zen-total")             # exit
         self.assertIsNone(self.win._zen_level)
         self.assertEqual(self._state(), before)
 

@@ -52,17 +52,22 @@ class DirtyEditor:
 # TabBar: tab-close-requested signal
 # ---------------------------------------------------------------------------
 
-class TestTabBarSignalExists(unittest.TestCase):
-    """:code:`tab-close-requested` signal exists on TabBar."""
+class TestTabBarSignals(unittest.TestCase):
+    """The signals TabBar promises its users.
 
-    def test_signal_defined_in_source(self):
-        src = os.path.join(
-            os.path.dirname(__file__),
-            "..", "src",
-            "markdown_vault", "editor", "tabs.py",
-        )
-        source = Path(src).read_text()
-        self.assertIn('"tab-close-requested"', source)
+    Asked of GObject, not of the source text: this used to read tabs.py and
+    assert that the string ``"tab-close-requested"`` appears somewhere in it —
+    which stays true for a signal that was renamed in the registration but left
+    in a comment, and for one that is never emitted.
+    """
+
+    EXPECTED = {"tab-changed", "tab-close-requested", "tab-closed",
+                "tab-copy-path", "tab-renamed"}
+
+    def test_the_registered_signals_are_exactly_the_expected_set(self):
+        from gi.repository import GObject
+        from markdown_vault.editor.tabs import TabBar
+        self.assertEqual(set(GObject.signal_list_names(TabBar)), self.EXPECTED)
 
 
 # ---------------------------------------------------------------------------

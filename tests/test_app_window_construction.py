@@ -74,6 +74,20 @@ class AppWindowTest(unittest.TestCase):
             patcher.start()
         self.win = aw.MainWindow(self._app)
 
+    def activate(self, action_name):
+        """Drive the window the way the UI does — through its action.
+
+        Preferred over calling the private method: an action name is the contract
+        with menus and accelerators and survives the coming split, while
+        `_toggle_zen` may move into a manager. Use `lookup_action(...).activate()`
+        and **not** `Gtk.Widget.activate_action()`: the latter needs a realized,
+        rooted widget and headless does nothing at all — silently, so the test
+        would stay green while testing nothing.
+        """
+        action = self.win.lookup_action(action_name)
+        self.assertIsNotNone(action, f"no such action: {action_name}")
+        action.activate(None)
+
     def tearDown(self):
         autosave = getattr(self.win, "_autosave", None)
         if autosave is not None:

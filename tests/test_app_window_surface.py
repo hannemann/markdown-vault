@@ -23,23 +23,30 @@ class TestActions(AppWindowTest):
     until someone clicks the menu entry.
     """
 
-    #: Every action the window registers on itself. A split may move where they
-    #: are registered; it may not lose one.
+    #: Every action the window registers on itself, as a **closed** set. A split
+    #: may move where they are registered; it may neither lose nor rename one,
+    #: and adding one has to be a conscious edit here.
     EXPECTED = {
-        "theme-system", "theme-light", "theme-dark",
-        "add-vault", "new-file", "insert-image", "paste-image",
+        "about", "add-vault", "close-tab", "find-in-view", "insert-image",
+        "mru-switcher-next", "mru-switcher-prev", "nav-back", "nav-forward",
+        "new-file", "next-tab", "paste-image", "preferences", "prev-tab",
+        "quick-open", "replace-in-view", "save", "theme-dark", "theme-light",
+        "theme-system", "toggle-help", "toggle-search", "toggle-sidebar",
+        "toggle-zen", "toggle-zen-total", "view-edit", "view-graph",
+        "view-render", "view-split", "zoom-in", "zoom-out", "zoom-reset",
     }
 
-    def test_registered_actions_cover_the_expected_set(self):
-        registered = set(self.win.list_actions())
-        missing = self.EXPECTED - registered
-        self.assertEqual(missing, set(), f"lost actions: {sorted(missing)}")
+    def test_the_registered_actions_are_exactly_the_expected_set(self):
+        # Equality, not subset: a lost action breaks a menu entry silently, and a
+        # renamed one breaks the accelerator still pointing at the old name —
+        # neither shows up in a subset check.
+        self.assertEqual(set(self.win.list_actions()), self.EXPECTED)
 
-    def test_every_registered_action_is_enabled_and_callable(self):
-        # A registered-but-disabled action is the other way a split breaks this:
-        # the menu entry exists and does nothing.
+    def test_every_expected_action_can_be_looked_up(self):
+        # lookup_action is also how the tests below drive the window: it survives
+        # the split, a private method name does not.
         for name in sorted(self.EXPECTED):
-            self.assertTrue(self.win.has_action(name), name)
+            self.assertIsNotNone(self.win.lookup_action(name), name)
 
 
 class TestAskWiring(AppWindowTest):
@@ -105,7 +112,7 @@ class TestZoom(AppWindowTest):
         tabs, pointer = self._with_pointer(tab, over_preview=True)
         with tabs as tab_bar, pointer:
             tab_bar.get_current_tab.return_value = tab
-            self.win._zoom_active(+1)
+            self.activate("zoom-in")
         self.assertGreater(tab.preview.zoom_level, 1.0)
         self.assertEqual(tab.editor.zoom_factor, 1.0)      # the other half untouched
 
@@ -114,7 +121,7 @@ class TestZoom(AppWindowTest):
         tabs, pointer = self._with_pointer(tab, over_preview=False)
         with tabs as tab_bar, pointer:
             tab_bar.get_current_tab.return_value = tab
-            self.win._zoom_active(-1)
+            self.activate("zoom-out")
         self.assertLess(tab.editor.zoom_factor, 1.0)
         self.assertEqual(tab.preview.zoom_level, 1.0)
 
@@ -124,14 +131,14 @@ class TestZoom(AppWindowTest):
         tabs, pointer = self._with_pointer(tab, over_preview=False)
         with tabs as tab_bar, pointer:
             tab_bar.get_current_tab.return_value = tab
-            self.win._zoom_reset()
+            self.activate("zoom-reset")
         self.assertEqual(tab.editor.zoom_factor, 1.0)
 
     def test_zooming_without_an_open_tab_does_nothing(self):
         with unittest.mock.patch.object(self.win, "_tab_bar") as tab_bar:
             tab_bar.get_current_tab.return_value = None
-            self.win._zoom_active(+1)          # must not raise
-            self.win._zoom_reset()
+            self.activate("zoom-in")          # must not raise
+            self.activate("zoom-reset")
 
 
 class TestViewMode(AppWindowTest):
