@@ -52,26 +52,40 @@ class AppWindowTest(unittest.TestCase):
 
     def setUp(self):
         import markdown_vault.app.app_window as aw
+        from markdown_vault.core import config
         self.aw = aw
+        self._config = config
+        # The window's settings ARE the process-wide object (config.settings()).
+        # A test that flips a setting would hand it to the next test — and a
+        # leftover "semantic_search_enabled" makes the following window build a
+        # real ONNX index. Reload from the pinned test config on both ends.
+        config.reload_settings()
         self._app = _application(aw)
         self._patchers = [
             unittest.mock.patch.object(aw.Adw.StyleManager, "get_default"),
             unittest.mock.patch.object(aw, "_load_gtk_css"),
+            # No embedder, no model file, no background build: these tests are
+            # about the window's wiring, not about the index.
+            unittest.mock.patch.object(aw.MainWindow, "_setup_semantic_index"),
         ]
         style = self._patchers[0].start()
         style.return_value.set_color_scheme = unittest.mock.Mock()
-        self._patchers[1].start()
+        for patcher in self._patchers[1:]:
+            patcher.start()
         self.win = aw.MainWindow(self._app)
 
     def tearDown(self):
         autosave = getattr(self.win, "_autosave", None)
         if autosave is not None:
             autosave.cancel()          # a 30 s timer would outlive this test
-        index = getattr(self.win, "_semantic_index", None)
-        if index is not None:
-            index.shutdown()
+        # getattr, not a bare call: a test may have parked a stand-in here, and a
+        # teardown that explodes hides the failure the test was about.
+        shutdown = getattr(getattr(self.win, "_semantic_index", None), "shutdown", None)
+        if callable(shutdown):
+            shutdown()
         for patcher in reversed(self._patchers):
             patcher.stop()
+        self._config.reload_settings()   # hand no mutated setting to the next test
 
 
 class TestHeadlessConstruction(AppWindowTest):
