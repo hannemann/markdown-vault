@@ -55,6 +55,7 @@ from markdown_vault.app.zen_controller import ZenController
 from markdown_vault.app.find_controller import FindController
 from markdown_vault.app.ask_controller import AskController
 from markdown_vault.app.link_navigator import LinkNavigator
+from markdown_vault.app.preview_actions import PreviewActions
 from markdown_vault.core import config
 from markdown_vault.uikit import dialogs
 from markdown_vault.uikit import banners as banner_mod
@@ -358,6 +359,14 @@ class MainWindow(Adw.ApplicationWindow):
             in_page_state_fn=self._in_page_nav_state,
         )
 
+        # Ticking a checkbox and downloading an image both edit the note's source
+        # and then re-sync the other views — see PreviewActions.
+        self._preview_actions = PreviewActions(
+            tab_bar=self._tab_bar,
+            sidebar=self._sidebar,
+            refresh_preview=self._view_mode_manager.refresh_preview,
+            toast=self._toast)
+
         # Following a link: one rule for "cross-vault → switch first" and the
         # anchor jump, instead of three near-identical handlers.
         self._links = LinkNavigator(
@@ -382,8 +391,8 @@ class MainWindow(Adw.ApplicationWindow):
                 "on_preview_link_clicked": self._links.on_link_clicked,
                 "on_preview_link_new_tab": self._links.on_link_new_tab,
                 "on_preview_link_not_found": self._links.on_link_not_found,
-                "on_preview_checkbox_toggled": self._on_preview_checkbox_toggled,
-                "on_preview_image_download": self._on_preview_image_download,
+                "on_preview_checkbox_toggled": self._preview_actions.on_checkbox_toggled,
+                "on_preview_image_download": self._preview_actions.on_image_download,
                 # Straight to the InputManager: the history and its buttons are
                 # its property, and routing through a window forwarder only hides
                 # who actually answers.
@@ -1758,116 +1767,6 @@ class MainWindow(Adw.ApplicationWindow):
                 tab.editor.scroll_to_line(line_num - 1)
                 text = tab.editor.get_text()
                 tab.preview.scroll_to_line(line_num - 1, text)
-
-    # Matches a Markdown checkbox on a list line (group 4 = state: space or x/X).
-    _CHECKBOX_RE = re.compile(r'^(>\s*)*(\s*)([-*+]|\d+\.)\s+\[([ xX])\]')
-
-    def _on_preview_checkbox_toggled(self, preview, line: int, checked: bool) -> None:
-        """Handle checkbox toggle — flip the checkbox at the given source line."""
-        logger.debug("Checkbox toggled: line=%s checked=%s", line, checked)
-        # Resolve the tab from the emitting preview, not the current tab (R7.4).
-        tab = None
-        for t in self._tab_bar._tabs.values():
-            if t.preview is preview:
-                tab = t
-                break
-        if not tab or not tab.editor.file_path:
-            return
-
-        text = tab.editor.get_text()
-        lines = text.split('\n')
-
-        if line < 0 or line >= len(lines):
-            logger.debug("Checkbox line %s out of range (total %s)", line, len(lines))
-            return
-
-        original_line = lines[line]
-        match = self._CHECKBOX_RE.match(original_line)
-        if not match:
-            logger.debug("Line %s is not a checkbox line", line)
-            return
-
-        new_state = "x" if checked else " "
-        old_state = match.group(4)
-        if old_state.lower() == new_state:
-            return
-
-        new_line = (
-            original_line[:match.start(4)]
-            + new_state
-            + original_line[match.end(4):]
-        )
-
-        # Replace the line in the buffer (undoable via begin_user_action).
-        buffer = tab.editor._buffer
-        _ok, line_start = buffer.get_iter_at_line(line)
-        _ok, line_end = buffer.get_iter_at_line(line)
-        line_end.forward_to_line_end()
-        buffer.begin_user_action()
-        buffer.delete(line_start, line_end)
-        buffer.insert(line_start, new_line)
-        buffer.end_user_action()
-
-        logger.debug("Checkbox toggled on line %s: %s -> %s", line, old_state, new_state)
-
-        # Schedule preview refresh if visible.
-        if tab.preview.get_visible():
-            self._refresh_preview()
-
-        # Update sidebar if visible.
-        if self._sidebar.get_visible():
-            self._sidebar.update_text_only(tab.editor.file_path, tab.editor.get_text())
-
-    def _on_preview_image_download(self, preview, uri: str) -> None:
-        """Right-click "Download Image": fetch a remote image into the note's
-        ``attachments/<note-name>/`` and rewrite its source links to the local
-        path. Runs on a worker thread so the UI never blocks."""
-        tab = next((t for t in self._tab_bar._tabs.values() if t.preview is preview), None)
-        if not tab or not tab.editor.file_path:
-            return
-        file_path = tab.editor.file_path
-        stem = Path(file_path).stem
-        note_dir = Path(file_path).parent
-        # Attachments mirror the note's location under the vault's attachments/
-        # tree (…/attachments/<subfolder>/<note>/), linked relative to the note.
-        vault_root = path_utils.find_vault_for_dir(str(note_dir)) or str(note_dir)
-        from markdown_vault.importers import web_import
-        dest_dir, rel_prefix = web_import.attachment_target(vault_root, note_dir, stem)
-        self._toast("Downloading image…")
-
-        def worker():
-            try:
-                rel = web_import.save_one_image(uri, dest_dir, rel_prefix)
-            except Exception as exc:   # never let a worker crash the app
-                logger.warning("Image download failed for %s: %s", uri, exc, exc_info=True)
-                GLib.idle_add(self._on_image_downloaded, tab, uri, None, str(exc))
-                return
-            GLib.idle_add(self._on_image_downloaded, tab, uri, rel, None)
-
-        threading.Thread(target=worker, daemon=True).start()
-
-    def _on_image_downloaded(self, tab, uri: str, rel, error) -> bool:
-        """Back on the main thread: rewrite the source (if the tab still exists)
-        and report via a toast. Error toasts stay until dismissed."""
-        if rel is None:
-            self._toast(f"Image download failed{': ' + error if error else ''}", timeout=0)
-            return False
-        if tab not in self._tab_bar._tabs.values():
-            return False               # tab closed mid-download; file is on disk
-        from markdown_vault.importers import web_import
-        current = tab.editor.get_text()
-        new_text = web_import.rewrite_image_url(current, uri, rel)
-        if new_text != current:
-            buffer = tab.editor._buffer
-            buffer.begin_user_action()
-            buffer.set_text(new_text)
-            buffer.end_user_action()
-            if tab.preview.get_visible():
-                self._refresh_preview()
-            if self._sidebar.get_visible():
-                self._sidebar.update_text_only(tab.editor.file_path, tab.editor.get_text())
-        self._toast("Image downloaded")
-        return False
 
     # ── Vault tree file operations ───────────────────────────────
 

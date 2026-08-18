@@ -2,7 +2,9 @@
 
 import unittest
 
-from markdown_vault.markdown.md_text import strip_markdown, unwrap_bold_headings
+from markdown_vault.markdown.md_text import (
+    set_checkbox_state, strip_markdown, unwrap_bold_headings,
+)
 
 
 class TestStripMarkdown(unittest.TestCase):
@@ -69,6 +71,48 @@ class TestUnwrapBoldHeadings(unittest.TestCase):
     def test_multiple_headings(self):
         md = "# **One**\n\ntext\n\n## **Two**"
         self.assertEqual(unwrap_bold_headings(md), "# One\n\ntext\n\n## Two")
+
+
+class TestSetCheckboxState(unittest.TestCase):
+    """Ticking a task-list checkbox in the preview writes back into the source.
+
+    Pure text work, so it is tested as such — it used to sit in the window,
+    reachable only through a rendered preview and a GtkTextBuffer.
+    """
+
+    def test_ticks_and_unticks(self):
+        self.assertEqual(set_checkbox_state("- [ ] milk", True), "- [x] milk")
+        self.assertEqual(set_checkbox_state("- [x] milk", False), "- [ ] milk")
+
+    def test_an_already_correct_state_returns_none(self):
+        # None means "nothing to do": the caller then skips a buffer edit, so a
+        # click that changes nothing does not land in the undo stack.
+        self.assertIsNone(set_checkbox_state("- [x] milk", True))
+        self.assertIsNone(set_checkbox_state("- [ ] milk", False))
+
+    def test_uppercase_counts_as_ticked(self):
+        self.assertIsNone(set_checkbox_state("- [X] milk", True))
+        self.assertEqual(set_checkbox_state("- [X] milk", False), "- [ ] milk")
+
+    def test_bullets_numbers_quotes_and_indentation(self):
+        for line, ticked in (
+            ("* [ ] a", "* [x] a"),
+            ("+ [ ] a", "+ [x] a"),
+            ("1. [ ] a", "1. [x] a"),
+            ("    - [ ] a", "    - [x] a"),
+            ("> - [ ] a", "> - [x] a"),
+            (">> - [ ] a", ">> - [x] a"),
+        ):
+            self.assertEqual(set_checkbox_state(line, True), ticked, line)
+
+    def test_lines_without_a_checkbox_are_left_alone(self):
+        for line in ("- milk", "[ ] milk", "text - [ ] not a list item", "", "# [ ]"):
+            self.assertIsNone(set_checkbox_state(line, True), line)
+
+    def test_the_rest_of_the_line_is_untouched(self):
+        line = "- [ ] buy **milk** [link](x.md) <!-- note -->"
+        self.assertEqual(set_checkbox_state(line, True),
+                         "- [x] buy **milk** [link](x.md) <!-- note -->")
 
 
 if __name__ == "__main__":

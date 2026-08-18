@@ -11,6 +11,7 @@ install_data(
     'ask_controller.py',
     'find_controller.py',
     'link_navigator.py',
+    'preview_actions.py',
     'zen_controller.py',
     'zoom_controller.py',
   ),
