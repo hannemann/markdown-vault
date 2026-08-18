@@ -120,7 +120,10 @@ class PreferencesDialog(Adw.PreferencesDialog):
         """
         super().__init__(title="Preferences")
 
-        self._settings = config.load_settings()
+        # The one owned settings object, not a copy: the dialog applies instantly
+        # (no OK/Cancel), so a private snapshot bought nothing and was one of the
+        # two writers that could undo each other.
+        self._settings = config.settings()
         self._glib_loglevel_callback = glib_loglevel_callback
         self._on_reindex = on_reindex
         # Debounced disk writes for text entries (R22.11): typing a URL by hand

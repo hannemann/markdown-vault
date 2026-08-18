@@ -598,8 +598,48 @@ def _log_settings_write(before: dict, after: dict) -> None:
         logger.info("settings write from %s: %s", where, "; ".join(parts))
 
 
-def save_settings(settings: dict) -> None:
-    """Persist settings into vaults.yaml (merged with existing vaults)."""
+_settings_singleton: dict | None = None
+
+
+def settings() -> dict:
+    """**The** settings of this process — one object, owned here.
+
+    Every consumer gets the same dict, so a change made anywhere is visible
+    everywhere and there is no second copy that could overwrite the first. That is
+    the whole point: the components used to load their own snapshots, and
+    :func:`save_settings` writes the block back as a whole, so whoever saved last
+    reset every key the others had changed meanwhile.
+
+    Mutate it in place (``settings()["key"] = value``) and call
+    :func:`save_settings` to persist.
+    """
+    global _settings_singleton
+    if _settings_singleton is None:
+        _settings_singleton = load_settings()
+    return _settings_singleton
+
+
+def reload_settings() -> dict:
+    """Re-read the file into the **existing** object (contents change, identity
+    does not) — handing out a new dict would strand every holder with a stale one.
+    For tests and for picking up a change made outside the app."""
+    global _settings_singleton
+    fresh = load_settings()
+    if _settings_singleton is None:
+        _settings_singleton = fresh
+    else:
+        _settings_singleton.clear()
+        _settings_singleton.update(fresh)
+    return _settings_singleton
+
+
+def save_settings(settings_to_save: dict | None = None) -> None:
+    """Persist settings into vaults.yaml (merged with existing vaults).
+
+    Without an argument the owned state (:func:`settings`) is written — the normal
+    case. Passing a dict stays possible for tests and one-off writes.
+    """
+    values = settings_to_save if settings_to_save is not None else settings()
     _invalidate_cache()
     _ensure_config_dir()
     existing: dict = {}
@@ -609,8 +649,8 @@ def save_settings(settings: dict) -> None:
                 existing = yaml.safe_load(fh) or {}
         except (yaml.YAMLError, OSError):
             existing = {}
-    _log_settings_write(existing.get("settings") or {}, settings)
-    existing["settings"] = settings
+    _log_settings_write(existing.get("settings") or {}, values)
+    existing["settings"] = dict(values)     # a copy: the file gets a snapshot
     yaml_str = yaml.dump(existing, default_flow_style=False, sort_keys=False)
     try:
         _atomic_write(CONFIG_FILE, yaml_str)
@@ -619,16 +659,16 @@ def save_settings(settings: dict) -> None:
         raise
 
 
-def apply_webkit_env(settings: dict | None = None) -> None:
-    """Apply WebKit environment variables from *settings*.
+def apply_webkit_env(values: dict | None = None) -> None:
+    """Apply WebKit environment variables from *values* (default: the owned state).
 
     Must run before any WebKit module is imported (i.e. before the app
     window is created), otherwise the renderer/compositor is already
     initialised with the defaults.  Environment variables are only set,
     never unset — the app starts in a fresh process each time.
     """
-    if settings is None:
-        settings = load_settings()
+    if values is None:
+        values = settings()
     for setting_key, env_key in _WEBKIT_ENV_KEYS.items():
-        if settings.get(setting_key):
+        if values.get(setting_key):
             os.environ[env_key] = "1"

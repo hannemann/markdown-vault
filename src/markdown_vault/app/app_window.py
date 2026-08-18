@@ -127,7 +127,9 @@ class MainWindow(Adw.ApplicationWindow):
         super().__init__(application=app, title="Markdown Vault")
 
         _load_gtk_css()
-        self._settings = config.load_settings()
+        self._settings = config.settings()   # the owned object, shared with the dialog
+        self._applied: dict = {}             # see _remember_applied_settings
+        self._remember_applied_settings()
 
         self._view_mode: str = "edit"
         self._setup_complete = False
@@ -1611,9 +1613,8 @@ class MainWindow(Adw.ApplicationWindow):
     def rebuild_semantic_index(self) -> None:
         """Discard the cache and re-embed everything against the *currently
         selected* backend, live (no restart).  Wired to the Preferences button;
-        also picks up a backend switch made in the same dialog session."""
-        # Re-read settings so a just-changed backend / model / paths take hold.
-        self._settings = config.load_settings()
+        also picks up a backend switch made in the same dialog session (the settings
+        object is shared, so a change in the dialog is already visible here)."""
         if not self._settings.get("semantic_search_enabled"):
             logger.info("rebuild requested but semantic search is disabled")
             return
@@ -3095,12 +3096,25 @@ class MainWindow(Adw.ApplicationWindow):
         )
         about.present(self)
 
+    #: Settings whose change needs work here (reload previews, start/stop the
+    #: index) rather than just being read on the next access.
+    _APPLIED_KEYS = ("preview_allow_remote_images", "semantic_search_enabled")
+
+    def _remember_applied_settings(self) -> None:
+        """Snapshot the few settings this window *acts on*, so a later change can
+        still be recognised as a change. The settings object itself is shared with
+        the dialog and already carries the new value when the signal arrives."""
+        self._applied = {k: self._settings.get(k, False) for k in self._APPLIED_KEYS}
+
     def _on_preferences_changed(self, _dlg) -> None:
         # settings-changed fires on EVERY preference row change; only reload
         # previews when the remote-image CSP actually changed (R21.8).
-        old_remote_images = self._settings.get("preview_allow_remote_images", False)
-        old_semantic = self._settings.get("semantic_search_enabled", False)
-        self._settings = config.load_settings()
+        #
+        # The dialog edits the same settings object, so by the time this runs the
+        # new value is already in self._settings — "before" has to come from what
+        # was last *applied* here, not from re-reading the settings.
+        old_remote_images = self._applied.get("preview_allow_remote_images", False)
+        old_semantic = self._applied.get("semantic_search_enabled", False)
         remote_images_changed = (
             self._settings.get("preview_allow_remote_images", False)
             != old_remote_images
@@ -3115,6 +3129,7 @@ class MainWindow(Adw.ApplicationWindow):
             elif self._semantic_index is not None:
                 self._semantic_index.shutdown()
                 self._semantic_index = None
+        self._remember_applied_settings()
         self._apply_keybindings()
         self._tab_bar.set_tab_min_width(self._settings.get("tab_min_width", 100))
         # Apply to all open editors.

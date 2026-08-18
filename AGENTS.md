@@ -142,7 +142,11 @@ key files.
 - **Search:** bottom-bar `search/search.py` over `search/search_backend.py`; semantic + Ask
   in `search/semantic_search.py` / `search/semantic_index.py` / `search/ask.py`.
 - **Config / session:** `core/config.py` (vaults.yaml + settings), `core/session.py` (JSON
-  state).
+  state). **The settings have one owner:** `config.settings()` returns *the* dict for the
+  process — mutate it in place and call `config.save_settings()`. Never call
+  `load_settings()` in application code: a private copy silently resets whatever another
+  component changed meanwhile, because the whole block is written back.
+  `tests/test_settings_ownership.py` enforces this.
 
 For anything finer-grained, query the graph rather than reading top-to-bottom.
 

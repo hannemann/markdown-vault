@@ -19,7 +19,7 @@ logging_setup.init(None)
 
 from markdown_vault.core import config
 
-_settings = config.load_settings()
+_settings = config.settings()
 config.apply_webkit_env(_settings)
 
 # Apply the configured log levels now that settings are available.

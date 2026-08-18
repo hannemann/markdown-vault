@@ -21,11 +21,16 @@ class _TempConfigMixin:
         _cfg.CONFIG_DIR = Path(self._tmpdir)
         _cfg.CONFIG_FILE = Path(self._tmpdir) / "vaults.yaml"
         _cfg._vaults_cache = None
+        # The owned settings are process state: without this, one test's object
+        # (loaded from a temp dir that is about to be deleted) would answer the
+        # next test's reads.
+        _cfg._settings_singleton = None
 
     def tearDown(self):
         _cfg.CONFIG_DIR = self._orig_dir
         _cfg.CONFIG_FILE = self._orig_file
         _cfg._vaults_cache = None
+        _cfg._settings_singleton = None
         shutil.rmtree(self._tmpdir, ignore_errors=True)
 
 
@@ -256,6 +261,59 @@ class TestRemoveVault(_TempConfigMixin, unittest.TestCase):
         _cfg.set_vault_icon("/tmp/notes", "🧠", mono=False)
         _cfg._vaults_cache = None
         self.assertNotIn("mono", _cfg.load_vaults()[0])
+
+
+class TestSettingsAreOneObject(_TempConfigMixin, unittest.TestCase):
+    """The app has exactly one settings state, owned here.
+
+    Two components each holding their own snapshot is how an update gets lost: the
+    whole block is written back, so whoever saves last resets every key the other
+    changed meanwhile — and reads go stale in between, which is why call sites grew
+    ad-hoc reloads. `settings()` hands out *the* object, so there is nothing that
+    could drift apart.
+    """
+
+    def test_every_caller_gets_the_same_object(self):
+        self.assertIs(_cfg.settings(), _cfg.settings())
+
+    def test_a_change_by_one_caller_is_visible_to_the_other(self):
+        a, b = _cfg.settings(), _cfg.settings()
+        a["editor_font_size"] = 21
+        self.assertEqual(b["editor_font_size"], 21)
+
+    def test_saving_needs_no_argument(self):
+        _cfg.settings()["autosave_interval"] = 99
+        _cfg.save_settings()
+        self.assertEqual(_cfg.load_settings()["autosave_interval"], 99)
+
+    def test_a_second_writer_cannot_undo_the_first(self):
+        # The lost update this ticket is about: two independent changes, one file.
+        _cfg.settings()["autosave_interval"] = 60      # e.g. the app window
+        _cfg.save_settings()
+        _cfg.settings()["editor_font_size"] = 18       # e.g. the dialog
+        _cfg.save_settings()
+        written = _cfg.load_settings()
+        self.assertEqual(written["autosave_interval"], 60)
+        self.assertEqual(written["editor_font_size"], 18)
+
+    def test_load_settings_still_returns_an_independent_copy(self):
+        # It stays available for tests and one-off reads — but it is a copy, so a
+        # caller cannot accidentally treat it as the app's live state.
+        copy = _cfg.load_settings()
+        copy["editor_font_size"] = 99
+        self.assertNotEqual(_cfg.settings()["editor_font_size"], 99)
+
+    def test_reload_replaces_the_contents_not_the_object(self):
+        # Callers hold the object for the process lifetime; handing out a new one
+        # on reload would resurrect exactly the stale-snapshot problem.
+        live = _cfg.settings()
+        live["autosave_interval"] = 60
+        _cfg.save_settings()
+        _cfg.CONFIG_FILE.write_text("settings:\n  autosave_interval: 5\n",
+                                    encoding="utf-8")
+        _cfg.reload_settings()
+        self.assertIs(_cfg.settings(), live)
+        self.assertEqual(live["autosave_interval"], 5)
 
 
 class TestSettings(_TempConfigMixin, unittest.TestCase):

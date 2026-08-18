@@ -48,7 +48,9 @@ class _DialogTest(unittest.TestCase):
         self._patchers.append(m)
         m.start()
 
-        self.load = _p("markdown_vault.ui.preferences.config.load_settings")
+        # The dialog reads the app's owned settings object (config.settings), not a
+        # private copy — patch that, and hand each test its own dict.
+        self.load = _p("markdown_vault.ui.preferences.config.settings")
         self.load.return_value = {}
         _p("markdown_vault.ui.preferences.config.save_settings").side_effect = (
             lambda s: self.saved.append(dict(s)))
