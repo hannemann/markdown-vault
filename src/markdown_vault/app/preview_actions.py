@@ -38,7 +38,7 @@ class PreviewActions:
 
     def _tab_of(self, preview):
         """The tab whose preview emitted the signal — never the current one."""
-        return next((t for t in self._tab_bar._tabs.values()
+        return next((t for t in self._tab_bar.all_tabs()
                      if t.preview is preview), None)
 
     def _after_source_change(self, tab) -> None:
@@ -112,7 +112,7 @@ class PreviewActions:
             self._toast(f"Image download failed{': ' + error if error else ''}",
                         timeout=0)
             return False
-        if tab not in self._tab_bar._tabs.values():
+        if tab not in self._tab_bar.all_tabs():
             return False                # tab closed mid-download; file is on disk
         from markdown_vault.importers import web_import
         current = tab.editor.get_text()

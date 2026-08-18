@@ -1699,7 +1699,7 @@ class MainWindow(Adw.ApplicationWindow):
         new_prefix = attachments.link_prefix(new_vault, new_note)
         if old_prefix == new_prefix:
             return
-        tab = next((t for t in self._tab_bar._tabs.values()
+        tab = next((t for t in self._tab_bar.all_tabs()
                     if t.editor.file_path in (new_note, old_note)), None)
         if tab is None:
             attachments.relink_file(new_note, old_prefix, new_prefix)
