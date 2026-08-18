@@ -1,0 +1,116 @@
+"""Session and navigation, pinned for the App_Window split.
+
+Two areas whose damage is invisible when it breaks: a session key silently
+dropped costs the user their layout on the next start, and the vault switch is
+the single point seven different "open this file" paths converge on.
+
+Built on the real window — see test_app_window_construction.
+"""
+import unittest
+import unittest.mock
+
+from test_app_window_construction import AppWindowTest
+
+
+class TestSessionState(AppWindowTest):
+    """`_get_window_state` is the contract between the window and the session
+    file. Every key here is something the user gets back on the next start, and
+    a split that carries eleven of twelve keys over loses one silently — the
+    file just stops mentioning it."""
+
+    #: What the session file is entitled to receive. Written out rather than
+    #: derived, so *removing* a key has to be a deliberate edit here too.
+    EXPECTED = {
+        "width", "height", "sidebar_visible", "expanded_vaults", "search_visible",
+        "search_paned_position", "sidebar_paned_position", "main_paned_position",
+        "nav_history", "ask_last_question",
+    }
+
+    def test_window_state_carries_exactly_the_expected_keys(self):
+        self.assertEqual(set(self.win._get_window_state()), self.EXPECTED)
+
+    def test_geometry_and_layout_are_numbers_the_session_can_store(self):
+        state = self.win._get_window_state()
+        for key in ("width", "height", "search_paned_position",
+                    "sidebar_paned_position", "main_paned_position"):
+            self.assertIsInstance(state[key], int, key)
+        self.assertIsInstance(state["sidebar_visible"], bool)
+        self.assertIsInstance(state["expanded_vaults"], list)
+
+    def test_saving_a_session_writes_those_keys_to_disk(self):
+        from markdown_vault.core import session
+        self.win._session_mgr.save_session(None, self.win._content_stack)
+        stored = session.load_session()
+        self.assertIn("window", stored)
+        self.assertEqual(set(stored["window"]), {"width", "height"})
+        for key in ("sidebar_visible", "expanded_vaults", "vault_sessions"):
+            self.assertIn(key, stored)
+
+
+class TestNavigation(AppWindowTest):
+    """The vault switch is where seven entry points meet — the file tree, the
+    sidebar, two preview-link paths, a search result, a newly added vault and the
+    history. A split may move it; it may not give any of them their own copy."""
+
+    def test_a_switch_is_not_committed_until_the_dirty_check_confirms(self):
+        # Two-phase on purpose: cancelling the "unsaved changes" dialog has to
+        # abort the switch completely, so phase 1 must not touch the active vault.
+        with unittest.mock.patch.object(self.win, "_close_all_tabs_with_dirty_check") as check, \
+                unittest.mock.patch.object(self.win, "_switch_vault_complete") as complete:
+            self.win._switch_vault("/tmp/some-vault")
+            self.assertIsNone(self.win._active_vault)      # nothing committed yet
+            complete.assert_not_called()
+            check.call_args.kwargs["on_confirm"]()          # user confirms
+        complete.assert_called_once_with("/tmp/some-vault", None, None)
+
+    def test_switching_to_the_active_vault_does_nothing(self):
+        self.win._active_vault = "/tmp/same"
+        with unittest.mock.patch.object(self.win, "_close_all_tabs_with_dirty_check") as check:
+            self.win._switch_vault("/tmp/same")
+        check.assert_not_called()
+
+    def test_a_second_switch_while_one_is_pending_is_ignored(self):
+        # Otherwise two dirty-check dialogs race and the second confirm lands in
+        # a vault the first one already left.
+        with unittest.mock.patch.object(self.win, "_close_all_tabs_with_dirty_check") as check:
+            self.win._switch_vault("/tmp/first")
+            self.win._switch_vault("/tmp/second")
+        self.assertEqual(check.call_count, 1)
+
+    def test_history_navigation_delegates_and_refreshes_the_buttons(self):
+        # Back/forward live in InputManager; the window's job is to try the
+        # in-page anchor first (footnotes, TOC) and only then hand over.
+        with unittest.mock.patch.object(self.win, "_input_manager") as inputs, \
+                unittest.mock.patch.object(self.win, "_tab_bar") as tabs:
+            tabs.get_current_tab.return_value = None      # no in-page history
+            self.win._nav_back()
+            self.win._nav_forward()
+            self.win._push_history("/tmp/a.md")
+        inputs.nav_back.assert_called_once()
+        inputs.nav_forward.assert_called_once()
+        inputs.push_history.assert_called_once_with("/tmp/a.md")
+
+    def test_an_in_page_anchor_is_unwound_before_the_note_history(self):
+        # Ctrl+Alt+Left inside a long note with footnotes must first return to
+        # where the anchor jump started, not leave the note entirely.
+        tab = unittest.mock.Mock()
+        tab.preview.go_back_in_page.return_value = True
+        with unittest.mock.patch.object(self.win, "_input_manager") as inputs, \
+                unittest.mock.patch.object(self.win, "_tab_bar") as tabs:
+            tabs.get_current_tab.return_value = tab
+            self.win._nav_back()
+        inputs.nav_back.assert_not_called()
+
+    def test_opening_a_history_entry_from_another_vault_switches_first(self):
+        # The history spans vaults, so an entry may point outside the active one.
+        with unittest.mock.patch.object(self.win, "_find_vault_for_file",
+                                        return_value="/tmp/other-vault"), \
+                unittest.mock.patch.object(self.win, "_switch_vault") as switch:
+            self.win._active_vault = "/tmp/this-vault"
+            self.win._open_from_history("/tmp/other-vault/note.md")
+        switch.assert_called_once_with("/tmp/other-vault",
+                                       open_file_path="/tmp/other-vault/note.md")
+
+
+if __name__ == "__main__":
+    unittest.main()
