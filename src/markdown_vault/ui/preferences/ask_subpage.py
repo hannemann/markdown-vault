@@ -1,0 +1,522 @@
+"""Preferences — Ask subpage: the answer engine, the chat backend and its endpoint (URL, API key, model list), plus the local GGUF model."""
+
+import logging
+import threading
+from pathlib import Path
+
+import gi
+
+logger = logging.getLogger(__name__)
+
+gi.require_version("Gtk", "4.0")
+gi.require_version("Adw", "1")
+
+from gi.repository import Gtk, Adw, GLib, Gio
+
+from markdown_vault.core import config
+
+
+class AskSubpageMixin:
+    def _build_ask_subpage(self):
+        """Chat model that writes grounded answers, plus a link to its prompt."""
+        page = Adw.PreferencesPage(title="Ask")
+        group = Adw.PreferencesGroup(
+            title="Ask (answers from your notes)",
+            description="The quick-open 'ask' mode answers from your notes with a "
+                        "local model. 'Automatic' sets everything up for you; only "
+                        "the model download needs a click. Choose 'Manual' to pick "
+                        "the backend and tune it yourself.")
+        page.add(group)
+
+        self._ask_engines = ["auto", "manual", "off"]
+        self._ask_engine_row = Adw.ComboRow(
+            title="Answer engine",
+            model=Gtk.StringList.new(
+                ["Automatic — recommended", "Manual (advanced)", "Off"]))
+        e = self._settings.get("ask_engine", "auto")
+        self._ask_engine_row.set_selected(
+            self._ask_engines.index(e) if e in self._ask_engines else 0)
+        self._ask_engine_row.connect("notify::selected", self._on_ask_engine_changed)
+        group.add(self._ask_engine_row)
+
+        self._ask_backends = ["local", "ollama", "openai"]
+        self._ask_backend_row = Adw.ComboRow(
+            title="Backend",
+            model=Gtk.StringList.new(
+                ["Local — in-process, no server (recommended)",
+                 "Ollama (/api/chat)", "OpenAI-compatible — llama.cpp (/v1)"]))
+        b = self._settings.get("ask_backend", "local")
+        self._ask_backend_row.set_selected(
+            self._ask_backends.index(b) if b in self._ask_backends else 0)
+        self._ask_backend_row.connect("notify::selected", self._on_ask_backend_changed)
+        group.add(self._ask_backend_row)
+
+        # --- Local (in-process GGUF) rows ---------------------------------
+        # Model selector: pick among the GGUFs already in the models folder.
+        self._ask_gguf_paths = []
+        self._ask_gguf_updating = False
+        self._ask_gguf_combo = Adw.ComboRow(title="Model",
+                                            subtitle="Downloaded models")
+        self._ask_gguf_list = Gtk.StringList()
+        self._ask_gguf_combo.set_model(self._ask_gguf_list)
+        self._ask_gguf_combo.connect("notify::selected", self._on_ask_gguf_selected)
+        gguf_rescan = Gtk.Button(icon_name="view-refresh-symbolic",
+                                 valign=Gtk.Align.CENTER,
+                                 tooltip_text="Rescan the models folder")
+        gguf_rescan.add_css_class("flat")
+        gguf_rescan.connect("clicked", lambda *_: self._refresh_gguf_models())
+        self._ask_gguf_combo.add_suffix(gguf_rescan)
+        group.add(self._ask_gguf_combo)
+
+        gguf_btn = Gtk.Button(icon_name="folder-download-symbolic",
+                              valign=Gtk.Align.CENTER)
+        gguf_btn.add_css_class("flat")
+        gguf_btn.set_tooltip_text("Download the model")
+        gguf_btn.connect("clicked", self._on_download_gguf)
+        self._ask_gguf_dl_btn = gguf_btn
+        self._ask_gguf_url_row, self._ask_gguf_url_entry = self._entry_row(
+            "Model URL", "ask_gguf_url", trailing=gguf_btn)
+        group.add(self._ask_gguf_url_row)
+
+        self._ask_gguf_progress = Gtk.ProgressBar(
+            show_text=True, visible=False,
+            margin_start=12, margin_end=12, margin_bottom=6)
+        group.add(self._ask_gguf_progress)
+
+        self._ask_gguf_file_row = Adw.ActionRow(title="Model file")
+        gguf_pick = Gtk.Button(icon_name="document-open-symbolic",
+                               valign=Gtk.Align.CENTER,
+                               tooltip_text="Choose a .gguf file…")
+        gguf_pick.add_css_class("flat")
+        gguf_pick.connect("clicked", lambda *_: self._choose_gguf_file())
+        gguf_reset = Gtk.Button(icon_name="edit-clear-symbolic",
+                                valign=Gtk.Align.CENTER,
+                                tooltip_text="Reset to the default location")
+        gguf_reset.add_css_class("flat")
+        gguf_reset.connect("clicked", lambda *_: self._reset_gguf_path())
+        self._ask_gguf_file_row.add_suffix(gguf_pick)
+        self._ask_gguf_file_row.add_suffix(gguf_reset)
+        group.add(self._ask_gguf_file_row)
+
+        # GPU layers, CPU threads and the KV-cache knobs live on their own
+        # subpage (built before this one), reached via this row.
+        self._ask_runtime_row = self._nav_row(
+            "Model runtime", "GPU layers, CPU threads, KV cache…",
+            self._runtime_subpage)
+        group.add(self._ask_runtime_row)
+        # Model (download) rows: needed by the local backend in auto and manual.
+        self._ask_model_rows = [self._ask_gguf_url_row, self._ask_gguf_file_row]
+
+        # --- Server (Ollama / OpenAI-compatible) rows ---------------------
+        self._ask_url_row, self._ask_url_entry = self._entry_row(
+            "Server URL", "ask_ollama_url")
+        # Hint the saved backend's port immediately (not only on a later switch).
+        from markdown_vault.search import ask_models
+        saved_url = ask_models.DEFAULT_URLS.get(self._settings.get("ask_backend"))
+        if saved_url:
+            self._ask_url_entry.set_placeholder_text(f"{saved_url} (default)")
+        # A non-local URL means note content leaves the device — re-check the warning
+        # as the URL is typed (localhost llama.cpp/ollama stay local).
+        self._ask_url_entry.connect("changed", lambda *_: self._on_ask_url_changed())
+        group.add(self._ask_url_row)
+        # API key (OpenAI-compatible servers that require auth). Stored in the OS
+        # keyring, never in vaults.yaml or the logs — see _key_row.
+        # The key belongs to the server it was entered for, so the keyring name is
+        # resolved per endpoint at read/write time, not fixed at build time.
+        ask_models.adopt_legacy_key(self._settings)
+        self._ask_key_row, self._ask_key_entry = self._key_row(
+            "API key", self._ask_secret_name)
+        group.add(self._ask_key_row)
+        # Privacy: shown ONLY when the server is non-local (any server backend) —
+        # a local llama.cpp/ollama sends nothing out; a remote one ships note text.
+        self._ask_external_row = self._caption_row(
+            "⚠ This server is not local — the full text of every retrieved note "
+            "is sent to it with each question.")
+        self._ask_external_row.set_visible(False)
+        group.add(self._ask_external_row)
+
+        # The model list is fetched from the server; a refresh icon sits in the
+        # row next to the selected model, and the subtitle carries the status
+        # (count, "Loading…", or an unreachable-server error).
+        self._ask_model_combo = Adw.ComboRow(
+            title="Model", subtitle="Fetched from the server")
+        self._ask_model_list = Gtk.StringList()
+        self._ask_model_combo.set_model(self._ask_model_list)
+        self._ask_model_combo.connect("notify::selected", self._on_ask_model_selected)
+        ask_refresh_btn = Gtk.Button(
+            icon_name="view-refresh-symbolic", valign=Gtk.Align.CENTER,
+            tooltip_text="Refresh model list")
+        ask_refresh_btn.add_css_class("flat")
+        ask_refresh_btn.connect("clicked", lambda *_: self._refresh_ask_models())
+        self._ask_model_combo.add_suffix(ask_refresh_btn)
+        group.add(self._ask_model_combo)
+        self._ask_server_rows = [self._ask_url_row, self._ask_key_row,
+                                 self._ask_model_combo]
+
+        self._ask_reasoning_row = Adw.SwitchRow(
+            title="Reasoning",
+            subtitle="Let a reasoning model (Qwen3, …) think before answering — "
+                     "more accurate but much slower. Off is faster and usually "
+                     "enough for grounded note answers.")
+        self._ask_reasoning_row.set_active(self._settings.get("ask_reasoning", True))
+        self._ask_reasoning_row.connect(
+            "notify::active", self._on_toggle_setting, "ask_reasoning")
+        group.add(self._ask_reasoning_row)
+
+        self._ask_hybrid_row = Adw.SwitchRow(
+            title="Hybrid retrieval",
+            subtitle="Fuse a keyword (BM25) ranking into the semantic search so "
+                     "exact tokens — names, config keys, shortcuts — that "
+                     "embeddings blur still surface. Helps most on large vaults.")
+        self._ask_hybrid_row.set_active(self._settings.get("ask_hybrid", True))
+        self._ask_hybrid_row.connect(
+            "notify::active", self._on_toggle_setting, "ask_hybrid")
+        group.add(self._ask_hybrid_row)
+
+        self._ask_topk_row = Adw.SpinRow(
+            title="Context notes",
+            subtitle="How many notes are sent to the model as context. On CPU "
+                     "the model spends almost all its time reading them, so fewer "
+                     "= much faster (roughly linear). Recommended: 10 on a GPU, "
+                     "~5 on a slow CPU.",
+            adjustment=Gtk.Adjustment.new(
+                self._settings.get("ask_top_k", 10), 3, 20, 1, 5, 0.0),
+            digits=0,
+        )
+        self._ask_topk_row.connect("notify::value", self._on_ask_top_k_changed)
+        group.add(self._ask_topk_row)
+
+        self._ask_ctx_row = Adw.SpinRow(
+            title="Context window",
+            subtitle="Tokens of context. Used by the Local and Ollama backends "
+                     "(higher fits more/longer notes but uses more memory); the "
+                     "OpenAI-compatible server sizes its own context.",
+            adjustment=Gtk.Adjustment.new(
+                self._settings.get("ask_num_ctx", 8192),
+                2048, 32768, 1024, 4096, 0.0),
+            digits=0,
+        )
+        self._ask_ctx_row.connect("notify::value", self._on_ask_num_ctx_changed)
+        group.add(self._ask_ctx_row)
+
+        self._ask_prompt_row = self._nav_row(
+            "System prompt", "Grounding instructions sent to the model",
+            self._prompt_subpage)
+        group.add(self._ask_prompt_row)
+        # Rows that only make sense in Manual mode (Automatic configures them).
+        self._ask_manual_rows = [self._ask_backend_row, self._ask_reasoning_row,
+                                 self._ask_hybrid_row, self._ask_topk_row,
+                                 self._ask_ctx_row, self._ask_prompt_row]
+        self._refresh_gguf_models()
+        self._refresh_gguf_status()
+        self._update_ask_rows()          # show only the rows the engine/backend use
+        self._update_external_warning()  # reveal the leak warning iff URL is non-local
+        subpage = self._subpage("Ask", page)
+        subpage.connect("shown", lambda *_: self.set_focus(None))  # see Embedding
+        return subpage
+
+    def _on_ask_model_selected(self, combo, _pspec) -> None:
+        item = combo.get_selected_item()
+        if item is not None:
+            self._remember_ask_model(item.get_string())
+            self._persist_debounced()
+
+    def _remember_ask_model(self, model: str) -> None:
+        """Record the choice for the *current* server, so switching provider and
+        back restores it instead of sending it to a server that lacks it."""
+        from markdown_vault.search import ask_models
+        ask_models.remember(self._settings, self._ask_backend(), self._ask_url(), model)
+
+    def _ask_backend(self) -> str:
+        return self._settings.get("ask_backend") or config.default("ask_backend")
+
+    def _ask_url(self) -> str:
+        return self._settings.get("ask_ollama_url") or config.default("ask_ollama_url")
+
+    def _ask_secret_name(self) -> str:
+        """Keyring name of the API key for the currently configured server."""
+        from markdown_vault.search import ask_models
+        return ask_models.secret_name(self._ask_backend(), self._ask_url())
+
+    def _reload_ask_key(self) -> None:
+        """Show the key of the server that is configured now. A pending edit is
+        flushed first, so it still reaches the server it was typed for."""
+        from markdown_vault.core import secret_store
+        if not self._ask_key_entry.get_sensitive():
+            return                      # no keyring — the field is disabled
+        self._flush_secret()
+        self._secret_updating = True
+        try:
+            self._ask_key_entry.set_text(
+                secret_store.get_secret(self._ask_secret_name()))
+        finally:
+            self._secret_updating = False
+
+    def _on_ask_url_changed(self) -> None:
+        """The URL identifies the server: warn (or stop warning) about notes
+        leaving the device, and re-fetch that server's models once typing stops."""
+        self._update_external_warning()
+        self._schedule_ask_models_refresh()
+
+    def _schedule_ask_models_refresh(self, delay_ms: int = 700) -> None:
+        if self._ask_backend() not in ("ollama", "openai"):
+            return
+        self._cancel_ask_models_refresh()
+        self._ask_models_id = GLib.timeout_add(delay_ms, self._ask_models_timeout)
+
+    def _ask_models_timeout(self) -> bool:
+        """The URL has settled — it now identifies a (possibly different) server,
+        so file it under this backend and pick up that server's model and key."""
+        self._ask_models_id = None
+        from markdown_vault.search import ask_models
+        backend, url = self._ask_backend(), self._ask_url()
+        ask_models.remember_url(self._settings, backend, url)
+        ask_models.activate(self._settings, backend, url)
+        self._persist_debounced()
+        self._reload_ask_key()
+        self._refresh_ask_models()
+        return False
+
+    def _cancel_ask_models_refresh(self, *_args) -> None:
+        if self._ask_models_id is not None:
+            GLib.source_remove(self._ask_models_id)
+            self._ask_models_id = None
+
+    def _on_ask_engine_changed(self, row, _pspec) -> None:
+        self._settings["ask_engine"] = self._ask_engines[row.get_selected()]
+        self._persist()
+        self._update_ask_rows()
+
+    def _on_ask_backend_changed(self, row, _pspec) -> None:
+        from markdown_vault.search import ask_models
+        backend = self._ask_backends[row.get_selected()]
+        previous = self._settings.get("ask_backend") or config.default("ask_backend")
+        self._flush_secret()          # the pending key still belongs to `previous`
+        # URL, model and key belong to the provider: file the old one's, restore
+        # the new one's. Without this, a hand-typed URL is carried over and the
+        # new backend talks to the previous one's host.
+        url = ask_models.switch_backend(self._settings, previous, backend)
+        self._update_ask_rows()
+        default_url = ask_models.DEFAULT_URLS.get(backend)
+        if default_url:
+            self._ask_url_entry.set_placeholder_text(f"{default_url} (default)")
+            self._ask_url_entry.set_text(url)          # fires changed → saves
+        self._reload_ask_key()
+        self._update_external_warning()
+        self._persist()
+        if backend != "local":
+            self._cancel_ask_models_refresh()   # the URL change scheduled one
+            self._refresh_ask_models()          # different endpoint per backend
+
+    @staticmethod
+    def _is_local_url(url: str) -> bool:
+        """True if *url* points at this machine (or is empty/unset)."""
+        from urllib.parse import urlparse
+        host = (urlparse(url).hostname or "").lower() if url else ""
+        return host in ("", "localhost", "127.0.0.1", "::1", "0.0.0.0")
+
+    def _update_external_warning(self) -> None:
+        """Reveal the 'notes leave the device' warning only for a server backend
+        with a **non-local** URL — a local llama.cpp/ollama sends nothing out."""
+        row = getattr(self, "_ask_external_row", None)
+        if row is None:
+            return
+        backend = self._settings.get("ask_backend")
+        url = (self._ask_url_entry.get_text().strip()
+               or self._settings.get("ask_ollama_url", ""))
+        row.set_visible(backend in ("ollama", "openai") and not self._is_local_url(url))
+
+    def _ask_effective_backend(self) -> str:
+        """The backend the current engine will actually use: Automatic is always
+        the in-process 'local' backend; Manual uses the chosen ask_backend."""
+        engine = self._settings.get("ask_engine") or config.default("ask_engine")
+        if engine == "auto":
+            return "local"
+        return self._settings.get("ask_backend") or config.default("ask_backend")
+
+    def _update_ask_rows(self) -> None:
+        """Show only the rows the current engine + backend actually use, so a
+        non-technical user in Automatic sees just the model download, and the GPU
+        row appears only when the installed build can offload."""
+        engine = self._settings.get("ask_engine") or config.default("ask_engine")
+        off = engine == "off"
+        manual = engine == "manual"
+        backend = self._ask_effective_backend()
+        local = (not off) and backend == "local"
+        for w in self._ask_model_rows:        # model download: auto + manual/local
+            w.set_visible(local)
+        # Model selector + the runtime subpage link: only in Manual, local.
+        self._ask_gguf_combo.set_visible(manual and backend == "local")
+        self._ask_runtime_row.set_visible(manual and backend == "local")
+        for w in self._ask_server_rows:       # server URL + model list: manual only
+            w.set_visible(manual and backend in ("ollama", "openai"))
+        for w in self._ask_manual_rows:       # advanced tuning: manual only
+            w.set_visible(manual)
+
+    def _gguf_path(self):
+        from pathlib import Path
+        resolved = config.resolve_model_path(self._settings)
+        return Path(resolved) if resolved else config.models_dir() / "model.gguf"
+
+    def _refresh_gguf_models(self) -> None:
+        """Rescan the models folder into the selector, preselecting the active
+        model. Guarded so rebuilding the list doesn't fire a spurious change."""
+        from pathlib import Path
+        self._ask_gguf_updating = True
+        self._ask_gguf_paths = [str(p) for p in config.list_models()]
+        self._ask_gguf_list.splice(0, self._ask_gguf_list.get_n_items(),
+                                   [Path(p).name for p in self._ask_gguf_paths])
+        current = config.resolve_model_path(self._settings)
+        if current in self._ask_gguf_paths:
+            self._ask_gguf_combo.set_selected(self._ask_gguf_paths.index(current))
+        self._ask_gguf_updating = False
+        n = len(self._ask_gguf_paths)
+        self._ask_gguf_combo.set_subtitle(
+            "No models downloaded yet" if not n
+            else f"{n} in the models folder")
+
+    def _on_ask_gguf_selected(self, combo, _pspec) -> None:
+        if self._ask_gguf_updating:
+            return
+        i = combo.get_selected()
+        if 0 <= i < len(self._ask_gguf_paths):
+            self._settings["ask_gguf_path"] = self._ask_gguf_paths[i]
+            self._persist()
+            self._refresh_gguf_status()
+
+    def _after_gguf_download(self, target) -> None:
+        """A finished, valid download becomes the selected model. A rejected one
+        (not a GGUF) is not selected — just rescan so it doesn't linger."""
+        from pathlib import Path
+        if Path(target).exists() and config.is_gguf(target):
+            self._settings["ask_gguf_path"] = str(target)
+            self._persist()
+        self._refresh_gguf_models()
+        self._refresh_gguf_status()
+
+    def _on_download_gguf(self, button) -> None:
+        url = (self._ask_gguf_url_entry.get_text().strip()
+               or config.default("ask_gguf_url"))
+        if not url:
+            return
+        url = config.normalize_gguf_url(url)   # HF file page → raw-file link
+        # Save under the URL's own filename so several models coexist instead of
+        # overwriting one file; the finished download becomes the selection.
+        target = config.models_dir() / config.model_filename_from_url(url)
+        button.set_sensitive(False)
+        bar = self._ask_gguf_progress
+        bar.set_visible(True)
+        bar.set_fraction(0.0)
+        bar.set_text("Starting…")
+        gguf_check = lambda p: (None if config.is_gguf(p) else
+                                "That URL isn't a GGUF model file — use the "
+                                "download (\"resolve\") link, not the web page.")
+        threading.Thread(
+            target=self._download_worker,
+            args=(button, url, target, target.name, bar),
+            kwargs={"refresh": lambda t=target: self._after_gguf_download(t),
+                    "validate": gguf_check},
+            daemon=True).start()
+
+    def _choose_gguf_file(self) -> None:
+        dialog = Gtk.FileDialog(title="Select a GGUF model file")
+        cur = self._gguf_path()
+        try:
+            probe = cur.parent if cur.parent.exists() else None
+            if probe is not None:
+                dialog.set_initial_folder(Gio.File.new_for_path(str(probe)))
+        except Exception:  # noqa: BLE001
+            pass
+
+        def done(dlg, result):
+            try:
+                gfile = dlg.open_finish(result)
+            except GLib.Error:
+                return  # cancelled or failed
+            if gfile is not None and gfile.get_path():
+                self._settings["ask_gguf_path"] = gfile.get_path()
+                self._persist()
+                self._refresh_gguf_models()
+                self._refresh_gguf_status()
+
+        dialog.open(self.get_root(), None, done)
+
+    def _reset_gguf_path(self) -> None:
+        self._settings["ask_gguf_path"] = ""   # empty → auto-pick the newest
+        self._persist()
+        self._refresh_gguf_models()
+        self._refresh_gguf_status()
+
+    def _refresh_gguf_status(self) -> None:
+        p = self._gguf_path()
+        if p.exists():
+            mb = p.stat().st_size / 1024 / 1024
+            self._ask_gguf_file_row.set_subtitle(f"{p}  ·  {mb:.0f} MB")
+        else:
+            self._ask_gguf_file_row.set_subtitle(f"{p}  ·  not downloaded")
+        self._refresh_gpu_recommendation()
+
+    def _refresh_ask_models(self) -> None:
+        """Fetch the model list off the main thread. Endpoint and parsing live in
+        ask_models (shared with the Ask footer picker); the result also fills that
+        module's cache, so the palette shows the same list without a second fetch.
+        Errors are surfaced inline here — unlike the background refresh, this is a
+        thing the user asked for and wants an answer to."""
+        from markdown_vault.core import secret_store
+        from markdown_vault.search import ask_models
+        backend, url = self._ask_backend(), self._ask_url()
+        if backend not in ask_models.SERVER_BACKENDS:
+            return
+        key = secret_store.get_secret(self._ask_secret_name())  # also proxied Ollama
+        self._ask_model_combo.set_subtitle("Loading…")
+
+        def worker():
+            # probe() classifies and records the status, so the palette sees the
+            # same verdict as this dialog — including a failure.
+            GLib.idle_add(self._populate_ask_models,
+                          ask_models.probe(backend, url, key))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _populate_ask_models(self, status) -> bool:
+        """Show what the server answered — *status* is an ``ask_models``
+        :class:`EndpointStatus`, so the wording here and the palette's warning come
+        from the same verdict."""
+        from markdown_vault.search import ask_models
+        models = status.models
+        if status.state in (ask_models.UNREACHABLE, ask_models.UNAUTHORIZED,
+                            ask_models.LIST_ERROR):
+            self._ask_model_combo.set_subtitle(f"Not reachable: {status.error}")
+            self._ask_model_combo.add_css_class("error")
+            return False
+        self._ask_model_combo.remove_css_class("error")
+        if status.state == ask_models.NO_LIST:
+            self._ask_model_combo.set_subtitle(
+                "This server does not list models — it serves a fixed one")
+            return False
+        if not models:
+            self._ask_model_combo.set_subtitle("No models on the server")
+            return False
+        # Only ever offer what this server actually has: a model kept from another
+        # provider (or one that has since been removed) would be sent to a server
+        # that does not know it. If the stored choice is gone, adopt a real one.
+        current = self._settings.get("ask_model")
+        self._ask_model_list.splice(0, self._ask_model_list.get_n_items(), models)
+        if current in models:
+            self._ask_model_combo.set_selected(models.index(current))
+        else:
+            self._ask_model_combo.set_selected(0)
+            self._remember_ask_model(models[0])
+            self._persist_debounced()
+        self._ask_model_combo.set_subtitle(f"{len(models)} models")
+        return False
+
+    def _on_ask_num_ctx_changed(self, _row, _pspec) -> None:
+        self._settings["ask_num_ctx"] = int(
+            self._ask_ctx_row.get_adjustment().get_value())
+        self._persist()
+
+    def _on_ask_top_k_changed(self, _row, _pspec) -> None:
+        self._settings["ask_top_k"] = int(
+            self._ask_topk_row.get_adjustment().get_value())
+        self._persist()

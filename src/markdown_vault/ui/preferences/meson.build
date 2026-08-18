@@ -1,0 +1,19 @@
+install_data(
+  files(
+    '__init__.py',
+    'ask_subpage.py',
+    'constants.py',
+    'debug_page.py',
+    'dialog.py',
+    'editor_page.py',
+    'embedding_subpage.py',
+    'general_page.py',
+    'keyboard_page.py',
+    'preview_page.py',
+    'prompt_subpage.py',
+    'runtime_subpage.py',
+    'search_page.py',
+    'web_page.py',
+  ),
+  install_dir: pythondir / 'markdown_vault' / 'ui' / 'preferences',
+)

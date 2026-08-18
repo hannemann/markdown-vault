@@ -37,7 +37,7 @@ from markdown_vault.search import quick_open
 from markdown_vault.search.quick_open_palette import QuickOpenPalette
 from markdown_vault.editor.paned_sizer import PanedSizer
 from markdown_vault.ui.status_bar import StatusBar
-from markdown_vault.ui.preferences import PreferencesDialog
+from markdown_vault.ui.preferences.dialog import PreferencesDialog
 from markdown_vault.vault.wikilink_autofix import WikilinkResolver, analyze_text, find_broken_ranges
 from markdown_vault.editor.find_bar import FindBar
 from markdown_vault.app.monitor_handler import MonitorHandler

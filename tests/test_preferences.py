@@ -1,4 +1,4 @@
-"""Tests for markdown_vault.ui.preferences — PreferencesDialog behaviour.
+"""Tests for markdown_vault.ui.preferences.dialog — PreferencesDialog behaviour.
 
 Characterisation tests (R119.2 / ticket A): construct the real Adw dialog headless
 with ``config`` and the ``search``/``importers`` boundary mocked, and pin the stable
@@ -24,7 +24,7 @@ Adw.init()
 import markdown_vault.search.llama_runtime  # noqa: F401,E402
 import markdown_vault.search.ask  # noqa: F401,E402
 import markdown_vault.importers.document_import  # noqa: F401,E402
-from markdown_vault.ui.preferences import PreferencesDialog  # noqa: E402
+from markdown_vault.ui.preferences.dialog import PreferencesDialog  # noqa: E402
 
 
 class _DialogTest(unittest.TestCase):
@@ -50,9 +50,9 @@ class _DialogTest(unittest.TestCase):
 
         # The dialog reads the app's owned settings object (config.settings), not a
         # private copy — patch that, and hand each test its own dict.
-        self.load = _p("markdown_vault.ui.preferences.config.settings")
+        self.load = _p("markdown_vault.ui.preferences.dialog.config.settings")
         self.load.return_value = {}
-        _p("markdown_vault.ui.preferences.config.save_settings").side_effect = (
+        _p("markdown_vault.ui.preferences.dialog.config.save_settings").side_effect = (
             lambda s: self.saved.append(dict(s)))
 
         ask = _p("markdown_vault.search.ask")
@@ -154,9 +154,9 @@ class TestSettingsPersist(_DialogTest):
         dlg = self._dialog(autosave_interval=30)
         got = []
         dlg.connect("settings-changed", lambda _d: got.append(True))
-        with patch("markdown_vault.ui.preferences.config.save_settings",
+        with patch("markdown_vault.ui.preferences.dialog.config.save_settings",
                    side_effect=OSError("disk full")), \
-                patch("markdown_vault.ui.preferences.dialogs.show_error") as err:
+                patch("markdown_vault.ui.preferences.dialog.dialogs.show_error") as err:
             dlg._autosave_row.get_adjustment().set_value(90)
         err.assert_called_once()
         self.assertEqual(got, [])          # no signal on a failed write
@@ -371,7 +371,7 @@ class TestApiKeyInKeyring(_DialogTest):
     def test_failed_write_surfaces_an_error(self):
         dlg = self._dialog()
         with patch("markdown_vault.core.secret_store.set_secret", return_value=False), \
-                patch("markdown_vault.ui.preferences.dialogs.show_error") as err:
+                patch("markdown_vault.ui.preferences.dialog.dialogs.show_error") as err:
             dlg._ask_key_entry.set_text("sk-nope")
             dlg._flush_secret()
         err.assert_called_once()

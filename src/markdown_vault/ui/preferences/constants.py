@@ -1,0 +1,81 @@
+"""Preferences — values shared by the dialog shell and its page modules.
+
+Kept in one module so a page does not have to import a sibling page (the package
+edge is ``ui → ui.preferences``; a module here importing back up would close a
+cycle and turn the layering guard red).
+"""
+
+import logging
+
+import gi
+
+gi.require_version("Gtk", "4.0")
+gi.require_version("Gdk", "4.0")
+
+from gi.repository import Gtk, Gdk
+
+_VIEW_MODES = {"edit": "Edit", "render": "Render", "split": "Split"}
+_LOGLEVELS = {"debug": "Debug", "info": "Info", "warning": "Warning", "error": "Error"}
+_GLIB_LOGLEVELS = {
+    "all": "All (debug+)",
+    "warning": "Warning and up",
+    "critical": "Critical and up",
+    "error": "Error only",
+}
+_LOGLEVEL_MAP = {
+    "debug": logging.DEBUG,
+    "info": logging.INFO,
+    "warning": logging.WARNING,
+    "error": logging.ERROR,
+}
+
+_RELEVANT_MODS = (
+    Gdk.ModifierType.SHIFT_MASK
+    | Gdk.ModifierType.CONTROL_MASK
+    | Gdk.ModifierType.ALT_MASK
+    | Gdk.ModifierType.SUPER_MASK
+)
+
+
+def _accel_to_label(accel: str) -> str:
+    """Convert a GTK accelerator string to a human-readable label."""
+    if not accel:
+        return "None"
+    ok, keyval, mods = Gtk.accelerator_parse(accel)
+    if not ok or keyval == 0:
+        return accel
+    parts = []
+    if mods & Gdk.ModifierType.SHIFT_MASK:
+        parts.append("Shift")
+    if mods & Gdk.ModifierType.CONTROL_MASK:
+        parts.append("Ctrl")
+    if mods & Gdk.ModifierType.ALT_MASK:
+        parts.append("Alt")
+    if mods & Gdk.ModifierType.SUPER_MASK:
+        parts.append("Super")
+    key_name = Gdk.keyval_name(keyval)
+    if key_name:
+        parts.append(key_name.capitalize())
+    return "+".join(parts)
+
+
+class _HttpsOnlyRedirect:
+    """A urllib redirect handler that refuses to leave HTTPS. A model URL that
+    redirects to http/ftp would deliver an unauthenticated file straight into a
+    native parser (llama.cpp's GGUF loader, ONNX Runtime's protobuf) — a
+    memory-safety surface, not a mere parse error. Instantiated lazily so the
+    urllib import stays local to the download path."""
+
+    def __new__(cls):
+        import urllib.request
+        import urllib.error
+        from urllib.parse import urlparse
+
+        class _Handler(urllib.request.HTTPRedirectHandler):
+            def redirect_request(self, req, fp, code, msg, headers, newurl):
+                if urlparse(newurl).scheme != "https":
+                    raise urllib.error.HTTPError(
+                        newurl, code, "refusing a non-HTTPS redirect", headers, fp)
+                return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+        return _Handler()
