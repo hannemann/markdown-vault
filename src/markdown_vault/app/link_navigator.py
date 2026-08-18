@@ -68,6 +68,17 @@ class LinkNavigator:
             self._open_in_new_tab(file_path)
         else:
             self._open_in_place(file_path)
+        if fragment:
+            # Arm the jump on whichever preview now shows the target — opening a
+            # link reuses the tab or spawns a new one depending on the view mode,
+            # so the preview to scroll is only known afterwards. Arming rather
+            # than scrolling: the window rebuilds the stack right after this and
+            # reloads the preview, which would discard an immediate scroll. The
+            # jump runs when that load reports FINISHED.
+            tab = self._get_current_tab()
+            if tab:
+                tab.preview.arm_anchor(fragment)
+            return
         if post is not None:
             post()
 

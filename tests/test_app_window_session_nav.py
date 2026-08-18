@@ -169,12 +169,30 @@ class TestLinkNavigator(unittest.TestCase):
         kwargs["post_open_fn"]()                                 # …until run
         self.tab.preview.scroll_to_anchor.assert_called_once_with("Heading")
 
-    def test_an_anchor_in_the_same_vault_is_scrolled_to_right_away(self):
+    def test_an_anchor_is_armed_on_the_preview_that_ends_up_showing_the_note(self):
+        # Which preview that is only becomes clear *after* opening: depending on
+        # the view mode the link reuses the tab or opens a new one. Arming it
+        # before would put the jump on the note being left — that is how it got
+        # lost in split view. And arming rather than scrolling, because the
+        # window reloads the preview right afterwards and would discard a scroll.
         nav = self._navigator()
+        order = []
+        self.tab.preview.arm_anchor.side_effect = lambda *_: order.append("arm")
+        self.calls.in_place.side_effect = lambda *_: order.append("open")
         with unittest.mock.patch(
                 "markdown_vault.core.path_utils.find_vault_for_dir", return_value="/v"):
             nav.follow("/v/note.md", "Heading", new_tab=False)
-        self.tab.preview.scroll_to_anchor.assert_called_once_with("Heading")
+        self.tab.preview.arm_anchor.assert_called_once_with("Heading")
+        self.tab.preview.scroll_to_anchor.assert_not_called()
+        self.assertEqual(order, ["open", "arm"])
+
+    def test_a_new_tab_gets_the_anchor_too(self):
+        nav = self._navigator()
+        with unittest.mock.patch(
+                "markdown_vault.core.path_utils.find_vault_for_dir", return_value="/v"):
+            nav.follow("/v/note.md", "Heading", new_tab=True)
+        self.calls.new_tab.assert_called_once_with("/v/note.md")
+        self.tab.preview.arm_anchor.assert_called_once_with("Heading")
 
     def test_a_link_without_an_anchor_scrolls_nothing(self):
         nav = self._navigator()

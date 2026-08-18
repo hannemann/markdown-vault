@@ -629,6 +629,33 @@ class TestPreviewResolveWikilink(unittest.TestCase):
         result = self._preview._resolve_wikilink(target)
         self.assertIsNone(result)
 
+    def test_a_directory_is_not_a_link_target(self):
+        """A trailing slash means a folder, never a note.
+
+        `Path` drops the slash, so appending ".md" would hit the *folder note*
+        `Sub.md` beside `Sub/` — the widespread folder-note layout. That made the
+        preview open an unrelated note (on the initial load, and on a click).
+        """
+        (self._vault / "Sub.md").write_text("# folder note")
+        self.assertIsNone(self._preview._resolve_wikilink(str(self._vault / "Sub") + "/"))
+
+    def test_a_dot_in_the_name_is_not_an_extension(self):
+        """`with_suffix` *replaces* the last dot segment instead of appending:
+        "notes/v1.2" became "v1.md" — a hit on a completely different note."""
+        (self._vault / "v1.md").write_text("# one")
+        self.assertIsNone(self._preview._resolve_wikilink(str(self._vault / "v1.2")))
+
+        (self._vault / "v1.2.md").write_text("# one point two")
+        result = self._preview._resolve_wikilink(str(self._vault / "v1.2"))
+        self.assertIsNotNone(result)
+        self.assertTrue(result.endswith("v1.2.md"), result)
+
+    def test_a_dotted_folder_name_does_not_resolve_to_a_shorter_note(self):
+        (self._vault / "My.md").write_text("# My")
+        (self._vault / "My.Notes").mkdir()
+        self.assertIsNone(
+            self._preview._resolve_wikilink(str(self._vault / "My.Notes") + "/"))
+
     def _page_uri(self, vault_name, relpath, fragment=""):
         from markdown_vault.core.path_utils import wikilink_url
         return wikilink_url(vault_name, relpath, fragment)
@@ -754,6 +781,108 @@ class TestPreviewResolveWikilink(unittest.TestCase):
         self._preview._current_vault_path = None
         result = self._preview._resolve_source_vault("")
         self.assertIsNone(result)
+
+
+class TestPreviewNavigationPolicy(unittest.TestCase):
+    """What `_on_decide_policy` does with a navigation.
+
+    The handler is driven directly instead of through a real navigation: headless
+    there is no pointer, and a scripted `element.click()` produces no navigation at
+    all. So these tests exercise the handler's *logic* — that a real click actually
+    arrives as LINK_CLICKED (and a middle click with button=2) is a runtime check
+    the stubs here take for granted, not one they prove.
+    """
+
+    def setUp(self):
+        self._tmp = tempfile.mkdtemp()
+        self._vault = Path(self._tmp) / "vault"
+        (self._vault / "Sub").mkdir(parents=True)
+        (self._vault / "Sub.md").write_text("# folder note")
+        (self._vault / "Other.md").write_text("# other")
+        self._preview = Preview()
+        self._preview._base_uri = self._uri(str(self._vault) + "/")
+        self.clicked, self.not_found = [], []
+        self._preview.connect("link-clicked",
+                              lambda _w, p, f: self.clicked.append((p, f)))
+        self._preview.connect("link-clicked-new-tab",
+                              lambda _w, p, f: self.clicked.append((p, f)))
+        self._preview.connect("link-not-found",
+                              lambda _w, u: self.not_found.append(u))
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self._tmp, ignore_errors=True)
+
+    @staticmethod
+    def _uri(path: str) -> str:
+        from gi.repository import GLib
+        return GLib.filename_to_uri(path)
+
+    def _navigate(self, uri, nav_type, *, button=0, modifiers=0):
+        """Call the policy handler as WebKit would."""
+        from gi.repository import WebKit
+        nav = MagicMock()
+        nav.get_navigation_type.return_value = nav_type
+        nav.get_request.return_value.get_uri.return_value = uri
+        nav.get_mouse_button.return_value = button
+        nav.get_modifiers.return_value = modifiers
+        decision = MagicMock()
+        decision.get_navigation_action.return_value = nav
+        self._preview._on_decide_policy(
+            None, decision, WebKit.PolicyDecisionType.NAVIGATION_ACTION)
+        return decision
+
+    def _types(self):
+        from gi.repository import WebKit
+        return WebKit.NavigationType
+
+    def test_the_initial_load_resolves_nothing(self):
+        # The note being rendered lives in Sub/, so the base URI is ".../Sub/" — and
+        # `Sub.md` sits right beside it (folder-note layout). load_html arrives as a
+        # navigation to that base URI, and this used to emit link-clicked on `Sub.md`
+        # while merely rendering: no one had clicked anything.
+        self._preview._base_uri = self._uri(str(self._vault / "Sub") + "/")
+        self._navigate(self._preview._base_uri, self._types().OTHER)
+        self.assertEqual(self.clicked, [])
+        self.assertEqual(self.not_found, [])
+
+    def test_a_preview_without_a_base_directory_shows_no_dialog(self):
+        # No file path → base_uri None → WebKit navigates to "about:blank", which
+        # used to end in a "link not found" dialog on plain rendering.
+        self._preview._base_uri = None
+        self._navigate("about:blank", self._types().OTHER)
+        self.assertEqual(self.not_found, [])
+        self.assertEqual(self.clicked, [])
+
+    def test_clicking_a_directory_reports_not_found(self):
+        # PO decision: [text](sub/) is a wrong link, so say so — instead of silently
+        # opening the folder note that happens to sit beside it.
+        self._navigate(self._uri(str(self._vault / "Sub") + "/"),
+                       self._types().LINK_CLICKED)
+        self.assertEqual(self.clicked, [])
+        self.assertEqual(len(self.not_found), 1, self.not_found)
+
+    def test_clicking_a_link_with_an_anchor_opens_the_note_and_keeps_the_anchor(self):
+        # A cross-note anchor arrives with "#Heading" inside the path — _same_page_fragment
+        # only catches anchors within THIS document. Today the note opens but the anchor
+        # is lost; appending ".md" naively would break the link entirely.
+        self._navigate(self._uri(str(self._vault / "Other.md")) + "#Heading",
+                       self._types().LINK_CLICKED)
+        self.assertEqual(self.not_found, [])
+        self.assertEqual(len(self.clicked), 1, self.clicked)
+        path, fragment = self.clicked[0]
+        self.assertTrue(path.endswith("Other.md"), path)
+        self.assertEqual(fragment, "Heading")
+
+    def test_a_hash_in_the_file_name_survives(self):
+        # "A#B.md" travels as A%23B.md. Splitting the fragment *after* unquoting
+        # would cut the file name in half.
+        (self._vault / "A#B.md").write_text("# hash")
+        self._navigate(self._uri(str(self._vault / "A#B.md")),
+                       self._types().LINK_CLICKED)
+        self.assertEqual(self.not_found, [])
+        self.assertEqual(len(self.clicked), 1, self.clicked)
+        self.assertTrue(self.clicked[0][0].endswith("A#B.md"), self.clicked)
 
 
 class TestPreview(unittest.TestCase):
@@ -1076,16 +1205,92 @@ class TestAnchorScrollJs(unittest.TestCase):
         self.assertIn("getElementById", js)
         self.assertIn("scrollIntoView", js)
 
-    def test_retries_while_the_dom_is_still_rendering(self):
-        # A new note loads/swaps asynchronously, so the element may not exist on
-        # the first tick — the script must poll for a bounded window.
-        js = _anchor_scroll_js("Test")
-        self.assertIn("setTimeout", js)
+    def test_scrolls_smoothly(self):
+        self.assertIn("behavior:'smooth'", _anchor_scroll_js("Test"))
+
+    def test_does_not_poll(self):
+        # It used to retry via setTimeout because the element might not exist
+        # yet. That never worked here: by the time the script ran, the target
+        # heading still belonged to the previous note, and the retry scrolled
+        # nothing. Waiting is now the caller's job — the preview flushes the
+        # pending anchor when the load or the innerHTML swap reports completion,
+        # so the script itself can assume the DOM is in place.
+        self.assertNotIn("setTimeout", _anchor_scroll_js("Test"))
 
     def test_slug_is_json_encoded_so_quotes_cannot_break_out(self):
         js = _anchor_scroll_js('He said "hi"')
         # No raw double-quote from the heading leaks into the JS string literal.
         self.assertIn(json.dumps(_heading_to_slug('He said "hi"')), js)
+
+
+class TestArmedAnchorRidesWithTheContent(unittest.TestCase):
+    """A jump into a note that is *about to* be rendered travels with it.
+
+    Opening a note in an already-loaded preview replaces the body via innerHTML.
+    Sending the jump afterwards aimed at the previous note's markup and layout
+    and silently did nothing — the cross-note anchor bug. So the jump is armed
+    first and emitted by the very script that swaps the DOM.
+    """
+
+    def setUp(self):
+        self._preview = Preview()
+        self._preview._web_view = MagicMock()
+        self._preview._loaded = True
+        self._ran = []
+        self._preview._run_js = self._ran.append
+
+    def _scripts(self):
+        """The scripts handed to the WebView, with the queued idle run."""
+        sent = []
+        self._preview._web_view.evaluate_javascript.side_effect = (
+            lambda js, *a, **kw: sent.append(js))
+        return sent
+
+    @staticmethod
+    def _drain():
+        from gi.repository import GLib
+        ctx = GLib.MainContext.default()
+        while ctx.pending():
+            ctx.iteration(False)
+
+    def test_arming_never_scrolls_on_its_own(self):
+        self._preview.arm_anchor("Kapitel Zwei")
+        self.assertEqual(self._ran, [])
+        self.assertEqual(self._preview._pending_anchor, "Kapitel Zwei")
+
+    def test_a_swap_does_not_spend_the_armed_jump(self):
+        # Navigating inside a tab hits this swap first, but the window then
+        # rebuilds the stack (reset() + refresh_preview()), so a full load
+        # follows and throws away whatever the swap scrolled. Spending the anchor
+        # here is how the jump got lost.
+        sent = self._scripts()
+        self._preview.arm_anchor("Kapitel Zwei")
+        self._preview.update_from_text("## Kapitel Zwei\n", "/v", "/v/note.md")
+        self._drain()
+        self.assertEqual(len(sent), 1, sent)
+        self.assertIn("innerHTML", sent[0])
+        self.assertNotIn("scrollIntoView", sent[0])
+        self.assertEqual(self._preview._pending_anchor, "Kapitel Zwei")
+
+    def test_the_full_load_finishing_performs_the_jump(self):
+        from gi.repository import WebKit
+        self._preview.arm_anchor("Kapitel Zwei")
+        self._preview.reset()                           # what the window does
+        self._preview._load_in_progress = True
+        self._preview._on_load_changed(None, WebKit.LoadEvent.FINISHED)
+        self.assertEqual(len(self._ran), 1, self._ran)
+        self.assertIn(json.dumps(_heading_to_slug("Kapitel Zwei")), self._ran[0])
+        self.assertEqual(self._preview._pending_anchor, "")
+
+    def test_reset_keeps_the_armed_jump(self):
+        self._preview.arm_anchor("Kapitel Zwei")
+        self._preview.reset()
+        self.assertEqual(self._preview._pending_anchor, "Kapitel Zwei")
+
+    def test_a_settled_preview_still_jumps_right_away(self):
+        # In-page anchors and freshly loaded tabs keep the direct path.
+        self._preview.scroll_to_anchor("Kapitel Zwei")
+        self.assertEqual(len(self._ran), 1, self._ran)
 
 
 if __name__ == "__main__":

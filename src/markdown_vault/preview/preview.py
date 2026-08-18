@@ -81,11 +81,12 @@ def _anchor_scroll_js(heading: str) -> str:
     if not heading:
         return ""
     target = json.dumps(_heading_to_slug(heading))
+    # Appended to the script that puts the content in place, so the jump runs in
+    # the same turn as the DOM it targets — no waiting, no polling, no guessing
+    # when the layout is ready.
     return (
-        "(function(){var n=0;(function t(){"
-        f"var e=document.getElementById({target});"
-        "if(e){e.scrollIntoView({behavior:'smooth',block:'start'});return;}"
-        "if(n++<40)setTimeout(t,50);})();})();"
+        f"var _t=document.getElementById({target});"
+        "if(_t)_t.scrollIntoView({behavior:'smooth',block:'start'});"
     )
 
 
@@ -817,6 +818,8 @@ class Preview(Gtk.ScrolledWindow):
     # ------------------------------------------------------------------
 
     def _emit_link(self, resolved: str, new_tab: bool, fragment: str = "") -> None:
+        logger.debug("emit link: %s (fragment=%r, new_tab=%s)",
+                     resolved, fragment, new_tab)
         self.emit("link-clicked-new-tab" if new_tab else "link-clicked",
                   resolved, fragment)
 
@@ -851,7 +854,9 @@ class Preview(Gtk.ScrolledWindow):
         self._pending_anchor = heading
         # Flush now only if the page is fully rendered. While a load_html is in
         # flight the DOM is not ready and the navigation will discard any script
-        # we run, so defer to the load-changed FINISHED handler instead.
+        # we run, so defer to the load-changed FINISHED handler instead. For a
+        # jump into content that is only about to be rendered, use
+        # :meth:`arm_anchor` — this method would scroll the *previous* note.
         if heading and self._loaded and not self._load_in_progress:
             self._flush_pending_anchor()
 
@@ -863,6 +868,18 @@ class Preview(Gtk.ScrolledWindow):
         self._pending_anchor = ""
         if js:
             self._run_js(js)
+
+    def arm_anchor(self, heading: str) -> None:
+        """Remember *heading* for the content that is **about to** be rendered.
+
+        Unlike :meth:`scroll_to_anchor` this never scrolls right away: the target
+        does not exist yet. The jump is emitted together with the content — in
+        the same script for an innerHTML swap, on ``load-changed FINISHED`` for a
+        full load. Callers that open a note and want it scrolled to a heading arm
+        the jump *before* opening it.
+        """
+        logger.debug("preview: anchor armed %r on %s", heading, self._current_file)
+        self._pending_anchor = heading
 
     def _on_load_changed(self, _web_view, event) -> None:
         """Apply a pending anchor jump once a full page load finishes.
@@ -1066,32 +1083,42 @@ class Preview(Gtk.ScrolledWindow):
             self._jump_to_anchor(fragment)
             return True
 
-        # Extract the path string from the URI
-        if uri.startswith("file://"):
-            path_str = uri[7:]
+        # The initial load_html arrives here as a navigation to the document's own
+        # base URI (measured: type `other`, button 0) — or to "about:blank" when the
+        # note has no directory yet (base_dir "" -> base_uri None). Nothing to
+        # resolve in either case, and nothing to log: it was never a link. A real
+        # click never matches both halves.
+        if (nav_action.get_navigation_type() != WebKit.NavigationType.LINK_CLICKED
+                and uri in (self._base_uri, "about:blank")):
+            return False
+
+        # Split the fragment off the *URI*, not off the unquoted path: a file whose
+        # name really contains "#" arrives as %23 and must survive unquoting.
+        # `_same_page_fragment` above only catches anchors within THIS document; a
+        # cross-note link keeps its "#Heading" and would otherwise be resolved as
+        # part of the file name.
+        uri_path, _, link_fragment = uri.partition("#")
+        if uri_path.startswith("file://"):
+            path_str = uri_path[7:]
         else:
             # Non-file:// URIs — could be a plain relative link.
-            path_str = uri
+            path_str = uri_path
 
         path_str = unquote(path_str)
 
-        logger.debug("Attempting wikilink resolve for: %r", path_str)
+        logger.debug("Attempting link resolve for: %r", path_str)
         resolved = self._resolve_wikilink(path_str)
         if resolved:
-            logger.debug("Wikilink resolved to: %s", resolved)
+            logger.debug("Link resolved to: %s", resolved)
             decision.ignore()
-            self._emit_link(resolved, new_tab)  # honour middle/Ctrl like the vault: branch
+            # honour middle/Ctrl like the vault: branch, and carry the anchor along
+            self._emit_link(resolved, new_tab, link_fragment)
             return True
 
-        # Only show error dialog if this looks like a wikilink click
-        # (not a directory URI like the initial load)
-        if not path_str.endswith("/"):
-            logger.warning("Wikilink NOT resolved: %r", path_str)
-            decision.ignore()
-            self.emit("link-not-found", path_str)
-            return True
-
-        return False
+        logger.warning("Link NOT resolved: %r", path_str)
+        decision.ignore()
+        self.emit("link-not-found", path_str)
+        return True
 
     def _resolve_wikilink(self, path_str: str) -> str | None:
         """Resolve a plain relative/absolute link target to an existing .md file.
@@ -1100,12 +1127,21 @@ class Preview(Gtk.ScrolledWindow):
         are resolved against the file system.  Wikilinks use the ``vault:``
         scheme and are handled by ``_resolve_wikilink_page`` instead.
         """
+        # A directory is not a link target. Without this, `Path` drops the trailing
+        # slash and ".md" lands on the *folder* name — so `[text](sub/)` would open
+        # the folder note `sub.md` where one exists, instead of reporting a broken
+        # link.
+        if path_str.endswith("/"):
+            return None
+
         target = Path(path_str)
         name = target.name
 
         if name.endswith(".md") and target.exists():
             return str(target.resolve())
-        with_md = target.with_suffix(".md")
+        # Append, don't replace: `with_suffix` would turn "v1.2" into "v1.md" and
+        # "My.Notes" into "My.md" — a hit on an unrelated note.
+        with_md = target.parent / (name + ".md")
         if with_md.exists():
             return str(with_md.resolve())
         return None
@@ -1229,6 +1265,8 @@ class Preview(Gtk.ScrolledWindow):
             )
             self._last_html = full_html
             self._base_uri = base_uri
+            logger.debug("preview: full load (pending anchor=%r)",
+                         self._pending_anchor)
             # A pending anchor must wait for load-changed FINISHED, not the
             # synchronous _loaded flag below (the load itself is still async).
             self._load_in_progress = True
@@ -1247,6 +1285,17 @@ class Preview(Gtk.ScrolledWindow):
                 'document.querySelector(".markdown-body").innerHTML '
                 f'= {html_json}'
             )
+            # An armed anchor jump rides along in the *same* script: the heading
+            # it targets is created by the line above, so running both in one
+            # turn removes the question of when the new DOM is ready. Sending the
+            # jump separately means it either finds the previous note's markup or
+            # its stale layout — that is what used to make cross-note anchors
+            # silently do nothing.
+            # An armed anchor is deliberately NOT spent here. Navigating inside a
+            # tab reaches this swap first, but the window then rebuilds the stack
+            # and calls reset() + refresh_preview(), so a full load follows and
+            # discards whatever this scrolled. The jump therefore waits for that
+            # load's FINISHED — see _on_load_changed.
             GLib.idle_add(
                 self._web_view.evaluate_javascript,
                 js, -1, None, None, None, None,
