@@ -55,6 +55,24 @@ class FileManager:
         self._mru = mru
         self._nav_history = nav_history
 
+    def wire_tree_context_menu(self, parent: Gtk.Widget) -> None:
+        """Answer the vault tree's New File / New Folder / Delete entries.
+
+        The window used to own these three connections and forward each straight
+        back here — three hand-overs for no decision. The trigger belongs with
+        the dialogs it triggers; *parent* is only the widget the dialogs are
+        presented over.
+        """
+        self._vault_tree.connect(
+            "new-file-requested",
+            lambda _tree, parent_dir: self.prompt_new_file(parent, None, parent_dir))
+        self._vault_tree.connect(
+            "new-folder-requested",
+            lambda _tree, parent_dir: self.prompt_new_folder(parent, parent_dir))
+        self._vault_tree.connect(
+            "delete-requested",
+            lambda _tree, path: self.prompt_delete(parent, path))
+
     # ── New file ───────────────────────────────────────────────────────
 
     def prompt_new_file(

@@ -187,10 +187,9 @@ class MainWindow(Adw.ApplicationWindow):
         self._vault_tree.connect("file-selected", self._on_file_selected_from_tree)
         self._vault_tree.connect("vault-activated", self._on_vault_activated)
         self._vault_tree.connect("vault-added", self._on_vault_added)
-        self._vault_tree.connect("new-file-requested", self._on_new_file_requested)
-        self._vault_tree.connect("new-folder-requested", self._on_new_folder_requested)
+        # New file / New folder / Delete are wired by the FileManager itself —
+        # see wire_tree_context_menu, called once it exists.
         self._vault_tree.connect("import-requested", self._on_import_requested)
-        self._vault_tree.connect("delete-requested", self._on_delete_requested)
         self._vault_tree.connect("close-file-requested", self._on_close_file_requested)
         self._vault_tree.connect("file-renamed", self._on_file_renamed)
         self._vault_tree.connect("vault-renamed", self._on_vault_renamed)
@@ -403,6 +402,7 @@ class MainWindow(Adw.ApplicationWindow):
             mru=self.mru,
             nav_history=self._nav_history,
         )
+        self._file_manager.wire_tree_context_menu(self)
 
         self._sidebar_paned = Gtk.Paned(orientation=Gtk.Orientation.HORIZONTAL)
         self._sidebar_paned.add_css_class("sidebar-divider")
@@ -2013,14 +2013,6 @@ class MainWindow(Adw.ApplicationWindow):
 
     # ── Vault tree file operations ───────────────────────────────
 
-    def _on_new_file_requested(self, _tree, parent_dir: str) -> None:
-        """Handle 'New File' from the vault tree context menu."""
-        self._file_manager.prompt_new_file(self, None, parent_dir)
-
-    def _on_new_folder_requested(self, _tree, parent_dir: str) -> None:
-        """Handle 'New Folder' from the vault tree context menu."""
-        self._file_manager.prompt_new_folder(self, parent_dir)
-
     def _on_import_requested(self, _tree, target_dir: str) -> None:
         """Handle 'Import…' from the vault tree context menu — fetch a URL as a
         note into *target_dir*, then open it and reveal it in the tree."""
@@ -2104,10 +2096,6 @@ class MainWindow(Adw.ApplicationWindow):
     def _show_error(self, heading: str, body: str) -> None:
         """Show an error dialog with the given message."""
         dialogs.show_error(self, heading, body)
-
-    def _on_delete_requested(self, _tree, path: str) -> None:
-        """Handle 'Delete' from the vault tree context menu."""
-        self._file_manager.prompt_delete(self, path)
 
     def _on_close_file_requested(self, _tree, file_path: str) -> None:
         """Handle 'Close File' from the vault tree context menu."""
