@@ -73,6 +73,18 @@ class TestSamePageFragment(unittest.TestCase):
     def test_no_base_uri_is_none(self):
         self.assertIsNone(_same_page_fragment("file:///v/Wikipedia/#fn:1", None))
 
+    def test_fragment_is_percent_decoded(self):
+        # WebKit hands over the URI encoded, while the element id carries the
+        # real characters — so an anchor with anything beyond ASCII (an umlaut,
+        # Greek, CJK …) found nothing. ASCII-only anchors like "#fn:1" worked,
+        # which is why this stayed hidden.
+        self.assertEqual(
+            _same_page_fragment(self.BASE + "#e-beim-blo%C3%9Fen-rendern", self.BASE),
+            "e-beim-bloßen-rendern")
+        self.assertEqual(
+            _same_page_fragment(self.BASE + "#%E6%97%A5%E6%9C%AC%E8%AA%9E", self.BASE),
+            "日本語")
+
 
 class TestInPageNavHistory(unittest.TestCase):
     """In-page anchor back/forward state machine (footnote/TOC jumps).
@@ -873,6 +885,27 @@ class TestPreviewNavigationPolicy(unittest.TestCase):
         path, fragment = self.clicked[0]
         self.assertTrue(path.endswith("Other.md"), path)
         self.assertEqual(fragment, "Heading")
+
+    def test_a_non_ascii_anchor_arrives_decoded(self):
+        # WebKit encodes the URI, the heading id carries the real characters. An
+        # anchor with an umlaut, ß, Greek or CJK would otherwise be handed on as
+        # "%C3%9F…" and match no heading — the same trap as the in-page path.
+        (self._vault / "Ziel.md").write_text("## Größe\n")
+        self._navigate(self._uri(str(self._vault / "Ziel.md")) + "#gr%C3%B6%C3%9Fe",
+                       self._types().LINK_CLICKED)
+        self.assertEqual(len(self.clicked), 1, self.clicked)
+        self.assertEqual(self.clicked[0][1], "größe")
+
+    def test_an_extensionless_target_with_an_anchor_resolves(self):
+        # "[x](Other#heading)" — no .md, fragment attached: the extension is
+        # appended to the *path*, never to the fragment.
+        (self._vault / "Ziel.md").write_text("## Größe\n")
+        self._navigate(self._uri(str(self._vault / "Ziel")) + "#gr%C3%B6%C3%9Fe",
+                       self._types().LINK_CLICKED)
+        self.assertEqual(self.not_found, [])
+        self.assertEqual(len(self.clicked), 1, self.clicked)
+        self.assertTrue(self.clicked[0][0].endswith("Ziel.md"), self.clicked)
+        self.assertEqual(self.clicked[0][1], "größe")
 
     def test_a_hash_in_the_file_name_survives(self):
         # "A#B.md" travels as A%23B.md. Splitting the fragment *after* unquoting

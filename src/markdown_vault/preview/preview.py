@@ -592,11 +592,17 @@ def _same_page_fragment(uri: str, base_uri: str | None) -> str | None:
     """The fragment of *uri* when it is an in-page anchor (its base equals the
     document's own ``base_uri``), else ``None``. Footnote references/backlinks and
     TOC links resolve against the loaded document's base, so they must scroll the
-    view rather than be treated as file/wikilink navigation."""
+    view rather than be treated as file/wikilink navigation.
+
+    The fragment is percent-decoded: WebKit hands over an encoded URI, while the
+    element id in the document carries the real characters. Without this, every
+    anchor beyond ASCII — an umlaut, Greek, CJK — silently found nothing, which
+    ASCII-only footnote anchors hid.
+    """
     if not base_uri or "#" not in uri:
         return None
     base, _, fragment = uri.partition("#")
-    return fragment if fragment and base == base_uri else None
+    return unquote(fragment) if fragment and base == base_uri else None
 
 
 class Preview(Gtk.ScrolledWindow):
@@ -1098,6 +1104,7 @@ class Preview(Gtk.ScrolledWindow):
         # cross-note link keeps its "#Heading" and would otherwise be resolved as
         # part of the file name.
         uri_path, _, link_fragment = uri.partition("#")
+        link_fragment = unquote(link_fragment)   # id carries the real characters
         if uri_path.startswith("file://"):
             path_str = uri_path[7:]
         else:
