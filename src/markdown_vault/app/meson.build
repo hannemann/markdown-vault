@@ -8,6 +8,7 @@ install_data(
     'session_manager.py',
     'tab_manager.py',
     'view_mode_manager.py',
+    'find_controller.py',
     'zen_controller.py',
     'zoom_controller.py',
   ),

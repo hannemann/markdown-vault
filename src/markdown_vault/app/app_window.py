@@ -52,6 +52,7 @@ from markdown_vault.app.input_manager import InputManager
 from markdown_vault.app.file_manager import FileManager
 from markdown_vault.app.zoom_controller import ZoomController
 from markdown_vault.app.zen_controller import ZenController
+from markdown_vault.app.find_controller import FindController
 from markdown_vault.core import config
 from markdown_vault.uikit import dialogs
 from markdown_vault.uikit import banners as banner_mod
@@ -224,16 +225,10 @@ class MainWindow(Adw.ApplicationWindow):
         # In-view find bar (Ctrl+F), under the tabs. While it is open the
         # view that is NOT being searched is dimmed so it reads as inactive.
         self._find_bar = FindBar()
-        self._find_target = None
-        self._find_info_handler = 0
-        self._find_dimmed = None
-        self._find_bar.connect("search-changed", self._on_find_text_changed)
-        self._find_bar.connect("search-next", lambda *_: self._on_find_nav(True))
-        self._find_bar.connect("search-prev", lambda *_: self._on_find_nav(False))
-        self._find_bar.connect("options-changed", self._on_find_options_changed)
-        self._find_bar.connect("replace-one", lambda *_: self._on_find_replace(False))
-        self._find_bar.connect("replace-all", lambda *_: self._on_find_replace(True))
-        self._find_bar.connect("closed", self._on_find_closed)
+        self._find = FindController(
+            self._find_bar,
+            get_current_tab=self._tab_bar.get_current_tab,
+            get_focus=self.get_focus)
         centre.append(self._find_bar)
 
         # Close the find bar / global search with Esc even when focus has left
@@ -812,13 +807,7 @@ class MainWindow(Adw.ApplicationWindow):
         action.connect("activate", lambda *_: self._quick_open.open(self))
         self.add_action(action)
 
-        action = Gio.SimpleAction.new("find-in-view", None)
-        action.connect("activate", lambda *_: self._find_in_view())
-        self.add_action(action)
-
-        action = Gio.SimpleAction.new("replace-in-view", None)
-        action.connect("activate", lambda *_: self._replace_in_view())
-        self.add_action(action)
+        self._find.register_actions(self)
 
         action = Gio.SimpleAction.new("save", None)
         action.connect("activate", lambda *_: self._save_current())
@@ -1162,8 +1151,8 @@ class MainWindow(Adw.ApplicationWindow):
     def _on_tab_changed(self, _tab_bar, file_path: str) -> None:
         """Handle tab change — delegates to :class:`TabOrchestrator`."""
         # The find bar lives in the outgoing tab's overlay — close it first.
-        if self._find_bar.get_visible():
-            self._find_bar.close()
+        if self._find.visible:
+            self._find.close()
         self._tab_orchestrator.on_tab_changed(file_path)
         # Mark the open file in the tree.
         self._vault_tree.set_open_file(file_path)
@@ -1192,8 +1181,8 @@ class MainWindow(Adw.ApplicationWindow):
     def _on_tab_closed(self, _tab_bar, file_path: str) -> None:
         """Cleanup after a tab has been closed (tab-closed signal)."""
         # The find bar may target the closed tab's editor/preview — close it.
-        if self._find_bar.get_visible():
-            self._find_bar.close()
+        if self._find.visible:
+            self._find.close()
         self.mru.remove(file_path)
         child = self._content_stack.get_child_by_name(file_path)
         if child:
@@ -2441,8 +2430,8 @@ class MainWindow(Adw.ApplicationWindow):
     def _set_view_mode(self, mode: str) -> None:
         # Find targets/dims a specific view; a mode switch would leave it
         # pointing at (or dimming) a now-hidden view — close it first (R21.5).
-        if self._find_bar.get_visible():
-            self._find_bar.close()
+        if self._find.visible:
+            self._find.close()
         self._view_mode_manager.set_view_mode(mode)
 
     # ── Editor callbacks ────────────────────────────────────────────
@@ -2646,152 +2635,17 @@ class MainWindow(Adw.ApplicationWindow):
 
     # ── In-view find (Ctrl+F) ───────────────────────────────────────
 
-    def _active_find_target(self):
-        """Return the editor or preview to search — whichever is focused,
-        falling back to the current tab's view mode."""
-        tab = self._tab_bar.get_current_tab()
-        if not tab:
-            return None
-        widget = self.get_focus()
-        while widget is not None:
-            if widget is tab.preview:
-                return tab.preview
-            if widget is tab.editor:
-                return tab.editor
-            widget = widget.get_parent()
-        mode = getattr(tab, "view_mode", "edit")
-        return tab.preview if mode == "render" else tab.editor
-
-    def _find_in_view(self) -> None:
-        # Already open: just refocus the entry — don't recompute the target
-        # (focus is in the find entry, which would flip the target — R21.11).
-        if self._find_bar.get_visible() and self._find_target is not None:
-            self._find_bar.open()
-            return
-        target = self._active_find_target()
-        if target is None:
-            return
-        self._set_find_target(target)
-        tab = self._tab_bar.get_current_tab()
-        is_editor = tab is not None and target is tab.editor
-        self._find_bar.set_editor_mode(is_editor)
-        self._find_bar.set_replace_visible(False)  # Ctrl+F = search only
-        if is_editor:
-            self._apply_find_options()
-        self._dim_inactive_view(target)
-        self._find_bar.open()
-
-    def _replace_in_view(self) -> None:
-        """Ctrl+R: find + replace when the editor is the active view.
-
-        Works in the editor — including the edit pane of a split — but is a
-        no-op when the preview is the active view (it is read-only)."""
-        tab = self._tab_bar.get_current_tab()
-        if tab is None:
-            return
-        target = self._active_find_target()
-        if target is not tab.editor:
-            return  # preview is the active view — replace doesn't apply
-        self._set_find_target(target)
-        self._find_bar.set_editor_mode(True)
-        self._apply_find_options()
-        self._dim_inactive_view(target)
-        self._find_bar.open()
-        self._find_bar.focus_replace()
-
-    def _dim_inactive_view(self, target) -> None:
-        """Fade the view that is NOT being searched so it reads as inactive."""
-        self._restore_dimmed()
-        tab = self._tab_bar.get_current_tab()
-        if tab is None:
-            return
-        other = tab.preview if target is tab.editor else tab.editor
-        other.set_opacity(0.35)
-        self._find_dimmed = other
-
-    def _restore_dimmed(self) -> None:
-        """Un-dim the exact widget we dimmed (independent of the current tab)."""
-        if self._find_dimmed is not None:
-            self._find_dimmed.set_opacity(1.0)
-            self._find_dimmed = None
-
-    def _set_find_target(self, target) -> None:
-        if target is self._find_target:
-            return
-        if self._find_target is not None:
-            self._find_target.search_clear()  # drop the old pane's highlight (R21.10)
-            if self._find_info_handler:
-                self._find_target.disconnect(self._find_info_handler)
-        self._find_target = target
-        self._find_info_handler = target.connect(
-            "search-info-changed", lambda *_: self._update_find_count(),
-        )
-
-    def _update_find_count(self) -> None:
-        if self._find_target is not None:
-            current, total = self._find_target.search_info()
-            self._find_bar.set_count(current, total)
-
-    def _on_find_text_changed(self, _bar, text: str) -> None:
-        if self._find_target is None:
-            return
-        # search_set_text already positions on the first match; do NOT advance
-        # again or refining the query walks matches away (R21.9).
-        self._find_target.search_set_text(text)
-        self._update_find_count()
-
-    def _on_find_nav(self, forward: bool) -> None:
-        if self._find_target is None:
-            return
-        if forward:
-            self._find_target.search_next()
-        else:
-            self._find_target.search_prev()
-        self._update_find_count()
-
-    def _apply_find_options(self) -> None:
-        """Push the find bar's case/word/regex toggles onto the editor target."""
-        if self._find_target is not None and hasattr(self._find_target, "set_search_options"):
-            self._find_target.set_search_options(*self._find_bar.get_options())
-
-    def _on_find_options_changed(self, _bar) -> None:
-        if self._find_target is None:
-            return
-        self._apply_find_options()
-        # Re-run the query so the highlight and selection reflect the new mode.
-        self._find_target.search_set_text(self._find_bar.get_text())
-        self._update_find_count()
-
-    def _on_find_replace(self, all_matches: bool) -> None:
-        target = self._find_target
-        if target is None or not hasattr(target, "replace_current"):
-            return
-        replacement = self._find_bar.get_replace_text()
-        if all_matches:
-            target.replace_all(replacement)
-        else:
-            target.replace_current(replacement)
-        self._update_find_count()
-
     def _on_window_esc(self, _ctrl, keyval, _keycode, _state) -> bool:
+        """Esc closes whichever bar is open — find first, then global search."""
         if keyval != Gdk.KEY_Escape:
             return False
-        if self._find_bar.get_visible():
-            self._find_bar.close()
+        if self._find.visible:
+            self._find.close()
             return True
         if self._search_bar.get_visible():
             self._on_search_close_requested(self._search_bar)
             return True
         return False
-
-    def _on_find_closed(self, _bar) -> None:
-        if self._find_target is not None:
-            self._find_target.search_clear()
-            if self._find_info_handler:
-                self._find_target.disconnect(self._find_info_handler)
-                self._find_info_handler = 0
-            self._find_target = None
-        self._restore_dimmed()
 
     def _on_search_toggled(self, btn: Gtk.ToggleButton) -> None:
         self._search_bar.set_visible(btn.get_active())
