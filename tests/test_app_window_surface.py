@@ -83,6 +83,57 @@ class TestAskWiring(AppWindowTest):
         self.assertTrue(hasattr(status, "can_ask"))
 
 
+class TestZoom(AppWindowTest):
+    """Ctrl+plus/minus/0 zoom whichever half the pointer is over — the editor or
+    the preview, never both. Untested until now, and the pointer branch is the
+    kind of thing a split silently drops (both halves would still "work", just
+    always zooming the same one)."""
+
+    def _tab(self):
+        tab = unittest.mock.Mock()
+        tab.preview.zoom_level = 1.0
+        tab.editor.zoom_factor = 1.0
+        return tab
+
+    def _with_pointer(self, tab, over_preview):
+        return (unittest.mock.patch.object(self.win, "_tab_bar"),
+                unittest.mock.patch.object(self.win, "_is_pointer_over_preview",
+                                           return_value=over_preview))
+
+    def test_zooms_the_preview_when_the_pointer_is_over_it(self):
+        tab = self._tab()
+        tabs, pointer = self._with_pointer(tab, over_preview=True)
+        with tabs as tab_bar, pointer:
+            tab_bar.get_current_tab.return_value = tab
+            self.win._zoom_active(+1)
+        self.assertGreater(tab.preview.zoom_level, 1.0)
+        self.assertEqual(tab.editor.zoom_factor, 1.0)      # the other half untouched
+
+    def test_zooms_the_editor_otherwise(self):
+        tab = self._tab()
+        tabs, pointer = self._with_pointer(tab, over_preview=False)
+        with tabs as tab_bar, pointer:
+            tab_bar.get_current_tab.return_value = tab
+            self.win._zoom_active(-1)
+        self.assertLess(tab.editor.zoom_factor, 1.0)
+        self.assertEqual(tab.preview.zoom_level, 1.0)
+
+    def test_reset_returns_the_hovered_half_to_100_percent(self):
+        tab = self._tab()
+        tab.editor.zoom_factor = 1.6
+        tabs, pointer = self._with_pointer(tab, over_preview=False)
+        with tabs as tab_bar, pointer:
+            tab_bar.get_current_tab.return_value = tab
+            self.win._zoom_reset()
+        self.assertEqual(tab.editor.zoom_factor, 1.0)
+
+    def test_zooming_without_an_open_tab_does_nothing(self):
+        with unittest.mock.patch.object(self.win, "_tab_bar") as tab_bar:
+            tab_bar.get_current_tab.return_value = None
+            self.win._zoom_active(+1)          # must not raise
+            self.win._zoom_reset()
+
+
 class TestPreferencesReactions(AppWindowTest):
     """What the window *does* when a setting changes — the part that is not
     visible in the settings file and broke silently once already.

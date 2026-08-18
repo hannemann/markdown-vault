@@ -1,154 +1,130 @@
-"""Tests for MainWindow zen mode (Ctrl+B panels, Ctrl+Shift+B total)."""
+"""MainWindow zen mode (Ctrl+B panels, Ctrl+Shift+B total).
 
+Runs against the **real** window (`AppWindowTest`). It used to borrow the zen
+methods onto a hand-built stand-in with fake widgets — the standard workaround
+from when nobody had managed to construct `MainWindow` headless. That worked
+because these methods touch little state, but it tested the methods rather than
+the window: a zen level that forgets to restore a real widget, or an attribute
+renamed during a split, would still have passed.
+
+Same assertions as before, real widgets underneath.
+"""
 import unittest
 
-import markdown_vault.app.app_window as aw
+from test_app_window_construction import AppWindowTest
 
 
-class _FakeToggle:
-    def __init__(self, active):
-        self._active = active
+class ZenTest(AppWindowTest):
+    """Zen acts on six things; each test starts from a known state."""
 
-    def get_active(self):
-        return self._active
+    def _open(self, *, sidebar_open=True, search_open=False):
+        self.win._zen_level = None
+        self.win._zen_saved = None
+        for widget in (self.win._header, self.win._tab_bar, self.win._vault_tree,
+                       self.win._status_bar):
+            widget.set_visible(True)
+        self.win._sidebar_toggle.set_active(sidebar_open)
+        self.win._search_toggle.set_active(search_open)
 
-    def set_active(self, value):
-        self._active = value
-
-
-class _FakeWidget:
-    def __init__(self, visible=True):
-        self._visible = visible
-
-    def get_visible(self):
-        return self._visible
-
-    def set_visible(self, value):
-        self._visible = value
-
-
-def _make_window(sidebar_open=True, search_open=False):
-    class _W:
-        _toggle_zen = aw.MainWindow._toggle_zen
-        _cycle_zen = aw.MainWindow._cycle_zen
-        _set_zen_level = aw.MainWindow._set_zen_level
-        _apply_zen_level = aw.MainWindow._apply_zen_level
-        _zen_get = aw.MainWindow._zen_get
-        _zen_set = aw.MainWindow._zen_set
-        _ZEN_ELEMENTS = aw.MainWindow._ZEN_ELEMENTS
-        _ZEN_LEVELS = aw.MainWindow._ZEN_LEVELS
-
-    w = _W()
-    w._zen_level = None
-    w._zen_saved = None
-    w._header = _FakeWidget(True)
-    w._tab_bar = _FakeWidget(True)
-    w._vault_tree = _FakeWidget(True)
-    w._status_bar = _FakeWidget(True)
-    w._sidebar_toggle = _FakeToggle(sidebar_open)
-    w._search_toggle = _FakeToggle(search_open)
-    return w
+    def _state(self):
+        w = self.win
+        return {
+            "header": w._header.get_visible(),
+            "tab_bar": w._tab_bar.get_visible(),
+            "tree": w._vault_tree.get_visible(),
+            "sidebar": w._sidebar_toggle.get_active(),
+            "search": w._search_toggle.get_active(),
+            "statusbar": w._status_bar.get_visible(),
+        }
 
 
-def _state(w):
-    return {
-        "header": w._header.get_visible(),
-        "tab_bar": w._tab_bar.get_visible(),
-        "tree": w._vault_tree.get_visible(),
-        "sidebar": w._sidebar_toggle.get_active(),
-        "search": w._search_toggle.get_active(),
-        "statusbar": w._status_bar.get_visible(),
-    }
-
-
-class TestPanelsZen(unittest.TestCase):
+class TestPanelsZen(ZenTest):
     def test_hides_panels_keeps_header_and_tabs(self):
-        w = _make_window(search_open=True)
-        w._toggle_zen("panels")
-        self.assertEqual(w._zen_level, "panels")
-        self.assertTrue(w._header.get_visible())      # header stays
-        self.assertTrue(w._tab_bar.get_visible())     # tabs stay
-        self.assertFalse(w._vault_tree.get_visible())
-        self.assertFalse(w._sidebar_toggle.get_active())
-        self.assertFalse(w._search_toggle.get_active())
+        self._open(search_open=True)
+        self.win._toggle_zen("panels")
+        self.assertEqual(self.win._zen_level, "panels")
+        self.assertTrue(self.win._header.get_visible())      # header stays
+        self.assertTrue(self.win._tab_bar.get_visible())     # tabs stay
+        self.assertFalse(self.win._vault_tree.get_visible())
+        self.assertFalse(self.win._sidebar_toggle.get_active())
+        self.assertFalse(self.win._search_toggle.get_active())
 
     def test_toggle_off_restores(self):
-        w = _make_window(sidebar_open=True, search_open=True)
-        before = _state(w)
-        w._toggle_zen("panels")
-        w._toggle_zen("panels")
-        self.assertIsNone(w._zen_level)
-        self.assertEqual(_state(w), before)
+        self._open(sidebar_open=True, search_open=True)
+        before = self._state()
+        self.win._toggle_zen("panels")
+        self.win._toggle_zen("panels")
+        self.assertIsNone(self.win._zen_level)
+        self.assertEqual(self._state(), before)
 
 
-class TestTotalZen(unittest.TestCase):
+class TestTotalZen(ZenTest):
     def test_hides_everything(self):
-        w = _make_window()
-        w._toggle_zen("total")
-        self.assertEqual(w._zen_level, "total")
-        for getter in (w._header.get_visible, w._tab_bar.get_visible,
-                       w._vault_tree.get_visible):
-            self.assertFalse(getter())
-        self.assertFalse(w._sidebar_toggle.get_active())
+        self._open()
+        self.win._toggle_zen("total")
+        self.assertEqual(self.win._zen_level, "total")
+        for widget in (self.win._header, self.win._tab_bar, self.win._vault_tree):
+            self.assertFalse(widget.get_visible())
+        self.assertFalse(self.win._sidebar_toggle.get_active())
 
     def test_toggle_off_restores(self):
-        w = _make_window(sidebar_open=False, search_open=True)
-        before = _state(w)
-        w._toggle_zen("total")
-        w._toggle_zen("total")
-        self.assertEqual(_state(w), before)
+        self._open(sidebar_open=False, search_open=True)
+        before = self._state()
+        self.win._toggle_zen("total")
+        self.win._toggle_zen("total")
+        self.assertEqual(self._state(), before)
 
 
-class TestCycle(unittest.TestCase):
+class TestCycle(ZenTest):
     def test_cycle_normal_panels_total_normal(self):
-        w = _make_window(sidebar_open=True, search_open=True)
-        before = _state(w)
+        self._open(sidebar_open=True, search_open=True)
+        before = self._state()
 
-        w._cycle_zen()  # → panels
-        self.assertEqual(w._zen_level, "panels")
-        self.assertTrue(w._header.get_visible())       # header still up
-        self.assertFalse(w._vault_tree.get_visible())
+        self.win._cycle_zen()  # → panels
+        self.assertEqual(self.win._zen_level, "panels")
+        self.assertTrue(self.win._header.get_visible())       # header still up
+        self.assertFalse(self.win._vault_tree.get_visible())
 
-        w._cycle_zen()  # → total
-        self.assertEqual(w._zen_level, "total")
-        self.assertFalse(w._header.get_visible())       # header now hidden
+        self.win._cycle_zen()  # → total
+        self.assertEqual(self.win._zen_level, "total")
+        self.assertFalse(self.win._header.get_visible())      # header now hidden
 
-        w._cycle_zen()  # → normal
-        self.assertIsNone(w._zen_level)
-        self.assertEqual(_state(w), before)
+        self.win._cycle_zen()  # → normal
+        self.assertIsNone(self.win._zen_level)
+        self.assertEqual(self._state(), before)
 
     def test_shift_shortcut_still_toggles_total(self):
-        w = _make_window()
-        w._toggle_zen("total")
-        self.assertEqual(w._zen_level, "total")
-        w._toggle_zen("total")
-        self.assertIsNone(w._zen_level)
+        self._open()
+        self.win._toggle_zen("total")
+        self.assertEqual(self.win._zen_level, "total")
+        self.win._toggle_zen("total")
+        self.assertIsNone(self.win._zen_level)
 
 
-class TestLevelSwitching(unittest.TestCase):
+class TestLevelSwitching(ZenTest):
     def test_panels_then_total_hides_header(self):
-        w = _make_window()
-        w._toggle_zen("panels")            # header still visible
-        self.assertTrue(w._header.get_visible())
-        w._toggle_zen("total")             # switch → header hidden
-        self.assertEqual(w._zen_level, "total")
-        self.assertFalse(w._header.get_visible())
+        self._open()
+        self.win._toggle_zen("panels")            # header still visible
+        self.assertTrue(self.win._header.get_visible())
+        self.win._toggle_zen("total")             # switch → header hidden
+        self.assertEqual(self.win._zen_level, "total")
+        self.assertFalse(self.win._header.get_visible())
 
     def test_total_then_panels_restores_header(self):
-        w = _make_window()
-        w._toggle_zen("total")             # header hidden
-        w._toggle_zen("panels")            # switch → header back
-        self.assertEqual(w._zen_level, "panels")
-        self.assertTrue(w._header.get_visible())
+        self._open()
+        self.win._toggle_zen("total")             # header hidden
+        self.win._toggle_zen("panels")            # switch → header back
+        self.assertEqual(self.win._zen_level, "panels")
+        self.assertTrue(self.win._header.get_visible())
 
     def test_switch_then_exit_restores_original(self):
-        w = _make_window(sidebar_open=True, search_open=True)
-        before = _state(w)
-        w._toggle_zen("panels")
-        w._toggle_zen("total")             # switch levels
-        w._toggle_zen("total")             # exit
-        self.assertIsNone(w._zen_level)
-        self.assertEqual(_state(w), before)
+        self._open(sidebar_open=True, search_open=True)
+        before = self._state()
+        self.win._toggle_zen("panels")
+        self.win._toggle_zen("total")             # switch levels
+        self.win._toggle_zen("total")             # exit
+        self.assertIsNone(self.win._zen_level)
+        self.assertEqual(self._state(), before)
 
 
 if __name__ == "__main__":
