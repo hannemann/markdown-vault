@@ -28,6 +28,14 @@ _IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp",
                    ".ico", ".avif"}
 
 
+def _clamp_scroll(value: float, upper: float, page_size: float) -> float:
+    """The largest in-range scroll offset: never past the last page, never below
+    zero. This is the clamp reload_editor relies on — it catches a return into a
+    note that has since become *shorter*, where the raw value would scroll into
+    the void."""
+    return min(value, max(0.0, upper - page_size))
+
+
 class Editor(Gtk.ScrolledWindow):
     """A source-code editor widget specialised for Markdown files.
 
@@ -607,6 +615,47 @@ class Editor(Gtk.ScrolledWindow):
             self._view.scroll_to_iter(iter, margin, True, 0.0, yalign)
             self._buffer.place_cursor(iter)
             self._view.grab_focus()
+
+    # ── Scroll / caret position (navigation history) ────────────────
+
+    def capture_scroll_position(self) -> tuple[float, int]:
+        """Read the current vertical scroll offset and caret character offset.
+
+        Synchronous: an editor is a :class:`Gtk.ScrolledWindow`, so the value is
+        available at once — unlike the preview, whose scroll has to be reported
+        asynchronously from JavaScript.
+        """
+        vadj = self.get_vadjustment()
+        scroll = vadj.get_value() if vadj is not None else 0.0
+        cursor = self._buffer.get_iter_at_mark(self._buffer.get_insert()).get_offset()
+        return scroll, cursor
+
+    def restore_scroll_position(self, scroll: float | None = None,
+                                cursor: int | None = None) -> None:
+        """Restore a caret + scroll captured earlier, each clamped to the current
+        buffer so returning into a now-shorter note lands in range, not the void.
+
+        The caret is placed at once (clamped to the character count). The scroll
+        is applied only after the view re-lays out (via ``idle_add``): right
+        after a buffer fill the adjustment's ``upper`` is still 0 and would
+        silently clamp the value to 0 (the failure the pattern in
+        ``Tab.reload_editor`` exists to avoid). Fields left ``None`` are skipped.
+        """
+        buf = self._buffer
+        if cursor is not None:
+            buf.place_cursor(buf.get_iter_at_offset(min(cursor, buf.get_char_count())))
+        if scroll is not None:
+            vadj = self.get_vadjustment()
+            if vadj is not None:
+                def _apply(adj=vadj, value=scroll):
+                    adj.set_value(
+                        _clamp_scroll(value, adj.get_upper(), adj.get_page_size()))
+                    return False
+                GLib.idle_add(_apply)
+
+    def grab_editor_focus(self) -> None:
+        """Focus the text view so a restored caret is visible and ready to type."""
+        self._view.grab_focus()
 
     # ── Zoom ────────────────────────────────────────────────────────
 

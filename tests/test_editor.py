@@ -115,5 +115,63 @@ class TestEditorSearch(unittest.TestCase):
         self.assertFalse(ed.search_next())
 
 
+class TestClampScroll(unittest.TestCase):
+    """The pure scroll-clamp helper — the part reload_editor's pattern is built
+    on: never scroll past the last page, never below zero."""
+
+    def test_in_range_value_kept(self):
+        from markdown_vault.editor.editor import _clamp_scroll
+        self.assertEqual(_clamp_scroll(1234.0, upper=9016.0, page_size=500.0), 1234.0)
+
+    def test_value_past_end_clamped_to_last_page(self):
+        # Returning into a note that has since become shorter: 1234 no longer
+        # exists, so land at the end (upper - page_size) instead of the void.
+        from markdown_vault.editor.editor import _clamp_scroll
+        self.assertEqual(_clamp_scroll(1234.0, upper=500.0, page_size=100.0), 400.0)
+
+    def test_never_negative(self):
+        from markdown_vault.editor.editor import _clamp_scroll
+        self.assertEqual(_clamp_scroll(50.0, upper=80.0, page_size=200.0), 0.0)
+
+
+class TestEditorScrollPosition(unittest.TestCase):
+    """Capture + restore of the reader's caret and scroll — feature: the
+    history restores where the reader was."""
+
+    def _editor(self, text):
+        from markdown_vault.editor.editor import Editor
+        ed = Editor()
+        ed._buffer.set_text(text)
+        return ed
+
+    def _cursor(self, ed):
+        buf = ed._buffer
+        return buf.get_iter_at_mark(buf.get_insert()).get_offset()
+
+    def test_capture_reads_cursor_offset(self):
+        ed = self._editor("hello world")
+        ed._buffer.place_cursor(ed._buffer.get_iter_at_offset(6))
+        _scroll, cursor = ed.capture_scroll_position()
+        self.assertEqual(cursor, 6)
+
+    def test_restore_places_cursor(self):
+        ed = self._editor("hello world")
+        ed.restore_scroll_position(cursor=3)
+        self.assertEqual(self._cursor(ed), 3)
+
+    def test_restore_clamps_cursor_into_shorter_buffer(self):
+        # The note is now shorter than when the position was captured; the caret
+        # must land at the end, not raise past the character count.
+        ed = self._editor("short")  # 5 chars
+        ed.restore_scroll_position(cursor=9999)
+        self.assertEqual(self._cursor(ed), 5)
+
+    def test_restore_without_cursor_leaves_caret(self):
+        ed = self._editor("hello world")
+        ed._buffer.place_cursor(ed._buffer.get_iter_at_offset(4))
+        ed.restore_scroll_position(scroll=10.0)  # cursor omitted
+        self.assertEqual(self._cursor(ed), 4)
+
+
 if __name__ == "__main__":
     unittest.main()
