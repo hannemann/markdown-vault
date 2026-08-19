@@ -55,6 +55,7 @@ from markdown_vault.app.zen_controller import ZenController
 from markdown_vault.app.find_controller import FindController
 from markdown_vault.app.ask_controller import AskController
 from markdown_vault.app.link_navigator import LinkNavigator
+from markdown_vault.app.scroll_memory import ScrollMemory
 from markdown_vault.app.preview_actions import PreviewActions
 from markdown_vault.core import config
 from markdown_vault.uikit import dialogs
@@ -349,6 +350,10 @@ class MainWindow(Adw.ApplicationWindow):
 
         # Input manager (shortcuts + navigation). Built before the orchestrator,
         # which is handed its history methods directly.
+        # Remembers the reader's position per history entry; the window only
+        # wires its methods in as the save/restore callbacks below.
+        self._scroll_memory = ScrollMemory(self._nav_history, self._tab_bar)
+
         self._input_manager = InputManager(
             application=self,
             on_nav_file_opened=self._open_from_history,
@@ -357,6 +362,8 @@ class MainWindow(Adw.ApplicationWindow):
             forward_btn=self._forward_btn,
             settings=self._settings,
             in_page_state_fn=self._in_page_nav_state,
+            save_position_fn=self._scroll_memory.save_leaving,
+            restore_position_fn=self._scroll_memory.restore_current,
         )
 
         # Ticking a checkbox and downloading an image both edit the note's source
@@ -1038,6 +1045,7 @@ class MainWindow(Adw.ApplicationWindow):
         self, new_vault: str, *,
         open_file_path: str | None = None,
         post_open_fn=None,
+        from_nav: bool = False,
     ) -> None:
         """Switch to *new_vault*, saving the current vault's session first.
 
@@ -1049,6 +1057,8 @@ class MainWindow(Adw.ApplicationWindow):
         If *open_file_path* is given, the file is opened in Phase 2 after
         the switch is confirmed.
         *post_open_fn* is called after opening (e.g. for scrolling).
+        *from_nav* marks a back/forward landing here: the open must not push or
+        overwrite the target entry, and its saved position is restored after.
         """
         if new_vault == self._active_vault:
             return
@@ -1060,7 +1070,8 @@ class MainWindow(Adw.ApplicationWindow):
         # Close all open tabs with dirty-check; on confirm continue in Phase 2.
         logger.info("switch-vault: phase 1 — saving current vault session, checking dirty tabs (target=%s, open_file=%s)", new_vault, open_file_path)
         self._close_all_tabs_with_dirty_check(
-            on_confirm=lambda: self._switch_vault_complete(new_vault, open_file_path, post_open_fn)
+            on_confirm=lambda: self._switch_vault_complete(
+                new_vault, open_file_path, post_open_fn, from_nav)
         )
 
     def _open_file_and_scroll(self, file_path: str, line_num: int) -> None:
@@ -1074,7 +1085,7 @@ class MainWindow(Adw.ApplicationWindow):
 
     def _switch_vault_complete(
         self, new_vault: str, open_file_path: str | None = None,
-        post_open_fn=None,
+        post_open_fn=None, from_nav: bool = False,
     ) -> None:
         """Phase 2 of vault switching — called after dirty-check is confirmed.
 
@@ -1082,6 +1093,7 @@ class MainWindow(Adw.ApplicationWindow):
         and restores the target vault's session.
         If *open_file_path* is given, opens the file after the switch.
         *post_open_fn* is called after opening (e.g. for scrolling).
+        *from_nav* forwards a back/forward landing to phase 3.
         """
         self._switch_vault_pending = False
         logger.info("switch-vault: phase 2 — switching to %s (open_file=%s)", new_vault, open_file_path)
@@ -1094,11 +1106,12 @@ class MainWindow(Adw.ApplicationWindow):
         self._vault_tree.set_active_vault(new_vault)
         self._refresh_scope_selectors()  # "current" entry follows the active vault
         # Defer tab closure + restore to next idle iteration (avoid GTK widget lifecycle conflict).
-        GLib.idle_add(self._switch_vault_complete_phase3, new_vault, open_file_path, post_open_fn)
+        GLib.idle_add(self._switch_vault_complete_phase3, new_vault, open_file_path,
+                      post_open_fn, from_nav)
 
     def _switch_vault_complete_phase3(
         self, new_vault: str, open_file_path: str | None = None,
-        post_open_fn=None,
+        post_open_fn=None, from_nav: bool = False,
     ) -> bool:
         """Phase 3 of vault switching — deferred via GLib.idle_add.
 
@@ -1126,7 +1139,19 @@ class MainWindow(Adw.ApplicationWindow):
         # From here on it is navigation the user asked for, so it pushes.
         if open_file_path is not None:
             logger.info("switch-vault: opening %s in new vault", open_file_path)
-            self._open_file(open_file_path)          # this open is the entry
+            if from_nav:
+                # A back/forward landing in another vault: the entry already
+                # exists at the current position. Suppress so the open neither
+                # pushes a duplicate nor overwrites the entry's saved position
+                # with the freshly-loaded (scroll 0) one; restore it afterwards.
+                prev = self._nav_history.suppress
+                self._nav_history.suppress = True
+                try:
+                    self._open_file(open_file_path, _from_nav=True)
+                finally:
+                    self._nav_history.suppress = prev
+            else:
+                self._open_file(open_file_path)      # this open is the entry
             if post_open_fn is not None:
                 GLib.idle_add(post_open_fn)
         else:
@@ -2006,7 +2031,14 @@ class MainWindow(Adw.ApplicationWindow):
         (the global history spans vaults now)."""
         vault = self._find_vault_for_file(file_path)
         if vault and vault != self._active_vault:
-            self._switch_vault(vault, open_file_path=file_path)
+            # Cross-vault back/forward: the switch is async, so the InputManager's
+            # restore fires too early (the tab isn't open yet). Restore after the
+            # open instead, via post_open_fn, and mark it from_nav so the open
+            # doesn't clobber the entry.
+            self._switch_vault(
+                vault, open_file_path=file_path, from_nav=_from_nav,
+                post_open_fn=(self._scroll_memory.restore_current
+                              if _from_nav else None))
         else:
             self._navigate_in_place(file_path, _from_nav=_from_nav)
 
@@ -2026,6 +2058,13 @@ class MainWindow(Adw.ApplicationWindow):
             self._open_file(file_path, _from_nav=_from_nav)
             return
         old = tab.file_path
+        # Save the reader's spot in the note we're leaving *before* its buffer is
+        # replaced — after update_path the tab holds the target and the old
+        # position is gone (the push in _on_tab_changed would be too late). On a
+        # back/forward the leaving position was already saved before the history
+        # moved, so don't re-save over the target entry.
+        if not _from_nav and self._nav_history.current == old:
+            self._scroll_memory.record_from_tab(tab)
         # Re-key the tab first (tab bar + content-stack page + label) so the
         # editor's modified signal finds it under the new path, then load the
         # target's content into the same editor/preview widgets.

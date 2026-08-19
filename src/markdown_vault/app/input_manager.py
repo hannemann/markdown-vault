@@ -17,7 +17,8 @@ class InputManager:
 
     def __init__(self, application, on_nav_file_opened,
                  nav_history, back_btn, forward_btn, settings,
-                 in_page_state_fn=None):
+                 in_page_state_fn=None, save_position_fn=None,
+                 restore_position_fn=None):
         """Initialize the input manager.
 
         Args:
@@ -30,6 +31,13 @@ class InputManager:
             in_page_state_fn: Optional ``() -> (can_back, can_forward)`` reporting the
                 active preview's in-page anchor history, so the buttons stay lit while
                 footnote/TOC jumps can still be unwound.
+            save_position_fn: Optional ``() -> None`` that records the reader's
+                position into the *current* history entry. Called just before the
+                history leaves that entry — on a push and before a back/forward —
+                so where the reader was is captured before it is lost.
+            restore_position_fn: Optional ``() -> None`` that restores the current
+                entry's saved position. Called after a back/forward has opened the
+                target note.
         """
         self._application = application
         self._on_nav_file_opened = on_nav_file_opened
@@ -38,6 +46,13 @@ class InputManager:
         self._forward_btn = forward_btn
         self._settings = settings
         self._in_page_state_fn = in_page_state_fn
+        self._save_position_fn = save_position_fn
+        self._restore_position_fn = restore_position_fn
+        # True while our own back/forward is opening the target note. The open
+        # fires a tab-change that calls push_history again; that re-entrant push
+        # must not re-save the freshly-loaded (scroll 0) position over the target
+        # entry we are about to restore.
+        self._navigating = False
         self._tab_shortcut_ctrl: Gtk.ShortcutController | None = None
         self._tab_shortcuts: list = []
 
@@ -124,22 +139,47 @@ class InputManager:
         Args:
             file_path: Absolute path of the file to push
         """
+        if self._navigating:
+            # Re-entrant push from the tab-change our own back/forward fired —
+            # ignore it, or it overwrites the target entry's saved position.
+            return
+        if self._save_position_fn is not None:
+            self._save_position_fn()      # record where we were before leaving
         self._nav_history.push(file_path)
         self._update_nav_buttons()
 
     def nav_back(self) -> None:
         """Navigate to the previous entry in history, skipping missing files."""
+        if self._save_position_fn is not None:
+            self._save_position_fn()      # record the current spot before leaving it
         file_path = self._nav_history.back()
         if file_path is not None:
-            self._on_nav_file_opened(file_path, _from_nav=True)
+            self._open_from_nav(file_path)
         self._update_nav_buttons()
 
     def nav_forward(self) -> None:
         """Navigate to the next entry in history, skipping missing files."""
+        if self._save_position_fn is not None:
+            self._save_position_fn()
         file_path = self._nav_history.forward()
         if file_path is not None:
-            self._on_nav_file_opened(file_path, _from_nav=True)
+            self._open_from_nav(file_path)
         self._update_nav_buttons()
+
+    def _open_from_nav(self, file_path: str) -> None:
+        """Open *file_path* for a back/forward step, then restore its position.
+
+        The open is fenced by ``_navigating`` so the tab-change it triggers can't
+        re-save over the target entry; the restore runs after the fence, reading
+        the entry's intact saved position.
+        """
+        self._navigating = True
+        try:
+            self._on_nav_file_opened(file_path, _from_nav=True)
+        finally:
+            self._navigating = False
+        if self._restore_position_fn is not None:
+            self._restore_position_fn()   # land where we were, not at the top
 
     def _update_nav_buttons(self) -> None:
         """Reflect history state on the nav buttons.

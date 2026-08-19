@@ -280,5 +280,88 @@ class TestUpdateNavButtonsPublic(unittest.TestCase):
         self._mgr._update_nav_buttons.assert_called_once()
 
 
+class TestPositionCallbacks(unittest.TestCase):
+    """save_position_fn / restore_position_fn wrap push and back/forward so the
+    reader's position is recorded on leave and restored on return — feature: the
+    history restores the scroll position."""
+
+    def _mgr(self, *, with_fns=True):
+        self.nav_history = unittest.mock.MagicMock()
+        self.on_nav = unittest.mock.MagicMock()
+        self.save = unittest.mock.MagicMock()
+        self.restore = unittest.mock.MagicMock()
+        kw = dict(save_position_fn=self.save,
+                  restore_position_fn=self.restore) if with_fns else {}
+        return InputManager(
+            application=unittest.mock.MagicMock(),
+            on_nav_file_opened=self.on_nav,
+            nav_history=self.nav_history,
+            back_btn=unittest.mock.MagicMock(),
+            forward_btn=unittest.mock.MagicMock(),
+            settings={"tab_switch_mode": "mru"},
+            **kw)
+
+    def test_push_saves_leaving_position_before_pushing(self):
+        mgr = self._mgr()
+        order = []
+        self.save.side_effect = lambda: order.append("save")
+        self.nav_history.push.side_effect = lambda *a, **k: order.append("push")
+        mgr.push_history("/f.md")
+        self.assertEqual(order, ["save", "push"])   # record before the new entry
+
+    def test_back_saves_before_and_restores_after_opening(self):
+        mgr = self._mgr()
+        order = []
+        self.save.side_effect = lambda: order.append("save")
+        self.nav_history.back.side_effect = lambda: (order.append("back") or "/prev.md")
+        self.on_nav.side_effect = lambda *a, **k: order.append("open")
+        self.restore.side_effect = lambda: order.append("restore")
+        mgr.nav_back()
+        self.assertEqual(order, ["save", "back", "open", "restore"])
+
+    def test_forward_saves_before_and_restores_after_opening(self):
+        mgr = self._mgr()
+        order = []
+        self.save.side_effect = lambda: order.append("save")
+        self.nav_history.forward.side_effect = lambda: (order.append("fwd") or "/next.md")
+        self.on_nav.side_effect = lambda *a, **k: order.append("open")
+        self.restore.side_effect = lambda: order.append("restore")
+        mgr.nav_forward()
+        self.assertEqual(order, ["save", "fwd", "open", "restore"])
+
+    def test_back_does_not_restore_when_nowhere_to_go(self):
+        mgr = self._mgr()
+        self.nav_history.back.return_value = None
+        mgr.nav_back()
+        self.restore.assert_not_called()
+
+    def test_reentrant_push_during_nav_open_is_suppressed(self):
+        # Opening the target on back/forward fires a tab-change, which calls
+        # push_history again. That re-entrant push must be a no-op: otherwise it
+        # re-saves the freshly-loaded (scroll 0) position over the target entry
+        # we are about to restore, and the note lands at the top.
+        mgr = self._mgr()
+        calls = []
+        self.save.side_effect = lambda: calls.append("save")
+        self.nav_history.back.return_value = "/prev.md"
+
+        def on_open(fp, **k):
+            calls.append("open")
+            mgr.push_history(fp)          # what on_tab_changed does
+
+        self.on_nav.side_effect = on_open
+        mgr.nav_back()
+        self.assertEqual(calls, ["save", "open"])   # no second save
+        self.nav_history.push.assert_not_called()   # no re-entrant push
+        self.restore.assert_called_once()           # restore still runs after
+
+    def test_callbacks_are_optional(self):
+        mgr = self._mgr(with_fns=False)
+        self.nav_history.back.return_value = "/prev.md"
+        mgr.push_history("/f.md")   # no save fn → must not crash
+        mgr.nav_back()              # no restore fn → must not crash
+        self.on_nav.assert_called_once_with("/prev.md", _from_nav=True)
+
+
 if __name__ == "__main__":
     unittest.main()

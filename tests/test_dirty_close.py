@@ -598,7 +598,8 @@ class TestSwitchVaultDirtyDialogRace(unittest.TestCase):
                 if on_confirm is not None:
                     on_confirm()
 
-            def _switch_vault_complete(self, new_vault, open_file_path=None, post_open_fn=None):
+            def _switch_vault_complete(self, new_vault, open_file_path=None,
+                                       post_open_fn=None, from_nav=False):
                 # Full vault-switch logic (same as MainWindow)
                 self._do_close_paths(self._tab_bar.get_all_paths())
                 self.mru.clear()

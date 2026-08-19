@@ -61,7 +61,7 @@ class TestNavigation(AppWindowTest):
             self.assertIsNone(self.win._active_vault)      # nothing committed yet
             complete.assert_not_called()
             check.call_args.kwargs["on_confirm"]()          # user confirms
-        complete.assert_called_once_with("/tmp/some-vault", None, None)
+        complete.assert_called_once_with("/tmp/some-vault", None, None, False)
 
     def test_switching_to_the_active_vault_does_nothing(self):
         self.win._active_vault = "/tmp/same"
@@ -115,7 +115,8 @@ class TestNavigation(AppWindowTest):
             self.win._active_vault = "/tmp/this-vault"
             self.win._open_from_history("/tmp/other-vault/note.md")
         switch.assert_called_once_with("/tmp/other-vault",
-                                       open_file_path="/tmp/other-vault/note.md")
+                                       open_file_path="/tmp/other-vault/note.md",
+                                       from_nav=False, post_open_fn=None)
 
 
 class TestLinkNavigator(unittest.TestCase):
@@ -360,6 +361,72 @@ class TestStartupHistory(AppWindowTest):
             win = self.aw.MainWindow(self._app)
         self.addCleanup(win._autosave.cancel)
         self.assertEqual(win._nav_history.history, [])
+
+
+class TestScrollPositionHistory(AppWindowTest):
+    """The window's part of the scroll-position feature: it builds a
+    ``ScrollMemory`` and wires it in (as the InputManager's save/restore
+    callbacks, the vault switch's post-open callback, and the in-place capture).
+    The memory's own behaviour lives in test_scroll_memory."""
+
+    def _tab(self, path, mode, *, escroll=0.0, ecursor=0, pscroll=0.0):
+        tab = unittest.mock.Mock()
+        tab.file_path = path
+        tab.view_mode = mode
+        tab.editor.is_modified = False
+        tab.editor.capture_scroll_position.return_value = (escroll, ecursor)
+        tab.preview.preview_scroll_position.return_value = pscroll
+        return tab
+
+    # ── wiring: the window builds ScrollMemory and wires it in ───────
+
+    def test_input_manager_is_wired_with_scroll_memory(self):
+        self.assertEqual(self.win._input_manager._save_position_fn,
+                         self.win._scroll_memory.save_leaving)
+        self.assertEqual(self.win._input_manager._restore_position_fn,
+                         self.win._scroll_memory.restore_current)
+
+    # ── cross-vault back/forward ─────────────────────────────────────
+
+    def test_cross_vault_nav_switches_with_from_nav_and_restore(self):
+        # A back/forward landing in another vault must forward from_nav (so the
+        # async open doesn't clobber the entry) and restore the position after
+        # the open, via post_open_fn — the InputManager's own restore fires too
+        # early here (the switch is async).
+        with unittest.mock.patch.object(self.win, "_find_vault_for_file",
+                                        return_value="/tmp/other"), \
+                unittest.mock.patch.object(self.win, "_switch_vault") as switch:
+            self.win._active_vault = "/tmp/here"
+            self.win._open_from_history("/tmp/other/note.md", _from_nav=True)
+        switch.assert_called_once_with(
+            "/tmp/other", open_file_path="/tmp/other/note.md", from_nav=True,
+            post_open_fn=self.win._scroll_memory.restore_current)
+
+    # ── in-place link: capture before the buffer is replaced ─────────
+
+    def test_in_place_link_saves_position_before_replacing_the_buffer(self):
+        tab = self._tab("/a.md", "render")
+        self.win._nav_history.push("/a.md")
+        with unittest.mock.patch.object(self.win._tab_bar, "get_current_tab", return_value=tab), \
+             unittest.mock.patch.object(self.win._tab_bar, "get_all_paths", return_value=["/a.md"]), \
+             unittest.mock.patch.object(self.win._tab_bar, "update_path"), \
+             unittest.mock.patch.object(self.win, "_on_tab_changed"), \
+             unittest.mock.patch.object(self.win._scroll_memory, "record_from_tab") as rec:
+            self.win._navigate_in_place("/new.md", _from_nav=False)
+        rec.assert_called_once_with(tab)
+
+    def test_in_place_nav_does_not_resave_over_the_target_entry(self):
+        # back/forward saved the leaving position already and moved the history;
+        # the in-place open here must not overwrite the *target* entry.
+        tab = self._tab("/a.md", "render")
+        self.win._nav_history.push("/a.md")
+        with unittest.mock.patch.object(self.win._tab_bar, "get_current_tab", return_value=tab), \
+             unittest.mock.patch.object(self.win._tab_bar, "get_all_paths", return_value=["/a.md"]), \
+             unittest.mock.patch.object(self.win._tab_bar, "update_path"), \
+             unittest.mock.patch.object(self.win, "_on_tab_changed"), \
+             unittest.mock.patch.object(self.win._scroll_memory, "record_from_tab") as rec:
+            self.win._navigate_in_place("/new.md", _from_nav=True)
+        rec.assert_not_called()
 
 
 if __name__ == "__main__":

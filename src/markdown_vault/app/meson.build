@@ -9,6 +9,7 @@ install_data(
     'link_navigator.py',
     'monitor_handler.py',
     'preview_actions.py',
+    'scroll_memory.py',
     'session_manager.py',
     'tab_manager.py',
     'view_mode_manager.py',
