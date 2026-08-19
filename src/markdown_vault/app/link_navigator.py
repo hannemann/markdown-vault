@@ -98,14 +98,6 @@ class LinkNavigator:
         else:
             tab.preview.scroll_to_anchor(fragment)
 
-    def scroll_to_anchor(self, fragment: str) -> None:
-        """Scroll the current tab's preview to *fragment* — the heading a
-        cross-note wikilink (``[[Other#Heading]]``) pointed at. Deferred inside
-        the preview until the freshly opened note has rendered."""
-        tab = self._get_current_tab()
-        if tab and fragment:
-            tab.preview.scroll_to_anchor(fragment)
-
     @staticmethod
     def display_name(uri: str) -> str:
         """A user-friendly target name from a ``vault:`` URI."""
