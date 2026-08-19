@@ -39,6 +39,18 @@ def _is_canonical_note_path(p) -> bool:
             and not os.path.isdir(p))
 
 
+def _nav_entry_path(h):
+    """The note path of a nav-history entry, tolerating both persisted forms:
+    a plain string (legacy) or a ``{"path": …, …}`` dict (position-carrying).
+    Returns ``None`` for anything without a usable path, so the canonical check
+    below rejects it."""
+    if isinstance(h, str):
+        return h
+    if isinstance(h, dict):
+        return h.get("path")
+    return None
+
+
 def _sanitize(data: dict) -> dict:
     """Drop malformed persisted state at load so a corrupt or stale session can't
     crash the restore (or resurrect broken tabs). Invalid tabs / MRU / history
@@ -66,7 +78,8 @@ def _sanitize(data: dict) -> dict:
             sess["active_tab"] = good[-1]["path"] if good else None
     nav = data.get("nav_history")
     if isinstance(nav, dict) and isinstance(nav.get("history"), list):
-        hist = [h for h in nav["history"] if _is_canonical_note_path(h)]
+        hist = [h for h in nav["history"]
+                if _is_canonical_note_path(_nav_entry_path(h))]
         dropped += len(nav["history"]) - len(hist)
         nav["history"] = hist
         pos = nav.get("pos", -1)

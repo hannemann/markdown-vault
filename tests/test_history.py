@@ -352,7 +352,11 @@ class TestNavHistoryState(unittest.TestCase):
         for p in ("/v/a.md", "/v/b.md", "/v/c.md"):
             h.push(p)
         state = h.to_state()
-        self.assertEqual(state, {"history": ["/v/a.md", "/v/b.md", "/v/c.md"],
+        # Entries serialise as dicts keyed by "path"; a position-less entry
+        # carries only its path (no scroll/cursor keys) so the file stays lean.
+        self.assertEqual(state, {"history": [{"path": "/v/a.md"},
+                                             {"path": "/v/b.md"},
+                                             {"path": "/v/c.md"}],
                                  "pos": 2})
         h2 = NavHistory()
         h2.load_state(state, exists=lambda p: True)
@@ -396,6 +400,115 @@ class TestNavHistoryState(unittest.TestCase):
                      exists=lambda p: True)
         self.assertEqual(h.history, ["/b.md", "/c.md"])
         self.assertEqual(h.current, "/c.md")
+
+
+class TestNavHistoryPositions(unittest.TestCase):
+    """Position-carrying entries — feature: the history restores where the
+    reader was, not just which file. The public path API (``history``,
+    ``current``, ``back``/``forward``) stays string-valued; positions ride
+    alongside on ``current_entry`` / ``entries``."""
+
+    def setUp(self):
+        self._tmp = tempfile.mkdtemp()
+        self._a = str(Path(self._tmp) / "a.md")
+        self._b = str(Path(self._tmp) / "b.md")
+        Path(self._a).touch()
+        Path(self._b).touch()
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self._tmp, ignore_errors=True)
+
+    def test_push_defaults_to_no_position(self):
+        h = NavHistory()
+        h.push("/v/a.md")
+        e = h.current_entry
+        self.assertEqual(e.path, "/v/a.md")
+        self.assertIsNone(e.editor_scroll)
+        self.assertIsNone(e.editor_cursor)
+        self.assertIsNone(e.preview_scroll)
+        self.assertFalse(e.has_position())
+
+    def test_update_current_writes_only_given_fields(self):
+        h = NavHistory()
+        h.push("/v/a.md")
+        h.update_current(editor_scroll=120.0, editor_cursor=42)
+        e = h.current_entry
+        self.assertEqual(e.editor_scroll, 120.0)
+        self.assertEqual(e.editor_cursor, 42)
+        self.assertIsNone(e.preview_scroll)  # untouched field stays None
+
+    def test_update_current_is_noop_without_current(self):
+        h = NavHistory()
+        h.update_current(editor_scroll=1.0)  # empty history → no crash
+        self.assertIsNone(h.current_entry)
+
+    def test_position_travels_with_back_and_forward(self):
+        h = NavHistory()
+        h.push(self._a)
+        h.update_current(preview_scroll=300.0)
+        h.push(self._b)
+        self.assertEqual(h.back(), self._a)
+        self.assertEqual(h.current_entry.preview_scroll, 300.0)
+        self.assertEqual(h.forward(), self._b)
+        self.assertIsNone(h.current_entry.preview_scroll)
+
+    def test_duplicate_same_path_same_position_collapses(self):
+        h = NavHistory()
+        h.push("/v/a.md", editor_scroll=100.0)
+        h.push("/v/a.md", editor_scroll=100.0)
+        self.assertEqual(h.history, ["/v/a.md"])
+
+    def test_duplicate_same_path_different_position_kept(self):
+        # An in-page jump has the same file but a different position — it must
+        # not be swallowed by the classic path-only dedupe.
+        h = NavHistory()
+        h.push("/v/a.md", editor_scroll=100.0)
+        h.push("/v/a.md", editor_scroll=500.0)
+        self.assertEqual(h.history, ["/v/a.md", "/v/a.md"])
+        self.assertEqual(h.entries[0].editor_scroll, 100.0)
+        self.assertEqual(h.entries[1].editor_scroll, 500.0)
+
+    def test_positionless_push_of_same_path_still_collapses(self):
+        # Merely re-activating the current note (no explicit position) is not a
+        # new entry, and must not wipe the position already recorded there.
+        h = NavHistory()
+        h.push("/v/a.md", editor_scroll=100.0)
+        h.push("/v/a.md")
+        self.assertEqual(h.history, ["/v/a.md"])
+        self.assertEqual(h.current_entry.editor_scroll, 100.0)
+
+
+class TestNavHistoryPositionState(unittest.TestCase):
+    """Position round-trips through session state, and legacy string entries
+    migrate rather than vanishing (which would look like a silent empty
+    history after the upgrade)."""
+
+    def test_round_trip_carries_position(self):
+        h = NavHistory()
+        h.push("/v/a.md", editor_scroll=10.0, editor_cursor=3)
+        h.push("/v/b.md", preview_scroll=250.0)
+        h2 = NavHistory()
+        h2.load_state(h.to_state(), exists=lambda p: True)
+        self.assertEqual(h2.history, ["/v/a.md", "/v/b.md"])
+        self.assertEqual(h2.entries[0].editor_scroll, 10.0)
+        self.assertEqual(h2.entries[0].editor_cursor, 3)
+        self.assertEqual(h2.entries[1].preview_scroll, 250.0)
+
+    def test_load_migrates_legacy_string_entries(self):
+        state = {"history": ["/v/a.md", "/v/b.md"], "pos": 1}
+        h = NavHistory()
+        h.load_state(state, exists=lambda p: True)
+        self.assertEqual(h.history, ["/v/a.md", "/v/b.md"])
+        self.assertEqual(h.pos, 1)
+        self.assertFalse(h.current_entry.has_position())
+
+    def test_load_drops_garbage_entries(self):
+        state = {"history": ["/v/a.md", 123, {"nopath": 1}, {"path": "/v/b.md"}],
+                 "pos": 3}
+        h = NavHistory()
+        h.load_state(state, exists=lambda p: True)
+        self.assertEqual(h.history, ["/v/a.md", "/v/b.md"])
 
 
 if __name__ == "__main__":

@@ -332,6 +332,29 @@ class TestSanitize(unittest.TestCase):
         self.assertEqual(d["nav_history"]["history"], ["/v/a.md", "/v/c.md"])
         self.assertEqual(d["nav_history"]["pos"], 1)
 
+    def test_nav_history_keeps_dict_entries_with_positions(self):
+        # New-form entries carry a position; the sanitizer must keep them intact
+        # (dropping them would look like a silent empty history after upgrade).
+        nav = {"history": [{"path": "/v/a.md", "editor_scroll": 120.0},
+                           {"path": "/v/b.md", "preview_scroll": 300.0}], "pos": 1}
+        d = self._data([], nav=nav)
+        _ses._sanitize(d)
+        self.assertEqual(d["nav_history"]["history"],
+                         [{"path": "/v/a.md", "editor_scroll": 120.0},
+                          {"path": "/v/b.md", "preview_scroll": 300.0}])
+        self.assertEqual(d["nav_history"]["pos"], 1)
+
+    def test_nav_history_drops_dict_with_noncanonical_path(self):
+        nav = {"history": [{"path": "/v/../b.md"}, {"nopath": 1}, "notadict-butok",
+                           {"path": "/v/keep.md", "editor_cursor": 5}], "pos": 3}
+        d = self._data([], nav=nav)
+        _ses._sanitize(d)
+        # "notadict-butok" is not an absolute .md path either → dropped; only the
+        # canonical dict survives.
+        self.assertEqual(d["nav_history"]["history"],
+                         [{"path": "/v/keep.md", "editor_cursor": 5}])
+        self.assertEqual(d["nav_history"]["pos"], 0)
+
     def test_non_dict_containers_reset(self):
         d = {"vault_sessions": "garbage"}
         _ses._sanitize(d)
