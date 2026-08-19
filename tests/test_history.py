@@ -469,6 +469,19 @@ class TestNavHistoryPositions(unittest.TestCase):
         self.assertEqual(h.entries[0].editor_scroll, 100.0)
         self.assertEqual(h.entries[1].editor_scroll, 500.0)
 
+    def test_push_with_a_position_onto_a_position_less_entry_is_kept(self):
+        # The ordinary case for an in-page jump: the note was just opened, so its
+        # entry has no position yet, and the jump pushes one. It must become its
+        # own entry — this is what lets an anchor jump be a plain history push
+        # (the merge-in-page follow-up rests on it), and it was the one row of the
+        # dedupe matrix without a guard.
+        h = NavHistory()
+        h.push("/v/a.md")
+        h.push("/v/a.md", preview_scroll=250.0)
+        self.assertEqual(h.history, ["/v/a.md", "/v/a.md"])
+        self.assertIsNone(h.entries[0].preview_scroll)
+        self.assertEqual(h.entries[1].preview_scroll, 250.0)
+
     def test_positionless_push_of_same_path_still_collapses(self):
         # Merely re-activating the current note (no explicit position) is not a
         # new entry, and must not wipe the position already recorded there.
