@@ -21,7 +21,9 @@ from markdown_vault.preview.preview import (
     BlankLineBeforeListPreprocessor,
     _hover_uri_display,
     _anchor_scroll_js,
+    _scroll_to_js,
 )
+from markdown_vault.preview import preview as _pv
 import json
 import markdown as md
 
@@ -145,6 +147,107 @@ class TestInPageNavHistory(unittest.TestCase):
         p._reset_in_page_nav()
         self.assertEqual((p._in_page_back, p._in_page_fwd), (0, 0))
         p.emit.assert_not_called()
+
+
+class TestPreviewScrollToJs(unittest.TestCase):
+    """The pure scroll-position JS builder (restore = jump, no animation)."""
+
+    def test_builds_scrollto(self):
+        js = _scroll_to_js(300.0)
+        self.assertIn("scrollTo", js)
+        self.assertIn("300", js)
+
+    def test_no_smooth_behaviour(self):
+        # A restored position should appear at once, not animate from the top.
+        self.assertNotIn("smooth", _scroll_to_js(120.0))
+
+    def test_zero_is_valid(self):
+        self.assertIn("scrollTo", _scroll_to_js(0))
+
+
+class TestPreviewScrollPosition(unittest.TestCase):
+    """Recording the live scroll offset (for saving on leave) and restoring a
+    saved one (arm on entry) — feature: the history restores the reading spot.
+    The WebView JS is mocked; only the Python-side state is under test."""
+
+    def _preview(self):
+        p = Preview.__new__(Preview)           # bypass GTK/WebKit init
+        p._pending_scroll = None
+        p._pending_anchor = ""
+        p._scroll_y = 0.0
+        p._loaded = True
+        p._load_in_progress = False
+        p._web_view = object()                 # non-None sentinel
+        p._run_js = MagicMock()
+        return p
+
+    def test_arm_scroll_then_flush_runs_js_and_clears(self):
+        p = self._preview()
+        p.arm_scroll(250.0)
+        self.assertEqual(p._pending_scroll, 250.0)
+        p._flush_pending_scroll()
+        p._run_js.assert_called_once()
+        self.assertIn("250", p._run_js.call_args[0][0])
+        self.assertIsNone(p._pending_scroll)    # one-shot
+
+    def test_flush_is_noop_without_pending(self):
+        p = self._preview()
+        p._flush_pending_scroll()
+        p._run_js.assert_not_called()
+
+    def test_scroll_to_position_flushes_immediately_when_loaded(self):
+        p = self._preview()
+        p.scroll_to_position(120.0)
+        p._run_js.assert_called_once()
+        self.assertIsNone(p._pending_scroll)
+
+    def test_scroll_to_position_defers_while_loading(self):
+        p = self._preview()
+        p._load_in_progress = True
+        p.scroll_to_position(120.0)
+        p._run_js.assert_not_called()
+        self.assertEqual(p._pending_scroll, 120.0)   # armed for FINISHED
+
+    def test_finished_flushes_armed_scroll(self):
+        p = self._preview()
+        p.arm_scroll(88.0)
+        p._on_load_changed(None, _pv.WebKit.LoadEvent.FINISHED)
+        self.assertIsNone(p._pending_scroll)
+        p._run_js.assert_called()
+
+    def test_reported_scroll_updates_position(self):
+        p = self._preview()
+        jsc = MagicMock()
+        jsc.to_json.return_value = json.dumps({"y": 415.0})
+        p._on_scroll_reported(None, jsc)
+        self.assertEqual(p.preview_scroll_position(), 415.0)
+
+    def test_reported_scroll_ignores_garbage(self):
+        p = self._preview()
+        jsc = MagicMock()
+        jsc.to_json.return_value = json.dumps({"y": "notanumber"})
+        p._on_scroll_reported(None, jsc)
+        self.assertEqual(p.preview_scroll_position(), 0.0)
+
+
+class TestPreviewScrollReset(unittest.TestCase):
+    """A different note resets the live scroll offset; editing the same note
+    keeps it — so leaving a freshly opened note before any scroll event records
+    0, not the previous note's position."""
+
+    def test_switching_note_resets_scroll_offset(self):
+        p = Preview()
+        p.update_from_text("# A", "", "/a.md")
+        p._scroll_y = 500.0                          # user scrolled in A
+        p.update_from_text("# B", "", "/b.md")       # a different note
+        self.assertEqual(p.preview_scroll_position(), 0.0)
+
+    def test_live_edit_keeps_scroll_offset(self):
+        p = Preview()
+        p.update_from_text("# A", "", "/a.md")
+        p._scroll_y = 500.0
+        p.update_from_text("# A edited", "", "/a.md")  # same note, live edit
+        self.assertEqual(p.preview_scroll_position(), 500.0)
 
 
 class TestBuildCsp(unittest.TestCase):
@@ -990,7 +1093,9 @@ class TestPreviewCleanup(unittest.TestCase):
             preview.cleanup()
         mock_wv.stop_loading.assert_called_once()
         mock_wv.get_user_content_manager.return_value \
-            .unregister_script_message_handler.assert_called_once_with("checkboxHandler")
+            .unregister_script_message_handler.assert_has_calls(
+                [unittest.mock.call("checkboxHandler"),
+                 unittest.mock.call("scrollHandler")])
         mock_set_child.assert_called_once_with(None)
         mock_wv.terminate_web_process.assert_called_once()
         self.assertIsNone(preview._web_view)

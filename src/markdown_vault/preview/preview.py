@@ -90,6 +90,15 @@ def _anchor_scroll_js(heading: str) -> str:
     )
 
 
+def _scroll_to_js(y: float) -> str:
+    """Build JS that jumps the preview to vertical pixel offset *y*.
+
+    No ``behavior:'smooth'``: a restored reading position should appear at once,
+    not animate up from the top the way an in-page anchor jump does.
+    """
+    return f"window.scrollTo(0, {float(y)});"
+
+
 HTML_TEMPLATE = """\
 <!DOCTYPE html>
 <html>
@@ -648,6 +657,8 @@ class Preview(Gtk.ScrolledWindow):
         self._pending_base_dir: str = ""
         self._pending_current_file: str = ""
         self._pending_anchor: str = ""  # heading to scroll to once the note has rendered
+        self._pending_scroll: float | None = None  # pixel offset to restore on next render
+        self._scroll_y: float = 0.0     # last reported scroll offset (kept live by JS)
         self._load_in_progress: bool = False  # full load_html in flight (DOM not ready yet)
         self._web_view = WebKit.WebView()
         self._setup_web_view(self._web_view)
@@ -694,6 +705,34 @@ class Preview(Gtk.ScrolledWindow):
 
         content_controller = wv.get_user_content_manager()
         content_controller.register_script_message_handler("checkboxHandler")
+        content_controller.register_script_message_handler("scrollHandler")
+
+        # Report the scroll offset back to Python so it is always at hand when the
+        # note is left (an evaluate_javascript on leave would answer too late —
+        # after the content was already swapped). rAF-throttled: a scroll fires on
+        # every wheel tick, but only the latest value before leaving is needed.
+        scroll_script = WebKit.UserScript.new(
+            """
+            (function() {
+                var ticking = false;
+                window.addEventListener('scroll', function() {
+                    if (ticking) return;
+                    ticking = true;
+                    window.requestAnimationFrame(function() {
+                        ticking = false;
+                        if (window.webkit && window.webkit.messageHandlers
+                            && window.webkit.messageHandlers['scrollHandler']) {
+                            window.webkit.messageHandlers['scrollHandler']
+                                .postMessage({ y: window.scrollY });
+                        }
+                    });
+                }, { passive: true });
+            })();
+            """,
+            WebKit.UserContentInjectedFrames.ALL_FRAMES,
+            WebKit.UserScriptInjectionTime.END,
+        )
+        content_controller.add_script(scroll_script)
 
         checkbox_script = WebKit.UserScript.new(
             """
@@ -744,6 +783,10 @@ class Preview(Gtk.ScrolledWindow):
         ctrl.connect(
             "script-message-received::checkboxHandler",
             self._on_checkbox_clicked,
+        )
+        ctrl.connect(
+            "script-message-received::scrollHandler",
+            self._on_scroll_reported,
         )
 
     def _on_mouse_target_changed(self, _wv, hit_test_result, _modifiers) -> None:
@@ -819,6 +862,22 @@ class Preview(Gtk.ScrolledWindow):
         except Exception:
             logger.error("Failed to handle checkbox message from preview", exc_info=True)
 
+    def _on_scroll_reported(self, _content_manager, jsc_value) -> None:
+        """Record the preview's live scroll offset (rAF-throttled in JS), so it is
+        available synchronously when the note is left — no async query needed."""
+        try:
+            data = json.loads(jsc_value.to_json(0))
+            y = data.get("y")
+            if isinstance(y, (int, float)) and not isinstance(y, bool):
+                self._scroll_y = float(y)
+        except Exception:
+            logger.error("Failed to handle scroll message from preview", exc_info=True)
+
+    def preview_scroll_position(self) -> float:
+        """The last reported vertical scroll offset — kept current by the scroll
+        handler, so it is the reader's position at the moment the note is left."""
+        return self._scroll_y
+
     # ------------------------------------------------------------------
     # Navigation
     # ------------------------------------------------------------------
@@ -875,6 +934,33 @@ class Preview(Gtk.ScrolledWindow):
         if js:
             self._run_js(js)
 
+    def scroll_to_position(self, y: float) -> None:
+        """Jump to pixel offset *y* — the position counterpart of
+        :meth:`scroll_to_anchor`. Applied now if the page is already rendered
+        (returning into an already-open tab), otherwise deferred to the next
+        full load's FINISHED. For content only about to be rendered, use
+        :meth:`arm_scroll`.
+        """
+        self._pending_scroll = y
+        if self._loaded and not self._load_in_progress:
+            self._flush_pending_scroll()
+
+    def _flush_pending_scroll(self) -> None:
+        """Run the pending scroll restore (if any) and clear it — one-shot."""
+        if self._web_view is None or self._pending_scroll is None:
+            return
+        y = self._pending_scroll
+        self._pending_scroll = None
+        self._run_js(_scroll_to_js(y))
+
+    def arm_scroll(self, y: float) -> None:
+        """Remember pixel offset *y* for the content **about to** be rendered —
+        the position counterpart of :meth:`arm_anchor`. Applied on the next full
+        load's FINISHED, when the note it belongs to is actually in the DOM.
+        Used when returning (back/forward) into a note that reloads.
+        """
+        self._pending_scroll = y
+
     def arm_anchor(self, heading: str) -> None:
         """Remember *heading* for the content that is **about to** be rendered.
 
@@ -897,6 +983,10 @@ class Preview(Gtk.ScrolledWindow):
         if event == WebKit.LoadEvent.FINISHED:
             self._load_in_progress = False
             self._flush_pending_anchor()
+            # A saved pixel position takes precedence over a fragment (it is run
+            # last): a reader who entered at #heading and then scrolled on wants
+            # to return to where they were, not back to the heading.
+            self._flush_pending_scroll()
 
     def can_go_back_in_page(self) -> bool:
         """True if there is in-page anchor history (footnote/TOC jumps) to unwind."""
@@ -1222,6 +1312,12 @@ class Preview(Gtk.ScrolledWindow):
             self._pending_current_file = current_file
             return
 
+        if current_file and current_file != self._current_file:
+            # A different note is being shown — the previous note's scroll offset
+            # no longer applies. Reset so leaving immediately (before any scroll
+            # event) records 0, not the old position; an armed restore updates it
+            # again once it scrolls.
+            self._scroll_y = 0.0
         self._current_file = current_file
         source_vault = self._resolve_source_vault(base_dir)
         extensions = [
@@ -1451,7 +1547,7 @@ class Preview(Gtk.ScrolledWindow):
         the OS otherwise reports as a WebKitGTK crash. Steps:
 
         1. ``stop_loading()`` — cancel any in-flight load/JS.
-        2. unregister the ``checkboxHandler`` script-message handler.
+        2. unregister the ``checkboxHandler`` / ``scrollHandler`` message handlers.
         3. detach via the container API (``set_child(None)``) — not
            ``unparent()`` on the child, which leaves a stale child pointer in
            the ScrolledWindow's internal Viewport and triggers
@@ -1466,9 +1562,9 @@ class Preview(Gtk.ScrolledWindow):
         except Exception:
             logger.debug("stop_loading failed during cleanup", exc_info=True)
         try:
-            wv.get_user_content_manager().unregister_script_message_handler(
-                "checkboxHandler"
-            )
+            ucm = wv.get_user_content_manager()
+            ucm.unregister_script_message_handler("checkboxHandler")
+            ucm.unregister_script_message_handler("scrollHandler")
         except Exception:
             logger.debug("unregister handler failed during cleanup", exc_info=True)
         self.set_child(None)
