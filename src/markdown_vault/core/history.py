@@ -114,7 +114,9 @@ class NavHistory:
 
     @property
     def entries(self) -> list[NavEntry]:
-        """A copy of the full entry list, positions included."""
+        """The entry list, positions included — a copy of the *list*, not of the
+        entries: the records are live, and mutating one changes the history. Read
+        them; to write a position use :meth:`update_current`."""
         return list(self._history)
 
     @property
