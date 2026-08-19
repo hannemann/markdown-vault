@@ -10,7 +10,13 @@ to own everything the window could do; what is left is genuine window work
   monitor events, session, tabs, view mode. The window drives them.
 - **`*_controller`** and the named objects (`LinkNavigator`, `PreviewActions`) —
   own a domain **together with its state** and register their **own** actions.
-  The window builds them and then stays out of the way.
+  The window builds them and then stays out of the way. `ScrollMemory` is the
+  lighter case: a named collaborator with no actions and no state of its own — it
+  earns its module because the responsibility it carries (reading position ↔
+  history entry) belongs to neither of its collaborators, not because of rule 1
+  or 3. Its surface is currently handed to the InputManager as two callbacks
+  (`save_position_fn` / `restore_position_fn`); passing the object itself would
+  satisfy rule 3, and is the obvious cut if that wiring is touched again.
 
 ## Rules for the next cut
 
