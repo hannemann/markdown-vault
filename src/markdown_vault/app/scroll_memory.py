@@ -68,6 +68,21 @@ class ScrollMemory:
         if tab is not None:
             self.record_from_tab(tab)
 
+    def record_if_current(self, path: str) -> None:
+        """Record *path*'s position if it is the current entry — used just before
+        its tab is closed, the last moment the position is readable. Afterwards
+        the push (from the activated neighbour, or the vault switch's target open)
+        finds no tab and the entry keeps its stale open-time value.
+
+        Unlike :meth:`save_leaving` this ignores suppression: the vault switch
+        closes tabs under suppression, yet the leaving position must still be
+        captured — suppression is about not *pushing*, not about not recording."""
+        if self._nav_history.current != path:
+            return
+        tab = self._tab_bar.get_tab(path)
+        if tab is not None:
+            self.record_from_tab(tab)
+
     def restore_current(self) -> None:
         """Restore the saved position of the current history entry after a
         back/forward opened its note. The editor caret+scroll are set clamped to

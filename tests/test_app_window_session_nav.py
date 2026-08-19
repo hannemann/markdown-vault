@@ -369,6 +369,23 @@ class TestScrollPositionHistory(AppWindowTest):
     callbacks, the vault switch's post-open callback, and the in-place capture).
     The memory's own behaviour lives in test_scroll_memory."""
 
+    def setUp(self):
+        import tempfile
+        super().setUp()
+        self._tmp = tempfile.mkdtemp()
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self._tmp, ignore_errors=True)
+        super().tearDown()
+
+    def _md(self, name):
+        import os
+        from pathlib import Path
+        p = os.path.join(self._tmp, name)
+        Path(p).write_text(f"# {name}")
+        return p
+
     def _tab(self, path, mode, *, escroll=0.0, ecursor=0, pscroll=0.0):
         tab = unittest.mock.Mock()
         tab.file_path = path
@@ -377,6 +394,22 @@ class TestScrollPositionHistory(AppWindowTest):
         tab.editor.capture_scroll_position.return_value = (escroll, ecursor)
         tab.preview.preview_scroll_position.return_value = pscroll
         return tab
+
+    # ── closing the current tab is the last moment to read its position ──
+
+    def test_leaving_by_closing_the_current_tab_records_the_position(self):
+        # The tab is the only place the position can be read from, and closing is
+        # the last moment it exists — afterwards the push (from the activated
+        # neighbour, or the vault switch's target open) finds no tab and the entry
+        # silently keeps its value from when the note was opened. GG1.
+        y, x = self._md("y.md"), self._md("x.md")   # y = neighbour to land on
+        self.win._open_file(y)
+        self.win._open_file(x)
+        buf = self.win._tab_bar.get_tab(x).editor._buffer
+        buf.place_cursor(buf.get_iter_at_offset(5))
+        self.win._do_close_paths([x])
+        entry = next(e for e in self.win._nav_history.entries if e.path == x)
+        self.assertEqual(entry.editor_cursor, 5)
 
     # ── wiring: the window builds ScrollMemory and wires it in ───────
 

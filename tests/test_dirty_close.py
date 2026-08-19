@@ -586,7 +586,8 @@ class TestSwitchVaultDirtyDialogRace(unittest.TestCase):
                 self._vault_monitor = unittest.mock.Mock()
                 self._vault_tree = unittest.mock.Mock()
                 self._session_mgr = unittest.mock.Mock()
-                self._nav_history = unittest.mock.Mock()
+                self._nav_history = unittest.mock.Mock(current=None)
+                self._scroll_memory = unittest.mock.Mock()
                 self._autosave = unittest.mock.Mock()
                 self._close_window_pending = False
                 self._switch_vault_pending = False

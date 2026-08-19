@@ -73,6 +73,28 @@ class ScrollMemoryTest(unittest.TestCase):
         self.mem.save_leaving()
         self.tab_bar.get_tab.assert_not_called()
 
+    # ── record before closing (the last readable moment) ────────────
+
+    def test_record_if_current_saves_when_path_is_current(self):
+        self.hist.push("/a.md")
+        self.tab_bar.get_tab.return_value = self._tab("/a.md", "edit", ecursor=3)
+        self.mem.record_if_current("/a.md")
+        self.assertEqual(self.hist.current_entry.editor_cursor, 3)
+
+    def test_record_if_current_is_noop_for_a_non_current_path(self):
+        self.hist.push("/a.md")
+        self.mem.record_if_current("/b.md")
+        self.tab_bar.get_tab.assert_not_called()
+
+    def test_record_if_current_ignores_suppression(self):
+        # A vault switch closes tabs under suppression, but the leaving position
+        # must still be captured (unlike save_leaving, which honours it).
+        self.hist.push("/a.md")
+        self.hist.suppress = True
+        self.tab_bar.get_tab.return_value = self._tab("/a.md", "edit", ecursor=4)
+        self.mem.record_if_current("/a.md")
+        self.assertEqual(self.hist.current_entry.editor_cursor, 4)
+
     # ── restore on return ────────────────────────────────────────────
 
     def test_restore_applies_editor_position_and_focuses(self):

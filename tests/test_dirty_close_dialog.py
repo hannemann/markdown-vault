@@ -28,6 +28,8 @@ class TestDialogIsShown(unittest.TestCase):
                 self._editor2 = e2
                 self._vault_monitor = unittest.mock.Mock()
                 self._vault_monitor.skip_next_event = unittest.mock.Mock()
+                self._nav_history = unittest.mock.Mock(current=None)
+                self._scroll_memory = unittest.mock.Mock()
 
             # Copy methods from real window
             _on_tab_close_requested = aw.MainWindow._on_tab_close_requested

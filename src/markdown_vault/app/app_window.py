@@ -1375,6 +1375,10 @@ class MainWindow(Adw.ApplicationWindow):
         """Close the given paths (called after dirty-dialog confirmation)."""
         for path in list(paths):
             if path in self._tab_bar.get_all_paths():
+                # Closing is the last moment the reader's position is readable —
+                # afterwards save_leaving finds no tab and the entry keeps a stale
+                # value (the vault switch and tab-close paths push only after).
+                self._scroll_memory.record_if_current(path)
                 self._tab_bar.close_tab(path)
 
     def _close_all_tabs_with_dirty_check(self, on_confirm=None) -> None:
