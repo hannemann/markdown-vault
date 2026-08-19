@@ -411,6 +411,23 @@ class TestScrollPositionHistory(AppWindowTest):
         entry = next(e for e in self.win._nav_history.entries if e.path == x)
         self.assertEqual(entry.editor_cursor, 5)
 
+    def test_leaving_by_switching_vaults_records_the_position(self):
+        # The other half of GG1: phase 3 closes every tab *before* the target
+        # open pushes, and it closes under suppression — so this is also the
+        # guard for record_if_current ignoring `suppress`.
+        x, y = self._md("x.md"), self._md("y.md")
+        self.win._open_file(x)
+        buf = self.win._tab_bar.get_tab(x).editor._buffer
+        buf.place_cursor(buf.get_iter_at_offset(5))
+        target = {"vault_sessions": {"/new": {"tabs": [], "active_tab": None, "mru": []}}}
+        with unittest.mock.patch(
+                "markdown_vault.app.session_manager.session") as ms:
+            ms.load_session.return_value = target
+            ms.prune_vault_session.side_effect = lambda d: d
+            self.win._switch_vault_complete_phase3("/new", open_file_path=y)
+        entry = next(e for e in self.win._nav_history.entries if e.path == x)
+        self.assertEqual(entry.editor_cursor, 5)
+
     # ── wiring: the window builds ScrollMemory and wires it in ───────
 
     def test_input_manager_is_wired_with_scroll_memory(self):
