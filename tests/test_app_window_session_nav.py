@@ -237,5 +237,130 @@ class TestLinkNavigator(unittest.TestCase):
                              "Notes>sub/Other.md")
 
 
+class TestVaultSwitchHistory(AppWindowTest):
+    """The invariant: only a user action creates a history entry. Neither closing
+    the old vault's tabs nor restoring the new vault's session may leave one.
+
+    (`restore_vault_session` used to push and unsuppress itself; the switch now
+    wraps the whole non-navigating part in one suppress clamp and pushes the
+    "here I landed" entry itself, bound to whether a file is opened after.)
+    """
+
+    def setUp(self):
+        import tempfile
+        super().setUp()
+        self._tmp = tempfile.mkdtemp()
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self._tmp, ignore_errors=True)
+        super().tearDown()
+
+    def _md(self, name):
+        import os
+        from pathlib import Path
+        p = os.path.join(self._tmp, name)
+        Path(p).write_text(f"# {name}")
+        return p
+
+    def _switch(self, *, session_tabs, active_tab, open_file_path=None, old_tabs=()):
+        """Open *old_tabs* in the current vault, clear the history, then run a
+        vault switch whose target session holds *session_tabs* with *active_tab*.
+        Returns exactly the entries the switch itself produced."""
+        for fp in old_tabs:
+            self.win._open_file(fp)
+        hist = self.win._nav_history
+        hist._history.clear()
+        hist._pos = -1
+        target = {
+            "vault_sessions": {
+                "/new": {
+                    "tabs": [{"path": fp, "view_mode": "edit"} for fp in session_tabs],
+                    "active_tab": active_tab,
+                    "mru": [],
+                }
+            }
+        }
+        with unittest.mock.patch(
+                "markdown_vault.app.session_manager.session") as ms:
+            ms.load_session.return_value = target
+            ms.prune_vault_session.side_effect = lambda d: d
+            self.win._switch_vault_complete_phase3("/new", open_file_path=open_file_path)
+        return list(hist.history)
+
+    # active_tab is A, never the last-restored B — otherwise set_active_tab
+    # short-circuits ("already active"), tab-changed never fires, and the test
+    # would pass without ever entering the suppressed path.
+
+    def test_switch_with_a_target_pushes_only_the_target(self):
+        a, b, target = self._md("a.md"), self._md("b.md"), self._md("target.md")
+        entries = self._switch(session_tabs=[a, b], active_tab=a, open_file_path=target)
+        self.assertEqual(entries, [target])
+
+    def test_switch_without_a_target_pushes_only_the_active_tab(self):
+        a, b = self._md("a.md"), self._md("b.md")
+        entries = self._switch(session_tabs=[a, b], active_tab=a)
+        self.assertEqual(entries, [a])
+
+    def test_closing_several_old_tabs_leaves_none_of_them(self):
+        old = [self._md("o1.md"), self._md("o2.md"), self._md("o3.md")]
+        a, b = self._md("a.md"), self._md("b.md")
+        entries = self._switch(session_tabs=[a, b], active_tab=a, old_tabs=old)
+        for fp in old:
+            self.assertNotIn(fp, entries)
+        self.assertEqual(entries, [a])          # only the deliberate one
+
+    def test_switch_into_a_vault_without_tabs_pushes_nothing(self):
+        entries = self._switch(session_tabs=[], active_tab=None)
+        self.assertEqual(entries, [])
+
+    def test_a_normal_navigation_after_a_switch_still_pushes(self):
+        # A stuck suppression would silently swallow this — the guard against
+        # the try/finally being dropped.
+        a, b, later = self._md("a.md"), self._md("b.md"), self._md("later.md")
+        self._switch(session_tabs=[a, b], active_tab=a)
+        self.win._input_manager.push_history(later)
+        self.assertIn(later, self.win._nav_history.history)
+
+
+class TestStartupHistory(AppWindowTest):
+    """Case 5 of the invariant: startup is not a navigation either. It calls
+    `restore_vault_session` directly, not via phase 3, so it carries its own
+    suppress clamp — and with no saved `nav_history` nothing overwrites the
+    result afterwards, which is what makes a missing clamp visible here."""
+
+    def test_startup_without_saved_nav_history_leaves_the_history_empty(self):
+        import os
+        import shutil
+        import tempfile
+        from pathlib import Path
+
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp, True)
+        a, b = os.path.join(tmp, "a.md"), os.path.join(tmp, "b.md")
+        Path(a).write_text("# a")
+        Path(b).write_text("# b")
+        ses = {
+            "window": {"width": 1200, "height": 800},
+            "active_vault": tmp,
+            "vault_sessions": {tmp: {
+                "tabs": [{"path": a, "view_mode": "edit"},
+                         {"path": b, "view_mode": "edit"}],
+                "active_tab": a,          # not the last restored one: see the note
+                "mru": [],                # in TestVaultSwitchHistory
+            }},
+            # deliberately no "nav_history" — nothing overrides what the restore left
+        }
+        with unittest.mock.patch.object(self.aw.session, "load_session",
+                                        return_value=ses), \
+             unittest.mock.patch.object(self.aw.session, "prune_vault_session",
+                                        side_effect=lambda d: d), \
+             unittest.mock.patch.object(self._config, "load_vaults",
+                                        return_value=[{"name": "v", "path": tmp}]):
+            win = self.aw.MainWindow(self._app)
+        self.addCleanup(win._autosave.cancel)
+        self.assertEqual(win._nav_history.history, [])
+
+
 if __name__ == "__main__":
     unittest.main()

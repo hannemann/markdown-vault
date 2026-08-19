@@ -112,15 +112,18 @@ class SessionManager:
         vault_path: str,
         *,
         open_file_fn,
-        push_history_fn,
-        suppress_nav_fn,
         mru_push_fn,
     ) -> None:
-        """Restore tabs for *vault_path* from the persisted session."""
+        """Restore tabs for *vault_path* from the persisted session.
+
+        History is deliberately not touched here: opening the tabs and
+        activating one both feed the global nav history, so the caller wraps the
+        whole restore in a suppress clamp and pushes the "here I landed" entry
+        itself (see ``_switch_vault_complete_phase3`` and the startup restore).
+        """
         ses = session.load_session()
         vault_data = ses.get("vault_sessions", {}).get(vault_path, {})
         vault_data = session.prune_vault_session(vault_data)
-        suppress_nav_fn(True)
         for tab_data in vault_data.get("tabs", []):
             fp = tab_data.get("path", "")
             if fp and Path(fp).exists():
@@ -131,11 +134,9 @@ class SessionManager:
                     editor_zoom=tab_data.get("editor_zoom", 1.0),
                     preview_zoom=tab_data.get("preview_zoom", 1.0),
                 )
-        suppress_nav_fn(False)
         active_tab = vault_data.get("active_tab")
         if active_tab and active_tab in self._tab_bar.get_all_paths():
             self._tab_bar.set_active_tab(active_tab)
-            push_history_fn(active_tab)
         # Restore MRU from session.
         mru_data = vault_data.get("mru", [])
         if mru_data:

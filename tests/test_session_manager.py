@@ -294,8 +294,6 @@ class TestRestoreVaultSession(unittest.TestCase):
         self._mgr.restore_vault_session(
             "/vault",
             open_file_fn=lambda fp, **kw: opened.append((fp, kw)),
-            push_history_fn=lambda fp: None,
-            suppress_nav_fn=lambda s: None,
             mru_push_fn=lambda fp: None,
         )
         self.assertEqual(len(opened), 2)
@@ -320,16 +318,12 @@ class TestRestoreVaultSession(unittest.TestCase):
         mock_session.prune_vault_session.side_effect = lambda d: d
         self._tab_bar.add_tab(md_a)
 
-        pushed = []
         self._mgr.restore_vault_session(
             "/vault",
             open_file_fn=lambda fp, **kw: None,
-            push_history_fn=lambda fp: pushed.append(fp),
-            suppress_nav_fn=lambda s: None,
             mru_push_fn=lambda fp: None,
         )
         self.assertEqual(self._tab_bar._active, md_a)
-        self.assertEqual(pushed, [md_a])
 
     @unittest.mock.patch("markdown_vault.app.session_manager.session")
     def test_restore_rebuilds_mru(self, mock_session):
@@ -358,8 +352,6 @@ class TestRestoreVaultSession(unittest.TestCase):
         self._mgr.restore_vault_session(
             "/vault",
             open_file_fn=lambda fp, **kw: None,
-            push_history_fn=lambda fp: None,
-            suppress_nav_fn=lambda s: None,
             mru_push_fn=lambda fp: pushed.append(fp),
         )
         self.assertEqual(pushed, [md_a, md_b])
@@ -391,8 +383,6 @@ class TestRestoreVaultSession(unittest.TestCase):
         self._mgr.restore_vault_session(
             "/vault",
             open_file_fn=lambda fp, **kw: None,
-            push_history_fn=lambda fp: None,
-            suppress_nav_fn=lambda s: None,
             mru_push_fn=lambda fp: pushed.append(fp),
         )
         self.assertIn(md_a, pushed)
@@ -408,37 +398,26 @@ class TestRestoreVaultSession(unittest.TestCase):
         self._mgr.restore_vault_session(
             "/vault",
             open_file_fn=lambda fp, **kw: opened.append(fp),
-            push_history_fn=lambda fp: None,
-            suppress_nav_fn=lambda s: None,
             mru_push_fn=lambda fp: None,
         )
         self.assertEqual(opened, [])
 
     @unittest.mock.patch("markdown_vault.app.session_manager.session")
-    def test_restore_suppress_nav_history(self, mock_session):
-        """restore_vault_session toggles suppress around file opens."""
-        md_a = os.path.join(self._tmp, "a.md")
-        Path(md_a).write_text("# A")
-        mock_session.load_session.return_value = {
-            "vault_sessions": {
-                "/vault": {
-                    "tabs": [{"path": md_a, "view_mode": "edit"}],
-                    "active_tab": None,
-                    "mru": [],
-                }
-            }
-        }
+    def test_restore_no_longer_takes_history_callbacks(self, mock_session):
+        """History is the caller's business now: the vault switch and startup
+        wrap the whole restore in one suppress clamp, and the "here I landed"
+        entry is pushed by the caller, bound to whether a file is opened after.
+        The method must not silently accept the old callbacks again."""
+        mock_session.load_session.return_value = {"vault_sessions": {}}
         mock_session.prune_vault_session.side_effect = lambda d: d
-
-        suppress_log = []
-        self._mgr.restore_vault_session(
-            "/vault",
-            open_file_fn=lambda fp, **kw: None,
-            push_history_fn=lambda fp: None,
-            suppress_nav_fn=lambda s: suppress_log.append(s),
-            mru_push_fn=lambda fp: None,
-        )
-        self.assertEqual(suppress_log, [True, False])
+        for callback in ("push_history_fn", "suppress_nav_fn"):
+            with self.assertRaises(TypeError, msg=callback):
+                self._mgr.restore_vault_session(
+                    "/vault",
+                    open_file_fn=lambda fp, **kw: None,
+                    mru_push_fn=lambda fp: None,
+                    **{callback: lambda *a: None},
+                )
 
     @unittest.mock.patch("markdown_vault.app.session_manager.session")
     def test_restore_skips_nonexistent_files(self, mock_session):
@@ -460,8 +439,6 @@ class TestRestoreVaultSession(unittest.TestCase):
         self._mgr.restore_vault_session(
             "/vault",
             open_file_fn=lambda fp, **kw: opened.append(fp),
-            push_history_fn=lambda fp: None,
-            suppress_nav_fn=lambda s: None,
             mru_push_fn=lambda fp: None,
         )
         self.assertEqual(opened, [])

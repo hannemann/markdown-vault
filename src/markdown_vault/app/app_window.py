@@ -560,18 +560,27 @@ class MainWindow(Adw.ApplicationWindow):
 
         self._vault_tree.set_active_vault(self._active_vault)
 
-        # Restore tabs for the active vault.
+        # Restore tabs for the active vault. The restore no longer suppresses
+        # history itself, so clamp it here — startup calls restore directly, not
+        # via phase 3, and without this the restored tabs would land in the
+        # history as if the user had navigated to them.
         if self._active_vault:
-            self._session_mgr.restore_vault_session(
-                self._active_vault,
-                open_file_fn=self._open_file,
-                push_history_fn=self._input_manager.push_history,
-                suppress_nav_fn=lambda s: setattr(self._nav_history, "suppress", s),
-                mru_push_fn=self.mru.push,
-            )
+            prev = self._nav_history.suppress
+            self._nav_history.suppress = True
+            try:
+                self._session_mgr.restore_vault_session(
+                    self._active_vault,
+                    open_file_fn=self._open_file,
+                    mru_push_fn=self.mru.push,
+                )
+            finally:
+                self._nav_history.suppress = prev
 
-        # Restore the persisted global navigation history (drops missing files),
-        # overriding whatever the tab restore pushed.
+        # Restore the persisted global navigation history (drops missing files).
+        # There is nothing to override any more — the tab restore above runs under
+        # the suppress clamp and pushes nothing. And this only runs when a saved
+        # history exists, so the clamp, not this line, is what keeps the restored
+        # tabs out of the history.
         saved_history = _ses.get("nav_history")
         if saved_history:
             self._nav_history.load_state(saved_history)
@@ -1096,27 +1105,38 @@ class MainWindow(Adw.ApplicationWindow):
         Closes all open tabs, restores target vault state, and opens the
         requested file. Deferred to next idle iteration to avoid GTK
         widget lifecycle conflicts.
-
-        Note: this restore does not thread ``_from_nav`` through, so the
-        session-restore opens and the ``open_file_path`` open below all push
-        history. That stays correct only because ``NavHistory.push`` dedupes
-        against the current position — a re-open of the same entry is a no-op.
-        Keep that dedupe if you touch it; the cross-vault history relies on it.
         """
         logger.info("switch-vault: phase 3 — closing tabs and restoring %s", new_vault)
-        self._do_close_paths(self._tab_bar.get_all_paths())
-        self._session_mgr.restore_vault_session(
-            new_vault,
-            open_file_fn=self._open_file,
-            push_history_fn=self._input_manager.push_history,
-            suppress_nav_fn=lambda s: setattr(self._nav_history, "suppress", s),
-            mru_push_fn=self.mru.push,
-        )
+        # Both halves of the non-navigating part write to the global history:
+        # closing the old tabs activates a neighbour (tab-changed -> push), and
+        # the restore activates the target vault's last tab. Neither is a user
+        # navigation, so suppress the whole block. try/finally so an exception
+        # cannot leave suppression stuck (then nothing would ever push again).
+        prev = self._nav_history.suppress
+        self._nav_history.suppress = True
+        try:
+            self._do_close_paths(self._tab_bar.get_all_paths())
+            self._session_mgr.restore_vault_session(
+                new_vault,
+                open_file_fn=self._open_file,
+                mru_push_fn=self.mru.push,
+            )
+        finally:
+            self._nav_history.suppress = prev
+        # From here on it is navigation the user asked for, so it pushes.
         if open_file_path is not None:
             logger.info("switch-vault: opening %s in new vault", open_file_path)
-            self._open_file(open_file_path)
+            self._open_file(open_file_path)          # this open is the entry
             if post_open_fn is not None:
                 GLib.idle_add(post_open_fn)
+        else:
+            # No target file — "here I landed" is the restored active tab, and
+            # only if the vault restored one (a fresh/empty vault leaves none,
+            # so get_current_tab() is None after closing everything). Deliberately
+            # outside the suppression: this is the one entry the switch should add.
+            tab = self._tab_bar.get_current_tab()
+            if tab is not None:
+                self._input_manager.push_history(tab.file_path)
         return False  # Remove from idle queue after execution
 
     # ── File opening ───────────────────────────────────────────────
