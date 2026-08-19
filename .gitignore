@@ -22,4 +22,4 @@ graphify-out/
 
 # opencode (CLI config)
 .opencode/
-.claude/agents
+.claude/

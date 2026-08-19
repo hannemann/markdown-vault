@@ -1,5 +1,59 @@
 # AGENTS.md
 
+## 🚨 Behaviour & collaboration — non-negotiable (HIGH PRIORITY)
+
+These rules govern **how you work and collaborate with the user** — they come before
+any task, no matter how small or obvious a step looks. (How the *code* itself should be
+written is separate, under "Conventions".)
+
+- **Answer questions; never infer permission to act.** When the user asks a
+  question, answer it — do NOT start editing code, running fixes, or "improving"
+  things instead of, or before, giving the answer. And when *you* asked the user a
+  question or proposed doing something ("should I fix X?", "shall I filter Y?"),
+  you MUST wait for an explicit, unambiguous **yes to that action** before doing it.
+  A reply that does not clearly approve it — a pasted URL, a clarification, a
+  tangent, "ok"/"👍" about something else — is NOT consent: hold, or ask again.
+  Never treat your own proposal as pre-approved, and never bundle an unrequested
+  change onto an approved one. When unsure whether something is authorized, STOP and
+  ask instead of assuming. Make changes only when the user has actually and clearly
+  asked for them.
+- **Present the plan BEFORE implementing, and wait for the go-ahead.** Anything
+  beyond a trivial, unambiguous edit starts with a short plan — what you will
+  change, where, and what it means for the user — not with an edit. Do not start
+  implementing while the plan is still being discussed, and do not "just prepare"
+  files in the meantime: an unapproved change on disk is an approval you granted
+  yourself.
+  **An approval covers the plan that was approved, and nothing else.** The moment
+  you want a different approach — a different mechanism, a different place, extra
+  moving parts, or dropping a part the user said yes to — the old approval is
+  **void**: say what changed and why, and get a new yes. This holds even when the
+  new approach is better and even when the user's own follow-up prompted it;
+  their new requirement is an argument for a new plan, not consent to it. The
+  approval also lapses when the plan turns out to rest on a wrong premise —
+  re-present, don't improvise.
+- **NEVER edit files through a shell script.** File changes go through the `Edit` /
+  `Write` tools — never `python3 - <<'EOF'`, never `sed -i`, never `cat > file`, never
+  any other heredoc or redirection that rewrites a file. This is not a style
+  preference: `Edit` refuses to touch a file that was not read first and fails loudly
+  when the expected text is not there, so a stale assumption becomes an error instead
+  of a silent no-op — a scripted `.replace()` that matched nothing has already gone
+  unnoticed here. It also keeps every change visible in the transcript as a diff
+  instead of hiding it inside a script. If you believe an edit is too mechanical for
+  `Edit` (a line-range carve across a thousand lines), **ask first** and say why;
+  the answer may be yes, but it is the user's call, not yours.
+- **NEVER commit without explicit user request**: NEVER run `git commit` unless the user explicitly asks for it. Not after editing files, not after testing, not ever. The user will say "commit" when ready.
+- **Commit at topic boundaries — cut in front, never carve up afterwards**: as soon as
+  one topic is finished (a feature, a bugfix in a distinct area, a review finding that
+  opens a *new* concern) and BEFORE starting the next, STOP and actively push to commit
+  the finished work — say "let's commit X first", don't let it slide. The user still gives
+  the commit word (see the rule above); insist on the *pause and prompt*, not on committing
+  unasked. This keeps history atomic for free and checkpoints work against loss. Do NOT let
+  several unrelated topics pile up in one working tree and then try to split them into
+  separate commits after the fact — the post-hoc `git stash`/hunk-surgery that requires is
+  slow and has already risked losing work. A fix to code from the *same* still-uncommitted
+  topic stays in that commit (no pause); only a genuinely *different* subsystem or
+  user-facing concern is a boundary.
+
 ## 🚨 Code exploration — graphify FIRST (HIGH PRIORITY)
 
 For ANY question about code structure — architecture, "how does X work?", who
@@ -367,53 +421,6 @@ opening files in editor, toggling sidebar etc.) ask the user.
 - **Error handling**: Never use bare `except Exception: pass` — always log the exception at a minimum. Use `logging.warning()` or `logging.error()` with exc_info=True so errors are visible and debuggable.
 - **Logging**: Every module MUST use the standard `logging` module. Add `import logging` and `logger = logging.getLogger(__name__)` at the top of each file. Use `logger.debug()`/`logger.info()`/`logger.warning()`/`logger.error()` — NEVER use `print()` or any other ad-hoc output for diagnostics. Every `except` block must log at minimum with `exc_info=True`. Log level is configurable via `settings.loglevel` (debug/info/warning/error), effective after restart.
 - **Temp files**: NEVER use the system `/tmp` directory. Use the local `./tmp/` directory instead. The system `/tmp` is shared, unpredictable, and cleaned up by the OS. Local `./tmp/` is project-scoped and ignored by `.gitignore`, so it stays fully under your control.
-- **Answer questions; never infer permission to act.** When the user asks a
-  question, answer it — do NOT start editing code, running fixes, or "improving"
-  things instead of, or before, giving the answer. And when *you* asked the user a
-  question or proposed doing something ("should I fix X?", "shall I filter Y?"),
-  you MUST wait for an explicit, unambiguous **yes to that action** before doing it.
-  A reply that does not clearly approve it — a pasted URL, a clarification, a
-  tangent, "ok"/"👍" about something else — is NOT consent: hold, or ask again.
-  Never treat your own proposal as pre-approved, and never bundle an unrequested
-  change onto an approved one. When unsure whether something is authorized, STOP and
-  ask instead of assuming. Make changes only when the user has actually and clearly
-  asked for them.
-- **Present the plan BEFORE implementing, and wait for the go-ahead.** Anything
-  beyond a trivial, unambiguous edit starts with a short plan — what you will
-  change, where, and what it means for the user — not with an edit. Do not start
-  implementing while the plan is still being discussed, and do not "just prepare"
-  files in the meantime: an unapproved change on disk is an approval you granted
-  yourself.
-  **An approval covers the plan that was approved, and nothing else.** The moment
-  you want a different approach — a different mechanism, a different place, extra
-  moving parts, or dropping a part the user said yes to — the old approval is
-  **void**: say what changed and why, and get a new yes. This holds even when the
-  new approach is better and even when the user's own follow-up prompted it;
-  their new requirement is an argument for a new plan, not consent to it. The
-  approval also lapses when the plan turns out to rest on a wrong premise —
-  re-present, don't improvise.
-- **NEVER edit files through a shell script.** File changes go through the `Edit` /
-  `Write` tools — never `python3 - <<'EOF'`, never `sed -i`, never `cat > file`, never
-  any other heredoc or redirection that rewrites a file. This is not a style
-  preference: `Edit` refuses to touch a file that was not read first and fails loudly
-  when the expected text is not there, so a stale assumption becomes an error instead
-  of a silent no-op — a scripted `.replace()` that matched nothing has already gone
-  unnoticed here. It also keeps every change visible in the transcript as a diff
-  instead of hiding it inside a script. If you believe an edit is too mechanical for
-  `Edit` (a line-range carve across a thousand lines), **ask first** and say why;
-  the answer may be yes, but it is the user's call, not yours.
-- **NEVER commit without explicit user request**: NEVER run `git commit` unless the user explicitly asks for it. Not after editing files, not after testing, not ever. The user will say "commit" when ready.
-- **Commit at topic boundaries — cut in front, never carve up afterwards**: as soon as
-  one topic is finished (a feature, a bugfix in a distinct area, a review finding that
-  opens a *new* concern) and BEFORE starting the next, STOP and actively push to commit
-  the finished work — say "let's commit X first", don't let it slide. The user still gives
-  the commit word (see the rule above); insist on the *pause and prompt*, not on committing
-  unasked. This keeps history atomic for free and checkpoints work against loss. Do NOT let
-  several unrelated topics pile up in one working tree and then try to split them into
-  separate commits after the fact — the post-hoc `git stash`/hunk-surgery that requires is
-  slow and has already risked losing work. A fix to code from the *same* still-uncommitted
-  topic stays in that commit (no pause); only a genuinely *different* subsystem or
-  user-facing concern is a boundary.
 
 ## MRU Tab Switcher (Ctrl+Tab / Ctrl+Shift+Tab)
 
