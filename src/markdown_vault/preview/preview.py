@@ -637,6 +637,10 @@ class Preview(Gtk.ScrolledWindow):
         # availability, so the nav buttons refresh immediately (not just on the
         # next nav action).
         "in-page-nav-changed": (GObject.SignalFlags.RUN_LAST, None, ()),
+        # An in-page anchor jump, reported so it can become a history entry:
+        # (from, to) are the scroll offsets before and at the anchor, measured in
+        # JS before the smooth scroll (merge-in-page-and-note-back-stacks).
+        "anchor-navigated": (GObject.SignalFlags.RUN_LAST, None, (float, float)),
     }
 
     def __init__(self, css_path: str = "") -> None:
@@ -706,6 +710,7 @@ class Preview(Gtk.ScrolledWindow):
         content_controller = wv.get_user_content_manager()
         content_controller.register_script_message_handler("checkboxHandler")
         content_controller.register_script_message_handler("scrollHandler")
+        content_controller.register_script_message_handler("anchorHandler")
 
         # Report the scroll offset back to Python so it is always at hand when the
         # note is left (an evaluate_javascript on leave would answer too late —
@@ -787,6 +792,10 @@ class Preview(Gtk.ScrolledWindow):
         ctrl.connect(
             "script-message-received::scrollHandler",
             self._on_scroll_reported,
+        )
+        ctrl.connect(
+            "script-message-received::anchorHandler",
+            self._on_anchor_reported,
         )
 
     def _on_mouse_target_changed(self, _wv, hit_test_result, _modifiers) -> None:
@@ -878,6 +887,20 @@ class Preview(Gtk.ScrolledWindow):
         handler, so it is the reader's position at the moment the note is left."""
         return self._scroll_y
 
+    def _on_anchor_reported(self, _content_manager, jsc_value) -> None:
+        """Relay an in-page anchor jump (from → to scroll offsets) as the
+        ``anchor-navigated`` signal, so a caller can record it as a history
+        entry. Both offsets were measured in JS before the smooth scroll."""
+        try:
+            data = json.loads(jsc_value.to_json(0))
+            frm, to = data.get("from"), data.get("to")
+            num = (int, float)
+            if (isinstance(frm, num) and not isinstance(frm, bool)
+                    and isinstance(to, num) and not isinstance(to, bool)):
+                self.emit("anchor-navigated", float(frm), float(to))
+        except Exception:
+            logger.error("Failed to handle anchor message from preview", exc_info=True)
+
     # ------------------------------------------------------------------
     # Navigation
     # ------------------------------------------------------------------
@@ -902,7 +925,18 @@ class Preview(Gtk.ScrolledWindow):
             "window._mvBack=window._mvBack||[];window._mvFwd=[];"
             "window._mvBack.push(window.scrollY);"
             f"var _t=document.getElementById({frag});"
-            "if(_t)_t.scrollIntoView({behavior:'smooth',block:'start'});")
+            "if(_t){"
+            # Report the jump so Python can turn it into a history entry: `from`
+            # is where the reader is, `to` is the anchor's position in the
+            # document — both read now, before the smooth scroll, so the value is
+            # final without waiting on the scroll to settle.
+            "var _from=window.scrollY;"
+            "var _to=_t.getBoundingClientRect().top+window.scrollY;"
+            "if(window.webkit&&window.webkit.messageHandlers"
+            "&&window.webkit.messageHandlers['anchorHandler']){"
+            "window.webkit.messageHandlers['anchorHandler']"
+            ".postMessage({from:_from,to:_to});}"
+            "_t.scrollIntoView({behavior:'smooth',block:'start'});}")
         self._in_page_back += 1
         self._in_page_fwd = 0
         self.emit("in-page-nav-changed")
@@ -1565,6 +1599,7 @@ class Preview(Gtk.ScrolledWindow):
             ucm = wv.get_user_content_manager()
             ucm.unregister_script_message_handler("checkboxHandler")
             ucm.unregister_script_message_handler("scrollHandler")
+            ucm.unregister_script_message_handler("anchorHandler")
         except Exception:
             logger.debug("unregister handler failed during cleanup", exc_info=True)
         self.set_child(None)

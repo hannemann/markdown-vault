@@ -250,6 +250,45 @@ class TestPreviewScrollReset(unittest.TestCase):
         self.assertEqual(p.preview_scroll_position(), 500.0)
 
 
+class TestAnchorNavigation(unittest.TestCase):
+    """An in-page anchor jump reports its from/to scroll offsets (measured in JS
+    before the smooth scroll) so the jump can become an ordinary history entry —
+    the merge-in-page-and-note-back-stacks follow-up. The WebView JS is mocked."""
+
+    def _preview(self):
+        p = Preview.__new__(Preview)           # bypass GTK/WebKit init
+        p._in_page_back = 0
+        p._in_page_fwd = 0
+        p._run_js = MagicMock()
+        p.emit = MagicMock()
+        return p
+
+    def test_jump_reports_from_and_to_before_scrolling(self):
+        p = self._preview()
+        p._jump_to_anchor("sec-1")
+        js = p._run_js.call_args[0][0]
+        self.assertIn("getBoundingClientRect", js)      # to = element's top in the doc
+        self.assertIn("window.scrollY", js)             # from = current offset
+        self.assertIn("anchorHandler", js)              # reported to Python
+        self.assertIn("scrollIntoView", js)             # and it still scrolls
+
+    def test_anchor_reported_emits_signal(self):
+        p = self._preview()
+        jsc = MagicMock()
+        jsc.to_json.return_value = json.dumps({"from": 100.0, "to": 850.0})
+        p._on_anchor_reported(None, jsc)
+        p.emit.assert_any_call("anchor-navigated", 100.0, 850.0)
+
+    def test_anchor_reported_ignores_garbage(self):
+        p = self._preview()
+        jsc = MagicMock()
+        jsc.to_json.return_value = json.dumps({"from": "x", "to": None})
+        p._on_anchor_reported(None, jsc)
+        emitted = [c for c in p.emit.call_args_list
+                   if c.args and c.args[0] == "anchor-navigated"]
+        self.assertEqual(emitted, [])
+
+
 class TestBuildCsp(unittest.TestCase):
     """Content-Security-Policy assembly (5.1)."""
 
