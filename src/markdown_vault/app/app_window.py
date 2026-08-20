@@ -361,8 +361,7 @@ class MainWindow(Adw.ApplicationWindow):
             back_btn=self._back_btn,
             forward_btn=self._forward_btn,
             settings=self._settings,
-            save_position_fn=self._scroll_memory.save_leaving,
-            restore_position_fn=self._scroll_memory.restore_current,
+            scroll_memory=self._scroll_memory,
         )
 
         # Ticking a checkbox and downloading an image both edit the note's source

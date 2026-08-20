@@ -110,20 +110,20 @@ class TestNavBack(unittest.TestCase):
         # smoothly, like the preview and the outline click.
         self.nav_history.current = "/a.md"
         self.nav_history.back.return_value = "/a.md"
-        restore = unittest.mock.MagicMock()
-        self._mgr._restore_position_fn = restore
+        sm = unittest.mock.MagicMock()
+        self._mgr._scroll_memory = sm
         self._mgr.nav_back()
-        restore.assert_called_once_with(True)
+        sm.restore_current.assert_called_once_with(True)
 
     def test_nav_back_note_switch_restores_instantly(self):
         # Landing on a different note is a switch: restore instantly (the target
         # tab was possibly not even visible — animating would be wrong).
         self.nav_history.current = "/a.md"
         self.nav_history.back.return_value = "/b.md"
-        restore = unittest.mock.MagicMock()
-        self._mgr._restore_position_fn = restore
+        sm = unittest.mock.MagicMock()
+        self._mgr._scroll_memory = sm
         self._mgr.nav_back()
-        restore.assert_called_once_with(False)
+        sm.restore_current.assert_called_once_with(False)
 
 
 class TestNavForward(unittest.TestCase):
@@ -166,18 +166,18 @@ class TestNavForward(unittest.TestCase):
     def test_nav_forward_same_file_restores_smoothly(self):
         self.nav_history.current = "/a.md"
         self.nav_history.forward.return_value = "/a.md"
-        restore = unittest.mock.MagicMock()
-        self._mgr._restore_position_fn = restore
+        sm = unittest.mock.MagicMock()
+        self._mgr._scroll_memory = sm
         self._mgr.nav_forward()
-        restore.assert_called_once_with(True)
+        sm.restore_current.assert_called_once_with(True)
 
     def test_nav_forward_note_switch_restores_instantly(self):
         self.nav_history.current = "/a.md"
         self.nav_history.forward.return_value = "/b.md"
-        restore = unittest.mock.MagicMock()
-        self._mgr._restore_position_fn = restore
+        sm = unittest.mock.MagicMock()
+        self._mgr._scroll_memory = sm
         self._mgr.nav_forward()
-        restore.assert_called_once_with(False)
+        sm.restore_current.assert_called_once_with(False)
 
 
 class TestUpdateNavButtons(unittest.TestCase):
@@ -317,17 +317,17 @@ class TestUpdateNavButtonsPublic(unittest.TestCase):
 
 
 class TestPositionCallbacks(unittest.TestCase):
-    """save_position_fn / restore_position_fn wrap push and back/forward so the
-    reader's position is recorded on leave and restored on return — feature: the
-    history restores the scroll position."""
+    """The scroll_memory collaborator wraps push and back/forward so the reader's
+    position is recorded on leave (``save_leaving``) and restored on return
+    (``restore_current``) — feature: the history restores the scroll position."""
 
     def _mgr(self, *, with_fns=True):
         self.nav_history = unittest.mock.MagicMock()
         self.on_nav = unittest.mock.MagicMock()
-        self.save = unittest.mock.MagicMock()
-        self.restore = unittest.mock.MagicMock()
-        kw = dict(save_position_fn=self.save,
-                  restore_position_fn=self.restore) if with_fns else {}
+        self.scroll_memory = unittest.mock.MagicMock()
+        self.save = self.scroll_memory.save_leaving
+        self.restore = self.scroll_memory.restore_current
+        kw = dict(scroll_memory=self.scroll_memory) if with_fns else {}
         return InputManager(
             application=unittest.mock.MagicMock(),
             on_nav_file_opened=self.on_nav,

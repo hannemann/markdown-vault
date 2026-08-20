@@ -14,9 +14,9 @@ to own everything the window could do; what is left is genuine window work
   lighter case: a named collaborator with no actions and no state of its own — it
   earns its module because the responsibility it carries (reading position ↔
   history entry) belongs to neither of its collaborators, not because of rule 1
-  or 3. Its surface is currently handed to the InputManager as two callbacks
-  (`save_position_fn` / `restore_position_fn`); passing the object itself would
-  satisfy rule 3, and is the obvious cut if that wiring is touched again.
+  or 3. It is handed to the InputManager as **one object** (rule 3): the manager
+  calls its `save_leaving()` / `restore_current(in_page)` itself, rather than
+  being assembled from a pair of `*_fn` callbacks at the call site.
 
 ## Rules for the next cut
 
@@ -38,7 +38,7 @@ to own everything the window could do; what is left is genuine window work
 `tests/test_app_window_construction.py` catches it.
 
 **Metric:** `make callbacks FILE=src/markdown_vault/app/app_window.py` — how many
-window methods are handed outward. After the split: 84 methods / 106 sites.
+window methods are handed outward. Currently 85 methods / 107 sites.
 
 Every new `.py` here also goes into `meson.build` (alphabetically), or it is not
 installed and the app dies with `ModuleNotFoundError`.

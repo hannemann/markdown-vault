@@ -515,10 +515,10 @@ class TestScrollPositionHistory(AppWindowTest):
     # ── wiring: the window builds ScrollMemory and wires it in ───────
 
     def test_input_manager_is_wired_with_scroll_memory(self):
-        self.assertEqual(self.win._input_manager._save_position_fn,
-                         self.win._scroll_memory.save_leaving)
-        self.assertEqual(self.win._input_manager._restore_position_fn,
-                         self.win._scroll_memory.restore_current)
+        # Handed over as one object (rule 3), not a pair of *_fn callbacks: the
+        # manager calls its save_leaving()/restore_current(in_page) itself.
+        self.assertIs(self.win._input_manager._scroll_memory,
+                      self.win._scroll_memory)
 
     # ── cross-vault back/forward ─────────────────────────────────────
 

@@ -17,7 +17,7 @@ class InputManager:
 
     def __init__(self, application, on_nav_file_opened,
                  nav_history, back_btn, forward_btn, settings,
-                 save_position_fn=None, restore_position_fn=None):
+                 scroll_memory=None):
         """Initialize the input manager.
 
         Args:
@@ -27,14 +27,12 @@ class InputManager:
             back_btn: Back navigation :class:`Gtk.Button`
             forward_btn: Forward navigation :class:`Gtk.Button`
             settings: Settings dict from :mod:`config`
-            save_position_fn: Optional ``() -> None`` that records the reader's
-                position into the *current* history entry. Called just before the
-                history leaves that entry — on a push and before a back/forward —
-                so where the reader was is captured before it is lost.
-            restore_position_fn: Optional ``(in_page: bool) -> None`` that restores
-                the current entry's saved position. Called after a back/forward has
-                opened the target note; *in_page* is True when the step stayed in
-                the same note, so the restore can glide smoothly rather than jump.
+            scroll_memory: Optional reading-position memory (a
+                :class:`ScrollMemory`). Handed over as one object, not a pair of
+                callbacks: on a push and before a back/forward its
+                ``save_leaving()`` records where the reader was; after a
+                back/forward's open its ``restore_current(in_page)`` puts the
+                position back (``in_page`` True keeps a same-note step smooth).
         """
         self._application = application
         self._on_nav_file_opened = on_nav_file_opened
@@ -42,8 +40,7 @@ class InputManager:
         self._back_btn = back_btn
         self._forward_btn = forward_btn
         self._settings = settings
-        self._save_position_fn = save_position_fn
-        self._restore_position_fn = restore_position_fn
+        self._scroll_memory = scroll_memory
         # True while our own back/forward is opening the target note. The open
         # fires a tab-change that calls push_history again; that re-entrant push
         # must not re-save the freshly-loaded (scroll 0) position over the target
@@ -142,18 +139,18 @@ class InputManager:
             # Re-entrant push from the tab-change our own back/forward fired —
             # ignore it, or it overwrites the target entry's saved position.
             return
-        if not position and self._save_position_fn is not None:
+        if not position and self._scroll_memory is not None:
             # A plain push records the leaving position. A push that already
             # carries its own position (an anchor jump) does not — save-on-leave
             # would overwrite the from-offset the caller just set.
-            self._save_position_fn()
+            self._scroll_memory.save_leaving()
         self._nav_history.push(file_path, **position)
         self._update_nav_buttons()
 
     def nav_back(self) -> None:
         """Navigate to the previous entry in history, skipping missing files."""
-        if self._save_position_fn is not None:
-            self._save_position_fn()      # record the current spot before leaving it
+        if self._scroll_memory is not None:
+            self._scroll_memory.save_leaving()   # record the spot before leaving it
         from_path = self._nav_history.current
         file_path = self._nav_history.back()
         if file_path is not None:
@@ -162,8 +159,8 @@ class InputManager:
 
     def nav_forward(self) -> None:
         """Navigate to the next entry in history, skipping missing files."""
-        if self._save_position_fn is not None:
-            self._save_position_fn()
+        if self._scroll_memory is not None:
+            self._scroll_memory.save_leaving()
         from_path = self._nav_history.current
         file_path = self._nav_history.forward()
         if file_path is not None:
@@ -186,8 +183,8 @@ class InputManager:
             self._on_nav_file_opened(file_path, _from_nav=True)
         finally:
             self._navigating = False
-        if self._restore_position_fn is not None:
-            self._restore_position_fn(in_page)   # land where we were, not at the top
+        if self._scroll_memory is not None:
+            self._scroll_memory.restore_current(in_page)   # land where we were
 
     def _update_nav_buttons(self) -> None:
         """Reflect history state on the nav buttons.
