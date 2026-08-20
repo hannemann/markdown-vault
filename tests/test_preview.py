@@ -250,6 +250,22 @@ class TestAnchorNavigation(unittest.TestCase):
         self.assertIn("anchorHandler", js)              # reported to Python
         self.assertIn("scrollIntoView", js)             # and it still scrolls
 
+    def test_jump_clamps_the_reported_target_to_the_scrollable_range(self):
+        # A heading within one viewport of the end cannot be scrolled to the top:
+        # the browser stops at maxScroll while getBoundingClientRect().top keeps
+        # reporting the element's document position. Reporting that unclamped
+        # value makes `to` a spot the preview never shows, so the no-move guard
+        # in _on_anchor_navigated never fires (measured on real WebKit:
+        # from=4437.0 / to=4706.59 on every repeat click) and each click adds a
+        # dead history entry. Only the JS text can be asserted here — it runs in
+        # the web process.
+        p = self._preview()
+        p._jump_to_anchor("sec-1")
+        js = p._run_js.call_args[0][0]
+        self.assertIn("scrollHeight", js)
+        self.assertIn("innerHeight", js)
+        self.assertIn("Math.min", js)
+
     def test_anchor_reported_emits_signal(self):
         p = self._preview()
         jsc = MagicMock()

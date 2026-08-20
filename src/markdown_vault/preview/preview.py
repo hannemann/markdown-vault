@@ -933,15 +933,22 @@ class Preview(Gtk.ScrolledWindow):
         """Smooth-scroll to *fragment* and report the jump so it becomes an
         ordinary history entry — there is no separate in-page stack.
 
-        `from` is where the reader is, `to` is the anchor's position in the
-        document; both are read now, **before** the smooth scroll, so the value
-        is final without waiting on the scroll to settle."""
+        `from` is where the reader is, `to` is where the jump will actually land:
+        the anchor's document position, clamped to the scrollable range. Without
+        the clamp `to` is a spot the preview can never show for a heading in the
+        last screenful — the no-move guard in ``_on_anchor_navigated`` then never
+        fires and every repeat click adds a dead entry. Both are read now,
+        **before** the smooth scroll, so the value is final without waiting on
+        the scroll to settle."""
         frag = json.dumps(fragment)
         self._run_js(
             f"var _t=document.getElementById({frag});"
             "if(_t){"
             "var _from=window.scrollY;"
-            "var _to=_t.getBoundingClientRect().top+window.scrollY;"
+            "var _max=Math.max(0,document.documentElement.scrollHeight"
+            "-window.innerHeight);"
+            "var _to=Math.min(_max,"
+            "_t.getBoundingClientRect().top+window.scrollY);"
             "if(window.webkit&&window.webkit.messageHandlers"
             "&&window.webkit.messageHandlers['anchorHandler']){"
             "window.webkit.messageHandlers['anchorHandler']"
