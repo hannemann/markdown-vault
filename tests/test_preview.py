@@ -96,9 +96,13 @@ class TestPreviewScrollToJs(unittest.TestCase):
         self.assertIn("scrollTo", js)
         self.assertIn("300", js)
 
-    def test_no_smooth_behaviour(self):
-        # A restored position should appear at once, not animate from the top.
+    def test_default_is_not_smooth(self):
+        # A restored position after a note switch should appear at once.
         self.assertNotIn("smooth", _scroll_to_js(120.0))
+
+    def test_smooth_flag_animates(self):
+        # An in-page back/forward within the same note animates the short hop.
+        self.assertIn("smooth", _scroll_to_js(120.0, smooth=True))
 
     def test_zero_is_valid(self):
         self.assertIn("scrollTo", _scroll_to_js(0))
@@ -139,6 +143,21 @@ class TestPreviewScrollPosition(unittest.TestCase):
         p.scroll_to_position(120.0)
         p._run_js.assert_called_once()
         self.assertIsNone(p._pending_scroll)
+
+    def test_scroll_to_position_is_smooth_when_note_already_loaded(self):
+        # In-page back/forward: same note, no reload → animate the short hop.
+        p = self._preview()
+        p.scroll_to_position(120.0)
+        self.assertIn("smooth", p._run_js.call_args[0][0])
+
+    def test_flush_after_a_load_is_instant(self):
+        # Note switch: the position is applied on the fresh DOM without animation.
+        p = self._preview()
+        p._load_in_progress = True
+        p.scroll_to_position(120.0)          # deferred to FINISHED
+        p._load_in_progress = False
+        p._flush_pending_scroll()
+        self.assertNotIn("smooth", p._run_js.call_args[0][0])
 
     def test_scroll_to_position_defers_while_loading(self):
         p = self._preview()

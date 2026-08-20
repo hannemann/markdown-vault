@@ -90,13 +90,15 @@ def _anchor_scroll_js(heading: str) -> str:
     )
 
 
-def _scroll_to_js(y: float) -> str:
-    """Build JS that jumps the preview to vertical pixel offset *y*.
+def _scroll_to_js(y: float, smooth: bool = False) -> str:
+    """Build JS that moves the preview to vertical pixel offset *y*.
 
-    No ``behavior:'smooth'``: a restored reading position should appear at once,
-    not animate up from the top the way an in-page anchor jump does.
+    *smooth* animates the move — used for an in-page back/forward within the same
+    note (a short hop). A restored position after a note switch (fresh DOM, often
+    a long way) uses the default instant move, like a browser back.
     """
-    return f"window.scrollTo(0, {float(y)});"
+    behavior = "smooth" if smooth else "auto"
+    return f"window.scrollTo({{top:{float(y)},behavior:'{behavior}'}});"
 
 
 HTML_TEMPLATE = """\
@@ -958,18 +960,21 @@ class Preview(Gtk.ScrolledWindow):
             self._run_js(js)
 
     def scroll_to_position(self, y: float) -> None:
-        """Jump to pixel offset *y* — the position counterpart of
-        :meth:`scroll_to_anchor`. Applied now if the page is already rendered
-        (returning into an already-open tab), otherwise deferred to the next
-        full load's FINISHED. For content only about to be rendered, use
-        :meth:`arm_scroll`.
+        """Move to pixel offset *y* — the position counterpart of
+        :meth:`scroll_to_anchor`. If the page is already rendered (an in-page
+        back/forward within the same note) the move is **smooth** — a short hop.
+        Otherwise a reload is coming (a note switch), so it is deferred to the
+        next full load's FINISHED and applied **instantly** on the fresh DOM.
+        For content only about to be rendered, use :meth:`arm_scroll`.
         """
-        self._pending_scroll = y
         if self._loaded and not self._load_in_progress:
-            self._flush_pending_scroll()
+            self._run_js(_scroll_to_js(y, smooth=True))
+        else:
+            self._pending_scroll = y
 
     def _flush_pending_scroll(self) -> None:
-        """Run the pending scroll restore (if any) and clear it — one-shot."""
+        """Apply a scroll deferred to after a load — instant, on the fresh DOM.
+        One-shot; a no-op when nothing is pending."""
         if self._web_view is None or self._pending_scroll is None:
             return
         y = self._pending_scroll
