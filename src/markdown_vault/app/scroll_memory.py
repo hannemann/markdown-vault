@@ -83,13 +83,19 @@ class ScrollMemory:
         if tab is not None:
             self.record_from_tab(tab)
 
-    def restore_current(self) -> None:
+    def restore_current(self, smooth: bool = False) -> None:
         """Restore the saved position of the current history entry after a
         back/forward opened its note. The editor caret+scroll are set clamped to
         the buffer (and the editor focused so the caret is ready to type); the
         preview scroll is applied once its render finishes. A no-op when there is
         nothing saved or the landed tab isn't that note (e.g. a cross-vault
-        switch still in flight)."""
+        switch still in flight).
+
+        ``smooth`` marks an in-page back/forward (same note): the editor animates
+        to the spot instead of jumping, matching the preview (which decides the
+        same from ``showing_note``) and the outline click. A note switch leaves it
+        False so the editor lands instantly — the same reason the preview arms its
+        scroll for the reload rather than running it on the old page."""
         entry = self._nav_history.current_entry
         if entry is None or not entry.has_position():
             return
@@ -99,7 +105,8 @@ class ScrollMemory:
         mode = getattr(tab, "view_mode", "edit")
         if mode in _EDITOR_MODES and (entry.editor_scroll is not None
                                       or entry.editor_cursor is not None):
-            tab.editor.restore_scroll_position(entry.editor_scroll, entry.editor_cursor)
+            tab.editor.restore_scroll_position(entry.editor_scroll, entry.editor_cursor,
+                                               smooth=smooth)
             tab.editor.grab_editor_focus()   # so the restored caret is ready to type
         if mode in _PREVIEW_MODES and entry.preview_scroll is not None:
             if tab.preview.showing_note(entry.path):

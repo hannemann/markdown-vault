@@ -631,7 +631,8 @@ class Editor(Gtk.ScrolledWindow):
         return scroll, cursor
 
     def restore_scroll_position(self, scroll: float | None = None,
-                                cursor: int | None = None) -> None:
+                                cursor: int | None = None,
+                                smooth: bool = False) -> None:
         """Restore a caret + scroll captured earlier, each clamped to the current
         buffer so returning into a now-shorter note lands in range, not the void.
 
@@ -640,18 +641,39 @@ class Editor(Gtk.ScrolledWindow):
         after a buffer fill the adjustment's ``upper`` is still 0 and would
         silently clamp the value to 0 (the failure the pattern in
         ``Tab.reload_editor`` exists to avoid). Fields left ``None`` are skipped.
+
+        With ``smooth`` (in-page back/forward, same note) the view *animates* to
+        the caret line via ``scroll_to_iter`` — the same method the outline click
+        and search use, so the editor glides like the preview. The caret line is
+        aligned where it sat in the viewport (derived from the saved offset), so
+        the landing spot is line-granular but faithful. Without ``smooth`` (a note
+        switch) the saved pixel offset is written straight onto the adjustment —
+        an instant jump, because the target tab may not even be visible.
         """
         buf = self._buffer
+        cursor_iter = None
         if cursor is not None:
-            buf.place_cursor(buf.get_iter_at_offset(min(cursor, buf.get_char_count())))
-        if scroll is not None:
-            vadj = self.get_vadjustment()
-            if vadj is not None:
-                def _apply(adj=vadj, value=scroll):
-                    adj.set_value(
-                        _clamp_scroll(value, adj.get_upper(), adj.get_page_size()))
-                    return False
-                GLib.idle_add(_apply)
+            cursor_iter = buf.get_iter_at_offset(min(cursor, buf.get_char_count()))
+            buf.place_cursor(cursor_iter)
+        if scroll is None:
+            return
+        vadj = self.get_vadjustment()
+        if vadj is None:
+            return
+        if smooth and cursor_iter is not None:
+            def _animate(it=cursor_iter, value=scroll):
+                page = vadj.get_page_size()
+                y = self._view.get_iter_location(it).y
+                yalign = min(1.0, max(0.0, (y - value) / page)) if page else 0.0
+                self._view.scroll_to_iter(it, 0.0, True, 0.0, yalign)
+                return False
+            GLib.idle_add(_animate)
+        else:
+            def _apply(adj=vadj, value=scroll):
+                adj.set_value(
+                    _clamp_scroll(value, adj.get_upper(), adj.get_page_size()))
+                return False
+            GLib.idle_add(_apply)
 
     def grab_editor_focus(self) -> None:
         """Focus the text view so a restored caret is visible and ready to type."""

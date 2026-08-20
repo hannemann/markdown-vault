@@ -172,6 +172,41 @@ class TestEditorScrollPosition(unittest.TestCase):
         ed.restore_scroll_position(scroll=10.0)  # cursor omitted
         self.assertEqual(self._cursor(ed), 4)
 
+    def _flush_idle(self):
+        from gi.repository import GLib
+        ctx = GLib.MainContext.default()
+        while ctx.pending():
+            ctx.iteration(False)
+
+    def test_restore_instant_sets_the_adjustment_value(self):
+        # A note switch (smooth=False, the default) jumps: the saved pixel offset
+        # is written straight onto the adjustment.
+        import unittest.mock as m
+        ed = self._editor("line one\nline two\nline three")
+        vadj = m.MagicMock()
+        vadj.get_upper.return_value = 1000.0
+        vadj.get_page_size.return_value = 200.0
+        with m.patch.object(ed, "get_vadjustment", return_value=vadj):
+            ed.restore_scroll_position(scroll=120.0, cursor=3, smooth=False)
+            self._flush_idle()
+        vadj.set_value.assert_called_once()
+
+    def test_restore_smooth_scrolls_to_the_caret_iter(self):
+        # In-page back/forward (smooth=True) animates via scroll_to_iter to the
+        # caret line — no direct adjustment jump — so it glides like the outline
+        # click and the preview.
+        import unittest.mock as m
+        ed = self._editor("line one\nline two\nline three")
+        vadj = m.MagicMock()
+        vadj.get_page_size.return_value = 200.0
+        ed._view = m.MagicMock()
+        ed._view.get_iter_location.return_value = m.MagicMock(y=140)
+        with m.patch.object(ed, "get_vadjustment", return_value=vadj):
+            ed.restore_scroll_position(scroll=120.0, cursor=3, smooth=True)
+            self._flush_idle()
+        ed._view.scroll_to_iter.assert_called_once()
+        vadj.set_value.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

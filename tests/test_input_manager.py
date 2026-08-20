@@ -105,6 +105,26 @@ class TestNavBack(unittest.TestCase):
         with unittest.mock.patch.object(InputManager, '_update_nav_buttons'):
             self._mgr.nav_back()
 
+    def test_nav_back_same_file_restores_smoothly(self):
+        # Staying in the same note (an anchor/outline entry) is in-page: restore
+        # smoothly, like the preview and the outline click.
+        self.nav_history.current = "/a.md"
+        self.nav_history.back.return_value = "/a.md"
+        restore = unittest.mock.MagicMock()
+        self._mgr._restore_position_fn = restore
+        self._mgr.nav_back()
+        restore.assert_called_once_with(True)
+
+    def test_nav_back_note_switch_restores_instantly(self):
+        # Landing on a different note is a switch: restore instantly (the target
+        # tab was possibly not even visible — animating would be wrong).
+        self.nav_history.current = "/a.md"
+        self.nav_history.back.return_value = "/b.md"
+        restore = unittest.mock.MagicMock()
+        self._mgr._restore_position_fn = restore
+        self._mgr.nav_back()
+        restore.assert_called_once_with(False)
+
 
 class TestNavForward(unittest.TestCase):
     """InputManager.nav_forward."""
@@ -142,6 +162,22 @@ class TestNavForward(unittest.TestCase):
         self.nav_history.forward.return_value = "/path/to/next.md"
         with unittest.mock.patch.object(InputManager, '_update_nav_buttons'):
             self._mgr.nav_forward()
+
+    def test_nav_forward_same_file_restores_smoothly(self):
+        self.nav_history.current = "/a.md"
+        self.nav_history.forward.return_value = "/a.md"
+        restore = unittest.mock.MagicMock()
+        self._mgr._restore_position_fn = restore
+        self._mgr.nav_forward()
+        restore.assert_called_once_with(True)
+
+    def test_nav_forward_note_switch_restores_instantly(self):
+        self.nav_history.current = "/a.md"
+        self.nav_history.forward.return_value = "/b.md"
+        restore = unittest.mock.MagicMock()
+        self._mgr._restore_position_fn = restore
+        self._mgr.nav_forward()
+        restore.assert_called_once_with(False)
 
 
 class TestUpdateNavButtons(unittest.TestCase):
@@ -315,7 +351,7 @@ class TestPositionCallbacks(unittest.TestCase):
         self.save.side_effect = lambda: order.append("save")
         self.nav_history.back.side_effect = lambda: (order.append("back") or "/prev.md")
         self.on_nav.side_effect = lambda *a, **k: order.append("open")
-        self.restore.side_effect = lambda: order.append("restore")
+        self.restore.side_effect = lambda *a: order.append("restore")
         mgr.nav_back()
         self.assertEqual(order, ["save", "back", "open", "restore"])
 
@@ -325,7 +361,7 @@ class TestPositionCallbacks(unittest.TestCase):
         self.save.side_effect = lambda: order.append("save")
         self.nav_history.forward.side_effect = lambda: (order.append("fwd") or "/next.md")
         self.on_nav.side_effect = lambda *a, **k: order.append("open")
-        self.restore.side_effect = lambda: order.append("restore")
+        self.restore.side_effect = lambda *a: order.append("restore")
         mgr.nav_forward()
         self.assertEqual(order, ["save", "fwd", "open", "restore"])
 

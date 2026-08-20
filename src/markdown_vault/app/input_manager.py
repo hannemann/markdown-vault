@@ -31,9 +31,10 @@ class InputManager:
                 position into the *current* history entry. Called just before the
                 history leaves that entry — on a push and before a back/forward —
                 so where the reader was is captured before it is lost.
-            restore_position_fn: Optional ``() -> None`` that restores the current
-                entry's saved position. Called after a back/forward has opened the
-                target note.
+            restore_position_fn: Optional ``(in_page: bool) -> None`` that restores
+                the current entry's saved position. Called after a back/forward has
+                opened the target note; *in_page* is True when the step stayed in
+                the same note, so the restore can glide smoothly rather than jump.
         """
         self._application = application
         self._on_nav_file_opened = on_nav_file_opened
@@ -153,26 +154,32 @@ class InputManager:
         """Navigate to the previous entry in history, skipping missing files."""
         if self._save_position_fn is not None:
             self._save_position_fn()      # record the current spot before leaving it
+        from_path = self._nav_history.current
         file_path = self._nav_history.back()
         if file_path is not None:
-            self._open_from_nav(file_path)
+            self._open_from_nav(file_path, in_page=(file_path == from_path))
         self._update_nav_buttons()
 
     def nav_forward(self) -> None:
         """Navigate to the next entry in history, skipping missing files."""
         if self._save_position_fn is not None:
             self._save_position_fn()
+        from_path = self._nav_history.current
         file_path = self._nav_history.forward()
         if file_path is not None:
-            self._open_from_nav(file_path)
+            self._open_from_nav(file_path, in_page=(file_path == from_path))
         self._update_nav_buttons()
 
-    def _open_from_nav(self, file_path: str) -> None:
+    def _open_from_nav(self, file_path: str, in_page: bool = False) -> None:
         """Open *file_path* for a back/forward step, then restore its position.
 
         The open is fenced by ``_navigating`` so the tab-change it triggers can't
         re-save over the target entry; the restore runs after the fence, reading
         the entry's intact saved position.
+
+        *in_page* — the step stayed in the same note (an anchor/outline entry) —
+        is passed on so the restore can glide smoothly there and jump on a note
+        switch, the same in-page/switch split the preview already makes.
         """
         self._navigating = True
         try:
@@ -180,7 +187,7 @@ class InputManager:
         finally:
             self._navigating = False
         if self._restore_position_fn is not None:
-            self._restore_position_fn()   # land where we were, not at the top
+            self._restore_position_fn(in_page)   # land where we were, not at the top
 
     def _update_nav_buttons(self) -> None:
         """Reflect history state on the nav buttons.

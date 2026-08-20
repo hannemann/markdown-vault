@@ -103,9 +103,18 @@ class ScrollMemoryTest(unittest.TestCase):
         tab = self._tab("/a.md", "edit")
         self.tab_bar.get_current_tab.return_value = tab
         self.mem.restore_current()
-        tab.editor.restore_scroll_position.assert_called_once_with(200.0, 9)
+        tab.editor.restore_scroll_position.assert_called_once_with(200.0, 9, smooth=False)
         tab.editor.grab_editor_focus.assert_called_once()
         tab.preview.scroll_to_position.assert_not_called()
+
+    def test_restore_smooth_forwards_to_the_editor_on_in_page(self):
+        # In-page back/forward (smooth=True): the editor animates to the saved
+        # spot instead of jumping — consistent with the preview and outline.
+        self.hist.push("/a.md", editor_scroll=200.0, editor_cursor=9)
+        tab = self._tab("/a.md", "edit")
+        self.tab_bar.get_current_tab.return_value = tab
+        self.mem.restore_current(smooth=True)
+        tab.editor.restore_scroll_position.assert_called_once_with(200.0, 9, smooth=True)
 
     def test_restore_scrolls_now_when_the_note_is_already_shown(self):
         # In-page back/forward: the note is rendered, so scroll immediately.
