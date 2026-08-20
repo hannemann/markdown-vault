@@ -1384,7 +1384,6 @@ class Preview(Gtk.ScrolledWindow):
             )
             html_json = json.dumps(html_content, ensure_ascii=False)
             js = (
-                'window._mvBack=[];window._mvFwd=[];'   # drop stale anchor positions
                 'document.querySelector(".markdown-body").innerHTML '
                 f'= {html_json}'
             )

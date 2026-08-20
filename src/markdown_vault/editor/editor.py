@@ -643,29 +643,32 @@ class Editor(Gtk.ScrolledWindow):
         ``Tab.reload_editor`` exists to avoid). Fields left ``None`` are skipped.
 
         With ``smooth`` (in-page back/forward, same note) the view *animates* to
-        the caret line via ``scroll_to_iter`` — the same method the outline click
-        and search use, so the editor glides like the preview. The caret line is
-        aligned where it sat in the viewport (derived from the saved offset), so
-        the landing spot is line-granular but faithful. Without ``smooth`` (a note
-        switch) the saved pixel offset is written straight onto the adjustment —
-        an instant jump, because the target tab may not even be visible.
+        the saved offset via ``scroll_to_iter`` — the same method the outline
+        click and search use, so the editor glides like the preview. The target
+        line is looked up **from the saved offset**, never from the caret: the
+        caret is routinely nowhere near the viewport (a freshly opened note keeps
+        it at 0 while the reader scrolls down), and aligning on it would land at
+        the caret instead of the saved spot. Without ``smooth`` (a note switch)
+        the offset is written straight onto the adjustment — an instant jump,
+        because the target tab may not even be visible.
         """
         buf = self._buffer
-        cursor_iter = None
         if cursor is not None:
-            cursor_iter = buf.get_iter_at_offset(min(cursor, buf.get_char_count()))
-            buf.place_cursor(cursor_iter)
+            buf.place_cursor(buf.get_iter_at_offset(min(cursor, buf.get_char_count())))
         if scroll is None:
             return
         vadj = self.get_vadjustment()
         if vadj is None:
             return
-        if smooth and cursor_iter is not None:
-            def _animate(it=cursor_iter, value=scroll):
-                page = vadj.get_page_size()
-                y = self._view.get_iter_location(it).y
-                yalign = min(1.0, max(0.0, (y - value) / page)) if page else 0.0
-                self._view.scroll_to_iter(it, 0.0, True, 0.0, yalign)
+        if smooth:
+            def _animate(value=scroll):
+                # The bool is "is this position over text"; x=0 lies in the left
+                # margin, so it is False even for a perfectly good line — the
+                # iter is the right line either way. A value past the end of a
+                # now-shorter note yields its last line, and scroll_to_iter
+                # cannot scroll beyond it: the _clamp_scroll safety is kept.
+                _ok, it = self._view.get_iter_at_location(0, int(value))
+                self._view.scroll_to_iter(it, 0.0, True, 0.0, 0.0)
                 return False
             GLib.idle_add(_animate)
         else:

@@ -434,6 +434,20 @@ class TestScrollPositionHistory(AppWindowTest):
         self.assertEqual(h.entries[-1].path, "/a.md")
         self.assertEqual(h.entries[-1].preview_scroll, 900.0)   # to, the anchor
 
+    def test_anchor_jump_that_does_not_move_adds_no_entry(self):
+        # Split records editor+preview on the entry the reader is on, while an
+        # anchor push carries preview_scroll only — so a jump to where the reader
+        # already is would still count as a "different position" and add a dead
+        # entry. from == to means nothing moved.
+        h = self.win._nav_history
+        h.push("/a.md", editor_scroll=300.0, editor_cursor=7, preview_scroll=500.0)
+        tab = unittest.mock.Mock()
+        tab.file_path = "/a.md"
+        with unittest.mock.patch.object(self.win._tab_bar, "get_current_tab",
+                                        return_value=tab):
+            self.win._on_anchor_navigated(500.0, 500.0)
+        self.assertEqual(len(h.entries), 1)
+
     def test_outline_click_pushes_the_editor_target_in_edit_mode(self):
         # An outline click is in-page navigation. In edit mode the preview isn't
         # rendered to report the jump, so the window pushes the editor target as
@@ -447,6 +461,56 @@ class TestScrollPositionHistory(AppWindowTest):
         self.assertEqual(h.entries[-1].path, "/a.md")
         self.assertEqual((h.entries[-1].editor_scroll, h.entries[-1].editor_cursor),
                          (400.0, 55))
+
+    def test_outline_click_in_edit_mode_does_not_also_ask_the_preview(self):
+        # The preview may still hold the note's DOM from an earlier render (a tab
+        # read in Render and switched to Edit). Asked to jump it reports
+        # anchor-navigated and pushes a SECOND entry for one click, so back has to
+        # be pressed twice. In edit mode only the editor target is pushed.
+        tab = self._tab("/a.md", "edit")
+        with unittest.mock.patch.object(self.win._tab_bar, "get_current_tab",
+                                        return_value=tab):
+            self.win._on_outline_clicked(None, 3)
+        tab.editor.scroll_to_line.assert_called_once_with(3, yalign=0.0)
+        tab.preview.scroll_to_line.assert_not_called()
+
+    def test_outline_click_in_render_mode_lets_the_preview_report_the_jump(self):
+        tab = self._tab("/a.md", "render")
+        with unittest.mock.patch.object(self.win._tab_bar, "get_current_tab",
+                                        return_value=tab):
+            self.win._on_outline_clicked(None, 3)
+        tab.preview.scroll_to_line.assert_called_once()
+
+    def test_outline_click_records_the_spot_before_jumping(self):
+        # record_from_tab must run BEFORE editor.scroll_to_line: that call moves
+        # the caret to the heading, so recording afterwards would store the target
+        # as the origin and back would return to where it already is.
+        tab = self._tab("/a.md", "edit")
+        order = []
+        tab.editor.scroll_to_line.side_effect = lambda *a, **k: order.append("jump")
+        with unittest.mock.patch.object(self.win._tab_bar, "get_current_tab",
+                                        return_value=tab), \
+                unittest.mock.patch.object(
+                    self.win._scroll_memory, "record_from_tab",
+                    side_effect=lambda *_: order.append("record")):
+            self.win._on_outline_clicked(None, 3)
+        self.assertEqual(order, ["record", "jump"])
+
+    def test_an_in_place_note_switch_marks_the_preview_reload_pending(self):
+        # The tab re-key is followed by a deferred reset+reload; the flag has to
+        # be set synchronously, *before* it, or a scroll restore in between fires
+        # on the interim innerHTML swap and is wiped by the reload — the bug
+        # 950a912 fixes. Only Preview.mark_reload_pending was covered, not that
+        # anyone calls it.
+        tab = self._tab("/new.md", "render")
+        with unittest.mock.patch.object(self.win._tab_bar, "get_tab",
+                                        return_value=tab), \
+                unittest.mock.patch.object(self.win._tab_bar,
+                                           "_set_tab_unmodified"), \
+                unittest.mock.patch.object(self.win._tab_bar, "get_current_path",
+                                           return_value="/new.md"):
+            self.win._on_tab_renamed(None, "/old.md", "/new.md")
+        tab.preview.mark_reload_pending.assert_called_once()
 
     # ── wiring: the window builds ScrollMemory and wires it in ───────
 

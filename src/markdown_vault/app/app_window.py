@@ -1488,11 +1488,14 @@ class MainWindow(Adw.ApplicationWindow):
         if not tab:
             return
         self._scroll_memory.record_from_tab(tab)
-        text = tab.editor.get_text()
         tab.editor.scroll_to_line(line, yalign=0.0)
-        tab.preview.scroll_to_line(line, text)
         if getattr(tab, "view_mode", "edit") == "edit":
+            # Edit-only: the preview is off screen. Its DOM may still hold the
+            # note from an earlier render and would report a jump nobody sees —
+            # a second push for one click. Push the editor target instead.
             GLib.idle_add(self._push_outline_editor_target, tab)
+        else:
+            tab.preview.scroll_to_line(line, tab.editor.get_text())
 
     def _push_outline_editor_target(self, tab) -> bool:
         """Push the editor jump target of an outline click, once the editor
@@ -2117,6 +2120,12 @@ class MainWindow(Adw.ApplicationWindow):
         if tab is None:
             return
         self._nav_history.update_current(preview_scroll=frm)
+        if frm == to:
+            # The jump did not move: the anchor is already where the reader is.
+            # Pushing would add an entry whose only difference is the editor
+            # fields it does *not* carry (split records them, an anchor push does
+            # not) — a history step that visibly does nothing.
+            return
         self._input_manager.push_history(tab.file_path, preview_scroll=to)
 
     def _nav_back(self) -> None:

@@ -191,18 +191,36 @@ class TestEditorScrollPosition(unittest.TestCase):
             self._flush_idle()
         vadj.set_value.assert_called_once()
 
-    def test_restore_smooth_scrolls_to_the_caret_iter(self):
+    def test_restore_smooth_targets_the_saved_offset_not_the_caret(self):
         # In-page back/forward (smooth=True) animates via scroll_to_iter to the
-        # caret line — no direct adjustment jump — so it glides like the outline
-        # click and the preview.
+        # line at the SAVED offset — no direct adjustment jump. The caret is
+        # routinely far from the viewport (a freshly opened note keeps it at 0
+        # while the reader scrolls down), so aligning on it would land at the
+        # caret instead of the saved spot.
         import unittest.mock as m
         ed = self._editor("line one\nline two\nline three")
         vadj = m.MagicMock()
-        vadj.get_page_size.return_value = 200.0
+        target = object()
         ed._view = m.MagicMock()
-        ed._view.get_iter_location.return_value = m.MagicMock(y=140)
+        ed._view.get_iter_at_location.return_value = (False, target)
         with m.patch.object(ed, "get_vadjustment", return_value=vadj):
-            ed.restore_scroll_position(scroll=120.0, cursor=3, smooth=True)
+            ed.restore_scroll_position(scroll=120.0, cursor=0, smooth=True)
+            self._flush_idle()
+        ed._view.get_iter_at_location.assert_called_once_with(0, 120)
+        ed._view.scroll_to_iter.assert_called_once_with(target, 0.0, True, 0.0, 0.0)
+        vadj.set_value.assert_not_called()
+
+    def test_restore_smooth_needs_no_caret(self):
+        # An entry may carry a scroll and no cursor; the animation no longer
+        # depends on the caret, so it must still run (it used to fall back to
+        # the instant jump).
+        import unittest.mock as m
+        ed = self._editor("line one\nline two\nline three")
+        vadj = m.MagicMock()
+        ed._view = m.MagicMock()
+        ed._view.get_iter_at_location.return_value = (False, object())
+        with m.patch.object(ed, "get_vadjustment", return_value=vadj):
+            ed.restore_scroll_position(scroll=120.0, smooth=True)
             self._flush_idle()
         ed._view.scroll_to_iter.assert_called_once()
         vadj.set_value.assert_not_called()
