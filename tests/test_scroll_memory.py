@@ -18,12 +18,13 @@ class ScrollMemoryTest(unittest.TestCase):
         self.tab_bar = unittest.mock.Mock()
         self.mem = ScrollMemory(self.hist, self.tab_bar)
 
-    def _tab(self, path, mode, *, escroll=0.0, ecursor=0, pscroll=0.0):
+    def _tab(self, path, mode, *, escroll=0.0, ecursor=0, pscroll=0.0, showing=True):
         tab = unittest.mock.Mock()
         tab.file_path = path
         tab.view_mode = mode
         tab.editor.capture_scroll_position.return_value = (escroll, ecursor)
         tab.preview.preview_scroll_position.return_value = pscroll
+        tab.preview.showing_note.return_value = showing
         return tab
 
     # ── record: mode decides which fields are stored ─────────────────
@@ -106,13 +107,26 @@ class ScrollMemoryTest(unittest.TestCase):
         tab.editor.grab_editor_focus.assert_called_once()
         tab.preview.scroll_to_position.assert_not_called()
 
-    def test_restore_applies_preview_position_in_render_without_focus(self):
+    def test_restore_scrolls_now_when_the_note_is_already_shown(self):
+        # In-page back/forward: the note is rendered, so scroll immediately.
         self.hist.push("/a.md", preview_scroll=333.0)
-        tab = self._tab("/a.md", "render")
+        tab = self._tab("/a.md", "render", showing=True)
         self.tab_bar.get_current_tab.return_value = tab
         self.mem.restore_current()
         tab.preview.scroll_to_position.assert_called_once_with(333.0)
+        tab.preview.arm_scroll.assert_not_called()
         tab.editor.grab_editor_focus.assert_not_called()
+
+    def test_restore_arms_the_scroll_when_a_note_switch_reloads(self):
+        # A different note is coming: its content reloads (deferred), so arm the
+        # scroll for the load's FINISHED instead of running it on the old page —
+        # scrolling now would land on stale content and be wiped by the reload.
+        self.hist.push("/a.md", preview_scroll=333.0)
+        tab = self._tab("/a.md", "render", showing=False)
+        self.tab_bar.get_current_tab.return_value = tab
+        self.mem.restore_current()
+        tab.preview.arm_scroll.assert_called_once_with(333.0)
+        tab.preview.scroll_to_position.assert_not_called()
 
     def test_restore_is_noop_on_path_mismatch(self):
         self.hist.push("/a.md", editor_scroll=200.0)

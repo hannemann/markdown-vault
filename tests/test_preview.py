@@ -118,6 +118,8 @@ class TestPreviewScrollPosition(unittest.TestCase):
         p._pending_scroll = None
         p._pending_anchor = ""
         p._scroll_y = 0.0
+        p._reload_pending = False
+        p._current_file = ""
         p._loaded = True
         p._load_in_progress = False
         p._web_view = object()                 # non-None sentinel
@@ -144,8 +146,10 @@ class TestPreviewScrollPosition(unittest.TestCase):
         p._run_js.assert_called_once()
         self.assertIsNone(p._pending_scroll)
 
-    def test_scroll_to_position_is_smooth_when_note_already_loaded(self):
-        # In-page back/forward: same note, no reload → animate the short hop.
+    def test_scroll_to_position_is_smooth(self):
+        # scroll_to_position is only used for an in-page hop (same note, already
+        # rendered) — a short move, animated. A note switch goes through
+        # arm_scroll instead (applied instantly on FINISHED).
         p = self._preview()
         p.scroll_to_position(120.0)
         self.assertIn("smooth", p._run_js.call_args[0][0])
@@ -206,6 +210,24 @@ class TestPreviewScrollReset(unittest.TestCase):
         p._scroll_y = 500.0
         p.update_from_text("# A edited", "", "/a.md")  # same note, live edit
         self.assertEqual(p.preview_scroll_position(), 500.0)
+
+    def test_showing_note_tracks_the_rendered_file(self):
+        # The restore discriminator: same note already rendered → scroll now;
+        # a different note → a reload is coming, so arm for its FINISHED.
+        p = Preview()
+        p.update_from_text("# A", "", "/a.md")
+        self.assertTrue(p.showing_note("/a.md"))
+        self.assertFalse(p.showing_note("/b.md"))
+
+    def test_showing_note_false_while_a_reload_is_pending(self):
+        # After a tab re-key, current_file is set by the interim innerHTML swap
+        # but the real render (a deferred reload) is still coming — showing_note
+        # must not call the note 'stably shown' yet, or the restore fires early
+        # and gets wiped. Cleared on the load's FINISHED.
+        p = Preview()
+        p.update_from_text("# A", "", "/a.md")
+        p.mark_reload_pending()
+        self.assertFalse(p.showing_note("/a.md"))
 
 
 class TestAnchorNavigation(unittest.TestCase):

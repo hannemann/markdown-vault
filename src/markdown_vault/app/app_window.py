@@ -2016,6 +2016,10 @@ class MainWindow(Adw.ApplicationWindow):
         tab = self._tab_bar.get_tab(new_path)
         if tab:
             self._tab_bar._set_tab_unmodified(new_path, tab.editor.is_modified)
+            # The deferred reload below is the note's real render; mark it now
+            # (synchronously) so a scroll restore in between arms for its FINISHED
+            # instead of firing on the interim innerHTML swap and being wiped.
+            tab.preview.mark_reload_pending()
 
         # Defer view-mode and preview update so the stack re-layout completes first.
         def _deferred():

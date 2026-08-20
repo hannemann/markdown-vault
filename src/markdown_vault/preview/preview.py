@@ -659,6 +659,7 @@ class Preview(Gtk.ScrolledWindow):
         self._pending_anchor: str = ""  # heading to scroll to once the note has rendered
         self._pending_scroll: float | None = None  # pixel offset to restore on next render
         self._scroll_y: float = 0.0     # last reported scroll offset (kept live by JS)
+        self._reload_pending: bool = False  # a deferred reset+reload is coming (tab re-key)
         self._load_in_progress: bool = False  # full load_html in flight (DOM not ready yet)
         self._web_view = WebKit.WebView()
         self._setup_web_view(self._web_view)
@@ -883,6 +884,21 @@ class Preview(Gtk.ScrolledWindow):
         handler, so it is the reader's position at the moment the note is left."""
         return self._scroll_y
 
+    def showing_note(self, path: str) -> bool:
+        """Whether the preview *stably* displays *path*'s content — the note is its
+        current file **and** no reload is pending. Tells an in-page scroll (same
+        note, rendered → apply now) from a note switch (a deferred reset+reload is
+        coming; the scroll must be armed for its FINISHED, since ``_current_file``
+        is set synchronously by the interim innerHTML swap, before that reload)."""
+        return self._current_file == path and not self._reload_pending
+
+    def mark_reload_pending(self) -> None:
+        """Record that a deferred reset+reload is coming (the window re-keyed the
+        tab and rebuilt the content stack). Set synchronously, before the reload;
+        cleared on the load's FINISHED. Keeps :meth:`showing_note` from calling a
+        note switch 'already shown' during the interim innerHTML swap."""
+        self._reload_pending = True
+
     def _on_anchor_reported(self, _content_manager, jsc_value) -> None:
         """Relay an in-page anchor jump (from → to scroll offsets) as the
         ``anchor-navigated`` signal, so a caller can record it as a history
@@ -960,12 +976,11 @@ class Preview(Gtk.ScrolledWindow):
             self._run_js(js)
 
     def scroll_to_position(self, y: float) -> None:
-        """Move to pixel offset *y* — the position counterpart of
-        :meth:`scroll_to_anchor`. If the page is already rendered (an in-page
-        back/forward within the same note) the move is **smooth** — a short hop.
-        Otherwise a reload is coming (a note switch), so it is deferred to the
-        next full load's FINISHED and applied **instantly** on the fresh DOM.
-        For content only about to be rendered, use :meth:`arm_scroll`.
+        """Move **smoothly** to pixel offset *y* — the position counterpart of
+        :meth:`scroll_to_anchor`, for an in-page back/forward within the note that
+        is already rendered (a short hop). A note switch reloads the content
+        first, so its restore goes through :meth:`arm_scroll` instead and lands
+        instantly on the fresh DOM (see ``ScrollMemory.restore_current``).
         """
         if self._loaded and not self._load_in_progress:
             self._run_js(_scroll_to_js(y, smooth=True))
@@ -1010,6 +1025,7 @@ class Preview(Gtk.ScrolledWindow):
         """
         if event == WebKit.LoadEvent.FINISHED:
             self._load_in_progress = False
+            self._reload_pending = False   # the reload this waited for has arrived
             self._flush_pending_anchor()   # first-time open via [[Other#heading]]
             # A restored pixel position wins over a fragment if both are ever
             # armed (run last). They don't coincide any more: a fragment is armed

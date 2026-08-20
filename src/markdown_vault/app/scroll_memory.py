@@ -102,4 +102,10 @@ class ScrollMemory:
             tab.editor.restore_scroll_position(entry.editor_scroll, entry.editor_cursor)
             tab.editor.grab_editor_focus()   # so the restored caret is ready to type
         if mode in _PREVIEW_MODES and entry.preview_scroll is not None:
-            tab.preview.scroll_to_position(entry.preview_scroll)
+            if tab.preview.showing_note(entry.path):
+                # Same note, already rendered (in-page back/forward): scroll now.
+                tab.preview.scroll_to_position(entry.preview_scroll)
+            else:
+                # A note switch: the content reloads (deferred), so arm the scroll
+                # for that load's FINISHED instead of running it on the old page.
+                tab.preview.arm_scroll(entry.preview_scroll)
