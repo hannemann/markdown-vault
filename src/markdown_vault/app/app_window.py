@@ -1479,12 +1479,30 @@ class MainWindow(Adw.ApplicationWindow):
             self._open_file(file_path)  # explicit new tab
 
     def _on_outline_clicked(self, _sidebar, line: int) -> None:
+        # An outline click is in-page navigation, recorded like a footnote/TOC
+        # jump: save where the reader was, then let the jump become a history
+        # entry. In render/split the preview jump reports it (anchor-navigated);
+        # in the editor-only view the preview isn't rendered and won't report, so
+        # push the editor target here.
         tab = self._tab_bar.get_current_tab()
         if not tab:
             return
-        tab.editor.scroll_to_line(line, yalign=0.0)
+        self._scroll_memory.record_from_tab(tab)
         text = tab.editor.get_text()
+        tab.editor.scroll_to_line(line, yalign=0.0)
         tab.preview.scroll_to_line(line, text)
+        if getattr(tab, "view_mode", "edit") == "edit":
+            GLib.idle_add(self._push_outline_editor_target, tab)
+
+    def _push_outline_editor_target(self, tab) -> bool:
+        """Push the editor jump target of an outline click, once the editor
+        scroll has settled (edit-mode only; render/split go through
+        anchor-navigated)."""
+        if tab is self._tab_bar.get_current_tab():
+            scroll, cursor = tab.editor.capture_scroll_position()
+            self._input_manager.push_history(tab.file_path,
+                                             editor_scroll=scroll, editor_cursor=cursor)
+        return False
 
     # ── Search scope (shared by full-text, semantic, Ask) ───────────
 

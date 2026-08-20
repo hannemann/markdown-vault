@@ -1476,11 +1476,10 @@ class Preview(Gtk.ScrolledWindow):
                 break
         if not target_slug:
             return
-        js = f'document.getElementById("{target_slug}")?.scrollIntoView({{behavior:"smooth",block:"start"}});'
-        GLib.idle_add(
-            self._web_view.evaluate_javascript,
-            js, -1, None, None, None, None,
-        )
+        # An outline click is the same in-page navigation as a footnote/TOC click:
+        # jump to the heading anchor and report from/to, so it becomes a history
+        # entry (via ``anchor-navigated``) like any other.
+        self._jump_to_anchor(target_slug)
 
     @staticmethod
     def _get_theme_colors() -> dict[str, str]:

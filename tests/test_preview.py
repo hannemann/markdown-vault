@@ -266,6 +266,17 @@ class TestAnchorNavigation(unittest.TestCase):
                    if c.args and c.args[0] == "anchor-navigated"]
         self.assertEqual(emitted, [])
 
+    def test_scroll_to_line_delegates_to_the_anchor_jump(self):
+        # An outline click in the preview is the same in-page navigation as a
+        # footnote/TOC jump: scroll to the heading anchor and report it, so it
+        # becomes a history entry via anchor-navigated.
+        p = Preview.__new__(Preview)
+        p._web_view = object()
+        p._jump_to_anchor = MagicMock()
+        p.scroll_to_line(0, "# Section One\n\nbody")
+        p._jump_to_anchor.assert_called_once()
+        self.assertIn("section", p._jump_to_anchor.call_args[0][0].lower())
+
 
 class TestBuildCsp(unittest.TestCase):
     """Content-Security-Policy assembly (5.1)."""

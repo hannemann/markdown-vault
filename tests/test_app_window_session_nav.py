@@ -434,6 +434,20 @@ class TestScrollPositionHistory(AppWindowTest):
         self.assertEqual(h.entries[-1].path, "/a.md")
         self.assertEqual(h.entries[-1].preview_scroll, 900.0)   # to, the anchor
 
+    def test_outline_click_pushes_the_editor_target_in_edit_mode(self):
+        # An outline click is in-page navigation. In edit mode the preview isn't
+        # rendered to report the jump, so the window pushes the editor target as
+        # its own history entry (same file, the jumped-to position).
+        h = self.win._nav_history
+        h.push("/a.md")
+        tab = self._tab("/a.md", "edit", escroll=400.0, ecursor=55)
+        with unittest.mock.patch.object(self.win._tab_bar, "get_current_tab",
+                                        return_value=tab):
+            self.win._push_outline_editor_target(tab)
+        self.assertEqual(h.entries[-1].path, "/a.md")
+        self.assertEqual((h.entries[-1].editor_scroll, h.entries[-1].editor_cursor),
+                         (400.0, 55))
+
     # ── wiring: the window builds ScrollMemory and wires it in ───────
 
     def test_input_manager_is_wired_with_scroll_memory(self):
