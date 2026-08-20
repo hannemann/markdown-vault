@@ -122,9 +122,10 @@ class TabOrchestrator:
         """Forward preview ``image-download-requested`` to MainWindow callback."""
         self._cb_call("on_preview_image_download", _widget, uri)
 
-    def _on_preview_in_page_nav(self, _widget) -> None:
-        """Forward preview ``in-page-nav-changed`` to MainWindow callback."""
-        self._cb_call("on_preview_in_page_nav")
+    def _on_preview_anchor_navigated(self, _widget, frm, to) -> None:
+        """Forward preview ``anchor-navigated`` (from/to scroll offsets) to the
+        MainWindow callback, which records the jump as a history entry."""
+        self._cb_call("on_anchor_navigated", frm, to)
 
     def _on_editor_text_changed(self, editor) -> None:
         """Forward editor ``text-changed`` signal to MainWindow callback."""
@@ -181,7 +182,7 @@ class TabOrchestrator:
         preview.connect("link-not-found", self._on_preview_link_not_found)
         preview.connect("checkbox-toggled", self._on_preview_checkbox_toggled)
         preview.connect("image-download-requested", self._on_preview_image_download)
-        preview.connect("in-page-nav-changed", self._on_preview_in_page_nav)
+        preview.connect("anchor-navigated", self._on_preview_anchor_navigated)
 
         editor.open_file(file_path)
 

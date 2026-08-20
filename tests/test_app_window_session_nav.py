@@ -77,12 +77,11 @@ class TestNavigation(AppWindowTest):
             self.win._switch_vault("/tmp/second")
         self.assertEqual(check.call_count, 1)
 
-    def test_history_navigation_delegates_and_refreshes_the_buttons(self):
-        # Back/forward live in InputManager; the window's job is to try the
-        # in-page anchor first (footnotes, TOC) and only then hand over.
-        with unittest.mock.patch.object(self.win, "_input_manager") as inputs, \
-                unittest.mock.patch.object(self.win, "_tab_bar") as tabs:
-            tabs.get_current_tab.return_value = None      # no in-page history
+    def test_history_navigation_delegates_to_the_input_manager(self):
+        # Back/forward live in InputManager, and the window delegates straight to
+        # it — in-page anchor jumps are ordinary history entries now, so there is
+        # no separate in-page step to unwind first.
+        with unittest.mock.patch.object(self.win, "_input_manager") as inputs:
             self.activate("nav-back")
             self.activate("nav-forward")
         inputs.nav_back.assert_called_once()
@@ -96,16 +95,6 @@ class TestNavigation(AppWindowTest):
         self.assertFalse(hasattr(self.win, "_push_history"))
         self.assertTrue(callable(self.win._input_manager.push_history))
 
-    def test_an_in_page_anchor_is_unwound_before_the_note_history(self):
-        # Ctrl+Alt+Left inside a long note with footnotes must first return to
-        # where the anchor jump started, not leave the note entirely.
-        tab = unittest.mock.Mock()
-        tab.preview.go_back_in_page.return_value = True
-        with unittest.mock.patch.object(self.win, "_input_manager") as inputs, \
-                unittest.mock.patch.object(self.win, "_tab_bar") as tabs:
-            tabs.get_current_tab.return_value = tab
-            self.activate("nav-back")
-        inputs.nav_back.assert_not_called()
 
     def test_opening_a_history_entry_from_another_vault_switches_first(self):
         # The history spans vaults, so an entry may point outside the active one.
@@ -427,6 +416,23 @@ class TestScrollPositionHistory(AppWindowTest):
             self.win._switch_vault_complete_phase3("/new", open_file_path=y)
         entry = next(e for e in self.win._nav_history.entries if e.path == x)
         self.assertEqual(entry.editor_cursor, 5)
+
+    # ── in-page anchor jump becomes a history entry ──────────────────
+
+    def test_anchor_jump_saves_from_on_current_and_pushes_to(self):
+        # An in-page anchor jump records where the reader was (from) on the entry
+        # they were on, then pushes the anchor as an ordinary entry (same file,
+        # the anchor's position) — so back/forward returns to the spot.
+        h = self.win._nav_history
+        h.push("/a.md")                       # current entry, position-less
+        tab = unittest.mock.Mock()
+        tab.file_path = "/a.md"
+        with unittest.mock.patch.object(self.win._tab_bar, "get_current_tab",
+                                        return_value=tab):
+            self.win._on_anchor_navigated(120.0, 900.0)
+        self.assertEqual(h.entries[-2].preview_scroll, 120.0)   # from, where we were
+        self.assertEqual(h.entries[-1].path, "/a.md")
+        self.assertEqual(h.entries[-1].preview_scroll, 900.0)   # to, the anchor
 
     # ── wiring: the window builds ScrollMemory and wires it in ───────
 

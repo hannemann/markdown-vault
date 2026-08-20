@@ -335,6 +335,21 @@ class TestPositionCallbacks(unittest.TestCase):
         mgr.nav_back()
         self.restore.assert_not_called()
 
+    def test_push_with_a_position_forwards_it_and_skips_save(self):
+        # An anchor jump pushes an entry that already carries its position; it
+        # must not run save-on-leave (that would overwrite the from-offset the
+        # caller set), and the position is forwarded to nav_history.push.
+        mgr = self._mgr()
+        mgr.push_history("/a.md", preview_scroll=900.0)
+        self.save.assert_not_called()
+        self.nav_history.push.assert_called_once_with("/a.md", preview_scroll=900.0)
+
+    def test_plain_push_still_saves_on_leave(self):
+        mgr = self._mgr()
+        mgr.push_history("/a.md")
+        self.save.assert_called_once()
+        self.nav_history.push.assert_called_once_with("/a.md")
+
     def test_reentrant_push_during_nav_open_is_suppressed(self):
         # Opening the target on back/forward fires a tab-change, which calls
         # push_history again. That re-entrant push must be a no-op: otherwise it

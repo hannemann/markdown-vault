@@ -633,10 +633,6 @@ class Preview(Gtk.ScrolledWindow):
         "image-download-requested": (GObject.SignalFlags.RUN_LAST, None, (str,)),
         # Emitted when the in-preview search match count becomes available.
         "search-info-changed": (GObject.SignalFlags.RUN_LAST, None, ()),
-        # Emitted when an in-page anchor jump changes the in-page back/forward
-        # availability, so the nav buttons refresh immediately (not just on the
-        # next nav action).
-        "in-page-nav-changed": (GObject.SignalFlags.RUN_LAST, None, ()),
         # An in-page anchor jump, reported so it can become a history entry:
         # (from, to) are the scroll offsets before and at the anchor, measured in
         # JS before the smooth scroll (merge-in-page-and-note-back-stacks).
@@ -653,8 +649,6 @@ class Preview(Gtk.ScrolledWindow):
         self._base_uri: str | None = None
         self._csp: str = _build_csp(False)
         self._last_html_hash: str = ""
-        self._in_page_back: int = 0     # depth of the in-page anchor back stack
-        self._in_page_fwd: int = 0      # depth of the in-page anchor forward stack
         self._last_html: str = ""
         self._active: bool = True
         self._pending_text: str | None = None
@@ -918,18 +912,16 @@ class Preview(Gtk.ScrolledWindow):
             self._web_view.evaluate_javascript, js, -1, None, None, None, None)
 
     def _jump_to_anchor(self, fragment: str) -> None:
-        """Smooth-scroll to *fragment*, pushing the current position onto the in-page
-        back stack (and clearing the forward stack) so the nav buttons can return."""
+        """Smooth-scroll to *fragment* and report the jump so it becomes an
+        ordinary history entry — there is no separate in-page stack.
+
+        `from` is where the reader is, `to` is the anchor's position in the
+        document; both are read now, **before** the smooth scroll, so the value
+        is final without waiting on the scroll to settle."""
         frag = json.dumps(fragment)
         self._run_js(
-            "window._mvBack=window._mvBack||[];window._mvFwd=[];"
-            "window._mvBack.push(window.scrollY);"
             f"var _t=document.getElementById({frag});"
             "if(_t){"
-            # Report the jump so Python can turn it into a history entry: `from`
-            # is where the reader is, `to` is the anchor's position in the
-            # document — both read now, before the smooth scroll, so the value is
-            # final without waiting on the scroll to settle.
             "var _from=window.scrollY;"
             "var _to=_t.getBoundingClientRect().top+window.scrollY;"
             "if(window.webkit&&window.webkit.messageHandlers"
@@ -937,9 +929,6 @@ class Preview(Gtk.ScrolledWindow):
             "window.webkit.messageHandlers['anchorHandler']"
             ".postMessage({from:_from,to:_to});}"
             "_t.scrollIntoView({behavior:'smooth',block:'start'});}")
-        self._in_page_back += 1
-        self._in_page_fwd = 0
-        self.emit("in-page-nav-changed")
 
     def scroll_to_anchor(self, heading: str) -> None:
         """Scroll to the *heading* anchor once the note has rendered.
@@ -1016,54 +1005,12 @@ class Preview(Gtk.ScrolledWindow):
         """
         if event == WebKit.LoadEvent.FINISHED:
             self._load_in_progress = False
-            self._flush_pending_anchor()
-            # A saved pixel position takes precedence over a fragment (it is run
-            # last): a reader who entered at #heading and then scrolled on wants
-            # to return to where they were, not back to the heading.
+            self._flush_pending_anchor()   # first-time open via [[Other#heading]]
+            # A restored pixel position wins over a fragment if both are ever
+            # armed (run last). They don't coincide any more: a fragment is armed
+            # only on the first link-open, a pixel position only on back/forward —
+            # in-page anchor jumps are ordinary history entries with a position.
             self._flush_pending_scroll()
-
-    def can_go_back_in_page(self) -> bool:
-        """True if there is in-page anchor history (footnote/TOC jumps) to unwind."""
-        return self._in_page_back > 0
-
-    def can_go_forward_in_page(self) -> bool:
-        """True if an unwound in-page anchor jump can be re-applied."""
-        return self._in_page_fwd > 0
-
-    def go_back_in_page(self) -> bool:
-        """Smooth-scroll back to the position before the last in-page jump. Returns
-        True if a step was taken, False if there is no in-page history to unwind."""
-        if self._in_page_back <= 0:
-            return False
-        self._run_js(
-            "if(window._mvBack&&window._mvBack.length){"
-            "window._mvFwd=window._mvFwd||[];window._mvFwd.push(window.scrollY);"
-            "window.scrollTo({top:window._mvBack.pop(),behavior:'smooth'});}")
-        self._in_page_back -= 1
-        self._in_page_fwd += 1
-        return True
-
-    def go_forward_in_page(self) -> bool:
-        """Re-apply an unwound in-page anchor jump; True if a step was taken."""
-        if self._in_page_fwd <= 0:
-            return False
-        self._run_js(
-            "if(window._mvFwd&&window._mvFwd.length){"
-            "window._mvBack=window._mvBack||[];window._mvBack.push(window.scrollY);"
-            "window.scrollTo({top:window._mvFwd.pop(),behavior:'smooth'});}")
-        self._in_page_fwd -= 1
-        self._in_page_back += 1
-        return True
-
-    def _reset_in_page_nav(self) -> None:
-        """Clear the in-page anchor history — a re-render or note switch makes the
-        recorded scroll positions meaningless — and refresh the nav buttons if any
-        history actually went away, so they never advertise a stack that is gone."""
-        changed = self._in_page_back or self._in_page_fwd
-        self._in_page_back = 0
-        self._in_page_fwd = 0
-        if changed:
-            self.emit("in-page-nav-changed")
 
     def _open_external(self, uri: str) -> None:
         GLib.idle_add(Gtk.show_uri, self.get_root(), uri, Gdk.CURRENT_TIME)
@@ -1380,9 +1327,6 @@ class Preview(Gtk.ScrolledWindow):
         if html_hash == self._last_html_hash:
             return
         self._last_html_hash = html_hash
-        # Content changed — old in-page anchor positions are meaningless now; this
-        # also refreshes the nav buttons so they don't keep advertising the stack.
-        self._reset_in_page_nav()
 
         base_uri = GLib.filename_to_uri(base_dir + "/") if base_dir else None
 

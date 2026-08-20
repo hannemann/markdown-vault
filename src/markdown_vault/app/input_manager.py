@@ -17,8 +17,7 @@ class InputManager:
 
     def __init__(self, application, on_nav_file_opened,
                  nav_history, back_btn, forward_btn, settings,
-                 in_page_state_fn=None, save_position_fn=None,
-                 restore_position_fn=None):
+                 save_position_fn=None, restore_position_fn=None):
         """Initialize the input manager.
 
         Args:
@@ -28,9 +27,6 @@ class InputManager:
             back_btn: Back navigation :class:`Gtk.Button`
             forward_btn: Forward navigation :class:`Gtk.Button`
             settings: Settings dict from :mod:`config`
-            in_page_state_fn: Optional ``() -> (can_back, can_forward)`` reporting the
-                active preview's in-page anchor history, so the buttons stay lit while
-                footnote/TOC jumps can still be unwound.
             save_position_fn: Optional ``() -> None`` that records the reader's
                 position into the *current* history entry. Called just before the
                 history leaves that entry — on a push and before a back/forward —
@@ -45,7 +41,6 @@ class InputManager:
         self._back_btn = back_btn
         self._forward_btn = forward_btn
         self._settings = settings
-        self._in_page_state_fn = in_page_state_fn
         self._save_position_fn = save_position_fn
         self._restore_position_fn = restore_position_fn
         # True while our own back/forward is opening the target note. The open
@@ -130,11 +125,14 @@ class InputManager:
 
     # ── Navigation ─────────────────────────────────────────────────────
 
-    def push_history(self, file_path: str) -> None:
+    def push_history(self, file_path: str, **position) -> None:
         """Append *file_path* to the navigation history.
 
         Consecutive duplicates are collapsed and any forward history is
-        discarded, matching standard browser behaviour.
+        discarded, matching standard browser behaviour. Optional position
+        keywords (``preview_scroll`` etc.) are forwarded to
+        :meth:`NavHistory.push` for a jump that already knows its target —
+        an in-page anchor jump — and suppress save-on-leave for that push.
 
         Args:
             file_path: Absolute path of the file to push
@@ -143,9 +141,12 @@ class InputManager:
             # Re-entrant push from the tab-change our own back/forward fired —
             # ignore it, or it overwrites the target entry's saved position.
             return
-        if self._save_position_fn is not None:
-            self._save_position_fn()      # record where we were before leaving
-        self._nav_history.push(file_path)
+        if not position and self._save_position_fn is not None:
+            # A plain push records the leaving position. A push that already
+            # carries its own position (an anchor jump) does not — save-on-leave
+            # would overwrite the from-offset the caller just set.
+            self._save_position_fn()
+        self._nav_history.push(file_path, **position)
         self._update_nav_buttons()
 
     def nav_back(self) -> None:
@@ -190,12 +191,10 @@ class InputManager:
         double-click toggle-maximizes the window.  "Nothing to navigate" is shown
         by dimming instead; the click then simply no-ops.
         """
-        extra_back, extra_fwd = (self._in_page_state_fn()
-                                 if self._in_page_state_fn else (False, False))
         self._back_btn.set_opacity(
-            1.0 if (self._nav_history.can_go_back() or extra_back) else 0.35)
+            1.0 if self._nav_history.can_go_back() else 0.35)
         self._forward_btn.set_opacity(
-            1.0 if (self._nav_history.can_go_forward() or extra_fwd) else 0.35)
+            1.0 if self._nav_history.can_go_forward() else 0.35)
 
     def update_nav_buttons(self) -> None:
         """Public API: dim/undim the navigation buttons based on history state."""
