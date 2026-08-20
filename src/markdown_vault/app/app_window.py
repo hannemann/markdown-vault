@@ -114,6 +114,13 @@ _TREE_MIN_WIDTH = 280
 _SIDEBAR_MIN_WIDTH = 220
 _CONTENT_MIN_WIDTH = 320
 
+# How far an in-page anchor jump must move to count as a navigation. Sub-pixel
+# only: WebKit settles window.scrollY on a whole pixel while
+# getBoundingClientRect().top keeps the fraction, so a jump to where the reader
+# already is reports e.g. from=21.0 / to=21.4375. Below one pixel is rounding,
+# not a new reading position.
+_ANCHOR_MOVED_PX = 1.0
+
 
 def _app_version() -> str:
     """The app version, generated into ``_version.py`` by Meson at install time, with a
@@ -2119,11 +2126,13 @@ class MainWindow(Adw.ApplicationWindow):
         if tab is None:
             return
         self._nav_history.update_current(preview_scroll=frm)
-        if frm == to:
+        if abs(frm - to) < _ANCHOR_MOVED_PX:
             # The jump did not move: the anchor is already where the reader is.
-            # Pushing would add an entry whose only difference is the editor
-            # fields it does *not* carry (split records them, an anchor push does
-            # not) — a history step that visibly does nothing.
+            # Pushing would add an entry that visibly does nothing — and in split
+            # one whose only difference is the editor fields it does *not* carry.
+            # Not `frm == to`: WebKit settles scrollY on a whole pixel while
+            # getBoundingClientRect().top keeps the sub-pixel, so a repeat click
+            # reports e.g. (21.0, 21.4375) and exact equality never holds.
             return
         self._input_manager.push_history(tab.file_path, preview_scroll=to)
 

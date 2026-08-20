@@ -448,6 +448,35 @@ class TestScrollPositionHistory(AppWindowTest):
             self.win._on_anchor_navigated(500.0, 500.0)
         self.assertEqual(len(h.entries), 1)
 
+    def test_repeat_click_on_the_same_anchor_adds_no_entry(self):
+        # The offsets WebKit really reports for a second click on the same
+        # anchor: it settles window.scrollY on a whole pixel while
+        # getBoundingClientRect().top keeps the fraction, so from and to differ
+        # by 0.4375 px and exact equality never holds. Without a tolerance every
+        # repeat click grows the history by one entry that goes nowhere.
+        h = self.win._nav_history
+        h.push("/a.md", preview_scroll=21.4375)
+        tab = unittest.mock.Mock()
+        tab.file_path = "/a.md"
+        with unittest.mock.patch.object(self.win._tab_bar, "get_current_tab",
+                                        return_value=tab):
+            for _ in range(3):
+                self.win._on_anchor_navigated(21.0, 21.4375)
+        self.assertEqual(len(h.entries), 1)
+
+    def test_a_real_anchor_jump_still_pushes(self):
+        # The tolerance must not swallow an actual jump — one pixel is rounding,
+        # anything more is a new reading position.
+        h = self.win._nav_history
+        h.push("/a.md", preview_scroll=0.0)
+        tab = unittest.mock.Mock()
+        tab.file_path = "/a.md"
+        with unittest.mock.patch.object(self.win._tab_bar, "get_current_tab",
+                                        return_value=tab):
+            self.win._on_anchor_navigated(0.0, 21.4375)
+        self.assertEqual(len(h.entries), 2)
+        self.assertEqual(h.entries[-1].preview_scroll, 21.4375)
+
     def test_outline_click_pushes_the_editor_target_in_edit_mode(self):
         # An outline click is in-page navigation. In edit mode the preview isn't
         # rendered to report the jump, so the window pushes the editor target as
