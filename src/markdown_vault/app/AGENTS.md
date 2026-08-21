@@ -40,5 +40,11 @@ to own everything the window could do; what is left is genuine window work
 **Metric:** `make callbacks FILE=src/markdown_vault/app/app_window.py` — how many
 window methods are handed outward. Currently 85 methods / 107 sites.
 
+**A new parameter on a collaborator needs a test of the caller, not only the
+receiver.** The window hands collaborators their arguments; a unit test of the
+collaborator leaves the window's wiring unguarded — is the value passed at all,
+and with the right polarity? Add a small window test that fails when the argument
+is dropped or inverted.
+
 Every new `.py` here also goes into `meson.build` (alphabetically), or it is not
 installed and the app dies with `ModuleNotFoundError`.
