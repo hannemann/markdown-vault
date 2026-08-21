@@ -565,6 +565,29 @@ class TestScrollPositionHistory(AppWindowTest):
             "/tmp/other", open_file_path="/tmp/other/note.md", from_nav=True,
             post_open_fn=self.win._scroll_memory.restore_current)
 
+    def _phase3_nav_target(self, *, from_nav):
+        """Run phase 3 with the session manager mocked out and report the
+        nav_target it was handed."""
+        with unittest.mock.patch.object(self.win._session_mgr,
+                                        "restore_vault_session") as restore, \
+                unittest.mock.patch.object(self.win, "_do_close_paths"), \
+                unittest.mock.patch.object(self.win, "_open_file"):
+            self.win._switch_vault_complete_phase3(
+                "/new", open_file_path="/new/a.md", from_nav=from_nav)
+        return restore.call_args.kwargs.get("nav_target")
+
+    def test_cross_vault_back_hands_the_target_as_nav_target(self):
+        # The target tab is restored from the history (post_open_fn ->
+        # restore_current). restore_vault_session has to be told to skip that one
+        # tab's saved scroll, or the target moves twice — first to its tab entry,
+        # then to the history position.
+        self.assertEqual(self._phase3_nav_target(from_nav=True), "/new/a.md")
+
+    def test_a_plain_vault_switch_passes_no_nav_target(self):
+        # No navigation, so no history restore to defer to: every tab — the
+        # opened one included — restores from its own entry.
+        self.assertIsNone(self._phase3_nav_target(from_nav=False))
+
     # ── in-place link: capture before the buffer is replaced ─────────
 
     def test_in_place_link_saves_position_before_replacing_the_buffer(self):
