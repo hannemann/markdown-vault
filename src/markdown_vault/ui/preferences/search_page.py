@@ -25,6 +25,10 @@ class SearchPageMixin:
         self._ask_subpage = self._build_ask_subpage()
 
         search = Adw.PreferencesPage(title="Search", icon_name="edit-find-symbolic")
+        # Addressable so the Quick Open banner can navigate here (Search → Ask)
+        # when a local model cannot load — see PreferencesDialog.open_at_ask.
+        search.set_name("search")
+        self._search_page = search
         sem_group = Adw.PreferencesGroup(
             title="Semantic search",
             description=(

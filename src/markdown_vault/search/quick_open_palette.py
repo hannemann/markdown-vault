@@ -47,7 +47,7 @@ class QuickOpenPalette(Adw.Dialog):
                  ask_answer_selected=None, get_top_k=None,
                  list_ask_models=None, set_ask_model=None,
                  current_ask_model=None, hide_deprecated=None,
-                 set_hide_deprecated=None) -> None:
+                 set_hide_deprecated=None, open_ask_settings=None) -> None:
         super().__init__()
         self._make_engine = make_engine
         self._semantic_query = semantic_query  # callable(query) -> list, off-thread
@@ -64,6 +64,10 @@ class QuickOpenPalette(Adw.Dialog):
         # probes again. Shown as a banner, and it gates submitting.
         self._ask_status = ask_status
         self._ask_recheck = ask_recheck
+        # For a local-model verdict the banner leads into the settings instead of
+        # re-probing: open_ask_settings() closes the palette and opens Preferences
+        # at Search -> Ask.
+        self._open_ask_settings = open_ask_settings
         self._banner = None
         self._pending_question = ""     # held until a running probe has settled
         self._checking = False          # a "Try again" check is showing its row
@@ -152,7 +156,7 @@ class QuickOpenPalette(Adw.Dialog):
         # must survive exactly the moment the user asks anyway.
         self._banner = Adw.Banner(revealed=False)
         self._banner.set_button_label("Try again")
-        self._banner.connect("button-clicked", lambda *_: self._on_banner_retry())
+        self._banner.connect("button-clicked", lambda *_: self._on_banner_clicked())
         box.append(self._banner)
 
         box.append(Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL))
@@ -299,6 +303,8 @@ class QuickOpenPalette(Adw.Dialog):
         st = self._ask_status() if self._ask_status else None
         if self._banner is not None:
             message = st.message if (st is not None and self._ask_mode) else ""
+            local = st is not None and getattr(st, "is_local", False)
+            self._banner.set_button_label("Settings" if local else "Try again")
             self._banner.set_title(message)
             self._banner.set_revealed(bool(message))
         self._update_submit_state(st)
@@ -339,6 +345,18 @@ class QuickOpenPalette(Adw.Dialog):
         if st is None or st.pending or not st.transient:
             return
         self._on_banner_retry()
+
+    def _on_banner_clicked(self) -> None:
+        """The banner button follows the verdict: a local-model error leads into
+        the settings to fix it (close the palette, open Preferences at Search →
+        Ask); a server error re-probes without leaving the palette."""
+        st = self._ask_status() if self._ask_status else None
+        if (st is not None and getattr(st, "is_local", False)
+                and self._open_ask_settings is not None):
+            self.close()
+            GLib.idle_add(self._open_ask_settings)
+        else:
+            self._on_banner_retry()
 
     def _on_banner_retry(self) -> None:
         """"Try again": probe the server once more without leaving the palette.

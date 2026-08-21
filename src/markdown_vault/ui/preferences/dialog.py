@@ -237,6 +237,16 @@ class PreferencesDialog(
         row.connect("activated", lambda *_: self.push_subpage(subpage))
         return row
 
+    def open_at_ask(self) -> None:
+        """Show the Search page and push its Ask subpage — where the Quick Open
+        banner sends the user when the chosen local model cannot load."""
+        page = getattr(self, "_search_page", None)
+        sub = getattr(self, "_ask_subpage", None)
+        if page is not None:
+            self.set_visible_page(page)
+        if sub is not None:
+            self.push_subpage(sub)
+
     @staticmethod
     def _subpage(title, page):
         """Wrap an ``Adw.PreferencesPage`` as a pushable navigation subpage.

@@ -65,6 +65,12 @@ class AskSubpageMixin:
                                  tooltip_text="Rescan the models folder")
         gguf_rescan.add_css_class("flat")
         gguf_rescan.connect("clicked", lambda *_: self._refresh_gguf_models())
+        gguf_model_reset = Gtk.Button(icon_name="edit-clear-symbolic",
+                                      valign=Gtk.Align.CENTER,
+                                      tooltip_text="Reset to the newest model")
+        gguf_model_reset.add_css_class("flat")
+        gguf_model_reset.connect("clicked", lambda *_: self._reset_gguf_path())
+        self._ask_gguf_combo.add_suffix(gguf_model_reset)
         self._ask_gguf_combo.add_suffix(gguf_rescan)
         group.add(self._ask_gguf_combo)
 
@@ -83,20 +89,22 @@ class AskSubpageMixin:
             margin_start=12, margin_end=12, margin_bottom=6)
         group.add(self._ask_gguf_progress)
 
-        self._ask_gguf_file_row = Adw.ActionRow(title="Model file")
-        gguf_pick = Gtk.Button(icon_name="document-open-symbolic",
-                               valign=Gtk.Align.CENTER,
-                               tooltip_text="Choose a .gguf file…")
-        gguf_pick.add_css_class("flat")
-        gguf_pick.connect("clicked", lambda *_: self._choose_gguf_file())
-        gguf_reset = Gtk.Button(icon_name="edit-clear-symbolic",
-                                valign=Gtk.Align.CENTER,
-                                tooltip_text="Reset to the default location")
-        gguf_reset.add_css_class("flat")
-        gguf_reset.connect("clicked", lambda *_: self._reset_gguf_path())
-        self._ask_gguf_file_row.add_suffix(gguf_pick)
-        self._ask_gguf_file_row.add_suffix(gguf_reset)
-        group.add(self._ask_gguf_file_row)
+        # Folder the GGUFs live in — the search folder and the download target.
+        # Display-only (no typing): pick a folder or reset to the shared default.
+        # Kept apart from the Whisper models under the same default (ask_models_dir).
+        self._ask_models_dir_row = Adw.ActionRow(title="Model folder")
+        dir_pick = Gtk.Button(icon_name="folder-open-symbolic",
+                              valign=Gtk.Align.CENTER, tooltip_text="Choose folder…")
+        dir_pick.add_css_class("flat")
+        dir_pick.connect("clicked", lambda *_: self._choose_models_dir())
+        dir_reset = Gtk.Button(icon_name="edit-clear-symbolic",
+                               valign=Gtk.Align.CENTER, tooltip_text="Reset to default")
+        dir_reset.add_css_class("flat")
+        dir_reset.connect("clicked", lambda *_: self._on_models_dir_selected(""))
+        self._ask_models_dir_row.add_suffix(dir_reset)
+        self._ask_models_dir_row.add_suffix(dir_pick)
+        self._ask_models_dir_row.set_activatable_widget(dir_pick)
+        group.add(self._ask_models_dir_row)
 
         # GPU layers, CPU threads and the KV-cache knobs live on their own
         # subpage (built before this one), reached via this row.
@@ -105,7 +113,7 @@ class AskSubpageMixin:
             self._runtime_subpage)
         group.add(self._ask_runtime_row)
         # Model (download) rows: needed by the local backend in auto and manual.
-        self._ask_model_rows = [self._ask_gguf_url_row, self._ask_gguf_file_row]
+        self._ask_model_rows = [self._ask_gguf_url_row, self._ask_models_dir_row]
 
         # --- Server (Ollama / OpenAI-compatible) rows ---------------------
         self._ask_url_row, self._ask_url_entry = self._entry_row(
@@ -360,14 +368,10 @@ class AskSubpageMixin:
         for w in self._ask_manual_rows:       # advanced tuning: manual only
             w.set_visible(manual)
 
-    def _gguf_path(self):
-        from pathlib import Path
-        resolved = config.resolve_model_path(self._settings)
-        return Path(resolved) if resolved else config.models_dir() / "model.gguf"
-
     def _refresh_gguf_models(self) -> None:
         """Rescan the models folder into the selector, preselecting the active
-        model. Guarded so rebuilding the list doesn't fire a spurious change."""
+        model, then refresh the Model-row status and the folder row. Guarded so
+        rebuilding the list doesn't fire a spurious change."""
         from pathlib import Path
         self._ask_gguf_updating = True
         self._ask_gguf_paths = [str(p) for p in config.list_models(self._settings)]
@@ -377,10 +381,15 @@ class AskSubpageMixin:
         if current in self._ask_gguf_paths:
             self._ask_gguf_combo.set_selected(self._ask_gguf_paths.index(current))
         self._ask_gguf_updating = False
+        self._refresh_models_dir_row()
+        self._refresh_gguf_status()
+
+    def _refresh_models_dir_row(self) -> None:
+        """The folder row's subtitle: the models folder and how many GGUFs it holds."""
+        d = config.ask_models_dir(self._settings)
         n = len(self._ask_gguf_paths)
-        self._ask_gguf_combo.set_subtitle(
-            "No models downloaded yet" if not n
-            else f"{n} in the models folder")
+        self._ask_models_dir_row.set_subtitle(
+            f"{d}  ·  {n} model{'' if n == 1 else 's'}")
 
     def _on_ask_gguf_selected(self, combo, _pspec) -> None:
         if self._ask_gguf_updating:
@@ -430,28 +439,31 @@ class AskSubpageMixin:
                     "validate": gguf_check},
             daemon=True).start()
 
-    def _choose_gguf_file(self) -> None:
-        dialog = Gtk.FileDialog(title="Select a GGUF model file")
-        cur = self._gguf_path()
+    def _choose_models_dir(self) -> None:
+        dialog = Gtk.FileDialog(title="Select the models folder")
+        cur = config.ask_models_dir(self._settings)
         try:
-            probe = cur.parent if cur.parent.exists() else None
-            if probe is not None:
-                dialog.set_initial_folder(Gio.File.new_for_path(str(probe)))
+            if cur.exists():
+                dialog.set_initial_folder(Gio.File.new_for_path(str(cur)))
         except Exception:  # noqa: BLE001
             pass
 
         def done(dlg, result):
             try:
-                gfile = dlg.open_finish(result)
+                gfile = dlg.select_folder_finish(result)
             except GLib.Error:
                 return  # cancelled or failed
             if gfile is not None and gfile.get_path():
-                self._settings["ask_gguf_path"] = gfile.get_path()
-                self._persist()
-                self._refresh_gguf_models()
-                self._refresh_gguf_status()
+                self._on_models_dir_selected(gfile.get_path())
 
-        dialog.open(self.get_root(), None, done)
+        dialog.select_folder(self.get_root(), None, done)
+
+    def _on_models_dir_selected(self, path: str) -> None:
+        """Set the models folder (empty → the shared default), then rescan — the
+        dropdown, the size subtitle and the folder row all follow."""
+        self._settings["ask_models_dir"] = path
+        self._persist()
+        self._refresh_gguf_models()
 
     def _reset_gguf_path(self) -> None:
         self._settings["ask_gguf_path"] = ""   # empty → auto-pick the newest
@@ -460,12 +472,22 @@ class AskSubpageMixin:
         self._refresh_gguf_status()
 
     def _refresh_gguf_status(self) -> None:
-        p = self._gguf_path()
-        if p.exists():
-            mb = p.stat().st_size / 1024 / 1024
-            self._ask_gguf_file_row.set_subtitle(f"{p}  ·  {mb:.0f} MB")
+        """The Model row's subtitle: the chosen model's name + size when it loads,
+        an explicit "not found" when a *set* choice is gone (the Quick Open banner
+        blocks it too), or a hint when nothing is chosen yet."""
+        from pathlib import Path
+        chosen = self._settings.get("ask_gguf_path") or ""
+        resolved = config.resolve_model_path(self._settings)
+        if resolved:
+            p = Path(resolved)
+            mb = p.stat().st_size / 1024 / 1024 if p.exists() else 0
+            via = "" if chosen else "  ·  newest"
+            self._ask_gguf_combo.set_subtitle(f"{p.name}  ·  {mb:.0f} MB{via}")
+        elif chosen:
+            wanted = Path(config.ask_gguf_wanted_path(self._settings)).name
+            self._ask_gguf_combo.set_subtitle(f"{wanted} — not found")
         else:
-            self._ask_gguf_file_row.set_subtitle(f"{p}  ·  not downloaded")
+            self._ask_gguf_combo.set_subtitle("No models downloaded yet")
         self._refresh_gpu_recommendation()
 
     def _refresh_ask_models(self) -> None:

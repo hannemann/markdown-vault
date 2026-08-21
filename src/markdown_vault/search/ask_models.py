@@ -133,6 +133,12 @@ class EndpointStatus:
         return self.state == OK and bool(self.models)
 
     @property
+    def is_local(self) -> bool:
+        """A local-model verdict: the fix is choosing or downloading a model in the
+        settings, not re-probing a server — so the banner button leads there."""
+        return self.state == LOCAL_UNAVAILABLE
+
+    @property
     def message(self) -> str:
         """One sentence for the user, or ``""`` when there is nothing to say.
 

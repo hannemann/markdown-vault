@@ -491,6 +491,7 @@ class MainWindow(Adw.ApplicationWindow):
             ask_hint=self._ask.unavailable_reason,
             ask_status=self._ask.endpoint_status,
             ask_recheck=self._ask.recheck_endpoint,
+            open_ask_settings=lambda: self._open_preferences(target="ask"),
             scope=self._scope_callbacks(),
             hide_deprecated=self.hide_deprecated,
             set_hide_deprecated=self.set_hide_deprecated,
@@ -2660,7 +2661,7 @@ class MainWindow(Adw.ApplicationWindow):
 
     # ── Preferences ────────────────────────────────────────────────
 
-    def _open_preferences(self) -> None:
+    def _open_preferences(self, target=None) -> None:
         try:
             config.check_config_access()
         except OSError as e:
@@ -2672,6 +2673,9 @@ class MainWindow(Adw.ApplicationWindow):
         )
         dlg.connect("settings-changed", self._on_preferences_changed)
         dlg.present(self)
+        if target == "ask":
+            # Sent here from the Quick Open banner when the local model cannot load.
+            dlg.open_at_ask()
 
     def _open_about(self) -> None:
         about = Adw.AboutDialog(

@@ -693,5 +693,40 @@ class TestEndpointStatusInPalette(unittest.TestCase):
         self.assertFalse(p._banner.get_revealed())
 
 
+class TestBannerButtonDispatch(unittest.TestCase):
+    """The banner button follows the verdict: a local-model error leads into the
+    settings; a server error re-probes."""
+
+    def _palette(self, *, is_local, with_settings=True):
+        import types
+        opened = []
+        p = QuickOpenPalette(
+            make_engine=lambda: None,
+            ask_status=lambda: types.SimpleNamespace(is_local=is_local),
+            open_ask_settings=((lambda: opened.append("settings"))
+                               if with_settings else None))
+        p._on_banner_retry = lambda: opened.append("retry")   # stub the server probe
+        p.close = lambda: opened.append("closed")
+        return p, opened
+
+    def test_local_verdict_opens_settings(self):
+        import unittest.mock as m
+        p, opened = self._palette(is_local=True)
+        with m.patch("markdown_vault.search.quick_open_palette.GLib.idle_add",
+                     side_effect=lambda fn, *a: fn()):
+            p._on_banner_clicked()
+        self.assertEqual(opened, ["closed", "settings"])   # close, then open settings
+
+    def test_server_verdict_reprobes(self):
+        p, opened = self._palette(is_local=False)
+        p._on_banner_clicked()
+        self.assertEqual(opened, ["retry"])                # no close, no settings
+
+    def test_local_without_a_settings_callback_falls_back_to_reprobe(self):
+        p, opened = self._palette(is_local=True, with_settings=False)
+        p._on_banner_clicked()
+        self.assertEqual(opened, ["retry"])
+
+
 if __name__ == "__main__":
     unittest.main()

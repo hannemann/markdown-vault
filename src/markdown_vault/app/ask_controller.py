@@ -42,6 +42,7 @@ class AskController:
         self._get_index = get_semantic_index
         self._get_scope_paths = get_scope_paths
         self._palette = None
+        self._logged_local_reason = None   # debounce: log a local model fault once
 
     def bind_palette(self, palette) -> None:
         """Register the palette to refresh when a server probe settles."""
@@ -130,7 +131,13 @@ class AskController:
         if backend not in ask_models.SERVER_BACKENDS:
             reason = llama_runtime.availability(
                 config.ask_gguf_wanted_path(self._settings))
-            return ask_models.local_unavailable(reason) if reason else None
+            if reason:
+                if reason != self._logged_local_reason:   # debounced: resolve runs
+                    logger.warning("Ask: local model unavailable — %s", reason)
+                    self._logged_local_reason = reason     # per answer, not once
+                return ask_models.local_unavailable(reason)
+            self._logged_local_reason = None
+            return None
         return ask_models.status(backend, self._server_url())
 
     def recheck_endpoint(self) -> None:
