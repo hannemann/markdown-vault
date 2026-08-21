@@ -452,6 +452,23 @@ def resolve_model_path(settings: dict) -> str:
     return str(models[0]) if models else ""
 
 
+def ask_gguf_wanted_path(settings: dict) -> str:
+    """The absolute path the chosen model *would* have, whether or not it exists —
+    the models folder + the stored filename. An **empty** choice falls back to
+    :func:`resolve_model_path` (the newest model, or ``""``).
+
+    Unlike :func:`resolve_model_path` this does not blank a set-but-missing choice:
+    the error path needs the *wanted* name to tell the user which model is gone,
+    where ``resolve_model_path`` would already have returned ``""``."""
+    name = settings.get("ask_gguf_path") or ""
+    if not name:
+        return resolve_model_path(settings)
+    cand = Path(name)
+    if not cand.is_absolute():
+        cand = ask_models_dir(settings) / name
+    return str(cand)
+
+
 def model_filename_from_url(url: str) -> str:
     """A GGUF filename derived from a download *url*, so several models keep
     distinct names in the folder instead of overwriting one ``model.gguf``."""

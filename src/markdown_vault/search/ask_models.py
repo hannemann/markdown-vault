@@ -75,10 +75,16 @@ UNAUTHORIZED = "unauthorized"
 LIST_ERROR = "list_error"
 #: No answer at all — refused, DNS failure, timeout.
 UNREACHABLE = "unreachable"
+#: The *local* backend cannot load its chosen GGUF (missing, not a GGUF, or the
+#: binding is absent). Not a server state — the verdict wears the same shape so the
+#: palette blocks and banners it exactly like a dead server. The user-facing reason
+#: (from ``llama_runtime.availability``) rides in :attr:`EndpointStatus.error`.
+LOCAL_UNAVAILABLE = "local_unavailable"
 
-#: States in which asking is certain to fail: there is no server, or it rejects the
-#: credentials the chat endpoint needs just as much. Everything else may warn.
-_BLOCKING = (UNAUTHORIZED, UNREACHABLE)
+#: States in which asking is certain to fail: there is no server (or it rejects the
+#: credentials the chat endpoint needs just as much), or the local model won't load.
+#: Everything else may warn.
+_BLOCKING = (UNAUTHORIZED, UNREACHABLE, LOCAL_UNAVAILABLE)
 
 
 @dataclass
@@ -148,7 +154,16 @@ class EndpointStatus:
         if self.state == LIST_ERROR:
             return (f"{self.url} could not list its models ({self.error}). Asking "
                     f"may still work.")
+        if self.state == LOCAL_UNAVAILABLE:
+            return self.error      # the availability() reason, already user-facing
         return ""
+
+
+def local_unavailable(reason: str) -> EndpointStatus:
+    """A blocking verdict for the local backend whose chosen GGUF cannot load;
+    *reason* is the user-facing text from :func:`llama_runtime.availability`. Shaped
+    like a server verdict so the palette banners and blocks it the same way."""
+    return EndpointStatus(state=LOCAL_UNAVAILABLE, error=reason)
 
 
 def note_chat_failure(backend: str, url: str, exc: Exception) -> str:

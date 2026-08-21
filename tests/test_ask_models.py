@@ -339,6 +339,14 @@ class TestPerEndpointMemory(unittest.TestCase):
     def test_recall_is_empty_for_an_unknown_endpoint(self):
         self.assertEqual(ask_models.recall({}, "openai", "https://new-host"), "")
 
+    def test_local_unavailable_is_a_blocking_verdict(self):
+        # Shaped like a server verdict so the palette blocks and banners it, with
+        # the availability() reason as the message.
+        st = ask_models.local_unavailable("No local model file at /x/m.gguf.")
+        self.assertFalse(st.can_ask)
+        self.assertFalse(st.pending)
+        self.assertEqual(st.message, "No local model file at /x/m.gguf.")
+
     def test_remember_local_stores_only_the_filename(self):
         # The footer picker's value is a full path; the stored ask_gguf_path must
         # be just the filename (a name in ask_models_dir), so the choice survives

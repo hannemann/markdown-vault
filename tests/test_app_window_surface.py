@@ -87,11 +87,25 @@ class TestAskWiring(AppWindowTest):
         self.win._semantic_index = unittest.mock.Mock()
         self.assertTrue(self.win._ask.can_ask())
 
-    def test_endpoint_status_is_none_for_a_backend_without_a_server(self):
-        # None is the palette's signal for "nothing to check" — a local model has
-        # no endpoint that could be unreachable.
+    def test_endpoint_status_none_for_local_with_a_usable_model(self):
+        # None is the palette's signal for "nothing to check" — a healthy local
+        # model has no endpoint that could be unreachable.
         self.win._settings["ask_engine"] = "auto"        # auto is always local
-        self.assertIsNone(self.win._ask.endpoint_status())
+        with unittest.mock.patch(
+                "markdown_vault.search.llama_runtime.availability",
+                return_value=None):
+            self.assertIsNone(self.win._ask.endpoint_status())
+
+    def test_endpoint_status_blocks_local_when_the_model_cannot_load(self):
+        # A local backend now carries its own verdict: a chosen GGUF that cannot
+        # load blocks and banners exactly like a dead server.
+        self.win._settings["ask_engine"] = "auto"
+        with unittest.mock.patch(
+                "markdown_vault.search.llama_runtime.availability",
+                return_value="No local model file at /x/m.gguf. Download one …"):
+            st = self.win._ask.endpoint_status()
+        self.assertIsNotNone(st)
+        self.assertFalse(st.can_ask)
 
     def test_endpoint_status_is_reported_for_a_server_backend(self):
         self.win._settings["ask_engine"] = "manual"

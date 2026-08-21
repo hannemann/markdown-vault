@@ -561,6 +561,21 @@ class TestDefaultAndMigration(unittest.TestCase):
         d = Path(tempfile.mkdtemp())
         self.assertEqual(_cfg.resolve_model_path({"ask_models_dir": str(d)}), "")
 
+    def test_wanted_path_names_a_gone_choice(self):
+        # resolve_model_path returns "" for a gone choice, but the error banner
+        # needs the wanted name — this keeps it.
+        from pathlib import Path
+        s = {"ask_models_dir": "/m", "ask_gguf_path": "gone.gguf"}
+        self.assertEqual(_cfg.ask_gguf_wanted_path(s), str(Path("/m") / "gone.gguf"))
+
+    def test_wanted_path_empty_choice_uses_resolve(self):
+        import tempfile
+        from pathlib import Path
+        d = Path(tempfile.mkdtemp())
+        (d / "m.gguf").write_bytes(b"GGUF\x00\x00")
+        self.assertEqual(_cfg.ask_gguf_wanted_path({"ask_models_dir": str(d)}),
+                         str(d / "m.gguf"))
+
     def test_default_unknown_key_is_empty(self):
         self.assertEqual(_cfg.default("no_such_key"), "")
 

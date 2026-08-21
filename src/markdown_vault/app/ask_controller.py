@@ -117,13 +117,20 @@ class AskController:
                 or config.default("ask_ollama_url"))
 
     def endpoint_status(self):
-        """The Ask server's last verdict about itself, or ``None`` when no server
-        is involved (local backend) — the palette reads that as "nothing to
-        check"."""
-        from markdown_vault.search import ask_models
+        """The verdict the palette blocks and banners on: the Ask server's last
+        word, or — for the **local** backend — a blocking verdict when the chosen
+        GGUF cannot load (``None`` when it can, read as "nothing to check").
+
+        The local reason is fed the *wanted* path (folder + stored filename), not
+        ``resolve_model_path``'s result: that is ``""`` for a gone choice and would
+        make the banner read "(unset)" instead of naming the chosen model."""
+        from markdown_vault.core import config
+        from markdown_vault.search import ask_models, llama_runtime
         backend = ask_models.effective_backend(self._settings)
         if backend not in ask_models.SERVER_BACKENDS:
-            return None
+            reason = llama_runtime.availability(
+                config.ask_gguf_wanted_path(self._settings))
+            return ask_models.local_unavailable(reason) if reason else None
         return ask_models.status(backend, self._server_url())
 
     def recheck_endpoint(self) -> None:
