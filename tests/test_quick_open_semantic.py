@@ -727,6 +727,21 @@ class TestBannerButtonDispatch(unittest.TestCase):
         p._on_banner_clicked()
         self.assertEqual(opened, ["retry"])
 
+    def test_entering_ask_mode_rechecks_a_stale_verdict(self):
+        # Opening in file mode no longer re-probes (the Ctrl+Space saving), so the
+        # toggle has to: otherwise a server started meanwhile stays "dead" with
+        # submit locked until the user presses Try again.
+        import unittest.mock as m
+        from markdown_vault.search import ask_models
+        p = QuickOpenPalette(
+            make_engine=lambda: None,
+            ask_answer=lambda *a, **k: None,     # wires the Ask toggle
+            ask_status=lambda: ask_models.EndpointStatus(
+                state=ask_models.UNREACHABLE, url="http://x"))
+        p._ask_recheck = m.MagicMock()
+        p._ask_toggle.set_active(True)
+        p._ask_recheck.assert_called_once()
+
     def test_no_endpoint_check_outside_ask_mode(self):
         # A plain Ctrl+Space (file switcher) must not run the model check —
         # for the local backend that is a file probe plus a llama_cpp import.

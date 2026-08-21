@@ -336,7 +336,8 @@ class QuickOpenPalette(Adw.Dialog):
             st.message if blocked else "Run — search or ask (Enter)")
 
     def recheck_if_stale(self) -> None:
-        """On opening, probe again unless the last verdict was "models listed".
+        """On opening or entering Ask mode, probe again unless the last verdict was
+        "models listed".
 
         A verdict that can change must not stick for the session — starting the
         server and reopening the palette is the natural retry. Verdicts that are
@@ -856,6 +857,7 @@ class QuickOpenPalette(Adw.Dialog):
             self._entry.set_placeholder_text("Go to file…")
             self._refresh()
         # Banner, picker and submit lock are all Ask-mode only.
+        self.recheck_if_stale()          # entering Ask is a retry, like reopening
         self.refresh_endpoint_status()
         self._entry.grab_focus()
 
