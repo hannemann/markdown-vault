@@ -300,7 +300,10 @@ class QuickOpenPalette(Adw.Dialog):
         the user is still typing takes effect there and then. Returns ``False`` so it
         can be handed to ``GLib.idle_add`` directly.
         """
-        st = self._ask_status() if self._ask_status else None
+        # Only ask the verdict in Ask mode: for the local backend it runs
+        # llama_runtime.availability() (a file check, and a llama_cpp import), and
+        # a plain Ctrl+Space file switch has no use for it.
+        st = self._ask_status() if (self._ask_status and self._ask_mode) else None
         if self._banner is not None:
             message = st.message if (st is not None and self._ask_mode) else ""
             local = st is not None and getattr(st, "is_local", False)
@@ -341,6 +344,8 @@ class QuickOpenPalette(Adw.Dialog):
         left alone: re-probing them would cost a round trip on the Ctrl+Space path
         for a configuration that is working.
         """
+        if not self._ask_mode:      # nothing to re-probe until Ask is actually used
+            return
         st = self._ask_status() if self._ask_status else None
         if st is None or st.pending or not st.transient:
             return

@@ -247,6 +247,16 @@ class TestSearchAndAskHandlers(_DialogTest):
         dlg._ask_gpu_row.get_adjustment().set_value(20)
         self._assert_persisted(dlg, "ask_n_gpu_layers", 20)
 
+    def test_download_target_follows_the_configured_models_folder(self):
+        # The dropdown lists ask_models_dir; downloading into models_dir() would
+        # drop the file where nothing looks for it — the button would appear to
+        # work and change nothing (the NN1 case).
+        dlg = self._dialog(ask_models_dir="/models/custom")
+        with patch("markdown_vault.ui.preferences.ask_subpage.threading.Thread") as T:
+            dlg._on_download_gguf(dlg._ask_gguf_dl_btn)
+        target = T.call_args.kwargs["args"][2]   # (button, url, target, name, bar)
+        self.assertTrue(str(target).startswith("/models/custom"))
+
     def test_threads(self):
         dlg = self._dialog(ask_n_threads=4)
         dlg._ask_threads_row.get_adjustment().set_value(8)

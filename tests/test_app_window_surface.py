@@ -107,6 +107,13 @@ class TestAskWiring(AppWindowTest):
         self.assertIsNotNone(st)
         self.assertFalse(st.can_ask)
 
+    def test_palette_is_wired_to_open_ask_settings(self):
+        # The banner's "Settings" button is useless without this callback — the
+        # palette would fall back to re-probing a server that isn't involved.
+        with unittest.mock.patch.object(self.win, "_open_preferences") as prefs:
+            self.win._quick_open._open_ask_settings()
+        prefs.assert_called_once_with(target="ask")
+
     def test_endpoint_status_is_reported_for_a_server_backend(self):
         self.win._settings["ask_engine"] = "manual"
         self.win._settings["ask_backend"] = "openai"

@@ -727,6 +727,32 @@ class TestBannerButtonDispatch(unittest.TestCase):
         p._on_banner_clicked()
         self.assertEqual(opened, ["retry"])
 
+    def test_no_endpoint_check_outside_ask_mode(self):
+        # A plain Ctrl+Space (file switcher) must not run the model check —
+        # for the local backend that is a file probe plus a llama_cpp import.
+        calls = []
+        p = QuickOpenPalette(make_engine=lambda: None,
+                             ask_status=lambda: (calls.append(1), None)[1])
+        p._ask_mode = False
+        p.refresh_endpoint_status()
+        p.recheck_if_stale()
+        self.assertEqual(calls, [])                 # not asked outside Ask mode
+        p._ask_mode = True
+        p.refresh_endpoint_status()
+        self.assertEqual(len(calls), 1)             # asked once Ask is active
+
+    def test_button_label_follows_the_verdict(self):
+        from markdown_vault.search import ask_models
+        p = QuickOpenPalette(
+            make_engine=lambda: None,
+            ask_status=lambda: ask_models.local_unavailable("gone"))
+        p._ask_mode = True
+        p.refresh_endpoint_status()
+        self.assertEqual(p._banner.get_button_label(), "Settings")
+        p._ask_status = lambda: ask_models.EndpointStatus(state=ask_models.UNREACHABLE)
+        p.refresh_endpoint_status()
+        self.assertEqual(p._banner.get_button_label(), "Try again")
+
 
 if __name__ == "__main__":
     unittest.main()
