@@ -131,7 +131,7 @@ def availability(model_path: str) -> str | None:
                 "restart, or switch the Ask backend to a server in Preferences.")
     if not model_path or not os.path.exists(model_path):
         return (f"No local model file at {model_path or '(unset)'}. Download one "
-                "in Preferences → Search → Ask (Model file → Download), then ask "
+                "in Preferences → Search → Ask (Model Download), then ask "
                 "again.")
     try:                                   # a GGUF starts with the 'GGUF' magic
         with open(model_path, "rb") as fh:

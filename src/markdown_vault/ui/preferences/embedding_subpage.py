@@ -44,14 +44,12 @@ class EmbeddingSubpageMixin:
         model_btn.set_tooltip_text("Download model.onnx")
         model_btn.connect("clicked", self._on_download_onnx, "model")
         self._sem_model_url_row, self._sem_model_url_entry = self._entry_row(
-            "Model URL", "semantic_onnx_model_url", trailing=model_btn)
+            "Model Download", "semantic_onnx_model_url", trailing=model_btn)
         self._sem_model_dl_btn = model_btn
-        local.add(self._sem_model_url_row)
 
         self._sem_model_progress = Gtk.ProgressBar(
             show_text=True, visible=False,
             margin_start=12, margin_end=12, margin_bottom=6)
-        local.add(self._sem_model_progress)
 
         tok_btn = Gtk.Button(
             icon_name="folder-download-symbolic", valign=Gtk.Align.CENTER)
@@ -59,14 +57,12 @@ class EmbeddingSubpageMixin:
         tok_btn.set_tooltip_text("Download tokenizer.json")
         tok_btn.connect("clicked", self._on_download_onnx, "tokenizer")
         self._sem_tok_url_row, self._sem_tok_url_entry = self._entry_row(
-            "Tokenizer URL", "semantic_onnx_tokenizer_url", trailing=tok_btn)
+            "Tokenizer Download", "semantic_onnx_tokenizer_url", trailing=tok_btn)
         self._sem_tok_dl_btn = tok_btn
-        local.add(self._sem_tok_url_row)
 
         self._sem_tok_progress = Gtk.ProgressBar(
             show_text=True, visible=False,
             margin_start=12, margin_end=12, margin_bottom=6)
-        local.add(self._sem_tok_progress)
 
         # Folder the ONNX files live in — both the download target and the load
         # source. Display-only (no typing): pick a folder or reset to the app
@@ -85,6 +81,13 @@ class EmbeddingSubpageMixin:
         self._sem_onnx_dir_row.set_activatable_widget(pick_btn)
         self._refresh_onnx_dir_row()
         local.add(self._sem_onnx_dir_row)
+
+        # Downloads into the folder above — placed under it so the target folder
+        # is chosen first.
+        local.add(self._sem_model_url_row)
+        local.add(self._sem_model_progress)
+        local.add(self._sem_tok_url_row)
+        local.add(self._sem_tok_progress)
 
         # Presence indicator for the ONNX files + a real load/embed self-test.
         self._sem_onnx_status_row = Adw.ActionRow(title="Model files")
@@ -367,7 +370,7 @@ class EmbeddingSubpageMixin:
             mb = target.stat().st_size / 1024 / 1024
             GLib.idle_add(
                 self._download_done, button, bar, True,
-                f"Downloaded {filename} ({mb:.0f} MB) — restart to use", refresh)
+                f"Downloaded {filename} ({mb:.0f} MB)", refresh)
         except Exception as exc:  # network/IO/permission — report, don't crash
             logger.warning("model download failed: %s", exc)
             GLib.idle_add(

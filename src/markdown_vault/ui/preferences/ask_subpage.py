@@ -81,13 +81,11 @@ class AskSubpageMixin:
         gguf_btn.connect("clicked", self._on_download_gguf)
         self._ask_gguf_dl_btn = gguf_btn
         self._ask_gguf_url_row, self._ask_gguf_url_entry = self._entry_row(
-            "Model URL", "ask_gguf_url", trailing=gguf_btn)
-        group.add(self._ask_gguf_url_row)
+            "Model Download", "ask_gguf_url", trailing=gguf_btn)
 
         self._ask_gguf_progress = Gtk.ProgressBar(
             show_text=True, visible=False,
             margin_start=12, margin_end=12, margin_bottom=6)
-        group.add(self._ask_gguf_progress)
 
         # Folder the GGUFs live in — the search folder and the download target.
         # Display-only (no typing): pick a folder or reset to the shared default.
@@ -105,6 +103,16 @@ class AskSubpageMixin:
         self._ask_models_dir_row.add_suffix(dir_pick)
         self._ask_models_dir_row.set_activatable_widget(dir_pick)
         group.add(self._ask_models_dir_row)
+
+        # Download a model into the folder above — placed under it so the target
+        # folder is chosen first.
+        group.add(self._ask_gguf_url_row)
+        group.add(self._ask_gguf_progress)
+
+        # A second group starts after the model download: the runtime, the manual
+        # backend/server settings and the answer tuning.
+        group = Adw.PreferencesGroup()
+        page.add(group)
 
         # GPU layers, CPU threads and the KV-cache knobs live on their own
         # subpage (built before this one), reached via this row.
