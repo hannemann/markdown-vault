@@ -368,7 +368,7 @@ def list_for(settings: dict, on_refresh=None) -> list:
     """
     backend = effective_backend(settings)
     if backend not in SERVER_BACKENDS:
-        return [(Path(p).name, str(p)) for p in config.list_models()]
+        return [(Path(p).name, str(p)) for p in config.list_models(settings)]
 
     url = _url_of(settings)
     models = cache_get(backend, url)
@@ -391,10 +391,16 @@ def recall(settings: dict, backend: str, url: str) -> str:
 
 
 def remember(settings: dict, backend: str, url: str, model: str) -> None:
-    """Record *model* as the choice for this endpoint **and** make it active."""
-    settings[setting_key(backend)] = model
+    """Record *model* as the choice for this endpoint **and** make it active.
+
+    For the **local** backend the picker's value is a full path; store only the
+    **filename** (``ask_gguf_path`` is a name in ``ask_models_dir``), so the choice
+    survives the models folder moving. Server backends store the model name as-is.
+    """
     if backend not in SERVER_BACKENDS:
+        settings[setting_key(backend)] = Path(model).name
         return
+    settings[setting_key(backend)] = model
     memory = dict(settings.get(MEMORY_KEY) or {})
     memory[endpoint_key(backend, url)] = model
     settings[MEMORY_KEY] = memory

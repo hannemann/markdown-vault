@@ -444,9 +444,6 @@ class TestDefaultAndMigration(unittest.TestCase):
         self.assertTrue(_cfg.default("ask_use_mmap"))
         self.assertEqual(_cfg.default("ask_max_tokens"), 1024)
 
-    def test_default_gguf_path_is_under_state_dir(self):
-        self.assertTrue(_cfg.default_gguf_path().endswith("models/model.gguf"))
-
     def test_model_filename_from_url(self):
         self.assertEqual(
             _cfg.model_filename_from_url("https://h/x/Foo-Q4_K_M.gguf"),
@@ -519,24 +516,50 @@ class TestDefaultAndMigration(unittest.TestCase):
         d = Path(tempfile.mkdtemp())
         (d / "real.gguf").write_bytes(b"GGUF\x00\x00")
         (d / "page.gguf").write_bytes(b"<html>")     # HTML masquerading as a model
-        orig = _cfg.models_dir
-        _cfg.models_dir = lambda: d
-        try:
-            self.assertEqual([p.name for p in _cfg.list_models()], ["real.gguf"])
-        finally:
-            _cfg.models_dir = orig
+        # An explicit ask_models_dir is searched instead of the shared models_dir.
+        self.assertEqual(
+            [p.name for p in _cfg.list_models({"ask_models_dir": str(d)})],
+            ["real.gguf"])
 
-    def test_resolve_model_falls_back_when_folder_empty(self):
-        orig = _cfg.list_models
-        _cfg.list_models = lambda: []
-        try:
-            self.assertEqual(_cfg.resolve_model_path({}), "")
-            # a stale explicit path is still named (so the reason can point at it)
-            self.assertEqual(
-                _cfg.resolve_model_path({"ask_gguf_path": "/gone.gguf"}),
-                "/gone.gguf")
-        finally:
-            _cfg.list_models = orig
+    def test_ask_models_dir_defaults_to_models_dir(self):
+        self.assertEqual(_cfg.ask_models_dir({}), _cfg.models_dir())
+        self.assertEqual(_cfg.ask_models_dir({"ask_models_dir": ""}), _cfg.models_dir())
+
+    def test_ask_models_dir_uses_the_configured_folder(self):
+        from pathlib import Path
+        self.assertEqual(_cfg.ask_models_dir({"ask_models_dir": "/custom/models"}),
+                         Path("/custom/models"))
+
+    def test_resolve_reassembles_folder_and_filename(self):
+        import tempfile
+        from pathlib import Path
+        d = Path(tempfile.mkdtemp())
+        (d / "m.gguf").write_bytes(b"GGUF\x00\x00")
+        s = {"ask_models_dir": str(d), "ask_gguf_path": "m.gguf"}
+        self.assertEqual(_cfg.resolve_model_path(s), str(d / "m.gguf"))
+
+    def test_resolve_set_but_unresolvable_returns_empty(self):
+        # A chosen model that is gone yields "" — the caller blocks and names the
+        # wanted model; resolve does NOT leak the raw value or silently switch.
+        import tempfile
+        from pathlib import Path
+        d = Path(tempfile.mkdtemp())               # empty folder, no fallback either
+        s = {"ask_models_dir": str(d), "ask_gguf_path": "gone.gguf"}
+        self.assertEqual(_cfg.resolve_model_path(s), "")
+
+    def test_resolve_empty_choice_falls_back_to_newest(self):
+        import tempfile
+        from pathlib import Path
+        d = Path(tempfile.mkdtemp())
+        (d / "m.gguf").write_bytes(b"GGUF\x00\x00")
+        s = {"ask_models_dir": str(d)}             # no ask_gguf_path → newest
+        self.assertEqual(_cfg.resolve_model_path(s), str(d / "m.gguf"))
+
+    def test_resolve_empty_folder_and_choice_returns_empty(self):
+        import tempfile
+        from pathlib import Path
+        d = Path(tempfile.mkdtemp())
+        self.assertEqual(_cfg.resolve_model_path({"ask_models_dir": str(d)}), "")
 
     def test_default_unknown_key_is_empty(self):
         self.assertEqual(_cfg.default("no_such_key"), "")

@@ -370,7 +370,7 @@ class AskSubpageMixin:
         model. Guarded so rebuilding the list doesn't fire a spurious change."""
         from pathlib import Path
         self._ask_gguf_updating = True
-        self._ask_gguf_paths = [str(p) for p in config.list_models()]
+        self._ask_gguf_paths = [str(p) for p in config.list_models(self._settings)]
         self._ask_gguf_list.splice(0, self._ask_gguf_list.get_n_items(),
                                    [Path(p).name for p in self._ask_gguf_paths])
         current = config.resolve_model_path(self._settings)
@@ -387,7 +387,10 @@ class AskSubpageMixin:
             return
         i = combo.get_selected()
         if 0 <= i < len(self._ask_gguf_paths):
-            self._settings["ask_gguf_path"] = self._ask_gguf_paths[i]
+            from pathlib import Path
+            # Store the filename, not the absolute path — it is a name in
+            # ask_models_dir and must survive the folder moving.
+            self._settings["ask_gguf_path"] = Path(self._ask_gguf_paths[i]).name
             self._persist()
             self._refresh_gguf_status()
 
@@ -396,7 +399,9 @@ class AskSubpageMixin:
         (not a GGUF) is not selected — just rescan so it doesn't linger."""
         from pathlib import Path
         if Path(target).exists() and config.is_gguf(target):
-            self._settings["ask_gguf_path"] = str(target)
+            # Store the filename — the download lands in ask_models_dir (see the
+            # download target below), where list_models and resolve_model_path look.
+            self._settings["ask_gguf_path"] = Path(target).name
             self._persist()
         self._refresh_gguf_models()
         self._refresh_gguf_status()
@@ -409,7 +414,7 @@ class AskSubpageMixin:
         url = config.normalize_gguf_url(url)   # HF file page → raw-file link
         # Save under the URL's own filename so several models coexist instead of
         # overwriting one file; the finished download becomes the selection.
-        target = config.models_dir() / config.model_filename_from_url(url)
+        target = config.ask_models_dir(self._settings) / config.model_filename_from_url(url)
         button.set_sensitive(False)
         bar = self._ask_gguf_progress
         bar.set_visible(True)

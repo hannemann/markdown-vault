@@ -339,6 +339,14 @@ class TestPerEndpointMemory(unittest.TestCase):
     def test_recall_is_empty_for_an_unknown_endpoint(self):
         self.assertEqual(ask_models.recall({}, "openai", "https://new-host"), "")
 
+    def test_remember_local_stores_only_the_filename(self):
+        # The footer picker's value is a full path; the stored ask_gguf_path must
+        # be just the filename (a name in ask_models_dir), so the choice survives
+        # the models folder moving.
+        s = {}
+        ask_models.remember(s, "local", "", "/some/models/Llama-3.2-3B.gguf")
+        self.assertEqual(s["ask_gguf_path"], "Llama-3.2-3B.gguf")
+
     def test_openai_url_variants_are_the_same_endpoint(self):
         # host and host/v1 address the same server — remembering under both would
         # silently lose the choice when the URL is written the other way.

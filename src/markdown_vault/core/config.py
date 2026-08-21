@@ -323,6 +323,9 @@ _DEFAULT_SETTINGS = {
     # and the load source; empty → the app state dir default. The URL pre-fills
     # the download button with a small llama3.2-3B instruct build.
     "ask_gguf_path": "",
+    # Folder the Ask GGUF picker searches and downloads into; empty → the shared
+    # models_dir(). Kept separate so it does not move the Whisper models there.
+    "ask_models_dir": "",
     "ask_gguf_url":
         "https://huggingface.co/bartowski/Llama-3.2-3B-Instruct-GGUF/"
         "resolve/main/Llama-3.2-3B-Instruct-Q4_K_M.gguf",
@@ -390,13 +393,19 @@ def default(key):
 
 
 def models_dir() -> Path:
-    """Folder holding the downloaded GGUF models (one file per model)."""
+    """The shared model folder under the data dir. Holds the downloaded GGUF
+    models (Ask) and, in per-model subfolders, the audio import's Whisper models —
+    so it is a *default*, not an Ask-only setting (see :func:`ask_models_dir`)."""
     return DATA_DIR / "models"
 
 
-def default_gguf_path() -> str:
-    """Legacy single-file location, kept as a fallback target."""
-    return str(models_dir() / "model.gguf")
+def ask_models_dir(settings: dict) -> Path:
+    """Folder the Ask GGUF picker searches and downloads into: the configured
+    ``ask_models_dir`` if set, else the shared :func:`models_dir`. Kept apart from
+    ``models_dir()`` itself, which also holds the audio import's Whisper models —
+    those must not move when the Ask folder is changed."""
+    raw = (settings or {}).get("ask_models_dir", "")
+    return Path(raw) if raw else models_dir()
 
 
 def is_gguf(path) -> bool:
@@ -410,10 +419,11 @@ def is_gguf(path) -> bool:
         return False
 
 
-def list_models() -> list:
-    """The **valid** GGUF files in :func:`models_dir`, newest first — files that
-    only carry a ``.gguf`` name but aren't GGUF are skipped."""
-    d = models_dir()
+def list_models(settings: dict) -> list:
+    """The **valid** GGUF files in the Ask models folder (:func:`ask_models_dir`),
+    newest first — files that only carry a ``.gguf`` name but aren't GGUF are
+    skipped."""
+    d = ask_models_dir(settings)
     if not d.exists():
         return []
     files = [p for p in d.glob("*.gguf") if p.is_file() and is_gguf(p)]
@@ -421,16 +431,25 @@ def list_models() -> list:
 
 
 def resolve_model_path(settings: dict) -> str:
-    """The GGUF the local backend should load: the explicitly selected
-    ``ask_gguf_path`` if it still exists and is a real GGUF, else the most-recent
-    valid model in the folder, else ``""`` (nothing usable yet)."""
-    explicit = settings.get("ask_gguf_path")
-    if explicit and os.path.exists(explicit) and is_gguf(explicit):
-        return explicit
-    models = list_models()
-    if models:
-        return str(models[0])
-    return explicit or ""
+    """The **absolute** path of the GGUF the local backend should load.
+
+    ``ask_gguf_path`` holds a filename in :func:`ask_models_dir` (a leftover
+    absolute path is still honoured); it is reassembled to an absolute path if it
+    still exists and is a real GGUF. A **set but unresolvable** choice yields
+    ``""`` — the error is surfaced by the caller (a banner naming the wanted
+    model), not papered over by loading a different model. Only an **empty** choice
+    falls back to the newest model in the folder.
+    """
+    explicit = settings.get("ask_gguf_path") or ""
+    if explicit:
+        cand = Path(explicit)
+        if not cand.is_absolute():
+            cand = ask_models_dir(settings) / explicit
+        if cand.exists() and is_gguf(cand):
+            return str(cand)
+        return ""      # set but gone/invalid: block, don't silently switch
+    models = list_models(settings)
+    return str(models[0]) if models else ""
 
 
 def model_filename_from_url(url: str) -> str:
