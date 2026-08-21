@@ -18,8 +18,10 @@ class _Tab:
         self.editor = unittest.mock.MagicMock()
         self.editor.file_path = file_path
         self.editor.zoom_factor = 1.0
+        self.editor.capture_scroll_position.return_value = (0.0, 0)
         self.preview = unittest.mock.MagicMock()
         self.preview.zoom_level = 1.0
+        self.preview.preview_scroll_position.return_value = 0.0
 
 
 class _TabBarMock:
@@ -137,6 +139,18 @@ class TestCollectTabData(unittest.TestCase):
         data = self._mgr.collect_tab_data(self._content_stack)
         self.assertEqual(data[0]["editor_zoom"], 1.5)
         self.assertEqual(data[0]["preview_zoom"], 0.8)
+
+    def test_scroll_position_fields(self):
+        """Each tab carries its editor scroll+cursor and preview scroll so the
+        reading position survives a restart — for every tab, not just the active
+        one (a background tab keeps its scroll; a never-shown one reports 0)."""
+        tab = self._tab_bar.add_tab("/tmp/note.md")
+        tab.editor.capture_scroll_position.return_value = (250.0, 42)
+        tab.preview.preview_scroll_position.return_value = 900.0
+        data = self._mgr.collect_tab_data(self._content_stack)
+        self.assertEqual(data[0]["editor_scroll"], 250.0)
+        self.assertEqual(data[0]["editor_cursor"], 42)
+        self.assertEqual(data[0]["preview_scroll"], 900.0)
 
     def test_skips_tabs_without_tab_object(self):
         """Tabs not found in get_tab are skipped."""
@@ -300,6 +314,84 @@ class TestRestoreVaultSession(unittest.TestCase):
         self.assertEqual(opened[0][0], md_a)
         self.assertEqual(opened[0][1]["view_mode"], "edit")
         self.assertEqual(opened[1][1]["split_position"], 400)
+
+    @unittest.mock.patch("markdown_vault.app.session_manager.session")
+    def test_restore_applies_the_saved_scroll_per_tab(self, mock_session):
+        """After opening each tab its saved reading position is applied: the
+        editor instantly, the preview armed for its render — for every tab."""
+        md_a = os.path.join(self._tmp, "a.md")
+        Path(md_a).write_text("# A")
+        mock_session.load_session.return_value = {
+            "vault_sessions": {
+                "/vault": {
+                    "tabs": [{"path": md_a, "view_mode": "edit",
+                              "editor_scroll": 250.0, "editor_cursor": 42,
+                              "preview_scroll": 900.0}],
+                    "active_tab": md_a, "mru": [],
+                }
+            }
+        }
+        mock_session.prune_vault_session.side_effect = lambda d: d
+        self._mgr.restore_vault_session(
+            "/vault",
+            open_file_fn=lambda fp, **kw: self._tab_bar.add_tab(fp),
+            mru_push_fn=lambda fp: None,
+        )
+        tab = self._tab_bar.get_tab(md_a)
+        tab.editor.restore_scroll_position.assert_called_once_with(250.0, 42)
+        tab.preview.arm_scroll.assert_called_once_with(900.0)
+
+    @unittest.mock.patch("markdown_vault.app.session_manager.session")
+    def test_restore_skips_the_nav_target_so_history_wins(self, mock_session):
+        """A cross-vault back/forward restores the navigation target from the
+        history (post_open_fn -> restore_current). restore_vault_session must NOT
+        also apply that tab's saved scroll, or the target moves twice."""
+        md_a = os.path.join(self._tmp, "a.md")
+        Path(md_a).write_text("# A")
+        mock_session.load_session.return_value = {
+            "vault_sessions": {
+                "/vault": {
+                    "tabs": [{"path": md_a, "editor_scroll": 250.0,
+                              "editor_cursor": 42, "preview_scroll": 900.0}],
+                    "active_tab": md_a, "mru": [],
+                }
+            }
+        }
+        mock_session.prune_vault_session.side_effect = lambda d: d
+        self._mgr.restore_vault_session(
+            "/vault",
+            open_file_fn=lambda fp, **kw: self._tab_bar.add_tab(fp),
+            mru_push_fn=lambda fp: None,
+            nav_target=md_a,
+        )
+        tab = self._tab_bar.get_tab(md_a)
+        tab.editor.restore_scroll_position.assert_not_called()
+        tab.preview.arm_scroll.assert_not_called()
+
+    @unittest.mock.patch("markdown_vault.app.session_manager.session")
+    def test_restore_ignores_broken_scroll_values(self, mock_session):
+        """A corrupted "editor_scroll": "x" must not reach restore_scroll_position;
+        broken values are filtered, not passed through (bool is not a number)."""
+        md_a = os.path.join(self._tmp, "a.md")
+        Path(md_a).write_text("# A")
+        mock_session.load_session.return_value = {
+            "vault_sessions": {
+                "/vault": {
+                    "tabs": [{"path": md_a, "editor_scroll": "x",
+                              "editor_cursor": None, "preview_scroll": True}],
+                    "active_tab": md_a, "mru": [],
+                }
+            }
+        }
+        mock_session.prune_vault_session.side_effect = lambda d: d
+        self._mgr.restore_vault_session(
+            "/vault",
+            open_file_fn=lambda fp, **kw: self._tab_bar.add_tab(fp),
+            mru_push_fn=lambda fp: None,
+        )
+        tab = self._tab_bar.get_tab(md_a)
+        tab.editor.restore_scroll_position.assert_not_called()
+        tab.preview.arm_scroll.assert_not_called()
 
     @unittest.mock.patch("markdown_vault.app.session_manager.session")
     def test_restore_sets_active_tab(self, mock_session):

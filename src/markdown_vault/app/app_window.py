@@ -1138,6 +1138,9 @@ class MainWindow(Adw.ApplicationWindow):
                 new_vault,
                 open_file_fn=self._open_file,
                 mru_push_fn=self.mru.push,
+                # A cross-vault back/forward restores the target from the history
+                # below (post_open_fn); don't also apply its tab-entry scroll here.
+                nav_target=(open_file_path if from_nav else None),
             )
         finally:
             self._nav_history.suppress = prev

@@ -107,7 +107,7 @@ Markdown Vault — a GNOME desktop app for editing and previewing Markdown files
 - **Markdown rendering**: HTML/CSS via WebKitGTK (WebView)
 - **Config**: `~/.config/de.hannemann.markdown-vault/vaults.yaml` (vaults + settings)
 - **Session**: `session.json` in the XDG **state** dir (default
-  `~/.local/state/de.hannemann.markdown-vault/`) — window geometry, tabs, view modes, split positions, sidebar, expanded_vaults, editor_zoom, preview_zoom. It is view/layout state, not configuration.
+  `~/.local/state/de.hannemann.markdown-vault/`) — window geometry, tabs, view modes, split positions, sidebar, expanded_vaults, editor_zoom, preview_zoom, and the per-tab reading position (editor_scroll/editor_cursor, preview_scroll — restored on startup and vault switch). It is view/layout state, not configuration.
 
 ## Tech decisions
 

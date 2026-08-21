@@ -880,8 +880,15 @@ class Preview(Gtk.ScrolledWindow):
             logger.error("Failed to handle scroll message from preview", exc_info=True)
 
     def preview_scroll_position(self) -> float:
-        """The last reported vertical scroll offset — kept current by the scroll
-        handler, so it is the reader's position at the moment the note is left."""
+        """The reader's scroll offset in this preview.
+
+        Normally the value the JS scroll handler last reported. While a scroll is
+        still *armed* and nothing has been scrolled yet — a restored tab that has
+        not been activated, so its content never rendered — the armed value is the
+        reader's position; reporting 0 there would overwrite it on the next save.
+        """
+        if self._pending_scroll is not None and not self._scroll_y:
+            return self._pending_scroll
         return self._scroll_y
 
     def showing_note(self, path: str) -> bool:

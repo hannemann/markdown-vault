@@ -191,6 +191,23 @@ class TestPreviewScrollPosition(unittest.TestCase):
         p._on_scroll_reported(None, jsc)
         self.assertEqual(p.preview_scroll_position(), 0.0)
 
+    def test_armed_scroll_counts_as_the_position_before_rendering(self):
+        # A restored tab that has not been activated: its preview never rendered,
+        # so the JS handler reported nothing (_scroll_y == 0), but arm_scroll holds
+        # the reader's position. Reporting 0 here would overwrite it on the next
+        # save — the position would survive only for regularly activated tabs.
+        p = self._preview()
+        p.arm_scroll(500.0)
+        self.assertEqual(p.preview_scroll_position(), 500.0)
+
+    def test_a_real_reported_scroll_wins_over_an_armed_value(self):
+        # Once the reader has actually scrolled, the live value is the truth; the
+        # armed value must not shadow it.
+        p = self._preview()
+        p.arm_scroll(500.0)
+        p._scroll_y = 320.0
+        self.assertEqual(p.preview_scroll_position(), 320.0)
+
 
 class TestPreviewScrollReset(unittest.TestCase):
     """A different note resets the live scroll offset; editing the same note

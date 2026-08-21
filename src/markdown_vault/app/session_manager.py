@@ -13,6 +13,16 @@ from markdown_vault.core import session
 logger = logging.getLogger(__name__)
 
 
+def _number(value):
+    """A number from persisted JSON, or ``None`` for anything else — a corrupted
+    ``"editor_scroll": "x"`` must not reach ``restore_scroll_position``. ``bool`` is
+    not a number here (``True`` is not a scroll offset). Mirrors the filter in
+    :meth:`NavEntry.from_state`."""
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return value
+    return None
+
+
 class SessionManager:
     """Manages session save and restore operations.
 
@@ -49,12 +59,19 @@ class SessionManager:
             paned = self._find_paned(child)
             if paned is not None:
                 split_pos = paned.get_position()
+            editor_scroll, editor_cursor = tab.editor.capture_scroll_position()
             data.append({
                 "path": path,
                 "view_mode": tab.view_mode,
                 "split_position": split_pos,
                 "editor_zoom": tab.editor.zoom_factor,
                 "preview_zoom": tab.preview.zoom_level,
+                # Reading position, so a restart lands where the reader was.
+                # For every tab: a background tab keeps its scroll (measured), a
+                # never-shown one reports 0 (no position to remember).
+                "editor_scroll": editor_scroll,
+                "editor_cursor": editor_cursor,
+                "preview_scroll": tab.preview.preview_scroll_position(),
             })
         return data
 
@@ -113,6 +130,7 @@ class SessionManager:
         *,
         open_file_fn,
         mru_push_fn,
+        nav_target: str | None = None,
     ) -> None:
         """Restore tabs for *vault_path* from the persisted session.
 
@@ -120,6 +138,15 @@ class SessionManager:
         activating one both feed the global nav history, so the caller wraps the
         whole restore in a suppress clamp and pushes the "here I landed" entry
         itself (see ``_switch_vault_complete_phase3`` and the startup restore).
+
+        Each tab's saved reading position is applied after it opens (the editor
+        instantly, the preview armed for its render). *nav_target* names the one
+        tab whose position must **not** be applied here: a cross-vault
+        back/forward restores that tab from the history instead
+        (``post_open_fn`` → ``ScrollMemory.restore_current``), and applying the
+        tab entry too would move it twice. At startup ``nav_target`` is ``None``
+        and the history is not even loaded yet, so every tab restores from its
+        own entry — the only source there.
         """
         ses = session.load_session()
         vault_data = ses.get("vault_sessions", {}).get(vault_path, {})
@@ -134,6 +161,8 @@ class SessionManager:
                     editor_zoom=tab_data.get("editor_zoom", 1.0),
                     preview_zoom=tab_data.get("preview_zoom", 1.0),
                 )
+                if fp != nav_target:
+                    self._restore_tab_scroll(fp, tab_data)
         active_tab = vault_data.get("active_tab")
         if active_tab and active_tab in self._tab_bar.get_all_paths():
             self._tab_bar.set_active_tab(active_tab)
@@ -151,3 +180,21 @@ class SessionManager:
                     mru_push_fn(fp)
             if active_tab and active_tab in self._tab_bar.get_all_paths():
                 mru_push_fn(active_tab)
+
+    def _restore_tab_scroll(self, file_path: str, tab_data: dict) -> None:
+        """Apply *file_path*'s saved reading position to its tab. The editor is
+        set instantly (a restart is a note load, not an in-page hop); the preview
+        scroll is armed so it fires on the note's render (``FINISHED``). Broken or
+        missing values are skipped — an old session without the fields, or a
+        corrupted one, restores nothing rather than crashing."""
+        tab = self._tab_bar.get_tab(file_path)
+        if tab is None:
+            return
+        scroll = _number(tab_data.get("editor_scroll"))
+        cursor = _number(tab_data.get("editor_cursor"))
+        if scroll is not None or cursor is not None:
+            tab.editor.restore_scroll_position(
+                scroll, int(cursor) if cursor is not None else None)
+        preview_scroll = _number(tab_data.get("preview_scroll"))
+        if preview_scroll is not None:
+            tab.preview.arm_scroll(preview_scroll)
