@@ -352,6 +352,8 @@ Hard rules:
 
 Always write failing tests first, then implement the fix. Run tests to verify they fail, then implement the minimal code to make them pass. Never commit code without corresponding tests.
 
+**Test the caller, not only the receiver.** When a change gives a collaborator a new argument, a unit test of the collaborator leaves the wiring that supplies it unguarded — is the value passed at all, and with the right polarity? Add a small test at the call site that fails when the argument is dropped or inverted. This blind spot has recurred across the codebase; the fuller statement lives in `src/markdown_vault/app/AGENTS.md` (it is not `app/`-specific).
+
 ## Testing loop (manual integration tests)
 
 For features involving GTK/WebKit/WebViews that cannot be tested
