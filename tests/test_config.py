@@ -437,6 +437,19 @@ class TestDefaultAndMigration(unittest.TestCase):
         self.assertEqual(_cfg.default("ask_backend"), "local")
         self.assertEqual(_cfg.default("ask_engine"), "auto")
 
+    def test_semantic_openai_defaults(self):
+        # The embedding side gains an OpenAI-compatible backend, mirroring Ask.
+        self.assertEqual(_cfg.default("semantic_openai_url"), "http://localhost:8080")
+        # default() returns "" for unknown keys too, so prove the key is registered.
+        self.assertIn("semantic_openai_model", _cfg._DEFAULT_SETTINGS)
+        self.assertEqual(_cfg.default("semantic_openai_model"), "")
+
+    def test_semantic_api_key_is_a_secret(self):
+        # Defence in depth: the key lives in the keyring, but a hand-edited
+        # vaults.yaml plaintext value must be masked in the debug dump, like
+        # ask_api_key.
+        self.assertIn("semantic_api_key", _cfg._SECRET_KEYS)
+
     def test_kv_cache_defaults(self):
         self.assertEqual(_cfg.default("ask_kv_type_k"), "f16")
         self.assertEqual(_cfg.default("ask_kv_type_v"), "f16")

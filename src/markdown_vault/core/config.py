@@ -286,9 +286,17 @@ _DEFAULT_SETTINGS = {
     "preview_allow_remote_images": False,
     # Semantic (vector) search — opt-in, Ollama backend.
     "semantic_search_enabled": False,
-    "semantic_backend": "onnx",  # "onnx" (local, recommended) or "ollama" (server)
+    # "onnx" (local, recommended), "ollama" (server) or "openai" (an
+    # OpenAI-compatible embeddings server, e.g. llama.cpp/vLLM, POST /v1/embeddings)
+    "semantic_backend": "onnx",
     "semantic_ollama_url": "http://localhost:11434",
     "semantic_ollama_model": "nomic-embed-text",
+    # OpenAI-compatible embedding backend. No general default model name exists for
+    # such a server, so it starts empty (a configured-but-unusable state the UI must
+    # name). The API key is not here — it lives in the keyring under
+    # semantic_api_key:<backend>|<url>; _SECRET_KEYS masks a legacy plaintext copy.
+    "semantic_openai_url": "http://localhost:8080",
+    "semantic_openai_model": "",
     # Folder holding the ONNX files (model.onnx + tokenizer.json); it is both the
     # download target and the load source. Empty → the app data dir default.
     "semantic_onnx_dir": "",
@@ -544,7 +552,7 @@ _WEBKIT_ENV_KEYS = {
 # Settings keys whose value is a secret and must never be logged verbatim. The
 # value lives in the OS keyring (secret_store), not here; this only guards a legacy
 # plaintext copy that a hand-edited vaults.yaml might still hold.
-_SECRET_KEYS = {"ask_api_key"}
+_SECRET_KEYS = {"ask_api_key", "semantic_api_key"}
 
 _last_logged_settings = None
 
