@@ -108,24 +108,23 @@ RIGHT:  "How does the sidebar refresh?"  →  make graph-query Q="how does the s
 Markdown Vault — a GNOME desktop app for editing and previewing Markdown files organized in vault directories.
 
 - **App ID**: `de.hannemann.markdown-vault`
-- **Language**: Python 3
-- **UI toolkit**: GTK 4 + libadwaita
-- **Markdown rendering**: HTML/CSS via WebKitGTK (WebView)
-- **Config**: `~/.config/de.hannemann.markdown-vault/vaults.yaml` (vaults + settings)
-- **Session**: `session.json` in the XDG **state** dir (default
-  `~/.local/state/de.hannemann.markdown-vault/`) — window geometry, tabs, view modes, split positions, sidebar, expanded_vaults, editor_zoom, preview_zoom, and the per-tab reading position (editor_scroll/editor_cursor, preview_scroll — restored on startup and vault switch). It is view/layout state, not configuration.
+- **Stack**: Python 3, GTK 4 + libadwaita, editor in GtkSourceView 5, preview
+  rendered as HTML/CSS in WebKitGTK.
+- **Config**: `vaults.yaml` in the XDG config dir — vaults + settings
+  (`core/config.py`).
+- **Session**: `session.json` in the XDG **state** dir — window/layout state,
+  not configuration; `core/session.py` owns the fields.
 
 ## Tech decisions
 
-- Use `gi.require_version("Gtk", "4.0")` and `gi.require_version("Adw", "1")` before importing.
-- **GtkSourceView 5** for editor (`gi.require_version("GtkSource", "5")`).
-- Markdown → HTML conversion uses Python `markdown` library.
-- **Math rendering**: `latex2mathml` converts LaTeX → MathML, WebKitGTK renders MathML natively. No JavaScript/CDN.
-- WebView is `WebKitGTK` via `gi.repository.WebKit`.
-- Vault list stored in YAML (`vaults.yaml`), not dconf — simpler to debug and version.
-- Images referenced in Markdown are resolved relative to the `.md` file's directory.
-- **Flatpak** as primary distribution format (sandboxed file access via portal).
-- **Dependencies**: never install packages yourself and never add a dependency without asking first — see the **Dependencies** section for the only allowed flow.
+Decisions the code alone does not explain — the stack itself is under *Project*,
+the `gi.require_version` pins and per-file mechanics live in the code:
+
+- **Math** is `latex2mathml` → MathML, rendered natively by WebKitGTK —
+  deliberately no JavaScript/CDN.
+- **Vault list and settings live in YAML** (`vaults.yaml`), not dconf — simpler
+  to debug and version.
+- **Flatpak** is the primary distribution format (sandboxed file access via portal).
 
 ## Project structure
 

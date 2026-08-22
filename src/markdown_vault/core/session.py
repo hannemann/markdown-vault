@@ -1,8 +1,10 @@
 """Markdown Vault — session state persistence.
 
 Saves and restores the full application state (window geometry, open tabs,
-view modes, split positions, sidebar visibility) to a JSON file so that
-restoring the app recreates the exact previous session.
+view modes, split positions, sidebar visibility, editor/preview zoom, expanded
+vaults, and each tab's reading position — editor scroll/cursor and preview
+scroll) to a JSON file so that restoring the app recreates the exact previous
+session. The reading position is restored both on startup and on a vault switch.
 
 Session file: ``session.json`` in the XDG state dir (``core.paths.STATE_DIR``) —
 view/layout state, not configuration.
