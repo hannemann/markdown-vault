@@ -88,7 +88,8 @@ class _DialogTest(unittest.TestCase):
         # wiping every setting not in it (that really happened).
         from gi.repository import GLib  # type: ignore[attr-defined]
         for dlg in self._dialogs:
-            for attr in ("_persist_id", "_secret_persist_id", "_ask_models_id"):
+            for attr in ("_persist_id", "_secret_persist_id", "_ask_models_id",
+                         "_sem_oai_models_id"):
                 source = getattr(dlg, attr, None)
                 if source is not None:
                     GLib.source_remove(source)
@@ -231,6 +232,55 @@ class TestBackendTolerance(_DialogTest):
         dlg = self._dialog(semantic_backend="a-backend-from-the-future")
         self.assertIsNotNone(dlg)          # __init__ must not raise
         self.assertEqual(dlg._sem_backend_index(), 0)
+
+
+class TestOpenAIEmbeddingBackend(_DialogTest):
+    """The OpenAI-compatible embedding backend rows in the Embedding subpage."""
+
+    def test_openai_is_the_third_backend(self):
+        dlg = self._dialog(semantic_backend="openai")
+        self.assertEqual(dlg._sem_backend_index(), 2)
+
+    def test_selecting_openai_greys_the_other_backends(self):
+        dlg = self._dialog(semantic_backend="openai")
+        dlg._update_sem_backend_sensitivity()
+        self.assertTrue(dlg._sem_openai_widgets[0].get_sensitive())
+        self.assertFalse(dlg._sem_onnx_widgets[0].get_sensitive())
+        self.assertFalse(dlg._sem_ollama_widgets[0].get_sensitive())
+
+    def test_model_selection_updates_the_setting(self):
+        # The chosen model goes into settings (a debounced save flushes it later,
+        # the same shared path the Ask picker uses).
+        dlg = self._dialog(semantic_backend="openai")
+        dlg._sem_oai_model_list.splice(0, 0, ["bge-m3", "e5-large"])
+        dlg._sem_oai_model_combo.set_selected(1)   # fires notify::selected
+        self.assertEqual(dlg._settings["semantic_openai_model"], "e5-large")
+
+    def test_d6_unusable_shown_when_no_model_and_the_server_lists(self):
+        dlg = self._dialog(semantic_backend="openai", semantic_openai_model="")
+        dlg._sem_oai_no_list = False
+        dlg._refresh_sem_openai_state()
+        self.assertTrue(dlg._sem_oai_unusable_row.get_visible())
+
+    def test_d6_unusable_hidden_for_a_no_list_server(self):
+        # llama.cpp serves its one model regardless of the (empty) name → usable.
+        dlg = self._dialog(semantic_backend="openai", semantic_openai_model="")
+        dlg._sem_oai_no_list = True
+        dlg._refresh_sem_openai_state()
+        self.assertFalse(dlg._sem_oai_unusable_row.get_visible())
+
+    def test_d6_unusable_hidden_when_a_model_is_set(self):
+        dlg = self._dialog(semantic_backend="openai", semantic_openai_model="bge-m3")
+        dlg._sem_oai_no_list = False
+        dlg._refresh_sem_openai_state()
+        self.assertFalse(dlg._sem_oai_unusable_row.get_visible())
+
+    def test_key_uses_the_endpoint_scoped_embedding_name(self):
+        # D2: the embedding key name carries the endpoint and is NOT the Ask name.
+        dlg = self._dialog(semantic_backend="openai",
+                           semantic_openai_url="http://h:8080/v1")
+        self.assertEqual(dlg._sem_openai_secret_name(),
+                         "semantic_api_key:openai|http://h:8080")
 
 
 class TestSearchAndAskHandlers(_DialogTest):

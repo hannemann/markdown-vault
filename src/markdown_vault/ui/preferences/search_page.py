@@ -51,8 +51,9 @@ class SearchPageMixin:
         self._sem_backends = list(self._SEM_BACKENDS)
         self._sem_backend_row = Adw.ComboRow(
             title="Backend",
-            subtitle="Local runs in-process (recommended); Ollama needs a server",
-            model=Gtk.StringList.new(["Local (ONNX) — recommended", "Ollama (server)"]),
+            subtitle="Local runs in-process (recommended); the servers need one running",
+            model=Gtk.StringList.new(["Local (ONNX) — recommended", "Ollama (server)",
+                                      "OpenAI-compatible (server)"]),
         )
         self._sem_backend_row.set_selected(self._sem_backend_index())
         self._sem_backend_row.connect("notify::selected", self._on_sem_backend_changed)
@@ -157,9 +158,16 @@ class SearchPageMixin:
         self._persist()
 
     def _on_sem_backend_changed(self, row, _pspec) -> None:
-        self._settings["semantic_backend"] = self._sem_backends[row.get_selected()]
+        backend = self._sem_backends[row.get_selected()]
+        self._settings["semantic_backend"] = backend
         self._persist()
         self._update_sem_backend_sensitivity()
+        if backend == "openai":
+            # Pick up this endpoint's key, models and warnings now that it's live.
+            self._reload_sem_openai_key()
+            self._update_sem_openai_external_warning()
+            self._refresh_sem_openai_state()
+            self._refresh_sem_openai_models()
 
     def _sem_backend_index(self) -> int:
         """Selected-row index for the persisted backend, tolerant of an unknown
@@ -182,13 +190,14 @@ class SearchPageMixin:
             row.set_sensitive(on)
 
     def _update_sem_backend_sensitivity(self) -> None:
-        """Grey out the rows the selected backend does not use."""
-        onnx = self._settings.get(
-            "semantic_backend", self._SEM_BACKEND_DEFAULT) == "onnx"
-        for w in self._sem_onnx_widgets:
-            w.set_sensitive(onnx)
-        for w in self._sem_ollama_widgets:
-            w.set_sensitive(not onnx)
+        """Grey out the groups the selected backend does not use (one live at a
+        time, three-way)."""
+        backend = self._settings.get("semantic_backend", self._SEM_BACKEND_DEFAULT)
+        for widgets, name in ((self._sem_onnx_widgets, "onnx"),
+                              (self._sem_ollama_widgets, "ollama"),
+                              (self._sem_openai_widgets, "openai")):
+            for w in widgets:
+                w.set_sensitive(backend == name)
 
     def _on_rebuild_index(self, _button) -> None:
         if self._on_reindex is None:

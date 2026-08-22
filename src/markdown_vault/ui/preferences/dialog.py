@@ -51,7 +51,7 @@ class PreferencesDialog(
 
     # Semantic-search backends and their single source of truth for the default,
     # so the picker, sensitivity and config never drift (R22.10).
-    _SEM_BACKENDS = ("onnx", "ollama")
+    _SEM_BACKENDS = ("onnx", "ollama", "openai")
     _SEM_BACKEND_DEFAULT = "onnx"
 
     def __init__(self, *, glib_loglevel_callback=None, on_reindex=None) -> None:

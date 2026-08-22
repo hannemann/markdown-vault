@@ -161,9 +161,78 @@ class EmbeddingSubpageMixin:
         self._sem_ollama_test_row.set_activatable_widget(self._sem_ollama_test_btn)
         ollama.add(self._sem_ollama_test_row)
 
+        openai = Adw.PreferencesGroup(
+            title="OpenAI-compatible (server)",
+            description="A server exposing POST /v1/embeddings (llama.cpp, vLLM, "
+                        "LocalAI, or a hosted endpoint). The API key is stored in "
+                        "the OS keyring, never in the config or logs.")
+        page.add(openai)
+
+        self._sem_oai_url_row, self._sem_oai_url_entry = self._entry_row(
+            "Server URL", "semantic_openai_url")
+        self._sem_oai_url_entry.set_placeholder_text(
+            f"{config.default('semantic_openai_url')} (default)")
+        self._sem_oai_url_entry.connect(
+            "changed", lambda *_: self._on_sem_openai_url_changed())
+        openai.add(self._sem_oai_url_row)
+
+        # API key per endpoint, in the keyring under its OWN name
+        # (semantic_api_key:openai|<url>), never the Ask entry (D2).
+        self._sem_oai_key_row, self._sem_oai_key_entry = self._key_row(
+            "API key", self._sem_openai_secret_name)
+        openai.add(self._sem_oai_key_row)
+
+        self._sem_oai_external_row = self._caption_row(
+            "⚠ This server is not local — the text of every note is sent to it "
+            "while the index builds.")
+        self._sem_oai_external_row.set_visible(False)
+        openai.add(self._sem_oai_external_row)
+
+        # Model list fetched from the server (D4), via the explicit ask_models
+        # level with THIS endpoint's url/key — never list_for (that reads the Ask
+        # settings). A server without a list endpoint (llama.cpp) is handled, not
+        # treated as an error.
+        self._sem_oai_model_combo = Adw.ComboRow(
+            title="Model", subtitle="Fetched from the server")
+        self._sem_oai_model_list = Gtk.StringList()
+        self._sem_oai_model_combo.set_model(self._sem_oai_model_list)
+        self._sem_oai_model_combo.connect(
+            "notify::selected", self._on_sem_openai_model_selected)
+        oai_refresh_btn = Gtk.Button(
+            icon_name="view-refresh-symbolic", valign=Gtk.Align.CENTER,
+            tooltip_text="Refresh model list")
+        oai_refresh_btn.add_css_class("flat")
+        oai_refresh_btn.connect("clicked", lambda *_: self._refresh_sem_openai_models())
+        self._sem_oai_model_combo.add_suffix(oai_refresh_btn)
+        openai.add(self._sem_oai_model_combo)
+
+        # D6: openai with no model picked is configured-but-unusable — name it
+        # here instead of letting the build fail silently. (A no-list server
+        # serves its one model regardless, so this stays hidden for it.)
+        self._sem_oai_no_list = False
+        self._sem_oai_unusable_row = self._caption_row(
+            "No model selected — semantic search won't run. Pick a model above "
+            "(Refresh to load the list).")
+        openai.add(self._sem_oai_unusable_row)
+
+        self._sem_oai_test_row = Adw.ActionRow(
+            title="Test connection",
+            subtitle="Embed a probe with the current URL + model")
+        self._sem_oai_test_btn = Gtk.Button(label="Test", valign=Gtk.Align.CENTER)
+        self._sem_oai_test_btn.connect("clicked", self._on_test_openai)
+        self._sem_oai_test_row.add_suffix(self._sem_oai_test_btn)
+        self._sem_oai_test_row.set_activatable_widget(self._sem_oai_test_btn)
+        openai.add(self._sem_oai_test_row)
+
+        self._sem_oai_models_id = None
+        self._reload_sem_openai_key()
+        self._refresh_sem_openai_state()
+        self._update_sem_openai_external_warning()
+
         # Grey out the group the selected backend does not use.
         self._sem_onnx_widgets = [local]
         self._sem_ollama_widgets = [ollama]
+        self._sem_openai_widgets = [openai]
         subpage = self._subpage("Embedding", page)
         # Don't auto-focus the first entry: an empty (default) field would open
         # with a focus ring + placeholder, which looks half-filled. Let the
@@ -269,6 +338,153 @@ class EmbeddingSubpageMixin:
             ok, msg = False, f"Failed: {exc}"
             logger.info("Ollama test failed: %s", exc)
         GLib.idle_add(self._test_done, button, self._sem_ollama_test_row, ok, msg)
+
+    # ── OpenAI-compatible embedding backend ────────────────────────────
+
+    def _sem_openai_url(self) -> str:
+        return (self._settings.get("semantic_openai_url")
+                or config.default("semantic_openai_url"))
+
+    def _sem_openai_secret_name(self) -> str:
+        """Keyring name of this endpoint's key — its own prefix, never the Ask
+        entry, so a key stays with the server it was entered for (D2)."""
+        from markdown_vault.search.semantic_search import semantic_secret_name
+        return semantic_secret_name(self._sem_openai_url())
+
+    def _reload_sem_openai_key(self) -> None:
+        """Show the key of the currently configured embedding server (flushing a
+        pending edit first, so it still reaches the server it was typed for)."""
+        from markdown_vault.core import secret_store
+        if not self._sem_oai_key_entry.get_sensitive():
+            return                      # no keyring — the field is disabled
+        self._flush_secret()
+        name = self._sem_openai_secret_name()
+        stored = secret_store.get_secret(name)
+        self._secret_updating = True
+        try:
+            self._sem_oai_key_entry.set_text(stored)
+        finally:
+            self._secret_updating = False
+        if stored:
+            self._known_secrets.add(name)
+        else:
+            self._known_secrets.discard(name)
+
+    def _on_sem_openai_url_changed(self) -> None:
+        self._update_sem_openai_external_warning()
+        self._schedule_sem_openai_refresh()
+
+    def _schedule_sem_openai_refresh(self, delay_ms: int = 700) -> None:
+        if self._settings.get("semantic_backend") != "openai":
+            return
+        if self._sem_oai_models_id is not None:
+            GLib.source_remove(self._sem_oai_models_id)
+        self._sem_oai_models_id = GLib.timeout_add(
+            delay_ms, self._sem_openai_models_timeout)
+
+    def _sem_openai_models_timeout(self) -> bool:
+        """The URL has settled — it now identifies a (possibly different) server,
+        so re-load that server's key and fetch its models."""
+        self._sem_oai_models_id = None
+        self._reload_sem_openai_key()
+        self._refresh_sem_openai_models()
+        return False
+
+    def _on_sem_openai_model_selected(self, combo, _pspec) -> None:
+        item = combo.get_selected_item()
+        if item is not None:
+            self._settings["semantic_openai_model"] = item.get_string()
+            self._persist_debounced()
+            self._refresh_sem_openai_state()
+
+    def _refresh_sem_openai_models(self) -> None:
+        """Fetch the model list off the main thread via the EXPLICIT ask_models
+        level (D4): probe reads only its arguments, so the Ask endpoint and the
+        Ask key are never touched. This endpoint's own url + key go in."""
+        from markdown_vault.core import secret_store
+        from markdown_vault.search import ask_models
+        url = self._sem_openai_url()
+        key = secret_store.get_secret(self._sem_openai_secret_name())
+        self._sem_oai_model_combo.set_subtitle("Loading…")
+
+        def worker():
+            GLib.idle_add(self._populate_sem_openai_models,
+                          ask_models.probe("openai", url, key))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _populate_sem_openai_models(self, status) -> bool:
+        """Render what the server answered — *status* is an ``ask_models``
+        :class:`EndpointStatus`; only the LISTING half is used (``can_ask`` is
+        chat-shaped and meaningless here)."""
+        from markdown_vault.search import ask_models
+        self._sem_oai_no_list = (status.state == ask_models.NO_LIST)
+        if status.state in (ask_models.UNREACHABLE, ask_models.UNAUTHORIZED,
+                            ask_models.LIST_ERROR):
+            self._sem_oai_model_combo.set_subtitle(f"Not reachable: {status.error}")
+            self._sem_oai_model_combo.add_css_class("error")
+            self._refresh_sem_openai_state()
+            return False
+        self._sem_oai_model_combo.remove_css_class("error")
+        if status.state == ask_models.NO_LIST:
+            self._sem_oai_model_combo.set_subtitle(
+                "This server does not list models — it serves a fixed one")
+            self._refresh_sem_openai_state()
+            return False
+        models = status.models
+        if not models:
+            self._sem_oai_model_combo.set_subtitle("No models on the server")
+            self._refresh_sem_openai_state()
+            return False
+        current = self._settings.get("semantic_openai_model")
+        self._sem_oai_model_list.splice(
+            0, self._sem_oai_model_list.get_n_items(), models)
+        if current in models:
+            self._sem_oai_model_combo.set_selected(models.index(current))
+        else:
+            self._sem_oai_model_combo.set_selected(0)
+            self._settings["semantic_openai_model"] = models[0]
+            self._persist_debounced()
+        self._sem_oai_model_combo.set_subtitle(f"{len(models)} models")
+        self._refresh_sem_openai_state()
+        return False
+
+    def _refresh_sem_openai_state(self) -> None:
+        """D6: reveal the 'no model → unusable' caption only when the server does
+        list models and none is picked. A no-list server serves its one model
+        regardless, so an empty name is fine there."""
+        model = (self._settings.get("semantic_openai_model") or "").strip()
+        self._sem_oai_unusable_row.set_visible(not model and not self._sem_oai_no_list)
+
+    def _update_sem_openai_external_warning(self) -> None:
+        """Reveal the 'notes leave the device' warning for a non-local server."""
+        url = (self._sem_oai_url_entry.get_text().strip()
+               or self._settings.get("semantic_openai_url", ""))
+        self._sem_oai_external_row.set_visible(
+            self._settings.get("semantic_backend") == "openai"
+            and not self._is_local_url(url))
+
+    def _on_test_openai(self, button) -> None:
+        from markdown_vault.core import secret_store
+        url = (self._sem_oai_url_entry.get_text().strip()
+               or config.default("semantic_openai_url"))
+        model = (self._settings.get("semantic_openai_model") or "").strip()
+        key = secret_store.get_secret(self._sem_openai_secret_name())
+        button.set_sensitive(False)
+        self._sem_oai_test_row.set_subtitle("Testing…")
+        threading.Thread(target=self._test_openai_worker,
+                         args=(button, url, model, key), daemon=True).start()
+
+    def _test_openai_worker(self, button, url, model, key) -> None:
+        try:
+            from markdown_vault.search.semantic_search import OpenAIEmbedder
+            vec = OpenAIEmbedder(model, url, key).embed(["connection test"])
+            dim = len(vec[0]) if vec else 0
+            ok, msg = True, f"Connected — embeds OK (dim {dim})"
+        except Exception as exc:
+            ok, msg = False, f"Failed: {exc}"
+            logger.info("OpenAI embedding test failed: %s", exc)
+        GLib.idle_add(self._test_done, button, self._sem_oai_test_row, ok, msg)
 
     def _on_test_onnx(self, button) -> None:
         model_p, tok_p = self._onnx_paths()
