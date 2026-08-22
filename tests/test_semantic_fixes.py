@@ -70,17 +70,20 @@ class TestOnnxSignature(unittest.TestCase):
         # + mtime at a different path must yield the same signature.
         import tempfile
         import os
+        import shutil
         from pathlib import Path
         d1, d2 = tempfile.mkdtemp(), tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, d1, ignore_errors=True)
+        self.addCleanup(shutil.rmtree, d2, ignore_errors=True)
         for d in (d1, d2):
             for name, data in (("model.onnx", b"aaaa"), ("tokenizer.json", b"{}")):
                 p = Path(d) / name
                 p.write_bytes(data)
                 os.utime(p, (0, 12345))          # identical mtime in both dirs
         sig1 = semantic_search._onnx_sig(str(Path(d1) / "model.onnx"),
-                                    str(Path(d1) / "tokenizer.json"))
+                                         str(Path(d1) / "tokenizer.json"))
         sig2 = semantic_search._onnx_sig(str(Path(d2) / "model.onnx"),
-                                    str(Path(d2) / "tokenizer.json"))
+                                         str(Path(d2) / "tokenizer.json"))
         self.assertEqual(sig1, sig2)             # a move must not invalidate
         self.assertNotIn(d1, sig1)               # no directory in the signature
 

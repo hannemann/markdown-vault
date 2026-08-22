@@ -8,6 +8,12 @@ same net for a much bigger object.
 
 Built on the real window (`AppWindowTest` — see test_app_window_construction for
 why that works and what it has to clean up).
+
+Two kinds of test live here. Most are characterisation tests on the real window
+(`AppWindowTest`), avoiding internal method names on purpose. A few — currently
+`TestSemanticBuildWiring` — are seam guards: they pin that one collaborator is
+called with the right argument, which needs a stub window and the internal name.
+Keep them apart and say which kind a new test is.
 """
 import unittest
 import unittest.mock
@@ -225,6 +231,39 @@ class TestPreferencesReactions(AppWindowTest):
             self.win._on_preferences_changed(None)
         index.shutdown.assert_called_once()
         self.assertIsNone(self.win._semantic_index)
+
+
+class TestSemanticBuildWiring(unittest.TestCase):
+    """The window must hand its OWN settings to the search-domain factory.
+
+    Guards the call site, not the factory — TestBuildEmbedder in
+    tests/test_semantic_search.py covers the receiver. A plain unittest.TestCase
+    rather than an AppWindowTest: the real-window fixture patches
+    _setup_semantic_index away in setUp, so it cannot cover this seam.
+    """
+
+    def test_build_embedder_gets_the_windows_settings(self):
+        import threading
+        from markdown_vault.app import app_window as aw
+        settings = {"semantic_backend": "onnx", "semantic_onnx_dir": "/models/x"}
+        win = unittest.mock.MagicMock()
+        win._settings = settings
+        win._semantic_build_lock = threading.Lock()
+        win._semantic_index = None
+        # Patch GLib.idle_add out: with a MagicMock window the scheduled
+        # _set_semantic_available returns a truthy Mock, which GLib reads as
+        # "call again" — a later suite test that spins the main loop would then
+        # busy-loop the mock and balloon memory. The test doesn't need the
+        # scheduling, so keep it out of the shared main context entirely.
+        with unittest.mock.patch(
+                "markdown_vault.search.semantic_search.build_embedder") as be, \
+             unittest.mock.patch(
+                "markdown_vault.search.semantic_index.SemanticIndexManager"), \
+             unittest.mock.patch("markdown_vault.app.app_window.GLib.idle_add"):
+            be.return_value = (unittest.mock.Mock(), "tag")
+            aw.MainWindow._setup_semantic_index(win)
+        be.assert_called_once()
+        self.assertIs(be.call_args[0][0], settings)   # the window's own object
 
 
 if __name__ == "__main__":
