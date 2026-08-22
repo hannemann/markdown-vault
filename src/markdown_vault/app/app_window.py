@@ -1693,16 +1693,20 @@ class MainWindow(Adw.ApplicationWindow):
 
     @staticmethod
     def _onnx_sig(model: str, tokenizer: str) -> str:
-        """Cache signature for the ONNX backend that folds in each file's size +
-        mtime, so swapping the model/tokenizer file (even at the same path)
-        invalidates the cache instead of reusing vectors from another model."""
+        """Cache signature for the ONNX backend: each file's **basename** + size +
+        mtime. Size + mtime catch a swapped model/tokenizer (even under the same
+        name); the basename keeps the identity readable. The **directory is left
+        out** on purpose — it is a location, not part of the model's identity, so
+        moving the models folder (an app-id change, another disk, a different
+        ``semantic_onnx_dir``) must not invalidate the cache and force a rebuild."""
         parts = []
         for p in (model, tokenizer):
+            name = os.path.basename(p)
             try:
                 st = os.stat(p)
-                parts.append(f"{p}:{st.st_size}:{int(st.st_mtime)}")
+                parts.append(f"{name}:{st.st_size}:{int(st.st_mtime)}")
             except OSError:
-                parts.append(f"{p}:missing")
+                parts.append(f"{name}:missing")
         return "onnx:" + "|".join(parts)
 
     def _semantic_update(self, path) -> None:

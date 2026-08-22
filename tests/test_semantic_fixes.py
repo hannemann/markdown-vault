@@ -59,8 +59,30 @@ class TestOnnxSignature(unittest.TestCase):
     """R22.2 — the ONNX cache signature must fold in file identity."""
 
     def test_missing_files_are_marked(self):
+        # Basename only, in the error branch too — the directory is not part of
+        # the model's identity (a move must not change the signature).
         sig = MainWindow._onnx_sig("/nope/model.onnx", "/nope/tok.json")
-        self.assertEqual(sig, "onnx:/nope/model.onnx:missing|/nope/tok.json:missing")
+        self.assertEqual(sig, "onnx:model.onnx:missing|tok.json:missing")
+
+    def test_same_file_new_location_keeps_the_signature(self):
+        # The bug: a folder move changed the signature and forced a 70-minute
+        # full rebuild, though the model was byte-identical. Same basename + size
+        # + mtime at a different path must yield the same signature.
+        import tempfile
+        import os
+        from pathlib import Path
+        d1, d2 = tempfile.mkdtemp(), tempfile.mkdtemp()
+        for d in (d1, d2):
+            for name, data in (("model.onnx", b"aaaa"), ("tokenizer.json", b"{}")):
+                p = Path(d) / name
+                p.write_bytes(data)
+                os.utime(p, (0, 12345))          # identical mtime in both dirs
+        sig1 = MainWindow._onnx_sig(str(Path(d1) / "model.onnx"),
+                                    str(Path(d1) / "tokenizer.json"))
+        sig2 = MainWindow._onnx_sig(str(Path(d2) / "model.onnx"),
+                                    str(Path(d2) / "tokenizer.json"))
+        self.assertEqual(sig1, sig2)             # a move must not invalidate
+        self.assertNotIn(d1, sig1)               # no directory in the signature
 
     def test_size_and_mtime_change_the_signature(self):
         import tempfile
