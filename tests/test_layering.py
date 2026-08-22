@@ -91,5 +91,29 @@ class TestLayering(unittest.TestCase):
         self.assertEqual(bidir, [], f"package import cycle(s): {bidir}")
 
 
+class TestAskIsImportLight(unittest.TestCase):
+    """`search/ask.py` must have no module-level markdown_vault import.
+
+    That is what keeps it safe as an import target for `semantic_search` (which
+    imports `openai_base` from it) and for `ask_models` — deferred imports inside
+    functions are fine and are how the existing `ask <-> ask_models` cycle is
+    defused. The package-level guard above cannot see this: all three modules
+    share the `search` package, so an import between them is not a package edge.
+    """
+
+    def test_ask_has_no_module_level_package_import(self):
+        tree = ast.parse((_ROOT / "search" / "ask.py").read_text())
+        offenders = []
+        for node in tree.body:                       # module level only
+            if isinstance(node, ast.ImportFrom) and (node.module or "").startswith(
+                    "markdown_vault"):
+                offenders.append(f"line {node.lineno}: from {node.module} import …")
+            elif isinstance(node, ast.Import):
+                offenders += [f"line {node.lineno}: import {a.name}"
+                              for a in node.names
+                              if a.name.startswith("markdown_vault")]
+        self.assertEqual(offenders, [], "ask.py must stay import-light")
+
+
 if __name__ == "__main__":
     unittest.main()

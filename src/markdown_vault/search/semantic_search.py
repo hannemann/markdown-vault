@@ -3,10 +3,12 @@
 Pure logic, no GTK:
 
 * :func:`chunk_markdown` — split a note into blocks with 1-based line tracking.
-* An *embedder* turns texts into vectors.  Two backends are provided:
-  :class:`OllamaEmbedder` (stdlib HTTP to an Ollama server) and
+* An *embedder* turns texts into vectors.  Three backends are provided:
   :class:`OnnxEmbedder` (local, in-process via onnxruntime + a HuggingFace
-  tokenizer — distro packages / Flatpak wheels, no pip on the host).
+  tokenizer — distro packages / Flatpak wheels, no pip on the host),
+  :class:`OllamaEmbedder` (stdlib HTTP to an Ollama server) and
+  :class:`OpenAIEmbedder` (stdlib HTTP to an OpenAI-compatible ``/v1/embeddings``
+  server — llama.cpp, vLLM, LocalAI, or hosted).
 * :class:`VectorIndex` — holds normalised chunk vectors and answers cosine
   top-K queries with numpy.
 
@@ -28,6 +30,11 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from markdown_vault.core import config
+# openai_base is a pure URL normaliser; ask.py has no module-level markdown_vault
+# import (an AST guard in tests/test_layering.py holds that), so this edge is
+# import-light and cannot close a cycle — ask_models imports us? no: nothing in
+# ask.py's closure imports semantic_search.
+from markdown_vault.search.ask import openai_base
 
 logger = logging.getLogger(__name__)
 
@@ -292,6 +299,57 @@ class OnnxEmbedder:
         summed = (emb * mask).sum(axis=1)
         counts = np.clip(mask.sum(axis=1), 1e-9, None)
         return summed / counts
+
+
+class OpenAIEmbedder:
+    """Embed via an OpenAI-compatible server (``POST /v1/embeddings``): llama.cpp,
+    vLLM, LocalAI, or a hosted endpoint — the same servers the Ask side already
+    talks to. No extra Python dependency (stdlib ``urllib``, like
+    :class:`OllamaEmbedder`).
+
+    ``is_query`` is ignored: the OpenAI embeddings API has no task-instruction
+    prefix concept (that is a nomic/Ollama trait). Bearer auth is sent only when a
+    key is configured. Errors propagate — a timeout or connection error reaches
+    ``_embed_all``'s skip-and-continue rather than being retried per prompt, the
+    same contract as :class:`OllamaEmbedder`.
+    """
+
+    def __init__(self, model: str, url: str = "http://localhost:8080",
+                 api_key: str = "", timeout: float = 60.0, batch: int = 32) -> None:
+        self.model = model
+        # openai_base drops a trailing slash and a trailing /v1, so a base spelled
+        # ``host`` or ``host/v1`` both work and no one builds ``…/v1/v1/embeddings``.
+        self.url = openai_base(url)
+        self.api_key = api_key
+        self.timeout = timeout
+        self.batch = batch
+
+    def embed(self, texts, is_query: bool = False) -> list[list[float]]:
+        texts = list(texts)
+        if not texts:
+            return []
+        out: list[list[float]] = []
+        for i in range(0, len(texts), self.batch):
+            out.extend(self._embed_batch(texts[i:i + self.batch]))
+        return out
+
+    def _embed_batch(self, texts) -> list[list[float]]:
+        # llama.cpp ignores the model name but wants a non-empty one; keep it valid.
+        data = self._post({"model": self.model or "default", "input": list(texts)})
+        entries = data.get("data") or []
+        if len(entries) != len(texts):
+            raise ValueError("openai /v1/embeddings returned wrong count")
+        return [[float(x) for x in (e.get("embedding") or [])] for e in entries]
+
+    def _post(self, payload: dict) -> dict:
+        body = json.dumps(payload).encode()
+        headers = {"Content-Type": "application/json"}
+        if self.api_key:                       # auth only when a key is configured
+            headers["Authorization"] = f"Bearer {self.api_key}"
+        req = urllib.request.Request(
+            self.url + "/v1/embeddings", data=body, headers=headers)
+        with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+            return json.loads(resp.read())
 
 
 # ── Vector index ────────────────────────────────────────────────────

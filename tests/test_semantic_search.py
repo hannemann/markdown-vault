@@ -122,6 +122,77 @@ class TestOllamaEndpointFallback(unittest.TestCase):
             e.embed(["hi"])
 
 
+class TestOpenAIEmbedder(unittest.TestCase):
+    """The OpenAI-compatible embedding backend: POST /v1/embeddings."""
+
+    def test_posts_model_and_input_and_parses_data(self):
+        e = ss.OpenAIEmbedder("my-model", "http://h:8080")
+        seen = {}
+
+        def fake_post(payload):
+            seen.update(payload)
+            return {"data": [{"embedding": [1.0, 2.0]}]}
+
+        e._post = fake_post
+        self.assertEqual(e.embed(["hi"]), [[1.0, 2.0]])
+        self.assertEqual(seen, {"model": "my-model", "input": ["hi"]})
+
+    def test_is_query_is_ignored(self):
+        # The OpenAI embeddings API has no task-prefix concept — the input is
+        # sent verbatim whether it is a query or a passage.
+        e = ss.OpenAIEmbedder("m", "http://h:8080")
+        seen = {}
+        e._post = lambda p: seen.update(p) or {"data": [{"embedding": [0.0]}]}
+        e.embed(["hi"], is_query=True)
+        self.assertEqual(seen["input"], ["hi"])
+
+    def test_batches_by_batch_size(self):
+        e = ss.OpenAIEmbedder("m", "http://h:8080", batch=2)
+        calls = []
+
+        def fake_post(payload):
+            calls.append(list(payload["input"]))
+            return {"data": [{"embedding": [1.0]} for _ in payload["input"]]}
+
+        e._post = fake_post
+        out = e.embed(["a", "b", "c"])
+        self.assertEqual(len(out), 3)
+        self.assertEqual(calls, [["a", "b"], ["c"]])  # 2 + 1, not one request
+
+    def test_wrong_count_raises(self):
+        e = ss.OpenAIEmbedder("m", "http://h:8080")
+        e._post = lambda p: {"data": [{"embedding": [1.0]}]}  # one for two inputs
+        with self.assertRaises(ValueError):
+            e.embed(["a", "b"])
+
+    def test_url_is_normalised_and_endpoint_appended(self):
+        import unittest.mock as m
+        # A base spelled with a trailing /v1 must not become /v1/v1/embeddings.
+        e = ss.OpenAIEmbedder("m", "http://h:8080/v1")
+        self.assertEqual(e.url, "http://h:8080")
+        with m.patch("urllib.request.urlopen") as urlopen:
+            urlopen.return_value.__enter__.return_value.read.return_value = (
+                b'{"data": [{"embedding": [1.0]}]}')
+            e._post({"model": "m", "input": ["hi"]})
+        req = urlopen.call_args[0][0]
+        self.assertEqual(req.full_url, "http://h:8080/v1/embeddings")
+
+    def test_auth_header_only_with_key(self):
+        import unittest.mock as m
+
+        def _capture(api_key):
+            e = ss.OpenAIEmbedder("m", "http://h:8080", api_key=api_key)
+            with m.patch("urllib.request.urlopen") as urlopen:
+                urlopen.return_value.__enter__.return_value.read.return_value = (
+                    b'{"data": []}')
+                e._post({"model": "m", "input": []})
+            return urlopen.call_args[0][0]
+
+        self.assertEqual(_capture("secret").get_header("Authorization"),
+                         "Bearer secret")
+        self.assertIsNone(_capture("").get_header("Authorization"))
+
+
 class TestOnnxMeanPool(unittest.TestCase):
     def test_masked_mean_ignores_padding(self):
         import numpy as np
