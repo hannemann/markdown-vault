@@ -1,6 +1,6 @@
 """Store secrets (e.g. an Ask API key) outside the config, via libsecret.
 
-Keeps secrets out of ``vaults.yaml`` and the logs. **Where** they land is libsecret's
+Keeps secrets out of ``settings.yaml`` and the logs. **Where** they land is libsecret's
 call, and it differs by install type — the API here is the same either way:
 
 * normal install → the **OS keyring** (Secret Service), visible and revocable in a

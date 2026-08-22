@@ -5,8 +5,8 @@ Two things are easy to get wrong and both produce a control that lies about what
 it does, so they live here instead of in each picker:
 
 * **Which setting selects a model depends on the backend.** The local backend
-  loads ``ask_gguf_path`` (a file), the server backends send ``ask_model`` (a
-  name). A picker that writes the wrong one changes nothing.
+  loads ``ask.gguf.path`` (a file), the server backends send ``ask.server.model``
+  (a name). A picker that writes the wrong one changes nothing.
 * **A server's settings belong to that server, not to the app.** Switching from
   Ollama to a remote OpenAI-compatible server must not leave the Ollama model
   selected — it would be sent to a server that has never heard of it. The same
@@ -37,11 +37,11 @@ SERVER_BACKENDS = ("ollama", "openai")
 
 _ENDPOINTS = {"ollama": "/api/tags", "openai": "/v1/models"}
 
-#: Settings key holding the per-endpoint memory: ``{"<backend>|<url>": "model"}``.
-MEMORY_KEY = "ask_model_by_endpoint"
+#: Settings path holding the per-endpoint memory: ``{"<backend>|<url>": "model"}``.
+MEMORY_KEY = "ask.server.model_by_endpoint"
 
-#: Settings key holding one server URL per backend.
-URL_MEMORY_KEY = "ask_url_by_backend"
+#: Settings path holding one server URL per backend.
+URL_MEMORY_KEY = "ask.server.url_by_backend"
 
 #: Typical server URL per backend — llama.cpp serves :8080, Ollama :11434.
 DEFAULT_URLS = {"ollama": "http://localhost:11434",
@@ -241,15 +241,15 @@ def _reason(exc: Exception) -> str:
 def effective_backend(settings: dict) -> str:
     """The backend that would actually answer: ``auto`` always means the
     in-process one, so a picker must not offer server models there."""
-    engine = settings.get("ask_engine") or config.default("ask_engine")
+    engine = config.get_setting(settings, "ask.engine") or config.default("ask.engine")
     if engine == "auto":
         return "local"
-    return settings.get("ask_backend") or config.default("ask_backend")
+    return config.get_setting(settings, "ask.backend") or config.default("ask.backend")
 
 
 def setting_key(backend: str) -> str:
-    """The settings key that selects a model for *backend*."""
-    return "ask_model" if backend in SERVER_BACKENDS else "ask_gguf_path"
+    """The settings path that selects a model for *backend*."""
+    return "ask.server.model" if backend in SERVER_BACKENDS else "ask.gguf.path"
 
 
 def endpoint(backend: str):
@@ -381,11 +381,11 @@ def current(settings: dict) -> str:
     """The model the active backend would actually use right now."""
     if effective_backend(settings) not in SERVER_BACKENDS:
         return config.resolve_model_path(settings)
-    return settings.get("ask_model") or ""
+    return config.get_setting(settings, "ask.server.model") or ""
 
 
 def _url_of(settings: dict) -> str:
-    return settings.get("ask_ollama_url") or config.default("ask_ollama_url")
+    return config.get_setting(settings, "ask.server.url") or config.default("ask.server.url")
 
 
 def list_for(settings: dict, on_refresh=None) -> list:
@@ -417,28 +417,28 @@ def list_for(settings: dict, on_refresh=None) -> list:
 
 def recall(settings: dict, backend: str, url: str) -> str:
     """The model last chosen for this endpoint, or ``""`` if it is new to us."""
-    return (settings.get(MEMORY_KEY) or {}).get(endpoint_key(backend, url), "")
+    return (config.get_setting(settings, MEMORY_KEY) or {}).get(endpoint_key(backend, url), "")
 
 
 def remember(settings: dict, backend: str, url: str, model: str) -> None:
     """Record *model* as the choice for this endpoint **and** make it active.
 
     For the **local** backend the picker's value is a full path; store only the
-    **filename** (``ask_gguf_path`` is a name in ``ask_models_dir``), so the choice
+    **filename** (``ask.gguf.path`` is a name in ``ask.gguf.dir``), so the choice
     survives the models folder moving. Server backends store the model name as-is.
     """
     if backend not in SERVER_BACKENDS:
-        settings[setting_key(backend)] = Path(model).name
+        config.set_setting(settings, setting_key(backend), Path(model).name)
         return
-    settings[setting_key(backend)] = model
-    memory = dict(settings.get(MEMORY_KEY) or {})
+    config.set_setting(settings, setting_key(backend), model)
+    memory = dict(config.get_setting(settings, MEMORY_KEY) or {})
     memory[endpoint_key(backend, url)] = model
-    settings[MEMORY_KEY] = memory
+    config.set_setting(settings, MEMORY_KEY, memory)
 
 
 def recall_url(settings: dict, backend: str) -> str:
     """The server URL for *backend* — the one last used there, else its usual port."""
-    stored = (settings.get(URL_MEMORY_KEY) or {}).get(backend)
+    stored = (config.get_setting(settings, URL_MEMORY_KEY) or {}).get(backend)
     return stored or DEFAULT_URLS.get(backend, "")
 
 
@@ -446,25 +446,25 @@ def remember_url(settings: dict, backend: str, url: str) -> None:
     """Record *url* as this backend's server (not the app's)."""
     if backend not in SERVER_BACKENDS or not url:
         return
-    urls = dict(settings.get(URL_MEMORY_KEY) or {})
+    urls = dict(config.get_setting(settings, URL_MEMORY_KEY) or {})
     urls[backend] = url
-    settings[URL_MEMORY_KEY] = urls
+    config.set_setting(settings, URL_MEMORY_KEY, urls)
 
 
 def switch_backend(settings: dict, previous: str, backend: str) -> str:
     """Switch the Ask backend, giving each provider its own URL and model back.
 
-    Files the URL currently in ``ask_ollama_url`` under *previous*, then makes
+    Files the URL currently in ``ask.server.url`` under *previous*, then makes
     *backend* active with its own URL and the model chosen there. Returns the now
     active URL. The local backend has neither, so it leaves both alone.
     """
     if previous in SERVER_BACKENDS:
-        remember_url(settings, previous, settings.get("ask_ollama_url") or "")
-    settings["ask_backend"] = backend
+        remember_url(settings, previous, config.get_setting(settings, "ask.server.url") or "")
+    config.set_setting(settings, "ask.backend", backend)
     if backend not in SERVER_BACKENDS:
-        return settings.get("ask_ollama_url") or ""
+        return config.get_setting(settings, "ask.server.url") or ""
     url = recall_url(settings, backend)
-    settings["ask_ollama_url"] = url
+    config.set_setting(settings, "ask.server.url", url)
     activate(settings, backend, url)
     return url
 
@@ -496,7 +496,7 @@ def adopt_legacy_key(settings: dict) -> bool:
     legacy = secret_store.get_secret(LEGACY_KEY_NAME)
     if not legacy:
         return False
-    backend = settings.get("ask_backend") or config.default("ask_backend")
+    backend = config.get_setting(settings, "ask.backend") or config.default("ask.backend")
     if backend not in SERVER_BACKENDS:
         return False
     name = secret_name(backend, _url_of(settings))
@@ -513,12 +513,12 @@ def adopt_legacy_key(settings: dict) -> bool:
 def activate(settings: dict, backend: str, url: str) -> str:
     """Reconcile the active model with a newly selected *backend*/*url*.
 
-    Only touches the model — the caller owns ``ask_backend``/``ask_ollama_url``.
+    Only touches the model — the caller owns ``ask.backend``/``ask.server.url``.
     Returns the now-active model (``""`` when this endpoint is unknown, so the
     picker shows nothing selected rather than another server's model).
     """
     if backend not in SERVER_BACKENDS:
         return config.resolve_model_path(settings)
     model = recall(settings, backend, url)
-    settings["ask_model"] = model
+    config.set_setting(settings, "ask.server.model", model)
     return model

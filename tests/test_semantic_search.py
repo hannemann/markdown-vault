@@ -345,8 +345,8 @@ class TestBuildEmbedder(unittest.TestCase):
 
     def test_ollama_backend(self):
         emb, tag = ss.build_embedder(
-            {"semantic_backend": "ollama", "semantic_ollama_model": "nomic",
-             "semantic_ollama_url": "http://h:11434"})
+            {"semantic": {"backend": "ollama", "ollama": {"model": "nomic",
+                                                          "url": "http://h:11434"}}})
         self.assertIsInstance(emb, ss.OllamaEmbedder)
         self.assertEqual(tag, "ollama:nomic")
 
@@ -354,7 +354,7 @@ class TestBuildEmbedder(unittest.TestCase):
         import unittest.mock as m
         with m.patch.object(ss, "OnnxEmbedder") as OE:
             emb, tag = ss.build_embedder(
-                {"semantic_backend": "onnx", "semantic_onnx_dir": "/models/x"})
+                {"semantic": {"backend": "onnx", "onnx": {"dir": "/models/x"}}})
         self.assertIs(emb, OE.return_value)
         self.assertTrue(OE.call_args[0][0].startswith("/models/x"))  # embedder loads it
         self.assertTrue(tag.startswith("onnx:"))
@@ -364,9 +364,9 @@ class TestBuildEmbedder(unittest.TestCase):
         import unittest.mock as m
         with m.patch("markdown_vault.core.secret_store.get_secret", return_value=""):
             emb, tag = ss.build_embedder(
-                {"semantic_backend": "openai",
-                 "semantic_openai_url": "http://h:8080/v1",   # cosmetic /v1
-                 "semantic_openai_model": "bge-m3"})
+                {"semantic": {"backend": "openai",
+                              "openai": {"url": "http://h:8080/v1",   # cosmetic /v1
+                                         "model": "bge-m3"}}})
         self.assertIsInstance(emb, ss.OpenAIEmbedder)
         # D3: base URL in the tag but normalised — a cosmetic /v1 must not change it,
         # so it does not force a rebuild.
@@ -379,8 +379,8 @@ class TestBuildEmbedder(unittest.TestCase):
         with m.patch("markdown_vault.core.secret_store.get_secret",
                      return_value="sk-emb") as gs:
             emb, _ = ss.build_embedder(
-                {"semantic_backend": "openai",
-                 "semantic_openai_url": "http://h:8080", "semantic_openai_model": "m"})
+                {"semantic": {"backend": "openai",
+                              "openai": {"url": "http://h:8080", "model": "m"}}})
         gs.assert_called_once_with("semantic_api_key:openai|http://h:8080")
         self.assertEqual(emb.api_key, "sk-emb")
 

@@ -28,7 +28,8 @@ class RuntimeSubpageMixin:
             title="GPU layers",
             subtitle="Layers offloaded to the GPU. 0 = pure CPU, 999 = all.",
             adjustment=Gtk.Adjustment.new(
-                self._settings.get("ask_n_gpu_layers", 0), 0, 999, 1, 8, 0.0),
+                config.get_setting(self._settings, "ask.local.n_gpu_layers", 0),
+                0, 999, 1, 8, 0.0),
             digits=0)
         self._ask_gpu_row.connect("notify::value", self._on_ask_gpu_layers_changed)
         from markdown_vault.search import llama_runtime
@@ -42,7 +43,8 @@ class RuntimeSubpageMixin:
                      "answers but can slow the rest of the system; raise it "
                      "gradually.",
             adjustment=Gtk.Adjustment.new(
-                self._settings.get("ask_n_threads", 0), 0, 128, 1, 4, 0.0),
+                config.get_setting(self._settings, "ask.local.n_threads", 0),
+                0, 128, 1, 4, 0.0),
             digits=0)
         self._ask_threads_row.connect("notify::value", self._on_ask_threads_changed)
         group.add(self._ask_threads_row)
@@ -53,7 +55,7 @@ class RuntimeSubpageMixin:
         self._ask_batch_values = [0, 256, 512, 1024, 2048, 4096]
 
         def _batch_index(setting):
-            v = int(self._settings.get(setting, 0) or 0)
+            v = int(config.get_setting(self._settings, setting, 0) or 0)
             return (self._ask_batch_values.index(v)
                     if v in self._ask_batch_values else 0)
 
@@ -62,7 +64,7 @@ class RuntimeSubpageMixin:
             subtitle="Logical batch (n_batch). Keep ≥ the micro-batch.",
             model=Gtk.StringList.new(
                 ["Default (2048)", "256", "512", "1024", "2048", "4096"]))
-        self._ask_batch_row.set_selected(_batch_index("ask_n_batch"))
+        self._ask_batch_row.set_selected(_batch_index("ask.local.n_batch"))
         self._ask_batch_row.connect("notify::selected", self._on_ask_batch_changed)
         group.add(self._ask_batch_row)
 
@@ -76,7 +78,7 @@ class RuntimeSubpageMixin:
         # Grey (and block) micro-batch values above the chosen batch size, so the
         # dropdown can't produce an n_ubatch > n_batch that llama.cpp would clamp.
         self._refresh_ubatch_factory()
-        self._ask_ubatch_row.set_selected(_batch_index("ask_n_ubatch"))
+        self._ask_ubatch_row.set_selected(_batch_index("ask.local.n_ubatch"))
         self._ask_ubatch_row.connect("notify::selected",
                                      self._on_ask_ubatch_changed)
         group.add(self._ask_ubatch_row)
@@ -90,13 +92,13 @@ class RuntimeSubpageMixin:
             subtitle="Key-cache precision. Quantizing K saves memory without "
                      "needing flash attention.",
             model=Gtk.StringList.new(kv_labels))
-        self._ask_kv_k_row.set_selected(self._kv_index("ask_kv_type_k"))
+        self._ask_kv_k_row.set_selected(self._kv_index("ask.local.kv_type_k"))
         self._ask_kv_k_row.connect("notify::selected", self._on_ask_kv_k_changed)
         group.add(self._ask_kv_k_row)
 
         self._ask_kv_v_row = Adw.ComboRow(
             title="V cache", model=Gtk.StringList.new(kv_labels))
-        self._ask_kv_v_row.set_selected(self._kv_index("ask_kv_type_v"))
+        self._ask_kv_v_row.set_selected(self._kv_index("ask.local.kv_type_v"))
         self._ask_kv_v_row.connect("notify::selected", self._on_ask_kv_v_changed)
         group.add(self._ask_kv_v_row)
 
@@ -104,7 +106,8 @@ class RuntimeSubpageMixin:
             title="Flash attention",
             subtitle="Faster attention, less memory; required for quantizing the "
                      "V cache. Needed when the V cache is q8_0/q4_0.")
-        self._ask_flash_row.set_active(self._settings.get("ask_flash_attn", False))
+        self._ask_flash_row.set_active(
+            config.get_setting(self._settings, "ask.local.flash_attn", False))
         self._ask_flash_row.connect("notify::active", self._on_ask_flash_changed)
         group.add(self._ask_flash_row)
 
@@ -113,9 +116,10 @@ class RuntimeSubpageMixin:
             subtitle="On (default) maps the model file lazily. Off loads it fully "
                      "into RAM — a longer 'Loading model…' but no page-faults "
                      "during the answer; needs enough free RAM.")
-        self._ask_mmap_row.set_active(self._settings.get("ask_use_mmap", True))
+        self._ask_mmap_row.set_active(
+            config.get_setting(self._settings, "ask.local.use_mmap", True))
         self._ask_mmap_row.connect("notify::active", self._on_toggle_setting,
-                                   "ask_use_mmap")
+                                   "ask.local.use_mmap")
         group.add(self._ask_mmap_row)
 
         self._ask_maxtok_row = Adw.SpinRow(
@@ -123,8 +127,8 @@ class RuntimeSubpageMixin:
             subtitle="Hard cap on generated tokens. Bounds the answer and stops a "
                      "model that gets stuck repeating itself (~1.5 words/token).",
             adjustment=Gtk.Adjustment.new(
-                self._settings.get("ask_max_tokens", 1024), 128, 8192, 128, 512,
-                0.0),
+                config.get_setting(self._settings, "ask.max_tokens", 1024),
+                128, 8192, 128, 512, 0.0),
             digits=0)
         self._ask_maxtok_row.connect("notify::value", self._on_ask_maxtok_changed)
         group.add(self._ask_maxtok_row)
@@ -132,12 +136,12 @@ class RuntimeSubpageMixin:
         return self._subpage("Model runtime", page)
 
     def _on_ask_maxtok_changed(self, _row, _pspec) -> None:
-        self._settings["ask_max_tokens"] = int(
-            self._ask_maxtok_row.get_adjustment().get_value())
+        config.set_setting(self._settings, "ask.max_tokens",
+                           int(self._ask_maxtok_row.get_adjustment().get_value()))
         self._persist()
 
     def _kv_index(self, key: str) -> int:
-        v = self._settings.get(key, "f16")
+        v = config.get_setting(self._settings, key, "f16")
         return self._ask_kv_types.index(v) if v in self._ask_kv_types else 0
 
     def _refresh_kv_hint(self) -> None:
@@ -146,33 +150,36 @@ class RuntimeSubpageMixin:
         from markdown_vault.search import llama_runtime
         text = ("Value-cache precision. Quantizing V (below f16) needs flash "
                 "attention.")
-        if llama_runtime.kv_needs_flash(self._settings.get("ask_kv_type_v", "f16")) \
-                and not self._settings.get("ask_flash_attn"):
+        if llama_runtime.kv_needs_flash(
+                config.get_setting(self._settings, "ask.local.kv_type_v", "f16")) \
+                and not config.get_setting(self._settings, "ask.local.flash_attn"):
             text += " ⚠ Turn on Flash attention below."
         self._ask_kv_v_row.set_subtitle(text)
 
     def _on_ask_kv_k_changed(self, row, _pspec) -> None:
-        self._settings["ask_kv_type_k"] = self._ask_kv_types[row.get_selected()]
+        config.set_setting(self._settings, "ask.local.kv_type_k",
+                           self._ask_kv_types[row.get_selected()])
         self._persist()
 
     def _on_ask_kv_v_changed(self, row, _pspec) -> None:
-        self._settings["ask_kv_type_v"] = self._ask_kv_types[row.get_selected()]
+        config.set_setting(self._settings, "ask.local.kv_type_v",
+                           self._ask_kv_types[row.get_selected()])
         self._persist()
         self._refresh_kv_hint()
 
     def _on_ask_flash_changed(self, row, _pspec) -> None:
-        self._settings["ask_flash_attn"] = row.get_active()
+        config.set_setting(self._settings, "ask.local.flash_attn", row.get_active())
         self._persist()
         self._refresh_kv_hint()
 
     def _on_ask_gpu_layers_changed(self, _row, _pspec) -> None:
-        self._settings["ask_n_gpu_layers"] = int(
-            self._ask_gpu_row.get_adjustment().get_value())
+        config.set_setting(self._settings, "ask.local.n_gpu_layers",
+                           int(self._ask_gpu_row.get_adjustment().get_value()))
         self._persist()
 
     def _on_ask_threads_changed(self, _row, _pspec) -> None:
-        self._settings["ask_n_threads"] = int(
-            self._ask_threads_row.get_adjustment().get_value())
+        config.set_setting(self._settings, "ask.local.n_threads",
+                           int(self._ask_threads_row.get_adjustment().get_value()))
         self._persist()
 
     def _setup_combo_item(self, _factory, item) -> None:
@@ -200,10 +207,11 @@ class RuntimeSubpageMixin:
         item.set_activatable(ok)
 
     def _on_ask_batch_changed(self, row, _pspec) -> None:
-        self._settings["ask_n_batch"] = self._ask_batch_values[row.get_selected()]
+        config.set_setting(self._settings, "ask.local.n_batch",
+                           self._ask_batch_values[row.get_selected()])
         # Keep n_ubatch ≤ n_batch: if the batch dropped below the current
         # micro-batch, lower the micro-batch to the highest value that still fits.
-        batch = self._settings["ask_n_batch"] or 2048
+        batch = config.get_setting(self._settings, "ask.local.n_batch") or 2048
         current = self._ask_batch_values[self._ask_ubatch_row.get_selected()] or 512
         if current > batch:
             fits = [i for i, v in enumerate(self._ask_batch_values)
@@ -213,7 +221,8 @@ class RuntimeSubpageMixin:
         self._persist()
 
     def _on_ask_ubatch_changed(self, row, _pspec) -> None:
-        self._settings["ask_n_ubatch"] = self._ask_batch_values[row.get_selected()]
+        config.set_setting(self._settings, "ask.local.n_ubatch",
+                           self._ask_batch_values[row.get_selected()])
         self._persist()
 
     def _refresh_gpu_recommendation(self) -> None:

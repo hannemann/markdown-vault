@@ -110,7 +110,7 @@ Markdown Vault — a GNOME desktop app for editing and previewing Markdown files
 - **App ID**: `de.hannemann.markdown-vault`
 - **Stack**: Python 3, GTK 4 + libadwaita, editor in GtkSourceView 5, preview
   rendered as HTML/CSS in WebKitGTK.
-- **Config**: `vaults.yaml` in the XDG config dir — vaults + settings
+- **Config**: `settings.yaml` in the XDG config dir — vaults + settings
   (`core/config.py`).
 - **Session**: `session.json` in the XDG **state** dir — window/layout state,
   not configuration; `core/session.py` owns the fields.
@@ -122,7 +122,7 @@ the `gi.require_version` pins and per-file mechanics live in the code:
 
 - **Math** is `latex2mathml` → MathML, rendered natively by WebKitGTK —
   deliberately no JavaScript/CDN.
-- **Vault list and settings live in YAML** (`vaults.yaml`), not dconf — simpler
+- **Vault list and settings live in YAML** (`settings.yaml`), not dconf — simpler
   to debug and version.
 - **Flatpak** is the primary distribution format (sandboxed file access via portal).
 
@@ -164,7 +164,7 @@ key files.
 - **Editor:** `editor/editor.py` (GtkSourceView 5).
 - **Search:** bottom-bar `search/search.py` over `search/search_backend.py`; semantic + Ask
   in `search/semantic_search.py` / `search/semantic_index.py` / `search/ask.py`.
-- **Config / session:** `core/config.py` (vaults.yaml + settings), `core/session.py` (JSON
+- **Config / session:** `core/config.py` (settings.yaml + settings), `core/session.py` (JSON
   state). **The settings have one owner:** `config.settings()` returns *the* dict for the
   process — mutate it in place and call `config.save_settings()`. Never call
   `load_settings()` in application code: a private copy silently resets whatever another
@@ -207,7 +207,7 @@ Every directory the app owns is named after the **app ID**; file and binary name
 short. The binary path is bound in the AppArmor profile (`packaging/apparmor/`), without
 which WebKitGTK aborts on Ubuntu 24.04 (see the WebKit note under *Conventions*).
 
-**XDG base directories** — config (`vaults.yaml`), state (logs, `session.json`, debug
+**XDG base directories** — config (`settings.yaml`), state (logs, `session.json`, debug
 dumps), cache (semantic index), data (downloaded models). `core/paths.py` owns the
 mapping, the rationale, and the `XDG_*_HOME` / `MDV_CONFIG_DIR` overrides. Under Flatpak
 they land in `~/.var/app/<app-id>/…`, so debug a sandboxed build there, not in the host's
@@ -338,8 +338,9 @@ If any exist, warn the user explicitly — changes may be lost during loop reset
 
 1. Close the app: `make stop`
 2. Delete debug dumps: `rm ~/.local/state/de.hannemann.markdown-vault/debug-*`
-3. In `~/.config/de.hannemann.markdown-vault/vaults.yaml` set `loglevel: debug`,
-   `debug_active: true` and enable required `debug_dump_*` flags
+3. In `~/.config/de.hannemann.markdown-vault/settings.yaml` set `log.level: debug`
+   (`log:\n  level: debug`), `debug.active: true` and enable the required
+   `debug.dump.*` flags (the settings are a nested tree — one branch per domain)
 
 **Loop:**
 
@@ -440,7 +441,7 @@ opening files in editor, toggling sidebar etc.) ask the user.
   - **DOM update over full reload**: After the initial `load_html()`, update content via `evaluate_javascript` setting `.innerHTML`, passing the HTML as a `json.dumps(html, ensure_ascii=False)` string literal to handle escaping. (Base64 + `atob` was used earlier but broke non-ASCII characters — do not reintroduce it.) This avoids a full document reload and natively preserves scroll position — no capture/restore dance needed.
   - CSS theme variables can be updated at runtime via `document.documentElement.style.setProperty()`.
 - GtkSourceView needs `gi.require_version("GtkSource", "5")` — version 4 is for GTK3.
-- `vaults.yaml` must never contain duplicate vault paths; deduplicate on load.
+- `settings.yaml` must never contain duplicate vault paths; deduplicate on load.
 - On Flatpak, file access is sandboxed — use `org.freedesktop.portal` for file chooser.
 - GtkSourceView 5 renamed `begin_not_undoable_action` → `begin_irreversible_action`.
 - `editor.file_path` is a `str`, not `Path` — use `Path(editor.file_path).parent` for directory.

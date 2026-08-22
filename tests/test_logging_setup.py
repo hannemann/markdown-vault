@@ -93,12 +93,12 @@ class LoggingSetupTestCase(unittest.TestCase):
 
 class InitTest(LoggingSetupTestCase):
     def test_init_creates_two_log_files(self):
-        self._init({"loglevel": "debug"})
+        self._init({"log": {"level": "debug"}})
         self.assertTrue(os.path.exists(self._stdout_log()))
         self.assertTrue(os.path.exists(self._stderr_log()))
 
     def test_init_reads_loglevel_from_dict(self):
-        self._init({"loglevel": "debug"})
+        self._init({"log": {"level": "debug"}})
         self.assertEqual(logging.getLogger("markdown-vault").level, logging.DEBUG)
         self.assertEqual(_ROOT.level, logging.DEBUG)
 
@@ -107,7 +107,7 @@ class InitTest(LoggingSetupTestCase):
         self.assertEqual(logging.getLogger("markdown-vault").level, logging.WARNING)
 
     def test_routes_normal_messages_to_stdout_log(self):
-        self._init({"loglevel": "debug"})
+        self._init({"log": {"level": "debug"}})
         logger = logging.getLogger("markdown-vault")
         logger.info("normal message 42")
         logger.warning("warning message 43")
@@ -122,7 +122,7 @@ class InitTest(LoggingSetupTestCase):
         self.assertIn("warning message 43", stderr_content)
 
     def test_routes_debug_to_stdout_log(self):
-        self._init({"loglevel": "debug"})
+        self._init({"log": {"level": "debug"}})
         logging.getLogger("markdown-vault").debug("debug message 44")
         _flush(logging_setup._installed_handlers)
         with open(self._stdout_log(), encoding="utf-8") as fh:
@@ -139,8 +139,8 @@ class InitTest(LoggingSetupTestCase):
         self.assertTrue(os.path.exists(self._stderr_log()))
 
     def test_init_twice_reattaches_level(self):
-        self._init({"loglevel": "debug"})
-        self._init({"loglevel": "error"})
+        self._init({"log": {"level": "debug"}})
+        self._init({"log": {"level": "error"}})
         self.assertEqual(
             logging.getLogger("markdown-vault").level, logging.ERROR
         )
@@ -148,7 +148,7 @@ class InitTest(LoggingSetupTestCase):
 
     def test_init_enables_faulthandler(self):
         faulthandler.disable()
-        self._init({"loglevel": "debug"})
+        self._init({"log": {"level": "debug"}})
         self.assertTrue(faulthandler.is_enabled())
 
 

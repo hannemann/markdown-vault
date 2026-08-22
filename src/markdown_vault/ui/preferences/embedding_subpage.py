@@ -44,7 +44,7 @@ class EmbeddingSubpageMixin:
         model_btn.set_tooltip_text("Download model.onnx")
         model_btn.connect("clicked", self._on_download_onnx, "model")
         self._sem_model_url_row, self._sem_model_url_entry = self._entry_row(
-            "Model Download", "semantic_onnx_model_url", trailing=model_btn)
+            "Model Download", "semantic.onnx.model_url", trailing=model_btn)
         self._sem_model_dl_btn = model_btn
 
         self._sem_model_progress = Gtk.ProgressBar(
@@ -57,7 +57,7 @@ class EmbeddingSubpageMixin:
         tok_btn.set_tooltip_text("Download tokenizer.json")
         tok_btn.connect("clicked", self._on_download_onnx, "tokenizer")
         self._sem_tok_url_row, self._sem_tok_url_entry = self._entry_row(
-            "Tokenizer Download", "semantic_onnx_tokenizer_url", trailing=tok_btn)
+            "Tokenizer Download", "semantic.onnx.tokenizer_url", trailing=tok_btn)
         self._sem_tok_dl_btn = tok_btn
 
         self._sem_tok_progress = Gtk.ProgressBar(
@@ -145,11 +145,11 @@ class EmbeddingSubpageMixin:
         page.add(ollama)
 
         self._sem_url_row, self._sem_url_entry = self._entry_row(
-            "Ollama URL", "semantic_ollama_url")
+            "Ollama URL", "semantic.ollama.url")
         ollama.add(self._sem_url_row)
 
         self._sem_model_row, self._sem_model_entry = self._entry_row(
-            "Embedding model", "semantic_ollama_model")
+            "Embedding model", "semantic.ollama.model")
         ollama.add(self._sem_model_row)
 
         self._sem_ollama_test_row = Adw.ActionRow(
@@ -169,9 +169,9 @@ class EmbeddingSubpageMixin:
         page.add(openai)
 
         self._sem_oai_url_row, self._sem_oai_url_entry = self._entry_row(
-            "Server URL", "semantic_openai_url")
+            "Server URL", "semantic.openai.url")
         self._sem_oai_url_entry.set_placeholder_text(
-            f"{config.default('semantic_openai_url')} (default)")
+            f"{config.default('semantic.openai.url')} (default)")
         self._sem_oai_url_entry.connect(
             "changed", lambda *_: self._on_sem_openai_url_changed())
         openai.add(self._sem_oai_url_row)
@@ -282,7 +282,7 @@ class EmbeddingSubpageMixin:
     def _onnx_dir(self) -> Path:
         """The folder the backend loads model.onnx + tokenizer.json from (and the
         download writes to). Blank setting → the app data dir default."""
-        return Path(self._settings.get("semantic_onnx_dir")
+        return Path(config.get_setting(self._settings, "semantic.onnx.dir")
                     or str(config.DATA_DIR / "onnx"))
 
     def _onnx_paths(self):
@@ -291,7 +291,7 @@ class EmbeddingSubpageMixin:
         return d / "model.onnx", d / "tokenizer.json"
 
     def _on_onnx_dir_selected(self, path: str) -> None:
-        self._settings["semantic_onnx_dir"] = path
+        config.set_setting(self._settings, "semantic.onnx.dir", path)
         self._persist_debounced()
         self._refresh_onnx_dir_row()
         self._refresh_onnx_status()  # download target + presence follow the folder
@@ -319,9 +319,9 @@ class EmbeddingSubpageMixin:
 
     def _on_test_ollama(self, button) -> None:
         url = (self._sem_url_entry.get_text().strip()
-               or config.default("semantic_ollama_url"))
+               or config.default("semantic.ollama.url"))
         model = (self._sem_model_entry.get_text().strip()
-                 or config.default("semantic_ollama_model"))
+                 or config.default("semantic.ollama.model"))
         button.set_sensitive(False)
         self._sem_ollama_test_row.set_subtitle("Testing…")
         threading.Thread(
@@ -342,8 +342,8 @@ class EmbeddingSubpageMixin:
     # ── OpenAI-compatible embedding backend ────────────────────────────
 
     def _sem_openai_url(self) -> str:
-        return (self._settings.get("semantic_openai_url")
-                or config.default("semantic_openai_url"))
+        return (config.get_setting(self._settings, "semantic.openai.url")
+                or config.default("semantic.openai.url"))
 
     def _sem_openai_secret_name(self) -> str:
         """Keyring name of this endpoint's key — its own prefix, never the Ask
@@ -375,7 +375,7 @@ class EmbeddingSubpageMixin:
         self._schedule_sem_openai_refresh()
 
     def _schedule_sem_openai_refresh(self, delay_ms: int = 700) -> None:
-        if self._settings.get("semantic_backend") != "openai":
+        if config.get_setting(self._settings, "semantic.backend") != "openai":
             return
         if self._sem_oai_models_id is not None:
             GLib.source_remove(self._sem_oai_models_id)
@@ -393,7 +393,7 @@ class EmbeddingSubpageMixin:
     def _on_sem_openai_model_selected(self, combo, _pspec) -> None:
         item = combo.get_selected_item()
         if item is not None:
-            self._settings["semantic_openai_model"] = item.get_string()
+            config.set_setting(self._settings, "semantic.openai.model", item.get_string())
             self._persist_debounced()
             self._refresh_sem_openai_state()
 
@@ -440,14 +440,14 @@ class EmbeddingSubpageMixin:
             self._sem_oai_model_combo.set_subtitle("No models on the server")
             self._refresh_sem_openai_state()
             return False
-        current = self._settings.get("semantic_openai_model")
+        current = config.get_setting(self._settings, "semantic.openai.model")
         self._sem_oai_model_list.splice(
             0, self._sem_oai_model_list.get_n_items(), models)
         if current in models:
             self._sem_oai_model_combo.set_selected(models.index(current))
         else:
             self._sem_oai_model_combo.set_selected(0)
-            self._settings["semantic_openai_model"] = models[0]
+            config.set_setting(self._settings, "semantic.openai.model", models[0])
             self._persist_debounced()
         self._sem_oai_model_combo.set_subtitle(f"{len(models)} models")
         self._refresh_sem_openai_state()
@@ -457,22 +457,22 @@ class EmbeddingSubpageMixin:
         """D6: reveal the 'no model → unusable' caption only when the server does
         list models and none is picked. A no-list server serves its one model
         regardless, so an empty name is fine there."""
-        model = (self._settings.get("semantic_openai_model") or "").strip()
+        model = (config.get_setting(self._settings, "semantic.openai.model") or "").strip()
         self._sem_oai_unusable_row.set_visible(not model and not self._sem_oai_no_list)
 
     def _update_sem_openai_external_warning(self) -> None:
         """Reveal the 'notes leave the device' warning for a non-local server."""
         url = (self._sem_oai_url_entry.get_text().strip()
-               or self._settings.get("semantic_openai_url", ""))
+               or config.get_setting(self._settings, "semantic.openai.url", ""))
         self._sem_oai_external_row.set_visible(
-            self._settings.get("semantic_backend") == "openai"
+            config.get_setting(self._settings, "semantic.backend") == "openai"
             and not self._is_local_url(url))
 
     def _on_test_openai(self, button) -> None:
         from markdown_vault.core import secret_store
         url = (self._sem_oai_url_entry.get_text().strip()
-               or config.default("semantic_openai_url"))
-        model = (self._settings.get("semantic_openai_model") or "").strip()
+               or config.default("semantic.openai.url"))
+        model = (config.get_setting(self._settings, "semantic.openai.model") or "").strip()
         key = secret_store.get_secret(self._sem_openai_secret_name())
         button.set_sensitive(False)
         self._sem_oai_test_row.set_subtitle("Testing…")
@@ -534,11 +534,11 @@ class EmbeddingSubpageMixin:
         model_p, tok_p = self._onnx_paths()
         if which == "model":
             url = (self._sem_model_url_entry.get_text().strip()
-                   or config.default("semantic_onnx_model_url"))
+                   or config.default("semantic.onnx.model_url"))
             filename, bar, target = "model.onnx", self._sem_model_progress, model_p
         else:
             url = (self._sem_tok_url_entry.get_text().strip()
-                   or config.default("semantic_onnx_tokenizer_url"))
+                   or config.default("semantic.onnx.tokenizer_url"))
             filename, bar, target = "tokenizer.json", self._sem_tok_progress, tok_p
         if not url:
             return

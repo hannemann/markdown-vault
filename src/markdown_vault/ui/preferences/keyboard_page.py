@@ -12,6 +12,7 @@ gi.require_version("Gdk", "4.0")
 
 from gi.repository import Gtk, Adw, Gdk
 
+from markdown_vault.core import config
 from markdown_vault.ui.preferences.constants import _RELEVANT_MODS, _accel_to_label
 
 
@@ -29,7 +30,7 @@ class KeyboardPageMixin:
         self._next_tab_btn.add_css_class("flat")
         self._next_tab_btn.set_valign(Gtk.Align.CENTER)
         self._setup_keybinding_button(
-            self._next_tab_btn, "keybinding_next_tab",
+            self._next_tab_btn, "tabs.keybinding.next",
         )
         self._next_tab_row.add_suffix(self._next_tab_btn)
         kb_group.add(self._next_tab_row)
@@ -39,7 +40,7 @@ class KeyboardPageMixin:
         self._prev_tab_btn.add_css_class("flat")
         self._prev_tab_btn.set_valign(Gtk.Align.CENTER)
         self._setup_keybinding_button(
-            self._prev_tab_btn, "keybinding_prev_tab",
+            self._prev_tab_btn, "tabs.keybinding.prev",
         )
         self._prev_tab_row.add_suffix(self._prev_tab_btn)
         kb_group.add(self._prev_tab_row)
@@ -52,7 +53,7 @@ class KeyboardPageMixin:
             subtitle="MRU switches to the most recently used tab, Cycle goes in order",
             model=Gtk.StringList.new(["Most Recently Used", "Cycle in Order"]),
         )
-        current_mode = self._settings.get("tab_switch_mode", "mru")
+        current_mode = config.get_setting(self._settings, "tabs.switch_mode", "mru")
         self._mode_row.set_selected(0 if current_mode == "mru" else 1)
         self._mode_row.connect("notify::selected", self._on_tab_switch_mode_changed)
         switch_group.add(self._mode_row)
@@ -70,7 +71,7 @@ class KeyboardPageMixin:
         button.connect("clicked", self._on_keybinding_clicked)
 
     def _update_keybinding_button(self, button: Gtk.Button) -> None:
-        accel = self._settings.get(button._setting_key, "")
+        accel = config.get_setting(self._settings, button._setting_key, "")
         button.set_label(_accel_to_label(accel))
 
     def _on_keybinding_clicked(self, button: Gtk.Button) -> None:
@@ -106,11 +107,12 @@ class KeyboardPageMixin:
 
         state &= _RELEVANT_MODS
         accel = Gtk.accelerator_name(keyval, state)
-        self._settings[button._setting_key] = accel
+        config.set_setting(self._settings, button._setting_key, accel)
         self._persist()
         self._update_keybinding_button(button)
         return True
 
     def _on_tab_switch_mode_changed(self, row: Adw.ComboRow, _pspec) -> None:
-        self._settings["tab_switch_mode"] = "mru" if row.get_selected() == 0 else "cycle"
+        config.set_setting(self._settings, "tabs.switch_mode",
+                           "mru" if row.get_selected() == 0 else "cycle")
         self._persist()

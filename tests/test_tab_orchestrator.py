@@ -112,7 +112,7 @@ def _make_orchestrator(
     bar = _TabBarMock(paths or [], current_path)
     mru = _MRUMock()
     sidebar = _SidebarMock()
-    settings = {"tab_switch_mode": tab_switch_mode}
+    settings = {"tabs": {"switch_mode": tab_switch_mode}}
     stack = _ContentStackMock()
     file_index = unittest.mock.MagicMock()
     backlink_index = unittest.mock.MagicMock()

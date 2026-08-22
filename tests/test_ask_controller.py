@@ -15,7 +15,7 @@ def _controller(settings):
 
 class TestEndpointStatusLocal(unittest.TestCase):
     def test_local_ok_returns_none(self):
-        ctrl = _controller({"ask_backend": "local"})
+        ctrl = _controller({"ask": {"backend": "local"}})
         with patch("markdown_vault.search.llama_runtime.availability",
                    return_value=None):
             self.assertIsNone(ctrl.endpoint_status())
@@ -24,8 +24,8 @@ class TestEndpointStatusLocal(unittest.TestCase):
         # The verdict must be fed the *wanted* path (folder + stored filename), not
         # resolve_model_path's result — that is "" for a gone choice and the banner
         # would read "(unset)" instead of the chosen model.
-        ctrl = _controller({"ask_backend": "local", "ask_models_dir": "/m",
-                            "ask_gguf_path": "gone.gguf"})
+        ctrl = _controller({"ask": {"backend": "local",
+                                    "gguf": {"dir": "/m", "path": "gone.gguf"}}})
         seen = {}
 
         def fake_availability(path):

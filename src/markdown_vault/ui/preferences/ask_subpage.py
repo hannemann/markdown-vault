@@ -33,7 +33,7 @@ class AskSubpageMixin:
             title="Answer engine",
             model=Gtk.StringList.new(
                 ["Automatic — recommended", "Manual (advanced)", "Off"]))
-        e = self._settings.get("ask_engine", "auto")
+        e = config.get_setting(self._settings, "ask.engine", "auto")
         self._ask_engine_row.set_selected(
             self._ask_engines.index(e) if e in self._ask_engines else 0)
         self._ask_engine_row.connect("notify::selected", self._on_ask_engine_changed)
@@ -45,7 +45,7 @@ class AskSubpageMixin:
             model=Gtk.StringList.new(
                 ["Local — in-process, no server (recommended)",
                  "Ollama (/api/chat)", "OpenAI-compatible — llama.cpp (/v1)"]))
-        b = self._settings.get("ask_backend", "local")
+        b = config.get_setting(self._settings, "ask.backend", "local")
         self._ask_backend_row.set_selected(
             self._ask_backends.index(b) if b in self._ask_backends else 0)
         self._ask_backend_row.connect("notify::selected", self._on_ask_backend_changed)
@@ -81,7 +81,7 @@ class AskSubpageMixin:
         gguf_btn.connect("clicked", self._on_download_gguf)
         self._ask_gguf_dl_btn = gguf_btn
         self._ask_gguf_url_row, self._ask_gguf_url_entry = self._entry_row(
-            "Model Download", "ask_gguf_url", trailing=gguf_btn)
+            "Model Download", "ask.gguf.url", trailing=gguf_btn)
 
         self._ask_gguf_progress = Gtk.ProgressBar(
             show_text=True, visible=False,
@@ -125,10 +125,11 @@ class AskSubpageMixin:
 
         # --- Server (Ollama / OpenAI-compatible) rows ---------------------
         self._ask_url_row, self._ask_url_entry = self._entry_row(
-            "Server URL", "ask_ollama_url")
+            "Server URL", "ask.server.url")
         # Hint the saved backend's port immediately (not only on a later switch).
         from markdown_vault.search import ask_models
-        saved_url = ask_models.DEFAULT_URLS.get(self._settings.get("ask_backend"))
+        saved_url = ask_models.DEFAULT_URLS.get(
+            config.get_setting(self._settings, "ask.backend"))
         if saved_url:
             self._ask_url_entry.set_placeholder_text(f"{saved_url} (default)")
         # A non-local URL means note content leaves the device — re-check the warning
@@ -136,7 +137,7 @@ class AskSubpageMixin:
         self._ask_url_entry.connect("changed", lambda *_: self._on_ask_url_changed())
         group.add(self._ask_url_row)
         # API key (OpenAI-compatible servers that require auth). Stored in the OS
-        # keyring, never in vaults.yaml or the logs — see _key_row.
+        # keyring, never in settings.yaml or the logs — see _key_row.
         # The key belongs to the server it was entered for, so the keyring name is
         # resolved per endpoint at read/write time, not fixed at build time.
         ask_models.adopt_legacy_key(self._settings)
@@ -174,9 +175,10 @@ class AskSubpageMixin:
             subtitle="Let a reasoning model (Qwen3, …) think before answering — "
                      "more accurate but much slower. Off is faster and usually "
                      "enough for grounded note answers.")
-        self._ask_reasoning_row.set_active(self._settings.get("ask_reasoning", True))
+        self._ask_reasoning_row.set_active(
+            config.get_setting(self._settings, "ask.reasoning", True))
         self._ask_reasoning_row.connect(
-            "notify::active", self._on_toggle_setting, "ask_reasoning")
+            "notify::active", self._on_toggle_setting, "ask.reasoning")
         group.add(self._ask_reasoning_row)
 
         self._ask_hybrid_row = Adw.SwitchRow(
@@ -184,9 +186,10 @@ class AskSubpageMixin:
             subtitle="Fuse a keyword (BM25) ranking into the semantic search so "
                      "exact tokens — names, config keys, shortcuts — that "
                      "embeddings blur still surface. Helps most on large vaults.")
-        self._ask_hybrid_row.set_active(self._settings.get("ask_hybrid", True))
+        self._ask_hybrid_row.set_active(
+            config.get_setting(self._settings, "ask.hybrid", True))
         self._ask_hybrid_row.connect(
-            "notify::active", self._on_toggle_setting, "ask_hybrid")
+            "notify::active", self._on_toggle_setting, "ask.hybrid")
         group.add(self._ask_hybrid_row)
 
         self._ask_topk_row = Adw.SpinRow(
@@ -196,7 +199,7 @@ class AskSubpageMixin:
                      "= much faster (roughly linear). Recommended: 10 on a GPU, "
                      "~5 on a slow CPU.",
             adjustment=Gtk.Adjustment.new(
-                self._settings.get("ask_top_k", 10), 3, 20, 1, 5, 0.0),
+                config.get_setting(self._settings, "ask.top_k", 10), 3, 20, 1, 5, 0.0),
             digits=0,
         )
         self._ask_topk_row.connect("notify::value", self._on_ask_top_k_changed)
@@ -208,7 +211,7 @@ class AskSubpageMixin:
                      "(higher fits more/longer notes but uses more memory); the "
                      "OpenAI-compatible server sizes its own context.",
             adjustment=Gtk.Adjustment.new(
-                self._settings.get("ask_num_ctx", 8192),
+                config.get_setting(self._settings, "ask.num_ctx", 8192),
                 2048, 32768, 1024, 4096, 0.0),
             digits=0,
         )
@@ -244,10 +247,12 @@ class AskSubpageMixin:
         ask_models.remember(self._settings, self._ask_backend(), self._ask_url(), model)
 
     def _ask_backend(self) -> str:
-        return self._settings.get("ask_backend") or config.default("ask_backend")
+        return (config.get_setting(self._settings, "ask.backend")
+                or config.default("ask.backend"))
 
     def _ask_url(self) -> str:
-        return self._settings.get("ask_ollama_url") or config.default("ask_ollama_url")
+        return (config.get_setting(self._settings, "ask.server.url")
+                or config.default("ask.server.url"))
 
     def _ask_secret_name(self) -> str:
         """Keyring name of the API key for the currently configured server."""
@@ -306,14 +311,16 @@ class AskSubpageMixin:
             self._ask_models_id = None
 
     def _on_ask_engine_changed(self, row, _pspec) -> None:
-        self._settings["ask_engine"] = self._ask_engines[row.get_selected()]
+        config.set_setting(self._settings, "ask.engine",
+                           self._ask_engines[row.get_selected()])
         self._persist()
         self._update_ask_rows()
 
     def _on_ask_backend_changed(self, row, _pspec) -> None:
         from markdown_vault.search import ask_models
         backend = self._ask_backends[row.get_selected()]
-        previous = self._settings.get("ask_backend") or config.default("ask_backend")
+        previous = (config.get_setting(self._settings, "ask.backend")
+                    or config.default("ask.backend"))
         self._flush_secret()          # the pending key still belongs to `previous`
         # URL, model and key belong to the provider: file the old one's, restore
         # the new one's. Without this, a hand-typed URL is carried over and the
@@ -344,24 +351,27 @@ class AskSubpageMixin:
         row = getattr(self, "_ask_external_row", None)
         if row is None:
             return
-        backend = self._settings.get("ask_backend")
+        backend = config.get_setting(self._settings, "ask.backend")
         url = (self._ask_url_entry.get_text().strip()
-               or self._settings.get("ask_ollama_url", ""))
+               or config.get_setting(self._settings, "ask.server.url", ""))
         row.set_visible(backend in ("ollama", "openai") and not self._is_local_url(url))
 
     def _ask_effective_backend(self) -> str:
         """The backend the current engine will actually use: Automatic is always
         the in-process 'local' backend; Manual uses the chosen ask_backend."""
-        engine = self._settings.get("ask_engine") or config.default("ask_engine")
+        engine = (config.get_setting(self._settings, "ask.engine")
+                  or config.default("ask.engine"))
         if engine == "auto":
             return "local"
-        return self._settings.get("ask_backend") or config.default("ask_backend")
+        return (config.get_setting(self._settings, "ask.backend")
+                or config.default("ask.backend"))
 
     def _update_ask_rows(self) -> None:
         """Show only the rows the current engine + backend actually use, so a
         non-technical user in Automatic sees just the model download, and the GPU
         row appears only when the installed build can offload."""
-        engine = self._settings.get("ask_engine") or config.default("ask_engine")
+        engine = (config.get_setting(self._settings, "ask.engine")
+                  or config.default("ask.engine"))
         off = engine == "off"
         manual = engine == "manual"
         backend = self._ask_effective_backend()
@@ -407,7 +417,8 @@ class AskSubpageMixin:
             from pathlib import Path
             # Store the filename, not the absolute path — it is a name in
             # ask_models_dir and must survive the folder moving.
-            self._settings["ask_gguf_path"] = Path(self._ask_gguf_paths[i]).name
+            config.set_setting(self._settings, "ask.gguf.path",
+                               Path(self._ask_gguf_paths[i]).name)
             self._persist()
             self._refresh_gguf_status()
 
@@ -418,14 +429,14 @@ class AskSubpageMixin:
         if Path(target).exists() and config.is_gguf(target):
             # Store the filename — the download lands in ask_models_dir (see the
             # download target below), where list_models and resolve_model_path look.
-            self._settings["ask_gguf_path"] = Path(target).name
+            config.set_setting(self._settings, "ask.gguf.path", Path(target).name)
             self._persist()
         self._refresh_gguf_models()
         self._refresh_gguf_status()
 
     def _on_download_gguf(self, button) -> None:
         url = (self._ask_gguf_url_entry.get_text().strip()
-               or config.default("ask_gguf_url"))
+               or config.default("ask.gguf.url"))
         if not url:
             return
         url = config.normalize_gguf_url(url)   # HF file page → raw-file link
@@ -469,12 +480,12 @@ class AskSubpageMixin:
     def _on_models_dir_selected(self, path: str) -> None:
         """Set the models folder (empty → the shared default), then rescan — the
         dropdown, the size subtitle and the folder row all follow."""
-        self._settings["ask_models_dir"] = path
+        config.set_setting(self._settings, "ask.gguf.dir", path)
         self._persist()
         self._refresh_gguf_models()
 
     def _reset_gguf_path(self) -> None:
-        self._settings["ask_gguf_path"] = ""   # empty → auto-pick the newest
+        config.set_setting(self._settings, "ask.gguf.path", "")  # empty → auto-pick newest
         self._persist()
         self._refresh_gguf_models()
         self._refresh_gguf_status()
@@ -484,7 +495,7 @@ class AskSubpageMixin:
         an explicit "not found" when a *set* choice is gone (the Quick Open banner
         blocks it too), or a hint when nothing is chosen yet."""
         from pathlib import Path
-        chosen = self._settings.get("ask_gguf_path") or ""
+        chosen = config.get_setting(self._settings, "ask.gguf.path") or ""
         resolved = config.resolve_model_path(self._settings)
         if resolved:
             p = Path(resolved)
@@ -542,7 +553,7 @@ class AskSubpageMixin:
         # Only ever offer what this server actually has: a model kept from another
         # provider (or one that has since been removed) would be sent to a server
         # that does not know it. If the stored choice is gone, adopt a real one.
-        current = self._settings.get("ask_model")
+        current = config.get_setting(self._settings, "ask.server.model")
         self._ask_model_list.splice(0, self._ask_model_list.get_n_items(), models)
         if current in models:
             self._ask_model_combo.set_selected(models.index(current))
@@ -554,11 +565,11 @@ class AskSubpageMixin:
         return False
 
     def _on_ask_num_ctx_changed(self, _row, _pspec) -> None:
-        self._settings["ask_num_ctx"] = int(
-            self._ask_ctx_row.get_adjustment().get_value())
+        config.set_setting(self._settings, "ask.num_ctx",
+                           int(self._ask_ctx_row.get_adjustment().get_value()))
         self._persist()
 
     def _on_ask_top_k_changed(self, _row, _pspec) -> None:
-        self._settings["ask_top_k"] = int(
-            self._ask_topk_row.get_adjustment().get_value())
+        config.set_setting(self._settings, "ask.top_k",
+                           int(self._ask_topk_row.get_adjustment().get_value()))
         self._persist()

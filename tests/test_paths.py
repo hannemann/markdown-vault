@@ -90,7 +90,7 @@ class TestRunIsolation(unittest.TestCase):
     """The suite must not be able to reach the developer's real directories.
 
     A leaked debounced write once replaced the whole settings block in the real
-    ``vaults.yaml``; the trigger was fixed, but the *exposure* is what this asserts.
+    ``settings.yaml``; the trigger was fixed, but the *exposure* is what this asserts.
     `make test` / `test-one` / `coverage` pin all four base dirs at ./tmp/test-home,
     so a forgotten mock, thread or timer writes there instead of into the real config.
     """

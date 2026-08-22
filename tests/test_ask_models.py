@@ -11,6 +11,7 @@ import unittest
 import urllib.error
 from unittest.mock import patch
 
+from markdown_vault.core import config
 from markdown_vault.search import ask_models
 
 
@@ -24,19 +25,19 @@ class TestBackendMapping(unittest.TestCase):
     server backend reads ask_model)."""
 
     def test_setting_key(self):
-        self.assertEqual(ask_models.setting_key("local"), "ask_gguf_path")
-        self.assertEqual(ask_models.setting_key("ollama"), "ask_model")
-        self.assertEqual(ask_models.setting_key("openai"), "ask_model")
+        self.assertEqual(ask_models.setting_key("local"), "ask.gguf.path")
+        self.assertEqual(ask_models.setting_key("ollama"), "ask.server.model")
+        self.assertEqual(ask_models.setting_key("openai"), "ask.server.model")
 
     def test_auto_engine_is_always_local(self):
         # "auto" configures everything and uses the in-process backend, whatever
         # ask_backend says — offering server models there would be a lie.
         self.assertEqual(
-            ask_models.effective_backend({"ask_engine": "auto",
-                                          "ask_backend": "openai"}), "local")
+            ask_models.effective_backend({"ask": {"engine": "auto",
+                                                  "backend": "openai"}}), "local")
         self.assertEqual(
-            ask_models.effective_backend({"ask_engine": "manual",
-                                          "ask_backend": "openai"}), "openai")
+            ask_models.effective_backend({"ask": {"engine": "manual",
+                                                  "backend": "openai"}}), "openai")
 
     def test_endpoint(self):
         self.assertEqual(ask_models.endpoint("ollama"), "/api/tags")
@@ -99,7 +100,7 @@ class TestListFor(unittest.TestCase):
     def test_local_lists_downloaded_gguf(self):
         with patch("markdown_vault.core.config.list_models",
                    return_value=["/models/a.gguf", "/models/b.gguf"]):
-            models = ask_models.list_for({"ask_backend": "local"})
+            models = ask_models.list_for({"ask": {"backend": "local"}})
         self.assertEqual(models, [("a.gguf", "/models/a.gguf"),
                                   ("b.gguf", "/models/b.gguf")])
 
@@ -110,9 +111,9 @@ class TestListFor(unittest.TestCase):
                    side_effect=AssertionError("must not fetch synchronously")), \
                 patch.object(ask_models, "refresh_async",
                              side_effect=lambda *a, **k: started.append(a)):
-            models = ask_models.list_for({"ask_engine": "manual", "ask_backend": "openai",
-                                          "ask_ollama_url": "http://h:8080",
-                                          "ask_model": "Qwen"})
+            models = ask_models.list_for({"ask": {"engine": "manual", "backend": "openai",
+                                                  "server": {"url": "http://h:8080",
+                                                             "model": "Qwen"}}})
         self.assertEqual(models, [("Qwen", "Qwen")])   # the configured one, nothing invented
         self.assertTrue(started, "a background refresh should have been kicked off")
 
@@ -121,8 +122,8 @@ class TestListFor(unittest.TestCase):
         with patch("urllib.request.urlopen",
                    side_effect=AssertionError("must not fetch synchronously")), \
                 patch.object(ask_models, "refresh_async"):  # the probe is a thread
-            models = ask_models.list_for({"ask_engine": "manual", "ask_backend": "openai",
-                                          "ask_ollama_url": "http://h:8080"})
+            models = ask_models.list_for({"ask": {"engine": "manual", "backend": "openai",
+                                                  "server": {"url": "http://h:8080"}}})
         self.assertEqual(models, [("m1", "m1"), ("m2", "m2")])
 
     def test_local_never_lists_server_models_and_vice_versa(self):
@@ -131,8 +132,8 @@ class TestListFor(unittest.TestCase):
         ask_models.cache_put("ollama", "http://h:11434", ["llama3.2"])
         with patch("markdown_vault.core.config.list_models",
                    return_value=["/models/a.gguf", "/models/b.gguf"]):
-            server = ask_models.list_for({"ask_engine": "manual", "ask_backend": "ollama",
-                                          "ask_ollama_url": "http://h:11434"})
+            server = ask_models.list_for({"ask": {"engine": "manual", "backend": "ollama",
+                                                  "server": {"url": "http://h:11434"}}})
         self.assertEqual(server, [("llama3.2", "llama3.2")])
         self.assertNotIn("a.gguf", [n for n, _ in server])
 
@@ -264,8 +265,8 @@ class TestEndpointStatus(unittest.TestCase):
         # itself every ~5 s for as long as the app runs. Only an endpoint nobody has
         # asked yet gets probed from here; a re-check is an explicit act (open the
         # palette again, or "Try again").
-        settings = {"ask_engine": "manual", "ask_backend": "openai",
-                    "ask_ollama_url": "http://h:8080"}
+        settings = {"ask": {"engine": "manual", "backend": "openai",
+                            "server": {"url": "http://h:8080"}}}
         self._settle(urllib.error.URLError("refused"))
         with patch.object(ask_models, "refresh_async") as again:
             ask_models.list_for(settings)
@@ -369,7 +370,7 @@ class TestPerEndpointMemory(unittest.TestCase):
         # the models folder moving.
         s = {}
         ask_models.remember(s, "local", "", "/some/models/Llama-3.2-3B.gguf")
-        self.assertEqual(s["ask_gguf_path"], "Llama-3.2-3B.gguf")
+        self.assertEqual(config.get_setting(s, "ask.gguf.path"), "Llama-3.2-3B.gguf")
 
     def test_openai_url_variants_are_the_same_endpoint(self):
         # host and host/v1 address the same server — remembering under both would
@@ -379,14 +380,15 @@ class TestPerEndpointMemory(unittest.TestCase):
         self.assertEqual(ask_models.recall(s, "openai", "https://h"), "Qwen")
 
     def test_switching_backend_replaces_the_active_model(self):
-        s = {"ask_backend": "ollama", "ask_ollama_url": "http://localhost:11434",
-             "ask_model": "llama3.2"}
+        s = {"ask": {"backend": "ollama",
+                     "server": {"url": "http://localhost:11434", "model": "llama3.2"}}}
         ask_models.remember(s, "ollama", "http://localhost:11434", "llama3.2")
         ask_models.activate(s, "openai", "https://llm.example.com")
-        self.assertEqual(s["ask_model"], "")        # nothing pretends to be selected
+        self.assertEqual(config.get_setting(s, "ask.server.model"), "")  # nothing selected
         ask_models.remember(s, "openai", "https://llm.example.com", "Qwen")
         ask_models.activate(s, "ollama", "http://localhost:11434")
-        self.assertEqual(s["ask_model"], "llama3.2")   # the old choice comes back
+        self.assertEqual(config.get_setting(s, "ask.server.model"),
+                         "llama3.2")   # the old choice comes back
 
 
 class TestPerBackendUrl(unittest.TestCase):
@@ -409,21 +411,22 @@ class TestPerBackendUrl(unittest.TestCase):
                          "http://localhost:11434")   # untouched
 
     def test_switch_backend_keeps_each_providers_url(self):
-        s = {"ask_backend": "openai", "ask_ollama_url": "https://llm.example.com"}
+        s = {"ask": {"backend": "openai", "server": {"url": "https://llm.example.com"}}}
         ask_models.remember(s, "openai", "https://llm.example.com", "Qwen")
         ask_models.switch_backend(s, "openai", "ollama")
-        self.assertEqual(s["ask_backend"], "ollama")
-        self.assertEqual(s["ask_ollama_url"], "http://localhost:11434")
-        self.assertEqual(s["ask_model"], "")          # nothing chosen there yet
+        self.assertEqual(config.get_setting(s, "ask.backend"), "ollama")
+        self.assertEqual(config.get_setting(s, "ask.server.url"), "http://localhost:11434")
+        self.assertEqual(config.get_setting(s, "ask.server.model"), "")  # nothing chosen yet
         ask_models.switch_backend(s, "ollama", "openai")
-        self.assertEqual(s["ask_ollama_url"], "https://llm.example.com")
-        self.assertEqual(s["ask_model"], "Qwen")      # and its model comes back
+        self.assertEqual(config.get_setting(s, "ask.server.url"), "https://llm.example.com")
+        self.assertEqual(config.get_setting(s, "ask.server.model"),
+                         "Qwen")      # and its model comes back
 
     def test_local_in_between_does_not_clobber_a_remembered_url(self):
-        s = {"ask_backend": "openai", "ask_ollama_url": "https://llm.example.com"}
+        s = {"ask": {"backend": "openai", "server": {"url": "https://llm.example.com"}}}
         ask_models.switch_backend(s, "openai", "local")
         ask_models.switch_backend(s, "local", "openai")
-        self.assertEqual(s["ask_ollama_url"], "https://llm.example.com")
+        self.assertEqual(config.get_setting(s, "ask.server.url"), "https://llm.example.com")
 
 
 class TestPerEndpointKey(unittest.TestCase):
@@ -447,16 +450,16 @@ class TestPerEndpointKey(unittest.TestCase):
         self.assertNotEqual(a, ask_models.secret_name("ollama", "https://h"))
 
     def test_key_is_read_for_the_active_endpoint(self):
-        settings = {"ask_engine": "manual", "ask_backend": "openai",
-                    "ask_ollama_url": "https://llm.example.com"}
+        settings = {"ask": {"engine": "manual", "backend": "openai",
+                            "server": {"url": "https://llm.example.com"}}}
         self.store[ask_models.secret_name("openai", "https://llm.example.com")] = "sk-x"
         self.assertEqual(ask_models.api_key(settings), "sk-x")
-        settings["ask_ollama_url"] = "http://localhost:8080"
+        config.set_setting(settings, "ask.server.url", "http://localhost:8080")
         self.assertEqual(ask_models.api_key(settings), "")   # other server, no key
 
     def test_legacy_key_is_adopted_once_for_the_configured_endpoint(self):
-        settings = {"ask_engine": "manual", "ask_backend": "openai",
-                    "ask_ollama_url": "https://llm.example.com"}
+        settings = {"ask": {"engine": "manual", "backend": "openai",
+                            "server": {"url": "https://llm.example.com"}}}
         self.store["ask_api_key"] = "sk-old"
         self.assertTrue(ask_models.adopt_legacy_key(settings))
         self.assertEqual(ask_models.api_key(settings), "sk-old")
@@ -464,8 +467,8 @@ class TestPerEndpointKey(unittest.TestCase):
         self.assertFalse(ask_models.adopt_legacy_key(settings))   # nothing to do
 
     def test_adoption_never_overwrites_an_endpoint_key(self):
-        settings = {"ask_engine": "manual", "ask_backend": "openai",
-                    "ask_ollama_url": "https://llm.example.com"}
+        settings = {"ask": {"engine": "manual", "backend": "openai",
+                            "server": {"url": "https://llm.example.com"}}}
         self.store[ask_models.secret_name("openai", "https://llm.example.com")] = "sk-new"
         self.store["ask_api_key"] = "sk-old"
         self.assertFalse(ask_models.adopt_legacy_key(settings))
@@ -477,13 +480,13 @@ class TestCurrent(unittest.TestCase):
 
     def test_server_uses_ask_model(self):
         self.assertEqual(
-            ask_models.current({"ask_engine": "manual", "ask_backend": "openai",
-                                "ask_model": "Qwen"}), "Qwen")
+            ask_models.current({"ask": {"engine": "manual", "backend": "openai",
+                                        "server": {"model": "Qwen"}}}), "Qwen")
 
     def test_local_uses_resolved_gguf_path(self):
         with patch("markdown_vault.core.config.resolve_model_path",
                    return_value="/models/a.gguf"):
-            self.assertEqual(ask_models.current({"ask_backend": "local"}),
+            self.assertEqual(ask_models.current({"ask": {"backend": "local"}}),
                              "/models/a.gguf")
 
 

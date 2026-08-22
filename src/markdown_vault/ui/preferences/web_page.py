@@ -10,6 +10,8 @@ gi.require_version("Adw", "1")
 
 from gi.repository import Adw
 
+from markdown_vault.core import config
+
 
 class WebPageMixin:
     def _build_web_page(self) -> None:
@@ -28,11 +30,11 @@ class WebPageMixin:
             "(WEBKIT_DISABLE_DMABUF_RENDERER). Takes effect after restart."
         )
         self._dmabuf_row.set_active(
-            self._settings.get("webkit_disable_dmabuf", False),
+            config.get_setting(self._settings, "webkit.disable_dmabuf", False),
         )
         self._dmabuf_row.connect(
             "notify::active", self._on_webkit_toggle_changed,
-            "webkit_disable_dmabuf",
+            "webkit.disable_dmabuf",
         )
         web_group.add(self._dmabuf_row)
 
@@ -44,11 +46,11 @@ class WebPageMixin:
             "Takes effect after restart."
         )
         self._compositing_row.set_active(
-            self._settings.get("webkit_disable_compositing", False),
+            config.get_setting(self._settings, "webkit.disable_compositing", False),
         )
         self._compositing_row.connect(
             "notify::active", self._on_webkit_toggle_changed,
-            "webkit_disable_compositing",
+            "webkit.disable_compositing",
         )
         web_group.add(self._compositing_row)
 
@@ -57,5 +59,5 @@ class WebPageMixin:
     def _on_webkit_toggle_changed(
         self, row: Adw.SwitchRow, _pspec, key: str,
     ) -> None:
-        self._settings[key] = row.get_active()
+        config.set_setting(self._settings, key, row.get_active())
         self._persist()

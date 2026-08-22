@@ -11,6 +11,7 @@ gi.require_version("Adw", "1")
 
 from gi.repository import Gtk, Adw
 
+from markdown_vault.core import config
 from markdown_vault.ui.preferences.constants import (
     _GLIB_LOGLEVELS, _LOGLEVELS, _LOGLEVEL_MAP,
 )
@@ -29,7 +30,7 @@ class DebugPageMixin:
             title="Log level",
             model=Gtk.StringList.new(list(_LOGLEVELS.values())),
         )
-        current_level = self._settings.get("loglevel", "info")
+        current_level = config.get_setting(self._settings, "log.level", "info")
         levels = list(_LOGLEVELS.keys())
         self._loglevel_row.set_selected(
             levels.index(current_level) if current_level in levels else 1
@@ -42,7 +43,7 @@ class DebugPageMixin:
             subtitle="markdown, pymdownx, pygments, xml",
             model=Gtk.StringList.new(list(_LOGLEVELS.values())),
         )
-        tp_level = self._settings.get("third_party_loglevel", "warning")
+        tp_level = config.get_setting(self._settings, "log.third_party", "warning")
         self._tp_loglevel_row.set_selected(
             levels.index(tp_level) if tp_level in levels else 2
         )
@@ -55,7 +56,7 @@ class DebugPageMixin:
             subtitle="Gtk, WebKit, Gjs messages",
             model=Gtk.StringList.new(list(_GLIB_LOGLEVELS.values())),
         )
-        glib_level = self._settings.get("glib_loglevel", "critical")
+        glib_level = config.get_setting(self._settings, "log.glib", "critical")
         glib_levels = list(_GLIB_LOGLEVELS.keys())
         self._glib_loglevel_row.set_selected(
             glib_levels.index(glib_level) if glib_level in glib_levels
@@ -78,7 +79,7 @@ class DebugPageMixin:
             ("sidebar", "Sidebar"),
         ):
             row = Adw.SwitchRow(title=title)
-            row.set_active(self._settings.get(f"debug_dump_{key}", False))
+            row.set_active(config.get_setting(self._settings, f"debug.dump.{key}", False))
             row.connect("notify::active", self._on_dump_toggle_changed, key)
             dump_group.add(row)
             self._dump_toggles[key] = row
@@ -89,7 +90,7 @@ class DebugPageMixin:
         levels = list(_GLIB_LOGLEVELS.keys())
         idx = row.get_selected()
         if idx < len(levels):
-            self._settings["glib_loglevel"] = levels[idx]
+            config.set_setting(self._settings, "log.glib", levels[idx])
             self._persist()
             # Notify caller to reconfigure GLib logging (live).
             if self._glib_loglevel_callback:
@@ -99,7 +100,7 @@ class DebugPageMixin:
         levels = list(_LOGLEVELS.keys())
         idx = row.get_selected()
         if idx < len(levels):
-            self._settings["loglevel"] = levels[idx]
+            config.set_setting(self._settings, "log.level", levels[idx])
             self._persist()
             level = _LOGLEVEL_MAP[levels[idx]]
             logging.getLogger().setLevel(level)
@@ -110,10 +111,10 @@ class DebugPageMixin:
         levels = list(_LOGLEVELS.keys())
         idx = row.get_selected()
         if idx < len(levels):
-            self._settings["third_party_loglevel"] = levels[idx]
+            config.set_setting(self._settings, "log.third_party", levels[idx])
             self._persist()
             set_third_party_loglevel(levels[idx])
 
     def _on_dump_toggle_changed(self, row: Adw.SwitchRow, _pspec, key: str) -> None:
-        self._settings[f"debug_dump_{key}"] = row.get_active()
+        config.set_setting(self._settings, f"debug.dump.{key}", row.get_active())
         self._persist()

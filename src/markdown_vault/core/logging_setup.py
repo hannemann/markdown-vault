@@ -419,15 +419,22 @@ def init(settings, redirect_stdout=None, redirect_stderr=None, setup_glib=True):
             (default) redirects only when stderr is not a terminal.
         setup_glib: Install the GLib log handler.
     """
+    # Local import so logging_setup stays import-light at module load (it is the
+    # very first thing main.py runs, before config is otherwise imported).
+    from markdown_vault.core import config
+
     settings = settings or {}
-    get = settings.get if isinstance(settings, dict) else getattr
 
     if redirect_stdout is None:
         redirect_stdout = not _is_tty(sys.stdout)
     if redirect_stderr is None:
         redirect_stderr = not _is_tty(sys.stderr)
 
-    log_level_str = str(get("loglevel", "warning")).lower() or "warning"
+    if isinstance(settings, dict):
+        log_level_str = str(
+            config.get_setting(settings, "log.level", "warning")).lower() or "warning"
+    else:
+        log_level_str = str(getattr(settings, "loglevel", "warning")).lower() or "warning"
     log_level = _LOGLEVEL_MAP.get(log_level_str, logging.WARNING)
 
     root = logging.getLogger()
@@ -446,7 +453,11 @@ def init(settings, redirect_stdout=None, redirect_stderr=None, setup_glib=True):
     faulthandler.enable(sys.stderr)
 
     if setup_glib:
-        glib_level = str(get("glib_loglevel", "critical")).lower() or "critical"
+        if isinstance(settings, dict):
+            glib_level = str(
+                config.get_setting(settings, "log.glib", "critical")).lower() or "critical"
+        else:
+            glib_level = str(getattr(settings, "glib_loglevel", "critical")).lower() or "critical"
         _setup_glib_logging(glib_level)
 
 

@@ -2,7 +2,7 @@
 
 Provides an ``Adw.PreferencesDialog`` for editing application settings
 such as autosave interval, editor appearance, and default view mode.
-Changes are applied immediately and persisted to ``vaults.yaml``.
+Changes are applied immediately and persisted to ``settings.yaml``.
 """
 
 import logging
@@ -74,11 +74,11 @@ class PreferencesDialog(
         self._glib_loglevel_callback = glib_loglevel_callback
         self._on_reindex = on_reindex
         # Debounced disk writes for text entries (R22.11): typing a URL by hand
-        # must not rewrite vaults.yaml on every keystroke.
+        # must not rewrite settings.yaml on every keystroke.
         self._persist_id = None
         self.connect("closed", self._flush_persist)
         # Same debounce for the keyring-backed API key (secret_store), kept
-        # separate so a secret never lands in self._settings / vaults.yaml.
+        # separate so a secret never lands in self._settings / settings.yaml.
         self._secret_persist_id = None
         self._pending_secret = None
         self._secret_updating = False
@@ -144,7 +144,7 @@ class PreferencesDialog(
         box.append(Gtk.Label(label=title, xalign=0.0, valign=Gtk.Align.CENTER,
                              width_request=self._LABEL_WIDTH))
         entry = Gtk.Entry(hexpand=True, valign=Gtk.Align.CENTER)
-        entry.set_text(self._settings.get(key, "") or "")
+        entry.set_text(config.get_setting(self._settings, key, "") or "")
         value = config.default(key)
         if value:
             entry.set_placeholder_text(f"{value} (default)")
@@ -164,7 +164,7 @@ class PreferencesDialog(
 
     def _key_row(self, title, secret_key):
         """Like :meth:`_entry_row`, but the value is a **secret in the OS keyring**
-        (libsecret), never in settings — so it stays out of vaults.yaml and the
+        (libsecret), never in settings — so it stays out of settings.yaml and the
         logs. Masked, and written **debounced** on a background flush, because a
         keyring write can prompt/unlock and must not fire per keystroke."""
         from markdown_vault.core import secret_store
@@ -285,15 +285,15 @@ class PreferencesDialog(
     # ── Handlers ────────────────────────────────────────────────────
 
     def _on_toggle_setting(self, row, _pspec, key) -> None:
-        self._settings[key] = row.get_active()
+        config.set_setting(self._settings, key, row.get_active())
         self._persist()
-        if key == "semantic_search_enabled":
+        if key == "semantic.enabled":
             # Takes effect right away: leaving the dependent rows live until the
             # next restart would invite changes that do nothing.
             self._update_semantic_sensitivity()
 
     def _on_entry_setting(self, row, key) -> None:
-        self._settings[key] = row.get_text().strip()
+        config.set_setting(self._settings, key, row.get_text().strip())
         self._persist_debounced()
 
 
