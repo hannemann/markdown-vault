@@ -232,6 +232,17 @@ class TestOpenAIEmbedderRateLimit(unittest.TestCase):
             e.embed(["hi"])
         self.assertEqual(sleep.call_args[0][0], 7.0)
 
+    def test_retry_after_is_capped(self):
+        import unittest.mock as m
+        # A hosted server can answer Retry-After: 3600; honouring it raw would park
+        # the build thread (holding the window's build lock) for an hour. Cap it.
+        e = ss.OpenAIEmbedder("m", "http://h:8080")
+        with m.patch("urllib.request.urlopen",
+                     side_effect=[_http_error(429, retry_after="3600"), _ok_response()]), \
+             m.patch("markdown_vault.search.semantic_search.time.sleep") as sleep:
+            e.embed(["hi"])
+        self.assertLessEqual(sleep.call_args[0][0], 30.0)
+
     def test_503_is_also_retried(self):
         import unittest.mock as m
         e = ss.OpenAIEmbedder("m", "http://h:8080")

@@ -330,6 +330,10 @@ class OpenAIEmbedder:
     #: HTTP statuses worth waiting out (rate limit, transient overload).
     _RETRY_STATUSES = (429, 503)
     _MAX_RETRIES = 6
+    #: Cap on any single backoff — exponential OR a server's Retry-After. The
+    #: build thread holds the window's build lock while it sleeps, so an uncapped
+    #: wait (a hosted server can answer Retry-After: 3600) looks like a hung app.
+    _MAX_BACKOFF = 30.0
 
     def __init__(self, model: str, url: str = "http://localhost:8080",
                  api_key: str = "", timeout: float = 60.0, batch: int = 32) -> None:
@@ -375,13 +379,16 @@ class OpenAIEmbedder:
                 # else (401, 404, 500…) is not, and neither is the last attempt.
                 if exc.code not in self._RETRY_STATUSES or attempt == self._MAX_RETRIES:
                     raise
-                wait = self._retry_after(exc)
-                wait = delay if wait is None else wait
+                after = self._retry_after(exc)
+                # Honour Retry-After but cap it (both paths share _MAX_BACKOFF), so
+                # a server answering in minutes/hours can't park the build thread —
+                # and the build lock with it — for that long.
+                wait = delay if after is None else min(after, self._MAX_BACKOFF)
                 logger.info("openai /v1/embeddings HTTP %s — backing off %.1fs "
                             "(attempt %d/%d)", exc.code, wait, attempt + 1,
                             self._MAX_RETRIES)
                 time.sleep(wait)
-                delay = min(delay * 2, 30.0)     # exponential, capped
+                delay = min(delay * 2, self._MAX_BACKOFF)     # exponential, capped
 
     @staticmethod
     def _retry_after(exc) -> float | None:
