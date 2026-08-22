@@ -127,26 +127,6 @@ Markdown Vault — a GNOME desktop app for editing and previewing Markdown files
 - **Flatpak** as primary distribution format (sandboxed file access via portal).
 - **Dependencies**: never install packages yourself and never add a dependency without asking first — see the **Dependencies** section for the only allowed flow.
 
-## Layout
-
-- **Left panel**: vault tree — all vaults as expandable file trees (IDE-style project browser).
-- **Center panel**: editor/preview/split with tabs.
-  - **Edit** — GtkSourceView with syntax highlighting.
-  - **Render** — WebKitGTK WebView with styled HTML.
-  - **Split** — editor + preview side by side.
-  - Default view is user-configurable.
-- **Right sidebar** (toggleable via hamburger menu or shortcut; a vertical
-  icon rail on the far right switches sections):
-  - Outline (headings of current file)
-  - Backlinks / `[[wikilink]]` references, grouped by vault
-  - Metadaten (renders the current file's YAML frontmatter as key/value rows)
-  - Git panel (status, diff, commit)
-  - File details (word count, last modified)
-- **Bottom bar** (Ctrl+Shift+F): live full-text search across vaults — `search.py` (UI) over `search_backend.py` (ripgrep engine with a Python fallback). Results are grouped per file and relevance-ranked (name/title > heading > body). Match modifiers `Aa` (case), `W` (whole word), `.*` (regex); non-regex queries also support operators/filters: multiple terms are AND-combined, `"phrase"` matches literally, `-term` excludes, and `tag:`/`path:`/`vault:` narrow the set. A shared **vault-scope dropdown** (`search/vault_scope.py`) picks the search scope — current vault (default), all vaults, or a specific vault — and is honoured by every search: full-text, semantic, Ask, and the quick-open file switcher (the same selector appears in both the search bar and the quick-open palette, backed by one `_search_scope` in `app_window`). A `?` popover shows the syntax.
-- **Quick Open** (Ctrl+Space): fuzzy file switcher — `quick_open_palette.py` (Adw.Dialog) over `quick_open.py`. An empty query lists recent files (MRU then mtime); typing fuzzy-matches note names, frontmatter aliases, and (when the query contains a `/`) the vault-relative path, with match highlighting. Built on a provider/engine design (`QuickOpenEngine` merges providers), so more result sources — e.g. a future semantic/vector provider — slot in via `_make_quick_open_engine` in `app_window` without touching the palette.
-- **Semantic search & Ask** (opt-in, under Preferences → Search): vector retrieval over the vaults — `semantic_search.py` (chunking + the ONNX / Ollama / OpenAI-compatible embedders), `semantic_index.py` (per-file cache, incremental updates, query, manual rebuild), and **Ask** RAG on top: `semantic_index.retrieve` returns note-level passages and `ask.py` grounds a chat model (Ollama or OpenAI-compatible) in them with `[n]` citations. Per-provider model/URL/key memory and the endpoint model-list verdict live in `ask_models.py`. The state semantics (`EndpointStatus`, `can_ask`, `AskController.unavailable_reason`) and the retrieval/master-switch couplings live at those symbols' docstrings — read them there, not a copy here.
-- **In-view find** (Ctrl+F): a find bar (`find_bar.py`) that searches whichever view is focused — the editor (GtkSource search: highlight, next/prev, current/total counter) or the preview (WebKit find controller: total count). Enter / Shift+Enter step matches, Esc closes; the non-searched view is dimmed while open.
-
 ## Project structure
 
 For module-level detail — where a symbol lives, who calls it, how modules connect — use
@@ -191,6 +171,21 @@ key files.
   `load_settings()` in application code: a private copy silently resets whatever another
   component changed meanwhile, because the whole block is written back.
   `tests/test_settings_ownership.py` enforces this.
+- **Add an embedding backend:** `search/semantic_search.py` — add an `Embedder`
+  class and a branch in `build_embedder()` returning `(embedder, signature_tag)`;
+  defaults go in `core/config.py`, the picker in
+  `ui/preferences/embedding_subpage.py`.
+- **Add a Preferences page:** a `…PageMixin` in `ui/preferences/<name>_page.py` —
+  add it to the `PreferencesDialog` bases **and** to `_page_names` (so `open_page`
+  accepts it) in `ui/preferences/dialog.py`, plus the module to
+  `ui/preferences/meson.build`.
+- **Add a sidebar panel:** `ui/sidebar.py` — **two** places: `add_titled(...)` in
+  `Sidebar.__init__` **and** an entry in `_SIDEBAR_SECTIONS`, which `_build_rail()`
+  turns into the icon-rail button. Miss the second and the panel exists in the
+  stack but is unreachable — no error, no warning.
+- **Add a Quick Open result source:** `app_window._make_quick_open_engine` —
+  append a provider; `QuickOpenEngine` (`search/quick_open.py`) merges them, the
+  palette is untouched.
 
 For anything finer-grained, query the graph rather than reading top-to-bottom.
 
