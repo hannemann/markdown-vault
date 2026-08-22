@@ -840,7 +840,15 @@ class Preview(Gtk.ScrolledWindow):
         self._web_view.set_zoom_level(self._zoom_level)
 
     def reset(self) -> None:
-        """Force a full HTML reload on the next ``update_from_text`` call."""
+        """Force a full HTML reload on the next ``update_from_text`` call.
+
+        Needed after the content stack has been manipulated — an external rename
+        makes ``_on_tab_renamed`` remove and re-add the stack child, which
+        destroys the WebView's rendered DOM while ``_loaded`` and
+        ``_last_html_hash`` stay stale. Without this reset the next refresh sees
+        an unchanged hash, skips the reload and leaves a blank view; call it
+        before refreshing after any such stack surgery.
+        """
         self._loaded = False
         self._last_html_hash = ""
 
