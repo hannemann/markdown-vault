@@ -151,6 +151,20 @@
         "whisper_model": {"type": "string", "enum": ["tiny", "base", "small", "medium", "large-v3"], "default": "base", "description": "Whisper model size for audio transcription on import. Bigger is more accurate, slower and a larger download."},
         "import_last_dir": {"type": "string", "default": "", "description": "Directory the document-import file chooser reopens in. Managed by the app."}
       }
+    },
+    "debug": {
+      "type": "object",
+      "x-runtime": false,
+      "description": "Developer/diagnostic flags — NOT part of the default settings; absent unless you add them by hand or via Preferences → Debug when troubleshooting. Type-checked when present.",
+      "properties": {
+        "active": {"type": "boolean", "default": false, "description": "Developer flag: turn on extra diagnostic behaviour. For troubleshooting only."},
+        "dump": {
+          "type": "object",
+          "default": {},
+          "additionalProperties": {"type": "boolean", "default": false},
+          "description": "Developer flags: write a debug dump per named component (file_index, backlink_index, preview_html, vault_tree, tabs, sidebar, …). An open map — any component name is valid, its value must be boolean. For troubleshooting only."
+        }
+      }
     }
   },
   "x-dependencies": [

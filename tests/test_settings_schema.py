@@ -32,12 +32,6 @@ _EXT = frozenset({
     "odt", "ods", "odp", "mp3", "wav", "m4a", "flac",
 })
 
-# JSON Schema type for a Python default. ``bool`` is checked by exact type (it is
-# a subclass of int), so ``type(value)`` — not isinstance — is the right key.
-_JSON_TYPE = {bool: "boolean", int: "integer", float: "number",
-              str: "string", dict: "object"}
-
-
 def _schema_leaves(node, prefix=""):
     """Map ``{dotted-path: leaf-node}`` for a JSON Schema. A node without
     ``properties`` is a leaf (including the opaque object leaves)."""
@@ -60,8 +54,20 @@ class TestSettingsSchema(unittest.TestCase):
 
     def test_leaf_sets_match(self):
         # Every runtime leaf documented, and nothing documented that is not a
-        # runtime leaf — the exact ZH1 gap, but for docs.
-        self.assertEqual(set(self.leaves), set(self.defaults))
+        # runtime leaf — the exact ZH1 gap, but for docs. Branches marked
+        # ``x-runtime: false`` (developer/debug flags) are documented on purpose
+        # but deliberately absent from _DEFAULT_SETTINGS, so exclude them here.
+        excluded = {k for k, v in self.schema["properties"].items()
+                    if v.get("x-runtime") is False}
+        documented = {p for p in self.leaves if p.split(".")[0] not in excluded}
+        self.assertEqual(documented, set(self.defaults))
+
+    def test_opaque_leaves_carry_no_additionalProperties(self):
+        # _flatten stops at _OPAQUE_LEAVES, so the validator never sees their
+        # contents. A schema that promised additionalProperties there would be
+        # silently ineffective — two sources for one "don't descend" decision.
+        for path in _cfg._OPAQUE_LEAVES:
+            self.assertNotIn("additionalProperties", self.leaves[path], path)
 
     def test_every_leaf_has_a_description(self):
         missing = [p for p, n in self.leaves.items()
@@ -72,7 +78,7 @@ class TestSettingsSchema(unittest.TestCase):
         for path, default in self.defaults.items():
             with self.subTest(path=path):
                 self.assertEqual(
-                    self.leaves[path].get("type"), _JSON_TYPE[type(default)])
+                    self.leaves[path].get("type"), _cfg._JSON_TYPE[type(default)])
 
     def test_default_is_within_its_enum(self):
         for path, default in self.defaults.items():
@@ -80,6 +86,27 @@ class TestSettingsSchema(unittest.TestCase):
             if enum is not None:
                 with self.subTest(path=path):
                     self.assertIn(default, enum)
+
+    def test_schema_default_matches_the_runtime_default(self):
+        # The load-time validator resets an invalid value to the default. Schema and
+        # runtime defaults must agree, or a reset would install a value the code
+        # never uses — a silent drift between the two artifacts.
+        for path, default in self.defaults.items():
+            with self.subTest(path=path):
+                self.assertEqual(self.leaves[path].get("default"), default)
+
+    def test_schema_is_installed_via_meson(self):
+        # settings.schema.json must ship as data, or the runtime validator finds no
+        # schema and silently skips validation — the py_sources / ModuleNotFoundError
+        # gotcha in new clothes.
+        meson = (Path(_cfg.__file__).parent / "meson.build").read_text(encoding="utf-8")
+        self.assertIn("settings.schema.json", meson)
+
+    def test_debug_dump_additionalProperties_has_a_default(self):
+        # The validator resets a wrong-typed debug.dump.<x> to this default; without
+        # it, a reset would install None instead of False. The runtime-default test
+        # above cannot catch this — debug.dump.* is not a runtime leaf (ZP1).
+        self.assertIn("default", self.leaves["debug.dump"]["additionalProperties"])
 
     def test_generated_docs_are_in_step_with_the_schema(self):
         # docs/settings.md is a *committed generated* file. Editing the schema

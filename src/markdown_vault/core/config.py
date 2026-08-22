@@ -7,6 +7,7 @@ by relative path notation.
 """
 
 import copy
+import json
 import logging
 import os
 import tempfile
@@ -398,6 +399,13 @@ _OPAQUE_LEAVES = frozenset({
     "ask.server.url_by_backend",
 })
 
+# JSON Schema type name for a Python value's exact type. ``bool`` is a subclass of
+# ``int``, so this is keyed by ``type(value)`` (not ``isinstance``): a bool for an
+# integer leaf is a type error, not a silent pass. One source, shared by the schema
+# coverage test and the load-time validator, so the two cannot drift.
+_JSON_TYPE = {bool: "boolean", int: "integer", float: "number",
+              str: "string", dict: "object"}
+
 
 def _navigate(tree: dict, path: str):
     """Return ``(parent_dict, leaf_key, found)`` for a dotted *path* in *tree*.
@@ -476,6 +484,75 @@ def _flatten(settings: dict, _prefix: str = "") -> dict:
         else:
             flat[path] = value
     return flat
+
+
+def _load_schema():
+    """The settings JSON Schema (docs source), or ``None`` if not installed.
+
+    ``core.config`` is the lowest layer and must start even when the schema data
+    file is absent (a forgotten ``install_data``); validation is then skipped. A
+    test keeps ``settings.schema.json`` in ``core/meson.build``, so a correct build
+    never reaches this — hence a ``debug`` log, not a warning a user cannot act on.
+    """
+    try:
+        return json.loads(Path(__file__).with_name("settings.schema.json")
+                          .read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        logger.debug("settings schema not found — skipping load-time validation")
+        return None
+
+
+def _subschema(node: dict, segment: str):
+    """The subschema for *segment* under *node*: a named property, else the open
+    map ``additionalProperties`` — the JSON Schema resolution order, so every open
+    map (``debug.dump``, any future one) is handled without a special case."""
+    return (node.get("properties") or {}).get(segment) or node.get("additionalProperties")
+
+
+def _leaf_schema(schema: dict, path: str):
+    """Walk the schema to the leaf at dotted *path*, or ``None`` (unknown path)."""
+    node = schema
+    for segment in path.split("."):
+        if not isinstance(node, dict):
+            return None
+        node = _subschema(node, segment)
+    return node if isinstance(node, dict) else None
+
+
+def _validate_settings(settings: dict) -> None:
+    """Warn (never block) on a setting that does not match the schema.
+
+    Runs at load after :func:`_migrate_settings`. Each flattened leaf is checked
+    against ``settings.schema.json``: an **unknown path** is warned and left in
+    place (deleting it would be data loss, so the warning recurs until the user
+    edits the file — hence the message names the file); a **wrong type** or an
+    **out-of-enum** value is warned and reset to the default, so a hand-edit cannot
+    silently degrade a feature. The app always starts. No dependency — the schema
+    is read as plain data, not with ``jsonschema``.
+    """
+    schema = _load_schema()
+    if schema is None:
+        return
+    for path, value in _flatten(settings).items():
+        leaf = _leaf_schema(schema, path)
+        if leaf is None:
+            logger.warning("unknown setting %r in %s — ignored", path, CONFIG_FILE)
+            continue
+        expected = leaf.get("type")
+        actual = _JSON_TYPE.get(type(value))
+        # An integer satisfies a "number" leaf (JSON Schema: integer ⊂ number), so
+        # preview.zoom: 2 is not a false positive.
+        type_ok = actual == expected or (expected == "number" and actual == "integer")
+        if expected and not type_ok:
+            logger.warning("setting %r in %s: expected %s, got %s — using the default",
+                           path, CONFIG_FILE, expected, actual or type(value).__name__)
+            set_setting(settings, path, leaf.get("default"))
+            continue
+        enum = leaf.get("enum")
+        if enum is not None and value not in enum:
+            logger.warning("setting %r in %s: %r is not one of %s — using the default",
+                           path, CONFIG_FILE, value, enum)
+            set_setting(settings, path, leaf.get("default"))
 
 
 def models_dir() -> Path:
@@ -697,6 +774,7 @@ def load_settings() -> dict:
     settings = copy.deepcopy(_DEFAULT_SETTINGS)
     _deep_merge(settings, data.get("settings") or {})
     _migrate_settings(settings)
+    _validate_settings(settings)
     global _last_logged_settings
     # Secrets belong in the keyring, not settings — but mask them in the debug
     # dump anyway (defence in depth: a legacy settings.yaml may still carry one, and
