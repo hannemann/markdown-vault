@@ -24,6 +24,7 @@ used, so the feature stays free when disabled.
 import json
 import logging
 import os
+import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
@@ -318,10 +319,17 @@ class OpenAIEmbedder:
 
     ``is_query`` is ignored: the OpenAI embeddings API has no task-instruction
     prefix concept (that is a nomic/Ollama trait). Bearer auth is sent only when a
-    key is configured. Errors propagate — a timeout or connection error reaches
-    ``_embed_all``'s skip-and-continue rather than being retried per prompt, the
-    same contract as :class:`OllamaEmbedder`.
+    key is configured. A rate limit (429) or transient overload (503) is retried
+    with exponential backoff, honouring a ``Retry-After`` header — a hosted server
+    commonly caps requests per minute, and a whole index build would otherwise
+    abort on the first cap. Other errors propagate — a timeout or connection error
+    reaches ``_embed_all``'s abort rather than being retried per prompt, the same
+    contract as :class:`OllamaEmbedder`.
     """
+
+    #: HTTP statuses worth waiting out (rate limit, transient overload).
+    _RETRY_STATUSES = (429, 503)
+    _MAX_RETRIES = 6
 
     def __init__(self, model: str, url: str = "http://localhost:8080",
                  api_key: str = "", timeout: float = 60.0, batch: int = 32) -> None:
@@ -355,10 +363,34 @@ class OpenAIEmbedder:
         headers = {"Content-Type": "application/json"}
         if self.api_key:                       # auth only when a key is configured
             headers["Authorization"] = f"Bearer {self.api_key}"
-        req = urllib.request.Request(
-            self.url + "/v1/embeddings", data=body, headers=headers)
-        with urllib.request.urlopen(req, timeout=self.timeout) as resp:
-            return json.loads(resp.read())
+        delay = 1.0
+        for attempt in range(self._MAX_RETRIES + 1):
+            req = urllib.request.Request(
+                self.url + "/v1/embeddings", data=body, headers=headers)
+            try:
+                with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+                    return json.loads(resp.read())
+            except urllib.error.HTTPError as exc:
+                # A rate limit / transient overload is worth waiting out; anything
+                # else (401, 404, 500…) is not, and neither is the last attempt.
+                if exc.code not in self._RETRY_STATUSES or attempt == self._MAX_RETRIES:
+                    raise
+                wait = self._retry_after(exc)
+                wait = delay if wait is None else wait
+                logger.info("openai /v1/embeddings HTTP %s — backing off %.1fs "
+                            "(attempt %d/%d)", exc.code, wait, attempt + 1,
+                            self._MAX_RETRIES)
+                time.sleep(wait)
+                delay = min(delay * 2, 30.0)     # exponential, capped
+
+    @staticmethod
+    def _retry_after(exc) -> float | None:
+        """Seconds from a ``Retry-After`` header, if it is a plain integer (the
+        common rate-limit form); an HTTP-date or missing header → None (fall back
+        to exponential backoff)."""
+        val = exc.headers.get("Retry-After") if exc.headers else None
+        val = (val or "").strip()
+        return float(val) if val.isdigit() else None
 
 
 # ── Vector index ────────────────────────────────────────────────────

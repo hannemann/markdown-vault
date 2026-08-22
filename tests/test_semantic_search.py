@@ -193,6 +193,75 @@ class TestOpenAIEmbedder(unittest.TestCase):
         self.assertIsNone(_capture("").get_header("Authorization"))
 
 
+def _http_error(code, retry_after=None):
+    import email.message
+    hdrs = email.message.Message()
+    if retry_after is not None:
+        hdrs["Retry-After"] = retry_after
+    return urllib.error.HTTPError("u", code, "err", hdrs, None)
+
+
+def _ok_response(body=b'{"data": [{"embedding": [1.0]}]}'):
+    import unittest.mock as m
+    resp = m.MagicMock()
+    resp.__enter__.return_value.read.return_value = body
+    return resp
+
+
+class TestOpenAIEmbedderRateLimit(unittest.TestCase):
+    """A rate-limited server (429) must be retried with backoff, not treated as a
+    permanent outage that aborts the whole index build."""
+
+    def test_retries_on_429_then_succeeds(self):
+        import unittest.mock as m
+        e = ss.OpenAIEmbedder("m", "http://h:8080")
+        with m.patch("urllib.request.urlopen",
+                     side_effect=[_http_error(429), _ok_response()]) as urlopen, \
+             m.patch("markdown_vault.search.semantic_search.time.sleep") as sleep:
+            out = e.embed(["hi"])
+        self.assertEqual(out, [[1.0]])
+        self.assertEqual(urlopen.call_count, 2)   # retried once
+        self.assertTrue(sleep.called)             # backed off between attempts
+
+    def test_honours_retry_after_header(self):
+        import unittest.mock as m
+        e = ss.OpenAIEmbedder("m", "http://h:8080")
+        with m.patch("urllib.request.urlopen",
+                     side_effect=[_http_error(429, retry_after="7"), _ok_response()]), \
+             m.patch("markdown_vault.search.semantic_search.time.sleep") as sleep:
+            e.embed(["hi"])
+        self.assertEqual(sleep.call_args[0][0], 7.0)
+
+    def test_503_is_also_retried(self):
+        import unittest.mock as m
+        e = ss.OpenAIEmbedder("m", "http://h:8080")
+        with m.patch("urllib.request.urlopen",
+                     side_effect=[_http_error(503), _ok_response()]), \
+             m.patch("markdown_vault.search.semantic_search.time.sleep"):
+            self.assertEqual(e.embed(["hi"]), [[1.0]])
+
+    def test_gives_up_after_the_retry_cap(self):
+        import unittest.mock as m
+        e = ss.OpenAIEmbedder("m", "http://h:8080")
+        with m.patch("urllib.request.urlopen",
+                     side_effect=_http_error(429)) as urlopen, \
+             m.patch("markdown_vault.search.semantic_search.time.sleep"):
+            with self.assertRaises(urllib.error.HTTPError):
+                e.embed(["hi"])
+        self.assertLessEqual(urlopen.call_count, 8)   # bounded, not forever
+
+    def test_non_retryable_status_propagates_immediately(self):
+        import unittest.mock as m
+        e = ss.OpenAIEmbedder("m", "http://h:8080")
+        with m.patch("urllib.request.urlopen",
+                     side_effect=_http_error(401)) as urlopen, \
+             m.patch("markdown_vault.search.semantic_search.time.sleep") as sleep:
+            with self.assertRaises(urllib.error.HTTPError):
+                e.embed(["hi"])
+        self.assertEqual(urlopen.call_count, 1)   # 401 is not transient
+        self.assertFalse(sleep.called)
+
+
 class TestOnnxMeanPool(unittest.TestCase):
     def test_masked_mean_ignores_padding(self):
         import numpy as np

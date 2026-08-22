@@ -319,6 +319,7 @@ class SemanticIndexManager:
         total = len(to_embed)
         changed = 0
         aborted = False
+        abort_reason = ""
         for path in to_embed:
             try:
                 text = Path(path).read_text(encoding="utf-8", errors="replace")
@@ -326,8 +327,9 @@ class SemanticIndexManager:
                 continue
             try:
                 kept, vecs = self._embed_all(chunk_markdown(text, path))
-            except BackendUnavailable:
+            except BackendUnavailable as exc:
                 aborted = True         # stop; no point taking a timeout per file
+                abort_reason = str(exc)
                 break
             new_files[path] = {"hash": _hash(text), "chunks": kept, "vecs": vecs}
             changed += 1
@@ -346,8 +348,9 @@ class SemanticIndexManager:
             # Do NOT persist: writing these files with their current hash would
             # cache the failure as success and skip them on every restart (R26.1).
             # Leaving the on-disk cache untouched means the next start retries.
-            logger.warning("semantic index: backend unavailable during build; "
-                           "cache left untouched, will retry on next start")
+            logger.warning("semantic index: backend unavailable during build "
+                           "(%s); cache left untouched, will retry on next start",
+                           abort_reason or "unknown")
             self._report_status(False)
             return
         self._save_cache()
