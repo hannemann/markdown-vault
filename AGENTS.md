@@ -195,36 +195,23 @@ For anything finer-grained, query the graph rather than reading top-to-bottom.
 
 <!-- DEPENDENCY_MAP_END -->
 
-**Installation paths:**
+**Installation paths** (Meson install prefix):
 
-- **Binaries:** `~/.local/bin/` (user) or `/usr/bin/` (system)
-- **Python code:** `<datadir>/de.hannemann.markdown-vault/python/markdown_vault/` — a private
-  directory, not the interpreter's `site-packages`, which may sit outside the install prefix. The
-  generated launcher puts it on `PYTHONPATH`.
-- **Data files:** `~/.local/share/de.hannemann.markdown-vault/` or
-  `/usr/share/de.hannemann.markdown-vault/`
-- **Every directory the app owns is named after the application ID**
-  (`de.hannemann.markdown-vault`) — the installed tree (`meson.build`, `pkgdatadir`) and all
-  four XDG dirs (`core/paths.py`, `_APP`). One name for the app everywhere; reverse-DNS keeps
-  it unique among all programs sharing these bases. **File** names stay short
-  (`markdown-vault.log`), as does the **binary** `bin/markdown-vault` — it is the command
-  users type, the path `scripts/app.sh` starts (`BIN`), and the path the AppArmor profile
-  is bound to (`packaging/apparmor/markdown-vault:9`), without which WebKitGTK aborts the
-  process on Ubuntu 24.04. It does **not** decide where WebKit puts its own directories:
-  the launcher execs the interpreter, so `g_get_prgname()` is `python3` and WebKit writes
-  to `~/.local/share/python3/`.
-- **Base directories follow the XDG Base Directory Specification** — one definition for
-  the whole app in `core/paths.py`, re-exported by `core.config` (`CONFIG_DIR`,
-  `STATE_DIR`, `CACHE_DIR`, `DATA_DIR`). Each honours its `XDG_*_HOME` variable (an unset,
-  empty or relative value falls back to the spec default), so a sandboxed build gets the
-  sandbox's dirs and a normal install the usual ones:
-  - **Config** (`vaults.yaml`): `$XDG_CONFIG_HOME/de.hannemann.markdown-vault/`, default
-    `~/.config/…`. `MDV_CONFIG_DIR` overrides it verbatim (isolated runs, E2E harness).
-  - **State** (logs, `session.json`, debug dumps): `$XDG_STATE_HOME/…`, default `~/.local/state/…`
-  - **Cache** (semantic index — regenerates): `$XDG_CACHE_HOME/…`, default `~/.cache/…`
-  - **Data** (downloaded ONNX/GGUF models): `$XDG_DATA_HOME/…`, default `~/.local/share/…`
-  Under Flatpak all of these land in `~/.var/app/<app-id>/…`, so a sandboxed build keeps
-  its own config, models and logs — do not expect to debug it through the host's log.
+- **Binaries:** `~/.local/bin/` (user) or `/usr/bin/` (system) — the short command
+  `markdown-vault`.
+- **Python code:** `<datadir>/de.hannemann.markdown-vault/python/markdown_vault/`, a
+  private directory the launcher puts on `PYTHONPATH` (not `site-packages`).
+- **Data files:** `<datadir>/de.hannemann.markdown-vault/`.
+
+Every directory the app owns is named after the **app ID**; file and binary names stay
+short. The binary path is bound in the AppArmor profile (`packaging/apparmor/`), without
+which WebKitGTK aborts on Ubuntu 24.04 (see the WebKit note under *Conventions*).
+
+**XDG base directories** — config (`vaults.yaml`), state (logs, `session.json`, debug
+dumps), cache (semantic index), data (downloaded models). `core/paths.py` owns the
+mapping, the rationale, and the `XDG_*_HOME` / `MDV_CONFIG_DIR` overrides. Under Flatpak
+they land in `~/.var/app/<app-id>/…`, so debug a sandboxed build there, not in the host's
+dirs.
 
 ## Running the app — agents MUST use ONLY these commands
 
