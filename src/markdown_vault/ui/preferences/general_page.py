@@ -18,6 +18,7 @@ class GeneralPageMixin:
     def _build_general_page(self) -> None:
         # ── General page ────────────────────────────────────────────
         general = Adw.PreferencesPage(title="General", icon_name="preferences-other-symbolic")
+        general.set_name("general")   # addressable via PreferencesDialog.open_page
 
         # Autosave group.
         autosave_group = Adw.PreferencesGroup(title="Autosave")

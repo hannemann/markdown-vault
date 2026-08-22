@@ -16,6 +16,7 @@ class EditorPageMixin:
     def _build_editor_page(self) -> None:
         # ── Editor page ─────────────────────────────────────────────
         editor = Adw.PreferencesPage(title="Editor", icon_name="document-edit-symbolic")
+        editor.set_name("editor")   # addressable via PreferencesDialog.open_page
 
         font_group = Adw.PreferencesGroup(title="Font &amp; Layout")
         editor.add(font_group)

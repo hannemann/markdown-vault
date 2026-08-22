@@ -491,7 +491,7 @@ class MainWindow(Adw.ApplicationWindow):
             ask_hint=self._ask.unavailable_reason,
             ask_status=self._ask.endpoint_status,
             ask_recheck=self._ask.recheck_endpoint,
-            open_ask_settings=lambda: self._open_preferences(target="ask"),
+            open_ask_settings=lambda: self._open_preferences(page="search", subpage="ask"),
             scope=self._scope_callbacks(),
             hide_deprecated=self.hide_deprecated,
             set_hide_deprecated=self.set_hide_deprecated,
@@ -1670,7 +1670,7 @@ class MainWindow(Adw.ApplicationWindow):
             self._status_bar.show_error(
                 "Semantic search: embedding backend unavailable",
                 actions=[("Rebuild", self.rebuild_semantic_index),
-                         ("Settings", self._open_preferences)])
+                         ("Settings", lambda: self._open_preferences(page="search"))])
         elif getattr(self, "_sem_progress", None):
             done, total = self._sem_progress
             self._status_bar.show_progress(
@@ -2392,6 +2392,17 @@ class MainWindow(Adw.ApplicationWindow):
     def debug_active_file(self) -> str:
         return self._tab_bar.get_current_path() or ""
 
+    def debug_open_preferences(self, page: str, subpage: str) -> str:
+        """Open Preferences at *page* (optional *subpage*, empty = none) and return
+        the resulting visible top-level page name — so a dbg caller can assert the
+        argument-driven navigation end-to-end. Runs on the GTK thread (D-Bus
+        dispatch), where presenting a dialog is allowed."""
+        dlg = self._open_preferences(page=page or None, subpage=subpage or None)
+        if dlg is None:
+            return ""
+        vp = dlg.get_visible_page()
+        return (vp.get_name() or "") if vp is not None else ""
+
     def debug_list_tabs(self) -> list:
         return self._tab_bar.get_all_paths()
 
@@ -2637,21 +2648,32 @@ class MainWindow(Adw.ApplicationWindow):
 
     # ── Preferences ────────────────────────────────────────────────
 
-    def _open_preferences(self, target=None) -> None:
+    def _open_preferences(self, page=None, subpage=None):
         try:
             config.check_config_access()
         except OSError as e:
             self._show_error("Cannot Open Preferences", str(e))
-            return
-        dlg = PreferencesDialog(
-            glib_loglevel_callback=logging_setup.update_glib_loglevel,
-            on_reindex=self.rebuild_semantic_index,
-        )
-        dlg.connect("settings-changed", self._on_preferences_changed)
+            return None
+        # Reuse an already-open dialog instead of stacking a second one; a repeated
+        # trigger (menu, banner, dbg) just raises it and navigates.
+        dlg = getattr(self, "_prefs_dialog", None)
+        if dlg is None:
+            dlg = PreferencesDialog(
+                glib_loglevel_callback=logging_setup.update_glib_loglevel,
+                on_reindex=self.rebuild_semantic_index,
+            )
+            dlg.connect("settings-changed", self._on_preferences_changed)
+            dlg.connect("closed", self._on_preferences_closed)
+            self._prefs_dialog = dlg
         dlg.present(self)
-        if target == "ask":
-            # Sent here from the Quick Open banner when the local model cannot load.
-            dlg.open_at_ask()
+        if page is not None:
+            # Argument-driven: any page (optionally a subpage) by name — the Quick
+            # Open Ask banner and the semantic-search error banner both route here.
+            dlg.open_page(page, subpage)
+        return dlg
+
+    def _on_preferences_closed(self, _dlg) -> None:
+        self._prefs_dialog = None
 
     def _open_about(self) -> None:
         about = Adw.AboutDialog(

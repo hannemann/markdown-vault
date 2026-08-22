@@ -118,7 +118,18 @@ class TestAskWiring(AppWindowTest):
         # palette would fall back to re-probing a server that isn't involved.
         with unittest.mock.patch.object(self.win, "_open_preferences") as prefs:
             self.win._quick_open._open_ask_settings()
-        prefs.assert_called_once_with(target="ask")
+        prefs.assert_called_once_with(page="search", subpage="ask")
+
+    def test_semantic_error_settings_button_opens_the_search_page(self):
+        # The embedding-unavailable banner's "Settings" should land the user on the
+        # Search page, not the dialog's default page, so the fix is one tap away.
+        self.win._sem_available = False
+        with unittest.mock.patch.object(self.win, "_status_bar") as bar, \
+             unittest.mock.patch.object(self.win, "_open_preferences") as prefs:
+            self.win._update_status_bar()
+            actions = dict(bar.show_error.call_args.kwargs["actions"])
+            actions["Settings"]()          # simulate the button click
+        prefs.assert_called_once_with(page="search")
 
     def test_endpoint_status_is_reported_for_a_server_backend(self):
         self.win._settings["ask_engine"] = "manual"
@@ -290,6 +301,33 @@ class TestSemanticBuildWiring(unittest.TestCase):
         win = unittest.mock.MagicMock()
         aw.MainWindow._on_semantic_dim_changed(win)
         win.rebuild_semantic_index.assert_called_once_with()
+
+
+class TestPreferencesReuse(unittest.TestCase):
+    """A second _open_preferences reuses the open dialog and just navigates, so
+    repeated calls don't stack duplicate dialogs."""
+
+    def test_second_call_reuses_the_dialog_and_navigates(self):
+        from markdown_vault.app import app_window as aw
+        win = unittest.mock.MagicMock()
+        win._prefs_dialog = None
+        with unittest.mock.patch(
+                "markdown_vault.app.app_window.PreferencesDialog") as PD, \
+             unittest.mock.patch(
+                "markdown_vault.app.app_window.config.check_config_access"):
+            aw.MainWindow._open_preferences(win, page="search")
+            aw.MainWindow._open_preferences(win, page="editor")
+        PD.assert_called_once()                       # only ONE dialog built
+        dlg = PD.return_value
+        self.assertEqual(dlg.present.call_count, 2)   # raised on both calls
+        dlg.open_page.assert_any_call("editor", None)  # navigated on reuse
+
+    def test_closing_the_dialog_drops_the_reference(self):
+        from markdown_vault.app import app_window as aw
+        win = unittest.mock.MagicMock()
+        win._prefs_dialog = "a-dialog"
+        aw.MainWindow._on_preferences_closed(win, None)
+        self.assertIsNone(win._prefs_dialog)
 
 
 if __name__ == "__main__":

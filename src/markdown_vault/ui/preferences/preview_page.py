@@ -16,6 +16,7 @@ class PreviewPageMixin:
     def _build_preview_page(self) -> None:
         # ── Preview page ────────────────────────────────────────────
         preview = Adw.PreferencesPage(title="Preview", icon_name="document-properties-symbolic")
+        preview.set_name("preview")   # addressable via PreferencesDialog.open_page
 
         zoom_group = Adw.PreferencesGroup(title="Zoom")
         preview.add(zoom_group)

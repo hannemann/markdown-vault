@@ -19,6 +19,7 @@ class KeyboardPageMixin:
     def _build_keyboard_page(self) -> None:
         # ── Keyboard page ──────────────────────────────────────────
         keyboard = Adw.PreferencesPage(title="Keyboard", icon_name="input-keyboard-symbolic")
+        keyboard.set_name("keyboard")   # addressable via PreferencesDialog.open_page
 
         kb_group = Adw.PreferencesGroup(title="Keybindings")
         keyboard.add(kb_group)

@@ -23,12 +23,13 @@ class SearchPageMixin:
         self._prompt_subpage = self._build_prompt_subpage(_ask)
         self._runtime_subpage = self._build_runtime_subpage()
         self._ask_subpage = self._build_ask_subpage()
+        # Addressable subpages for open_page(page, subpage=…).
+        self._subpages.update(embedding=self._emb_subpage, ask=self._ask_subpage,
+                              prompt=self._prompt_subpage, runtime=self._runtime_subpage)
 
         search = Adw.PreferencesPage(title="Search", icon_name="edit-find-symbolic")
-        # Addressable so the Quick Open banner can navigate here (Search → Ask)
-        # when a local model cannot load — see PreferencesDialog.open_at_ask.
+        # Addressable so a banner can navigate here by name — see open_page.
         search.set_name("search")
-        self._search_page = search
         sem_group = Adw.PreferencesGroup(
             title="Semantic search",
             description=(

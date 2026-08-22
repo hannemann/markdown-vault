@@ -17,6 +17,7 @@ class WebPageMixin:
         web = Adw.PreferencesPage(
             title="Web", icon_name="applications-internet-symbolic",
         )
+        web.set_name("web")   # addressable via PreferencesDialog.open_page
 
         web_group = Adw.PreferencesGroup(title="WebKit Rendering")
         web.add(web_group)

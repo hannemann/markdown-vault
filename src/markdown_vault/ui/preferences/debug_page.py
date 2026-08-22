@@ -20,6 +20,7 @@ class DebugPageMixin:
     def _build_debug_page(self) -> None:
         # ── Debug page ──────────────────────────────────────────────
         debug = Adw.PreferencesPage(title="Debug", icon_name="utilities-system-monitor-symbolic")
+        debug.set_name("debug")   # addressable via PreferencesDialog.open_page
 
         log_group = Adw.PreferencesGroup(title="Logging")
         debug.add(log_group)

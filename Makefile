@@ -1,5 +1,5 @@
 SHELL := /bin/bash
-.PHONY: _fetch-wheels lock-wheels download-wheels build-flatpak bundle-flatpak install-flatpak uninstall-flatpak run-flatpak test-flatpak clean clean-build clean-cache build venv venv-ai install install-ai uninstall clean-local run test test-one coverage callbacks test-e2e graph-build graph-update graph-query graph-path graph-explain start stop restart status dbg-ready dbg-state dbg-tabs dbg-active dbg-open dbg-close dbg-select dbg-search dbg-quickopen dbg-submit dbg-waitidle dbg-answer dbg-ask
+.PHONY: _fetch-wheels lock-wheels download-wheels build-flatpak bundle-flatpak install-flatpak uninstall-flatpak run-flatpak test-flatpak clean clean-build clean-cache build venv venv-ai install install-ai uninstall clean-local run test test-one coverage callbacks test-e2e graph-build graph-update graph-query graph-path graph-explain start stop restart status dbg-ready dbg-state dbg-tabs dbg-active dbg-open dbg-close dbg-select dbg-search dbg-quickopen dbg-submit dbg-waitidle dbg-answer dbg-ask dbg-prefs
 
 WHEEL_DIR := src/share/markdown-vault
 WHEELS_DIR := $(WHEEL_DIR)/wheels
@@ -286,6 +286,10 @@ dbg-tabs:
 
 dbg-active:
 	@$(DBUS_CALL).ActiveFile | $(UNWRAP)
+
+dbg-prefs:                 # PAGE=<name> [SUB=<subpage>]: open Preferences at a page, print the visible page
+	@test -n "$(PAGE)" || { echo 'usage: make dbg-prefs PAGE=search [SUB=ask]'; exit 2; }
+	@$(DBUS_CALL).OpenPreferences "$(PAGE)" "$(SUB)" | $(UNWRAP)
 
 dbg-open:                  # F=<abs path>: open a note in a tab
 	@test -n "$(F)" || { echo 'usage: make dbg-open F=/abs/path/note.md'; exit 2; }

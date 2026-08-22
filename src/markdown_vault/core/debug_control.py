@@ -76,6 +76,11 @@ _XML = f"""
       <arg type="i" name="timeout_ms" direction="in"/>
       <arg type="b" name="settled" direction="out"/>
     </method>
+    <method name="OpenPreferences">
+      <arg type="s" name="page" direction="in"/>
+      <arg type="s" name="subpage" direction="in"/>
+      <arg type="s" name="visible_page" direction="out"/>
+    </method>
   </interface>
 </node>
 """
@@ -144,6 +149,10 @@ class DebugControl:
             return GLib.Variant("(as)", (win.debug_search_results(),))
         if method == "WaitIdle":
             return GLib.Variant("(b)", (win.debug_wait_idle(params.unpack()[0]),))
+        if method == "OpenPreferences":
+            page, subpage = params.unpack()
+            return GLib.Variant(
+                "(s)", (win.debug_open_preferences(page, subpage),))
         raise ValueError(f"unknown method {method}")
 
 

@@ -91,6 +91,9 @@ class PreferencesDialog(
         self._ask_models_id = None
         self.connect("closed", self._cancel_ask_models_refresh)
 
+        # name -> pushable NavigationPage, filled as pages are built; open_page
+        # reads it so any subpage opens by argument.
+        self._subpages: dict = {}
         # Order is behaviour: it is the tab order the user sees, and the Search
         # page links to subpages that must exist by then.
         self._build_general_page()
@@ -100,6 +103,10 @@ class PreferencesDialog(
         self._build_search_page()
         self._build_keyboard_page()
         self._build_debug_page()
+        # Valid top-level page names (each page set its own via set_name), so
+        # open_page can reject a typo instead of letting Adw warn on a bad name.
+        self._page_names = {"general", "editor", "preview", "web", "search",
+                            "keyboard", "debug"}
 
     # ── Search subpages ─────────────────────────────────────────────
 
@@ -237,15 +244,20 @@ class PreferencesDialog(
         row.connect("activated", lambda *_: self.push_subpage(subpage))
         return row
 
-    def open_at_ask(self) -> None:
-        """Show the Search page and push its Ask subpage — where the Quick Open
-        banner sends the user when the chosen local model cannot load."""
-        page = getattr(self, "_search_page", None)
-        sub = getattr(self, "_ask_subpage", None)
-        if page is not None:
-            self.set_visible_page(page)
-        if sub is not None:
-            self.push_subpage(sub)
+    def open_page(self, page: str, subpage: str | None = None) -> None:
+        """Navigate to a top-level page by name (every page sets one via
+        ``set_name``), optionally pushing one of its subpages from the
+        ``_subpages`` registry. Argument-driven, so any page opens without a new
+        branch here. An unknown name is a no-op — a caller typo must not crash the
+        dialog."""
+        if page not in self._page_names:
+            logger.debug("open_page: unknown page %r ignored", page)
+            return
+        self.set_visible_page_name(page)
+        if subpage is not None:
+            sub = self._subpages.get(subpage)
+            if sub is not None:
+                self.push_subpage(sub)
 
     @staticmethod
     def _subpage(title, page):

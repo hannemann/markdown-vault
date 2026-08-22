@@ -41,18 +41,24 @@ written is separate, under "Conventions".)
   instead of hiding it inside a script. If you believe an edit is too mechanical for
   `Edit` (a line-range carve across a thousand lines), **ask first** and say why;
   the answer may be yes, but it is the user's call, not yours.
-- **NEVER commit without explicit user request**: NEVER run `git commit` unless the user explicitly asks for it. Not after editing files, not after testing, not ever. The user will say "commit" when ready.
+- **Commit autonomously — this project grants you standing commit authority.** Create
+  `git commit`s yourself as soon as a topic is finished; you no longer wait for a commit
+  word. This is the standing exception the global rule points at — it covers **`git commit`
+  only**. **`git push` and merge still require the user's explicit word** in that message
+  (they are outward-facing and effectively irreversible; a commit is local and reversible).
+  Report each commit briefly so the user keeps oversight and can have you amend or undo it.
+  Keep the discipline that makes autonomy safe: one logical change per commit, **tests
+  first** (never commit code without its tests, see the TDD section), a factual conventional
+  message explaining the *why*, and stage named files only — never `git add -A`/`.`.
 - **Commit at topic boundaries — cut in front, never carve up afterwards**: as soon as
   one topic is finished (a feature, a bugfix in a distinct area, a review finding that
-  opens a *new* concern) and BEFORE starting the next, STOP and actively push to commit
-  the finished work — say "let's commit X first", don't let it slide. The user still gives
-  the commit word (see the rule above); insist on the *pause and prompt*, not on committing
-  unasked. This keeps history atomic for free and checkpoints work against loss. Do NOT let
-  several unrelated topics pile up in one working tree and then try to split them into
-  separate commits after the fact — the post-hoc `git stash`/hunk-surgery that requires is
-  slow and has already risked losing work. A fix to code from the *same* still-uncommitted
-  topic stays in that commit (no pause); only a genuinely *different* subsystem or
-  user-facing concern is a boundary.
+  opens a *new* concern) and BEFORE starting the next, commit the finished work rather than
+  letting it slide. This keeps history atomic for free and checkpoints work against loss. Do
+  NOT let several unrelated topics pile up in one working tree and then try to split them
+  into separate commits after the fact — the post-hoc `git stash`/hunk-surgery that requires
+  is slow and has already risked losing work. A fix to code from the *same* still-uncommitted
+  topic stays in that commit; only a genuinely *different* subsystem or user-facing concern
+  is a boundary.
 
 ## 🚨 Code exploration — graphify FIRST (HIGH PRIORITY)
 
@@ -267,7 +273,7 @@ target exists.
 | Measure one file's line coverage | `make coverage FILE=<src-file> [T=<test_module…>]` (`sys.monitoring`, no `coverage.py` dep; fails on a red suite) |
 | Measure one file's coupling | `make callbacks FILE=<src-file>` — how many of its own methods it hands to other objects (pure AST, no test run). The metric a split is judged by: moving code between files does not change it, extracting state and responsibility does. Counting rule in `scripts/count_callbacks.py`; take before/after with this same target, never with an ad-hoc counter. |
 | Code graph (see graphify)     | `make graph-update` · `graph-query Q="…"` · `graph-explain S="…"` · `graph-path A="…" B="…"` · `graph-build` |
-| Drive the running app (D-Bus) | `make dbg-ready` (wait until up, e.g. after restart) · `dbg-state` · `dbg-tabs` · `dbg-active` · `dbg-open F=…` · `dbg-close F=…` · `dbg-select F=…` · `dbg-search Q="…"` · `dbg-ask Q="…"` (open+submit+wait+print answer) · low-level `dbg-quickopen Q=…` · `dbg-submit` · `dbg-waitidle` · `dbg-answer` |
+| Drive the running app (D-Bus) | `make dbg-ready` (wait until up, e.g. after restart) · `dbg-state` · `dbg-tabs` · `dbg-active` · `dbg-open F=…` · `dbg-close F=…` · `dbg-select F=…` · `dbg-search Q="…"` · `dbg-ask Q="…"` (open+submit+wait+print answer) · `dbg-prefs PAGE=… [SUB=…]` (open Preferences at a page, print the visible page) · low-level `dbg-quickopen Q=…` · `dbg-submit` · `dbg-waitidle` · `dbg-answer` |
 
 Hard rules:
 

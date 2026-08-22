@@ -234,6 +234,30 @@ class TestBackendTolerance(_DialogTest):
         self.assertEqual(dlg._sem_backend_index(), 0)
 
 
+class TestOpenPage(_DialogTest):
+    """open_page navigates to ANY named page by argument (not an if/elif of
+    hardcoded targets), and optionally pushes one of its subpages."""
+
+    def test_every_top_level_page_is_addressable_by_name(self):
+        dlg = self._dialog()
+        for name in ("general", "editor", "preview", "web", "search",
+                     "keyboard", "debug"):
+            dlg.open_page(name)
+            self.assertEqual(dlg.get_visible_page().get_name(), name)
+
+    def test_open_page_pushes_the_named_subpage(self):
+        dlg = self._dialog()
+        with patch.object(dlg, "push_subpage") as push:
+            dlg.open_page("search", subpage="ask")
+        self.assertEqual(dlg.get_visible_page().get_name(), "search")
+        push.assert_called_once_with(dlg._subpages["ask"])
+
+    def test_unknown_page_name_is_a_no_op(self):
+        dlg = self._dialog()
+        dlg.open_page("no-such-page")          # must not raise
+        dlg.open_page("search", subpage="nope")  # unknown subpage ignored
+
+
 class TestOpenAIEmbeddingBackend(_DialogTest):
     """The OpenAI-compatible embedding backend rows in the Embedding subpage."""
 
