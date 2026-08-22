@@ -392,6 +392,15 @@ opening files in editor, toggling sidebar etc.) ask the user.
 
 ## Conventions
 
+- **Hold description against behaviour — a comment, a symbol name, an `AGENTS.md`
+  line, or a key name is a *claim*, not evidence.** When it matters, grep before you
+  trust it; it is cheap. Two claims in this very file were spot-checked and **both
+  were wrong**: `app_window._ask_unavailable_reason` (no such symbol — it is
+  `AskController.unavailable_reason()`) and "WebView CSS uses `@theme_*` colours"
+  (it uses runtime-injected `var(--…)`; `@theme_*` is syntax WebKit silently
+  ignores) — cost: **one `grep` each**. Prefer a docstring beside the code over a
+  prose copy in a doc (which drifts); when a doc must state behaviour, cite the
+  symbol and keep it thin.
 - **Build generalists, never one-case special-cases** (applies everywhere, not just
   the importer). A solution must handle the general class of a problem, not target
   exactly one input / site / page. Special-casing a single case is how an app rots
