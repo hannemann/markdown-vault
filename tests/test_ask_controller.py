@@ -25,7 +25,7 @@ class TestEndpointStatusLocal(unittest.TestCase):
         # resolve_model_path's result — that is "" for a gone choice and the banner
         # would read "(unset)" instead of the chosen model.
         ctrl = _controller({"ask": {"backend": "local",
-                                    "gguf": {"dir": "/m", "path": "gone.gguf"}}})
+                                    "gguf": {"dir": "/m", "filename": "gone.gguf"}}})
         seen = {}
 
         def fake_availability(path):

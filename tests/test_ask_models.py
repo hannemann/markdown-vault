@@ -25,7 +25,7 @@ class TestBackendMapping(unittest.TestCase):
     server backend reads ask_model)."""
 
     def test_setting_key(self):
-        self.assertEqual(ask_models.setting_key("local"), "ask.gguf.path")
+        self.assertEqual(ask_models.setting_key("local"), "ask.gguf.filename")
         self.assertEqual(ask_models.setting_key("ollama"), "ask.server.model")
         self.assertEqual(ask_models.setting_key("openai"), "ask.server.model")
 
@@ -370,7 +370,7 @@ class TestPerEndpointMemory(unittest.TestCase):
         # the models folder moving.
         s = {}
         ask_models.remember(s, "local", "", "/some/models/Llama-3.2-3B.gguf")
-        self.assertEqual(config.get_setting(s, "ask.gguf.path"), "Llama-3.2-3B.gguf")
+        self.assertEqual(config.get_setting(s, "ask.gguf.filename"), "Llama-3.2-3B.gguf")
 
     def test_openai_url_variants_are_the_same_endpoint(self):
         # host and host/v1 address the same server — remembering under both would

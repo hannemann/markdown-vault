@@ -417,7 +417,7 @@ class AskSubpageMixin:
             from pathlib import Path
             # Store the filename, not the absolute path — it is a name in
             # ask_models_dir and must survive the folder moving.
-            config.set_setting(self._settings, "ask.gguf.path",
+            config.set_setting(self._settings, "ask.gguf.filename",
                                Path(self._ask_gguf_paths[i]).name)
             self._persist()
             self._refresh_gguf_status()
@@ -429,7 +429,7 @@ class AskSubpageMixin:
         if Path(target).exists() and config.is_gguf(target):
             # Store the filename — the download lands in ask_models_dir (see the
             # download target below), where list_models and resolve_model_path look.
-            config.set_setting(self._settings, "ask.gguf.path", Path(target).name)
+            config.set_setting(self._settings, "ask.gguf.filename", Path(target).name)
             self._persist()
         self._refresh_gguf_models()
         self._refresh_gguf_status()
@@ -485,7 +485,7 @@ class AskSubpageMixin:
         self._refresh_gguf_models()
 
     def _reset_gguf_path(self) -> None:
-        config.set_setting(self._settings, "ask.gguf.path", "")  # empty → auto-pick newest
+        config.set_setting(self._settings, "ask.gguf.filename", "")  # empty → auto-pick newest
         self._persist()
         self._refresh_gguf_models()
         self._refresh_gguf_status()
@@ -495,7 +495,7 @@ class AskSubpageMixin:
         an explicit "not found" when a *set* choice is gone (the Quick Open banner
         blocks it too), or a hint when nothing is chosen yet."""
         from pathlib import Path
-        chosen = config.get_setting(self._settings, "ask.gguf.path") or ""
+        chosen = config.get_setting(self._settings, "ask.gguf.filename") or ""
         resolved = config.resolve_model_path(self._settings)
         if resolved:
             p = Path(resolved)
