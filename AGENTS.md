@@ -147,23 +147,6 @@ Markdown Vault — a GNOME desktop app for editing and previewing Markdown files
 - **Semantic search & Ask** (opt-in, under Preferences → Search): vector retrieval over the vaults — `semantic_search.py` (chunking + the ONNX / Ollama / OpenAI-compatible embedders), `semantic_index.py` (per-file cache, incremental updates, query, manual rebuild), and **Ask** RAG on top: `semantic_index.retrieve` returns note-level passages and `ask.py` grounds a chat model (Ollama or OpenAI-compatible) in them with `[n]` citations. Per-provider model/URL/key memory and the endpoint model-list verdict live in `ask_models.py`. The state semantics (`EndpointStatus`, `can_ask`, `AskController.unavailable_reason`) and the retrieval/master-switch couplings live at those symbols' docstrings — read them there, not a copy here.
 - **In-view find** (Ctrl+F): a find bar (`find_bar.py`) that searches whichever view is focused — the editor (GtkSource search: highlight, next/prev, current/total counter) or the preview (WebKit find controller: total count). Enter / Shift+Enter step matches, Esc closes; the non-searched view is dimmed while open.
 
-## Features
-
-- **Multiple vaults**: freely selectable directories; add/remove via UI.
-- **Tabs**: open multiple files simultaneously in center panel. Each tab owns its own `Editor` + `Preview` instance.
-- **Dark mode**: `Adw.StyleManager` with System / Light / Dark toggle in hamburger menu. WebView CSS uses runtime-injected `var(--…)` custom properties (`preview.py` writes `:root { --bg: … }` into the initial `<style>` and updates them live via `documentElement.style.setProperty` on a theme change) — **not** `@theme_*`, which WebKit ignores.
-- **Git integration**: status indicators in file tree, diff view, commit from app.
-- **Tags/backlinks**: wikilink-style `[[page]]` parsing and backlink discovery.
-- **Wikilink autofix**: opt-in pre-save handling of `[[wikilinks]]` (all off by default) — normalize whitespace, redirect a broken link when exactly one vault file matches the basename (moved/renamed/casing), inform after a manual save about links that stay unresolved, and mark broken links live in the editor (gutter warning triangle + red underline). Runs on the manual and close save paths (`_save_current` / `_save_dirty_tabs`), **never** on autosave (`autosave._tick` → a different path that does not call it — the guarantee is structural, not a flag).
-- **Managed image attachments** (`core/attachments.py`): a note's downloaded/inserted images live under one per-vault tree mirroring the note tree — `<vault>/attachments/<note-relative-path>/<note-stem>/` — and are kept in sync with the note. Added by web import (opt-in download), paste (Ctrl+V / "Paste Image"), drag-drop onto the editor, or "Insert Image…" (hamburger + editor context menu); never by hand-copying into the tree. Deleting a note/folder removes its attachments; renaming/moving moves them and relinks the note (in the editor buffer if open, else on disk) — driven from both the in-app tree handlers and the file monitor (external), idempotent. The attachments tree shows dimmed in the sidebar with an "internal" pill, is not a drop target and blocks new-file/folder/import; its images are visible but not openable/draggable. Hand-typed image links are classified live: a broken target gets a gutter warning + red underline, a local image outside the tree gets a gutter hint + hover tooltip and adopts into the tree on a gutter double-click.
-- **Keybindings**: GNOME-style defaults, vim/emacs modes optional.
-- **Markdown + images**: `![alt](path)` with relative and absolute path resolution.
-- **Preferences dialog**: `Adw.PreferencesDialog` for autosave interval, default view mode, editor font size/tab width/wrap, preview zoom, and wikilink autofix (normalize / auto-fix moved links / warn on save / mark broken links).
-- **Zoom**: Ctrl+plus/minus/0 keyboard shortcuts; Ctrl+Wheel zoom on content area; per-tab zoom persisted in session.
-- **Session persistence**: window size, sidebar, tabs (view modes + split positions), active tab, expanded vaults, editor/preview zoom.
-- **Rich Markdown (pymdown-extensions)**: strikethrough `~~text~~`, highlight `==text==`, superscript `^sup^`, subscript `~sub~`, task lists `- [ ]`, tasklist `- [x]`, superfences (tabs, line numbers, highlight lines), magic links (auto URLs, @mentions, #issues), keyboard keys `++ctrl+c++`, smart symbols (quotes, dashes, ellipsis), emoji shortcodes `:smile:`, math formulas `$...$`, footnotes `[^1]` … `[^1]: …` (Python-Markdown `footnotes`; in-page anchor clicks are ordinary history entries — back/forward returns to the previous spot without reloading the note), task lists with checkboxes.
-- **CLI launcher**: `src/bin/markdown-vault.in` — a Meson-generated template installed as `bin/markdown-vault`; it pins the PyGObject interpreter and `PYTHONPATH`, then runs `python3 -m markdown_vault.main`. Match the running process by its command line (`markdown_vault.main`).
-
 ## Project structure
 
 For module-level detail — where a symbol lives, who calls it, how modules connect — use
@@ -306,7 +289,9 @@ Hard rules:
   `~/.var/app/de.hannemann.markdown-vault/.local/state/de.hannemann.markdown-vault/` and an E2E run
   to its throwaway dir — check there, not in the host's log, when diagnosing those.
 - NEVER use `killall python3` — that also kills firewalld and other system
-  Python processes.
+  Python processes. The app runs as `python3 -m markdown_vault.main`; match it
+  by that command line when you must identify the process (but prefer
+  `make status` / `make stop`).
 
 ## Dependencies
 

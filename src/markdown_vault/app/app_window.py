@@ -2279,6 +2279,12 @@ class MainWindow(Adw.ApplicationWindow):
         and returns the broken links that could not be auto-fixed — but only
         when the warn-on-save notice is enabled (empty otherwise, so callers
         that ignore the return value pay nothing).
+
+        Called only from the manual and close save paths
+        (:meth:`_save_current`, :meth:`_save_dirty_tabs`); autosave saves through
+        a separate path (``AutosaveManager._tick`` → :meth:`_autosave_save_tab`)
+        that never calls this. The "autofix never runs on autosave" guarantee is
+        therefore structural — a property of the wiring, not a runtime flag.
         """
         editor = tab.editor
         path = editor.file_path

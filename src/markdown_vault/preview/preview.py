@@ -1,9 +1,11 @@
 """Markdown Vault — WebKitGTK-based Markdown preview renderer.
 
 Converts Markdown text to HTML and displays it inside a ``WebKit.WebView``.
-The rendering respects system theme colours via GTK named CSS variables
-(``@theme_text_color`` etc.) so that the preview automatically adapts
-to light and dark mode.
+The rendering adapts to light/dark mode through runtime-injected CSS custom
+properties: the initial ``<style>`` carries a ``:root { --bg: …; --fg: … }``
+block, and :meth:`Preview.update_theme` updates those variables live on a theme
+change via ``document.documentElement.style.setProperty``. GTK's ``@theme_*``
+named colours are *not* used — WebKit silently ignores that syntax.
 """
 
 import hashlib
