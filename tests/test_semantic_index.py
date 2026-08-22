@@ -57,6 +57,17 @@ class _HungEmbedder:
         raise TimeoutError("hung")
 
 
+class _VarDimEmbedder:
+    """Embeds each text to a zero vector of a *mutable* width, to simulate a
+    server that swaps its model under an unchanged signature (a new dimension)."""
+
+    def __init__(self, dim):
+        self.dim = dim
+
+    def embed(self, texts, is_query=False):
+        return [[0.0] * self.dim for _ in texts]
+
+
 class TestSemanticIndexManager(unittest.TestCase):
     def setUp(self):
         self._vault = Path(tempfile.mkdtemp())
@@ -82,6 +93,36 @@ class TestSemanticIndexManager(unittest.TestCase):
         self.assertEqual(Path(res[0].path).name, "b.md")
         self.assertTrue(res[0].semantic)
         self.assertEqual(res[0].matches[0].line, 1)
+
+    def test_query_after_dimension_change_signals_and_does_not_crash(self):
+        # Case b (no note changed): the index loads old-dimensioned vectors, the
+        # server has swapped its model, and the first query embeds at a new width.
+        # vecs @ q must not crash — the manager returns [] and asks for a rebuild.
+        signals = []
+        m = SemanticIndexManager(
+            _VarDimEmbedder(4), lambda: [str(self._vault)], self._state,
+            "openai:h|m", min_score=0.0, on_dim_mismatch=lambda: signals.append(1))
+        m.build()
+        self.assertTrue(m.is_ready())
+        m._embedder.dim = 3                       # server swapped its model
+        self.assertEqual(m.query_files("alpha", top_k=5), [])   # no crash
+        self.assertEqual(signals, [1])
+
+    def test_build_with_changed_dimension_signals_instead_of_crashing(self):
+        # Case a: a note changed, so the build re-embeds it at the new width while
+        # the other file loads the old width from the cache → mixed widths. The
+        # np.vstack in _rebuild_index_locked must not crash the build.
+        signals = []
+        SemanticIndexManager(_VarDimEmbedder(4), lambda: [str(self._vault)],
+                             self._state, "openai:h|m").build()   # caches dim 4
+        (self._vault / "a.md").write_text("a wholly different alpha body now",
+                                          encoding="utf-8")
+        m = SemanticIndexManager(
+            _VarDimEmbedder(3), lambda: [str(self._vault)], self._state,
+            "openai:h|m", on_dim_mismatch=lambda: signals.append(1))
+        m.build()                                 # must not raise
+        self.assertEqual(signals, [1])
+        self.assertFalse(m.is_ready())            # dropped to a safe empty state
 
     def test_hybrid_recovers_exact_token_semantic_missed(self):
         # c.md's distinctive token isn't in the stub embedder's vocab → the

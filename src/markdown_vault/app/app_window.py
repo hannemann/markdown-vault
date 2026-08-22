@@ -1598,6 +1598,7 @@ class MainWindow(Adw.ApplicationWindow):
                     on_busy=self._on_index_busy,
                     on_status=self._on_semantic_status,
                     on_progress=self._on_semantic_progress,
+                    on_dim_mismatch=self._on_semantic_dim_changed,
                 )
                 if force:
                     manager.invalidate_cache()
@@ -1633,6 +1634,14 @@ class MainWindow(Adw.ApplicationWindow):
         self._sem_progress = (done, total) if total and done < total else None
         self._update_status_bar()
         return False
+
+    def _on_semantic_dim_changed(self) -> None:
+        """The manager saw the embedding dimension change under an unchanged
+        signature (the server swapped its model). Route to the canonical forced
+        rebuild — only the window may rebuild it (it owns the manager lifecycle
+        and the build lock). Thread-safe: rebuild_semantic_index only reads
+        settings and spawns a daemon thread, so no GLib hop is needed."""
+        self.rebuild_semantic_index()
 
     def _on_semantic_status(self, available: bool) -> None:
         # notify=True: a manager-driven recovery (a real embed succeeded) is worth

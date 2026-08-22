@@ -248,6 +248,17 @@ class TestVectorIndex(unittest.TestCase):
     def test_len_reflects_chunks(self):
         self.assertEqual(len(self._index()), 3)
 
+    def test_search_vector_raises_on_dimension_mismatch(self):
+        # A server that swapped its model returns vectors of another width; the
+        # cached matrix keeps the old one. vecs @ q would crash — raise a typed
+        # error the index manager turns into a rebuild instead.
+        import numpy as np
+        idx = ss.VectorIndex(_StubEmbedder())
+        idx.set_precomputed([ss.Chunk("/a.md", 1, "x")],
+                            np.zeros((1, 4), dtype="float32"))
+        with self.assertRaises(ss.DimensionMismatch):
+            idx.search_vector(np.zeros(3, dtype="float32"))
+
 
 class TestBuildEmbedder(unittest.TestCase):
     """The window-facing factory: backend choice + cache signature, no window."""

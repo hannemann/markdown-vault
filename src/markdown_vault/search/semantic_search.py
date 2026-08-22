@@ -40,6 +40,14 @@ from markdown_vault.search.ask import openai_base
 logger = logging.getLogger(__name__)
 
 
+class DimensionMismatch(Exception):
+    """A vector's width does not match the index/cache it meets. It means the
+    embedding model changed under an unchanged cache signature (e.g. llama.cpp
+    serving a different GGUF under the same name). The index manager turns this
+    into a full rebuild rather than letting numpy crash on ``vecs @ q`` /
+    ``np.vstack``."""
+
+
 # ── Chunking ────────────────────────────────────────────────────────
 
 @dataclass
@@ -404,6 +412,11 @@ class VectorIndex:
         vecs, chunks = self._vectors, self._chunks  # snapshot the pair together
         if vecs is None or q is None:
             return []
+        if q.shape[0] != vecs.shape[1]:
+            # The query was embedded at a different width than the index holds —
+            # the model changed under an unchanged signature. Raise instead of
+            # letting the matmul crash; the manager rebuilds.
+            raise DimensionMismatch((int(vecs.shape[1]), int(q.shape[0])))
         scores = vecs @ q
         order = np.argsort(-scores)[:top_k]
         return [(chunks[i], float(scores[i])) for i in order]

@@ -22,7 +22,8 @@ import threading
 from pathlib import Path
 
 from markdown_vault.search import lexical_search
-from markdown_vault.search.semantic_search import Chunk, VectorIndex, chunk_markdown
+from markdown_vault.search.semantic_search import (
+    Chunk, DimensionMismatch, VectorIndex, chunk_markdown)
 
 logger = logging.getLogger(__name__)
 
@@ -189,7 +190,7 @@ class SemanticIndexManager:
 
     def __init__(self, embedder, get_vault_paths, state_dir, signature_tag,
                  min_score: float = 0.35, on_busy=None, on_status=None,
-                 on_progress=None) -> None:
+                 on_progress=None, on_dim_mismatch=None) -> None:
         self._embedder = embedder
         self._get_vault_paths = get_vault_paths
         self._state_dir = Path(state_dir)
@@ -209,6 +210,13 @@ class SemanticIndexManager:
         self._on_status = on_status
         self._backend_ok = True
         self._on_progress = on_progress  # on_progress(done, total) during a build
+        # on_dim_mismatch() fires once when the embedding dimension changes under
+        # an unchanged signature. The manager does NOT rebuild itself — only the
+        # window can, since it owns the manager lifecycle and the build lock (a
+        # query-triggered rebuild here would run past its own shutdown and clobber
+        # the next manager's cache). The manager just reports; the window drives.
+        self._on_dim_mismatch = on_dim_mismatch
+        self._dim_signalled = False
         # path -> {"hash": str, "chunks": list[Chunk], "vecs": np.ndarray}
         self._files: dict[str, dict] = {}
         # Lazy BM25 (sparse) index for hybrid retrieval, cached by a
@@ -324,10 +332,16 @@ class SemanticIndexManager:
             new_files[path] = {"hash": _hash(text), "chunks": kept, "vecs": vecs}
             changed += 1
             self._report_progress(changed, total)
-        with self._lock:
-            self._files = new_files    # keep what we embedded / loaded, in memory
-            self._rebuild_index_locked()
-            self._ready = True
+        try:
+            with self._lock:
+                self._files = new_files   # keep what we embedded / loaded, in memory
+                self._rebuild_index_locked()
+                self._ready = True
+        except DimensionMismatch:
+            # Freshly embedded (new model) and cached (old model) widths mixed.
+            # Don't persist this — clear it and let the window rebuild from scratch.
+            self._handle_dim_mismatch()
+            return
         if aborted:
             # Do NOT persist: writing these files with their current hash would
             # cache the failure as success and skip them on every restart (R26.1).
@@ -409,6 +423,12 @@ class SemanticIndexManager:
                     path, op = self._pending.popitem()
                 try:
                     changed = self._apply_op(path, op) or changed
+                except DimensionMismatch:
+                    # A save reindexed a note at a new width against old cached
+                    # ones. Drop the mixed state, ask the window to rebuild, and
+                    # stop draining — don't save the mixed cache below.
+                    self._handle_dim_mismatch()
+                    return
                 except BackendUnavailable:
                     # Backend down: re-queue the path (the previous entry is left
                     # untouched, never emptied) and stop draining.  No _wake, so
@@ -523,7 +543,14 @@ class SemanticIndexManager:
         return kept, arr
 
     def _rebuild_index_locked(self):
-        """Re-stack all files' chunks/vectors into the index (holds the lock)."""
+        """Re-stack all files' chunks/vectors into the index (holds the lock).
+
+        The single funnel for every path that assembles the matrix (_build,
+        _reindex_file, _drop_file, _move_file), so the dimension check lives here
+        once: if freshly embedded vectors (a new model) coexist with old cached
+        ones, ``mats`` has two widths and ``np.vstack`` would crash. Raise instead
+        — the callers turn it into a rebuild.
+        """
         import numpy as np
         all_chunks: list = []
         mats: list = []
@@ -531,8 +558,28 @@ class SemanticIndexManager:
             if entry["chunks"] is not None and len(entry["chunks"]):
                 all_chunks.extend(entry["chunks"])
                 mats.append(entry["vecs"])
+        if len({m.shape[1] for m in mats}) > 1:
+            raise DimensionMismatch(sorted({int(m.shape[1]) for m in mats}))
         matrix = np.vstack(mats) if mats else None
         self._index.set_precomputed(all_chunks, matrix)
+
+    def _handle_dim_mismatch(self) -> None:
+        """Drop the now-inconsistent in-memory state (so nothing else stacks or
+        multiplies mismatched widths) and ask the window to invalidate + rebuild.
+        Fires the callback once; the replacement manager starts clean."""
+        with self._lock:
+            self._files = {}
+            self._index.set_precomputed([], None)
+            self._ready = False
+            first = not self._dim_signalled
+            self._dim_signalled = True
+        logger.warning("semantic index: embedding dimension changed under an "
+                       "unchanged signature (server model swapped); rebuilding")
+        if first and self._on_dim_mismatch is not None:
+            try:
+                self._on_dim_mismatch()
+            except Exception:
+                logger.debug("on_dim_mismatch callback failed", exc_info=True)
 
     # ── Query ──────────────────────────────────────────────────────
 
@@ -875,10 +922,17 @@ class SemanticIndexManager:
         q = self._index.embed_query(query)
         if q is None:
             return []
+        mismatch = False
         with self._lock:
             if not self._ready:
                 return []
-            hits = self._index.search_vector(q, top_k=top_k * 3)
+            try:
+                hits = self._index.search_vector(q, top_k=top_k * 3)
+            except DimensionMismatch:
+                mismatch = True         # handle outside the lock (it re-acquires)
+        if mismatch:
+            self._handle_dim_mismatch()
+            return []
         return [(c, s) for c, s in hits if s >= self._min_score]
 
     # ── Cache & walk ───────────────────────────────────────────────

@@ -265,6 +265,32 @@ class TestSemanticBuildWiring(unittest.TestCase):
         be.assert_called_once()
         self.assertIs(be.call_args[0][0], settings)   # the window's own object
 
+    def test_manager_is_wired_to_the_dim_mismatch_handler(self):
+        # AGENTS.md:355 — a new collaborator argument needs a caller test: the
+        # window must hand the manager its own on_dim_mismatch handler, or a
+        # dimension change would signal into nothing and the crash would return.
+        import threading
+        from markdown_vault.app import app_window as aw
+        win = unittest.mock.MagicMock()
+        win._settings = {"semantic_backend": "onnx"}
+        win._semantic_build_lock = threading.Lock()
+        win._semantic_index = None
+        with unittest.mock.patch(
+                "markdown_vault.search.semantic_search.build_embedder") as be, \
+             unittest.mock.patch(
+                "markdown_vault.search.semantic_index.SemanticIndexManager") as SIM, \
+             unittest.mock.patch("markdown_vault.app.app_window.GLib.idle_add"):
+            be.return_value = (unittest.mock.Mock(), "tag")
+            aw.MainWindow._setup_semantic_index(win)
+        self.assertIs(SIM.call_args.kwargs["on_dim_mismatch"],
+                      win._on_semantic_dim_changed)
+
+    def test_dim_changed_handler_triggers_a_rebuild(self):
+        from markdown_vault.app import app_window as aw
+        win = unittest.mock.MagicMock()
+        aw.MainWindow._on_semantic_dim_changed(win)
+        win.rebuild_semantic_index.assert_called_once_with()
+
 
 if __name__ == "__main__":
     unittest.main()
