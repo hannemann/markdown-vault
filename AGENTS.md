@@ -437,7 +437,17 @@ opening files in editor, toggling sidebar etc.) ask the user.
   into a shell plus focused collaborators; `src/markdown_vault/app/AGENTS.md` holds the full
   criteria ("Two kinds of neighbours", "Rules for the next cut", and the `make callbacks`
   metric). It applies everywhere, not just in `app/`.
-- **New Python modules**: the code lives in **subpackages** (`src/markdown_vault/<pkg>/`), each with its own `meson.build`. A new `.py` MUST be added to the `py_sources` list in **its subpackage's** `meson.build` (alphabetically sorted), not the root one — the root `meson.build` only lists the loaders (`__init__`/`__main__`/`main`) and one `subdir('<pkg>')` per subpackage. A brand-new subpackage needs its own `meson.build` (with `__init__.py` in the list) plus a `subdir()` line in the root. Meson has no `glob()`; forgetting means the file is not installed and the app crashes with `ModuleNotFoundError`. Use **absolute** imports (`from markdown_vault.<pkg>.<mod> import …`); keep the package DAG acyclic (`tests/test_layering.py` guards it). A subpackage may nest one level where a single surface got too big — `ui/preferences/` is the dialog split into a shell plus one module per page — wired the same way (own `meson.build` + `subdir()` in the parent). The "not deeper than package level" rule concerns where an `AGENTS.md` may sit, not Python nesting. Watch the direction of the new edge: it is `ui → ui.preferences`, so nothing under `ui/preferences/` may import `ui/sidebar.py` or `ui/status_bar.py` — that would close a cycle and turn the layering guard red.
+- **New Python modules**: a new `.py` goes into its subpackage's `meson.build`
+  `py_sources` — see the *Project structure* table for that mechanic and the
+  `ModuleNotFoundError` it prevents. Use **absolute** imports
+  (`from markdown_vault.<pkg>.<mod> import …`); keep the package DAG acyclic
+  (`tests/test_layering.py` guards it). A subpackage may nest one level where a
+  single surface got too big — `ui/preferences/` is the dialog split into a shell
+  plus one module per page (own `meson.build` + `subdir()` in the parent). The
+  "not deeper than package level" rule concerns where an `AGENTS.md` may sit, not
+  Python nesting. Watch the direction of the new edge: `ui → ui.preferences`, so
+  nothing under `ui/preferences/` may import `ui/sidebar.py` or `ui/status_bar.py`
+  — that would close a cycle and turn the layering guard red.
 - **GTK CSS in `css/gtk.css`**: Target GTK 4.14 / libadwaita 1.5. `var(--name)` and `color-mix()` need GTK 4.16+ and are silently dropped with "Expected a valid color" parser warnings. Use `@accent_bg_color` and `alpha(@color, 0.3)` instead. This does not apply to `css/style.css`, which is rendered by WebKit.
 - **WebKit needs an unprivileged user namespace**: WebKitGTK 2.46+ always sets up a `bwrap` sandbox and aborts the whole process if it cannot (`Failed to fully launch dbus-proxy`). On Ubuntu 24.04 this requires the AppArmor profile in `packaging/apparmor/` — see README. There is no API or env var to disable the sandbox.
 - **Test organization**: Add tests to existing test files grouped by topic (e.g. vault_monitor events → `test_vault_monitor_events.py`). Do not create new test files with arbitrary context names — distribute into the files that already cover the module under test. When in doubt, ask.
