@@ -464,17 +464,16 @@ class TestDefaultAndMigration(unittest.TestCase):
         self.assertEqual(_cfg.model_filename_from_url("https://h/x/nope"),
                          "model.gguf")
 
-    def test_resolve_model_prefers_explicit_existing_file(self):
-        import os
-        import tempfile
-        f = tempfile.NamedTemporaryFile(suffix=".gguf", delete=False)
-        f.write(b"GGUF\x00\x00\x00\x00")
-        f.close()
+    def test_resolve_drops_absolute_path_tolerance(self):
+        # A hand-edited absolute path is not honoured: only its basename inside
+        # ask.gguf.dir is loaded (the "filename" name is now honest).
+        d = tempfile.mkdtemp()
+        (Path(d) / "m.gguf").write_bytes(b"GGUF\x00\x00\x00\x00")
         try:
-            self.assertEqual(
-                _cfg.resolve_model_path({"ask": {"gguf": {"path": f.name}}}), f.name)
+            s = {"ask": {"gguf": {"dir": d, "filename": "/somewhere/else/m.gguf"}}}
+            self.assertEqual(_cfg.resolve_model_path(s), str(Path(d) / "m.gguf"))
         finally:
-            os.unlink(f.name)
+            shutil.rmtree(d, ignore_errors=True)
 
     def test_is_gguf_checks_magic(self):
         import os
@@ -550,7 +549,7 @@ class TestDefaultAndMigration(unittest.TestCase):
         from pathlib import Path
         d = Path(tempfile.mkdtemp())
         (d / "m.gguf").write_bytes(b"GGUF\x00\x00")
-        s = {"ask": {"gguf": {"dir": str(d), "path": "m.gguf"}}}
+        s = {"ask": {"gguf": {"dir": str(d), "filename": "m.gguf"}}}
         self.assertEqual(_cfg.resolve_model_path(s), str(d / "m.gguf"))
 
     def test_resolve_set_but_unresolvable_returns_empty(self):
@@ -559,7 +558,7 @@ class TestDefaultAndMigration(unittest.TestCase):
         import tempfile
         from pathlib import Path
         d = Path(tempfile.mkdtemp())               # empty folder, no fallback either
-        s = {"ask": {"gguf": {"dir": str(d), "path": "gone.gguf"}}}
+        s = {"ask": {"gguf": {"dir": str(d), "filename": "gone.gguf"}}}
         self.assertEqual(_cfg.resolve_model_path(s), "")
 
     def test_resolve_empty_choice_falls_back_to_newest(self):
@@ -581,7 +580,7 @@ class TestDefaultAndMigration(unittest.TestCase):
         # resolve_model_path returns "" for a gone choice, but the error banner
         # needs the wanted name — this keeps it.
         from pathlib import Path
-        s = {"ask": {"gguf": {"dir": "/m", "path": "gone.gguf"}}}
+        s = {"ask": {"gguf": {"dir": "/m", "filename": "gone.gguf"}}}
         self.assertEqual(_cfg.ask_gguf_wanted_path(s), str(Path("/m") / "gone.gguf"))
 
     def test_wanted_path_empty_choice_uses_resolve(self):

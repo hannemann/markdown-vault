@@ -373,10 +373,11 @@ _DEFAULT_SETTINGS = {
             # Memory-map the model file (default). Off loads it fully into RAM.
             "use_mmap": True,
         },
-        # The local GGUF model. The .gguf file is both the download target and the
-        # load source; empty → the app state dir default.
+        # The local GGUF model — a bare filename inside gguf.dir (not a full path;
+        # a hand-edited absolute path collapses to its basename there). The file is
+        # both the download target and the load source; empty → newest in gguf.dir.
         "gguf": {
-            "path": "",
+            "filename": "",
             "url":
                 "https://huggingface.co/bartowski/Llama-3.2-3B-Instruct-GGUF/"
                 "resolve/main/Llama-3.2-3B-Instruct-Q4_K_M.gguf",
@@ -518,18 +519,17 @@ def list_models(settings: dict) -> list:
 def resolve_model_path(settings: dict) -> str:
     """The **absolute** path of the GGUF the local backend should load.
 
-    ``ask_gguf_path`` holds a filename in :func:`ask_models_dir` (a leftover
-    absolute path is still honoured); it is reassembled to an absolute path if it
-    still exists and is a real GGUF. A **set but unresolvable** choice yields
-    ``""`` — the error is surfaced by the caller (a banner naming the wanted
-    model), not papered over by loading a different model. Only an **empty** choice
-    falls back to the newest model in the folder.
+    ``ask.gguf.filename`` is a bare filename in :func:`ask_models_dir`; it is
+    joined to that folder — only the basename is used, so a hand-edited absolute
+    path collapses to its name there — and returned if it exists and is a real
+    GGUF. A **set but unresolvable** choice yields ``""`` — the error is surfaced
+    by the caller (a banner naming the wanted model), not papered over by loading
+    a different model. Only an **empty** choice falls back to the newest model in
+    the folder.
     """
-    explicit = get_setting(settings, "ask.gguf.path") or ""
+    explicit = get_setting(settings, "ask.gguf.filename") or ""
     if explicit:
-        cand = Path(explicit)
-        if not cand.is_absolute():
-            cand = ask_models_dir(settings) / explicit
+        cand = ask_models_dir(settings) / Path(explicit).name
         if cand.exists() and is_gguf(cand):
             return str(cand)
         return ""      # set but gone/invalid: block, don't silently switch
@@ -539,19 +539,16 @@ def resolve_model_path(settings: dict) -> str:
 
 def ask_gguf_wanted_path(settings: dict) -> str:
     """The absolute path the chosen model *would* have, whether or not it exists —
-    the models folder + the stored filename. An **empty** choice falls back to
-    :func:`resolve_model_path` (the newest model, or ``""``).
+    the models folder + the stored filename (basename only). An **empty** choice
+    falls back to :func:`resolve_model_path` (the newest model, or ``""``).
 
     Unlike :func:`resolve_model_path` this does not blank a set-but-missing choice:
     the error path needs the *wanted* name to tell the user which model is gone,
     where ``resolve_model_path`` would already have returned ``""``."""
-    name = get_setting(settings, "ask.gguf.path") or ""
+    name = get_setting(settings, "ask.gguf.filename") or ""
     if not name:
         return resolve_model_path(settings)
-    cand = Path(name)
-    if not cand.is_absolute():
-        cand = ask_models_dir(settings) / name
-    return str(cand)
+    return str(ask_models_dir(settings) / Path(name).name)
 
 
 def model_filename_from_url(url: str) -> str:

@@ -1,0 +1,163 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "$id": "https://de.hannemann.markdown-vault/settings.schema.json",
+  "title": "Markdown Vault settings",
+  "description": "The settings block of settings.yaml. _DEFAULT_SETTINGS in core/config.py is the runtime source of truth; this schema is the docs source (docs/settings.md generates from it) and a coverage test keeps the two in step.",
+  "type": "object",
+  "properties": {
+    "autosave": {
+      "type": "object",
+      "properties": {
+        "interval": {"type": "integer", "default": 30, "description": "Seconds between automatic saves of a modified note."}
+      }
+    },
+    "view": {
+      "type": "object",
+      "properties": {
+        "default_mode": {"type": "string", "enum": ["edit", "render", "split"], "default": "edit", "description": "Which view a note opens in: edit, render or split."}
+      }
+    },
+    "hide_deprecated": {"type": "boolean", "default": false, "description": "Hide notes marked deprecated from the vault tree AND every search surface (a visible 'N hidden' notice remains). Spans pages, so it lives at the top level."},
+    "editor": {
+      "type": "object",
+      "properties": {
+        "font_size": {"type": "integer", "default": 14, "description": "Editor font size in points."},
+        "tab_width": {"type": "integer", "default": 4, "description": "Spaces a tab occupies in the editor."},
+        "wrap_text": {"type": "boolean", "default": true, "description": "Soft-wrap long lines in the editor."}
+      }
+    },
+    "preview": {
+      "type": "object",
+      "properties": {
+        "zoom": {"type": "number", "default": 1.0, "description": "Preview zoom factor (1.0 = 100%)."},
+        "allow_remote_images": {"type": "boolean", "default": false, "description": "Allow the preview to load images from remote URLs. Off by default, so a note cannot phone home when rendered."}
+      }
+    },
+    "tabs": {
+      "type": "object",
+      "properties": {
+        "min_width": {"type": "integer", "default": 150, "description": "Minimum tab width in pixels before the label ellipsizes."},
+        "wrap": {"type": "boolean", "default": false, "description": "Wrap the tab bar onto multiple rows instead of scrolling it."},
+        "switch_mode": {"type": "string", "enum": ["mru", "cycle"], "default": "mru", "description": "Ctrl+Tab order: mru (most-recently-used switcher) or cycle (plain tab order)."},
+        "keybinding": {
+          "type": "object",
+          "properties": {
+            "next": {"type": "string", "default": "<Control>Tab", "description": "Accelerator that selects the next tab."},
+            "prev": {"type": "string", "default": "<Shift><Control>Tab", "description": "Accelerator that selects the previous tab."}
+          }
+        }
+      }
+    },
+    "log": {
+      "type": "object",
+      "properties": {
+        "level": {"type": "string", "enum": ["debug", "info", "warning", "error"], "default": "info", "description": "Application log level, effective after restart."},
+        "third_party": {"type": "string", "enum": ["debug", "info", "warning", "error"], "default": "warning", "description": "Log level for third-party libraries."},
+        "glib": {"type": "string", "enum": ["all", "debug", "info", "message", "warning", "critical", "error"], "default": "critical", "description": "Log level for GLib/GTK messages."}
+      }
+    },
+    "webkit": {
+      "type": "object",
+      "properties": {
+        "disable_dmabuf": {"type": "boolean", "default": false, "description": "Export WEBKIT_DISABLE_DMABUF_RENDERER=1 at startup — a workaround for a black or broken preview on some GPU driver stacks."},
+        "disable_compositing": {"type": "boolean", "default": false, "description": "Export WEBKIT_DISABLE_COMPOSITING_MODE=1 at startup — a workaround for preview rendering glitches on some drivers."}
+      }
+    },
+    "wikilink": {
+      "type": "object",
+      "properties": {
+        "autofix_normalize": {"type": "boolean", "default": false, "description": "On manual save, normalize whitespace inside [[wikilinks]]."},
+        "autofix_relink": {"type": "boolean", "default": false, "description": "On manual save, redirect a broken [[wikilink]] when exactly one vault file matches its basename (moved/renamed/casing)."},
+        "warn_on_save": {"type": "boolean", "default": false, "description": "After a manual save, inform about [[wikilinks]] that stay unresolved."},
+        "mark_broken": {"type": "boolean", "default": false, "description": "Mark broken [[wikilinks]] live in the editor (gutter warning triangle + red underline)."}
+      }
+    },
+    "semantic": {
+      "type": "object",
+      "properties": {
+        "enabled": {"type": "boolean", "default": false, "description": "Enable semantic (vector) search and the Ask feature. Opt-in; off by default."},
+        "backend": {"type": "string", "enum": ["onnx", "ollama", "openai"], "default": "onnx", "description": "Embedding backend: onnx (local, recommended), ollama (server) or openai (an OpenAI-compatible embeddings server)."},
+        "min_score": {"type": "number", "default": 0.35, "description": "Minimum similarity score for a passage to count as a semantic hit."},
+        "ollama": {
+          "type": "object",
+          "properties": {
+            "url": {"type": "string", "default": "http://localhost:11434", "description": "Ollama server URL used for embeddings."},
+            "model": {"type": "string", "default": "nomic-embed-text", "description": "Ollama embedding model name."}
+          }
+        },
+        "openai": {
+          "type": "object",
+          "properties": {
+            "url": {"type": "string", "default": "http://localhost:8080", "description": "OpenAI-compatible embeddings server URL (POST /v1/embeddings)."},
+            "model": {"type": "string", "default": "", "description": "Embedding model name for the OpenAI-compatible server. Empty is a configured-but-unusable state the UI names — no general default exists."}
+          }
+        },
+        "onnx": {
+          "type": "object",
+          "properties": {
+            "dir": {"type": "string", "default": "", "description": "Folder holding the ONNX files (model.onnx + tokenizer.json). Empty falls back to the app data dir default."},
+            "model_url": {"type": "string", "default": "https://huggingface.co/Xenova/paraphrase-multilingual-MiniLM-L12-v2/resolve/main/onnx/model.onnx", "description": "Download URL for the ONNX embedding model."},
+            "tokenizer_url": {"type": "string", "default": "https://huggingface.co/Xenova/paraphrase-multilingual-MiniLM-L12-v2/resolve/main/tokenizer.json", "description": "Download URL for the ONNX tokenizer.json."}
+          }
+        }
+      }
+    },
+    "ask": {
+      "type": "object",
+      "properties": {
+        "engine": {"type": "string", "enum": ["auto", "manual", "off"], "default": "auto", "description": "Answer engine: auto (the app configures backend, GPU offload and thread count), manual (honour the advanced ask.backend / ask.local settings) or off (no answers)."},
+        "backend": {"type": "string", "enum": ["local", "ollama", "openai"], "default": "local", "description": "Manual-mode chat backend: local (in-process GGUF via llama-cpp-python), ollama or openai (an OpenAI-compatible server). Only takes effect when ask.engine is manual."},
+        "reasoning": {"type": "boolean", "default": true, "description": "Let a reasoning model think before answering. Accurate but slower; only sent to the backend when False, so non-reasoning models are unaffected."},
+        "hybrid": {"type": "boolean", "default": true, "description": "Fuse a BM25 keyword ranking into the semantic retrieval, so exact tokens embeddings blur still surface."},
+        "top_k": {"type": "integer", "default": 10, "description": "How many notes are retrieved as context for an answer. Fewer is much faster on CPU."},
+        "num_ctx": {"type": "integer", "default": 8192, "description": "Context window in tokens requested from the local and Ollama backends. The OpenAI backend sizes its context server-side and ignores this."},
+        "max_tokens": {"type": "integer", "default": 1024, "description": "Hard cap on generated tokens per answer, so a repetition loop still stops."},
+        "system_prompt": {"type": "string", "default": "", "description": "Override the built-in Ask system prompt. Empty uses the built-in default."},
+        "server": {
+          "type": "object",
+          "properties": {
+            "url": {"type": "string", "default": "http://localhost:11434", "description": "Active server URL for the current server backend (ollama or openai)."},
+            "model": {"type": "string", "default": "llama3.2", "description": "Model name sent to the server backend."},
+            "model_by_endpoint": {"type": "object", "default": {}, "description": "Remembered model per '<backend>|<url>' endpoint, so switching provider restores that provider's model. Managed by the app."},
+            "url_by_backend": {"type": "object", "default": {}, "description": "Remembered server URL per backend, so switching does not point the new backend at the old host. Managed by the app."}
+          }
+        },
+        "local": {
+          "type": "object",
+          "properties": {
+            "n_gpu_layers": {"type": "integer", "default": 0, "description": "Transformer layers to offload to the GPU for the local backend. 0 = pure CPU (safe default)."},
+            "n_threads": {"type": "integer", "default": 0, "description": "CPU threads for the local backend. 0 = half the physical cores, resolved at runtime."},
+            "n_batch": {"type": "integer", "default": 0, "description": "Logical prompt batch size (max tokens per decode). 0 = llama.cpp default."},
+            "n_ubatch": {"type": "integer", "default": 0, "description": "Physical prompt micro-batch size — the prefill-speed lever on the GPU. 0 = llama.cpp default; keep <= n_batch."},
+            "kv_type_k": {"type": "string", "enum": ["f16", "q8_0", "q4_0"], "default": "f16", "description": "KV-cache precision for the K cache. Quantizing K is free."},
+            "kv_type_v": {"type": "string", "enum": ["f16", "q8_0", "q4_0"], "default": "f16", "description": "KV-cache precision for the V cache. Below f16 requires flash attention."},
+            "flash_attn": {"type": "boolean", "default": false, "description": "Enable flash attention in the local backend."},
+            "use_mmap": {"type": "boolean", "default": true, "description": "Memory-map the model file. Off loads it fully into RAM (slower first load, no page-faults during the answer)."}
+          }
+        },
+        "gguf": {
+          "type": "object",
+          "properties": {
+            "filename": {"type": "string", "default": "", "description": "GGUF filename inside ask.gguf.dir for the local backend (only the basename is used). Empty picks the newest model in the folder."},
+            "url": {"type": "string", "default": "https://huggingface.co/bartowski/Llama-3.2-3B-Instruct-GGUF/resolve/main/Llama-3.2-3B-Instruct-Q4_K_M.gguf", "description": "Pre-fill URL for the GGUF download button."},
+            "dir": {"type": "string", "default": "", "description": "Folder the Ask GGUF picker searches and downloads into. Empty uses the shared models dir; kept separate from the Whisper models."}
+          }
+        }
+      }
+    },
+    "document": {
+      "type": "object",
+      "properties": {
+        "whisper_model": {"type": "string", "enum": ["tiny", "base", "small", "medium", "large-v3"], "default": "base", "description": "Whisper model size for audio transcription on import. Bigger is more accurate, slower and a larger download."},
+        "import_last_dir": {"type": "string", "default": "", "description": "Directory the document-import file chooser reopens in. Managed by the app."}
+      }
+    }
+  },
+  "x-dependencies": [
+    {"key": "ask.backend", "depends_on": "ask.engine", "note": "Only applies when ask.engine is 'manual'. With ask.engine 'auto' (the default) the app picks the backend and ask.backend is ignored."},
+    {"key": "ask.server.*", "depends_on": "ask.backend", "note": "The server url/model are read only when ask.backend is 'ollama' or 'openai'."},
+    {"key": "ask.local.*", "depends_on": "ask.backend", "note": "The llama.cpp runtime knobs are read only when ask.backend is 'local'."},
+    {"key": "ask.gguf.*", "depends_on": "ask.backend", "note": "The local GGUF file/folder are read only when ask.backend is 'local'."},
+    {"key": "ask.local.kv_type_v", "depends_on": "ask.local.flash_attn", "note": "Quantizing the V cache below f16 requires flash_attn: true."}
+  ]
+}

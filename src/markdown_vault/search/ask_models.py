@@ -5,7 +5,7 @@ Two things are easy to get wrong and both produce a control that lies about what
 it does, so they live here instead of in each picker:
 
 * **Which setting selects a model depends on the backend.** The local backend
-  loads ``ask.gguf.path`` (a file), the server backends send ``ask.server.model``
+  loads ``ask.gguf.filename`` (a file), the server backends send ``ask.server.model``
   (a name). A picker that writes the wrong one changes nothing.
 * **A server's settings belong to that server, not to the app.** Switching from
   Ollama to a remote OpenAI-compatible server must not leave the Ollama model
@@ -249,7 +249,7 @@ def effective_backend(settings: dict) -> str:
 
 def setting_key(backend: str) -> str:
     """The settings path that selects a model for *backend*."""
-    return "ask.server.model" if backend in SERVER_BACKENDS else "ask.gguf.path"
+    return "ask.server.model" if backend in SERVER_BACKENDS else "ask.gguf.filename"
 
 
 def endpoint(backend: str):
@@ -424,7 +424,7 @@ def remember(settings: dict, backend: str, url: str, model: str) -> None:
     """Record *model* as the choice for this endpoint **and** make it active.
 
     For the **local** backend the picker's value is a full path; store only the
-    **filename** (``ask.gguf.path`` is a name in ``ask.gguf.dir``), so the choice
+    **filename** (``ask.gguf.filename`` is a name in ``ask.gguf.dir``), so the choice
     survives the models folder moving. Server backends store the model name as-is.
     """
     if backend not in SERVER_BACKENDS:

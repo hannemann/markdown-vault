@@ -41,7 +41,7 @@ class TabOrchestrator:
     sidebar : Sidebar
         Sidebar widget for file-metadata display.
     settings : dict
-        Application settings (must contain ``tab_switch_mode``).
+        Application settings (must contain ``tabs.switch_mode``).
     content_stack : Gtk.Stack
         Stack that shows the content widget for each open tab.
     file_index : FileIndex
