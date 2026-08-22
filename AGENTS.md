@@ -464,17 +464,8 @@ opening files in editor, toggling sidebar etc.) ask the user.
 - **Logging**: Every module MUST use the standard `logging` module. Add `import logging` and `logger = logging.getLogger(__name__)` at the top of each file. Use `logger.debug()`/`logger.info()`/`logger.warning()`/`logger.error()` — NEVER use `print()` or any other ad-hoc output for diagnostics. Every `except` block must log at minimum with `exc_info=True`. Log level is configurable via `settings.loglevel` (debug/info/warning/error), effective after restart.
 - **Temp files**: NEVER use the system `/tmp` directory. Use the local `./tmp/` directory instead. The system `/tmp` is shared, unpredictable, and cleaned up by the OS. Local `./tmp/` is project-scoped and ignored by `.gitignore`, so it stays fully under your control.
 
-## MRU Tab Switcher (Ctrl+Tab / Ctrl+Shift+Tab)
-
-- **Single instance**: Only one `MRUSwitcher` dialog may be open at a time. Subsequent Ctrl+Tab while open is ignored.
-- **Exclusive during open**: While the switcher is shown, no other actions (editor typing, sidebar toggling, etc.) are possible — only Tab/Ctrl+Tab navigation and Escape to close.
-- **Alt+Tab behaviour**: Starts at MRU[1] (the previously active tab; MRU[0] is always the current tab), cycles forward with Tab, backward with Ctrl+Shift+Tab. Ctrl+release commits the selection and closes the dialog.
-- **No persistence**: The MRU list is in-memory only; it is rebuilt from session tab order on startup.
-
 ## Gotchas
 
-- **MRU switcher, double-cycle prevention**: application accelerators (`app.set_accels_for_action`) AND the switcher's key controller both handle Ctrl+Tab. `cycle_from_accelerator()` sets an `_accel_handled` flag so the key controller skips the event; if only the key controller fires (no accelerator), it cycles normally.
-- **No ShortcutController in MRU mode**: `_update_tab_shortcuts()` skips registering shortcuts when `tab_switch_mode == "mru"`, to avoid conflicts with the application accelerators.
 - WebKitGTK requires the main thread for JS evaluation — use `GLib.idle_add()` for WebView calls.
 - **WebKitGTK 6.0 quirks** (discovered during preview scroll-position work):
   - `Gtk.ScrolledWindow` adjustments are **ignored** by WebView — WebView scrolls internally.
