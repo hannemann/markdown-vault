@@ -341,27 +341,36 @@ def refresh_async(backend: str, url: str, api_key: str = "", on_settled=None) ->
     threading.Thread(target=work, daemon=True, name="ask-models").start()
 
 
-def probe(backend: str, url: str, api_key: str = "") -> EndpointStatus:
-    """Ask the server for its models **now** and record the outcome.
+def probe(backend: str, url: str, api_key: str = "",
+          record: bool = True) -> EndpointStatus:
+    """Ask the server for its models **now** and (by default) record the outcome.
 
     Blocking — for a caller that already runs its own worker thread (the explicit
     refresh in Preferences). Deliberately not deduplicated: it is a thing the user
-    asked for. Both entry points end up here, so the two surfaces cannot disagree
-    about what the server said.
+    asked for. Both Ask entry points end up here, so the two surfaces cannot
+    disagree about what the server said.
+
+    *record*=False classifies and returns the status but writes **neither** the
+    per-endpoint status **nor** the model cache. It is for a *second* consumer that
+    shares the endpoint keying but must not affect Ask — the embedding backend:
+    its verdict must never mute Ask, even against the same server (D4/ZB1).
     """
     try:
         models = fetch(backend, url, api_key)
         st = EndpointStatus(OK if models else EMPTY,
                             _norm_url(backend, url), models=models)
-        cache_put(backend, url, models)
+        if record:
+            cache_put(backend, url, models)
     except Exception as exc:  # noqa: BLE001 — every outcome becomes a state
         st = _classify(backend, url, exc)
-        # A failure supersedes an earlier list: keeping it would make a server that
-        # has since died look healthy for the rest of the session.
-        cache_put(backend, url, [])
+        if record:
+            # A failure supersedes an earlier list: keeping it would make a server
+            # that has since died look healthy for the rest of the session.
+            cache_put(backend, url, [])
         logger.info("model list for %s|%s: %s (%s)",
                     backend, _norm_url(backend, url), st.state, st.error)
-    _set_status(backend, url, st)
+    if record:
+        _set_status(backend, url, st)
     return st
 
 

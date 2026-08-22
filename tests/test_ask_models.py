@@ -321,6 +321,22 @@ class TestEndpointStatus(unittest.TestCase):
         self.assertEqual(ask_models.status("ollama", "http://h:11434").state,
                          ask_models.UNKNOWN)
 
+    def test_probe_record_false_does_not_write_the_shared_verdict(self):
+        # ZE1/ZB1: the embedding side probes the same endpoint; a failure there
+        # must not mute Ask. record=False classifies without writing the shared
+        # status/cache, so the Ask verdict for the endpoint stays untouched.
+        with patch("urllib.request.urlopen",
+                   side_effect=urllib.error.URLError("refused")):
+            st = ask_models.probe("openai", "http://h:8080", record=False)
+        self.assertFalse(st.can_ask)                                   # still classified
+        self.assertTrue(ask_models.status("openai", "http://h:8080").can_ask)  # untouched
+
+    def test_probe_record_true_writes_the_shared_verdict(self):
+        with patch("urllib.request.urlopen",
+                   side_effect=urllib.error.URLError("refused")):
+            ask_models.probe("openai", "http://h:8080", record=True)
+        self.assertFalse(ask_models.status("openai", "http://h:8080").can_ask)  # recorded
+
 
 class TestPerEndpointMemory(unittest.TestCase):
     """The chosen model belongs to the endpoint, not to the app: switching provider

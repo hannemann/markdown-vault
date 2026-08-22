@@ -398,9 +398,10 @@ class EmbeddingSubpageMixin:
             self._refresh_sem_openai_state()
 
     def _refresh_sem_openai_models(self) -> None:
-        """Fetch the model list off the main thread via the EXPLICIT ask_models
-        level (D4): probe reads only its arguments, so the Ask endpoint and the
-        Ask key are never touched. This endpoint's own url + key go in."""
+        """Fetch the model list off the main thread via the explicit ask_models
+        level (D4), with this endpoint's own url + key. `probe` also *writes* the
+        shared per-endpoint status/cache, so it is called with `record=False`
+        (below) — the embedding verdict must not mute Ask on the same server."""
         from markdown_vault.core import secret_store
         from markdown_vault.search import ask_models
         url = self._sem_openai_url()
@@ -408,8 +409,11 @@ class EmbeddingSubpageMixin:
         self._sem_oai_model_combo.set_subtitle("Loading…")
 
         def worker():
+            # record=False: this is a *second* consumer of the shared endpoint
+            # keying — a failed embedding probe must not write the shared status
+            # and mute Ask on the same server (D4/ZB1).
             GLib.idle_add(self._populate_sem_openai_models,
-                          ask_models.probe("openai", url, key))
+                          ask_models.probe("openai", url, key, record=False))
 
         threading.Thread(target=worker, daemon=True).start()
 

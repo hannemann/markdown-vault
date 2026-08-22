@@ -306,6 +306,19 @@ class TestOpenAIEmbeddingBackend(_DialogTest):
         self.assertEqual(dlg._sem_openai_secret_name(),
                          "semantic_api_key:openai|http://h:8080")
 
+    def test_model_refresh_probes_without_writing_the_shared_status(self):
+        # ZE1: the embedding model refresh must probe with record=False, or a
+        # failure would write the shared verdict and mute Ask on the same server.
+        dlg = self._dialog(semantic_backend="openai",
+                           semantic_openai_url="http://h:8080")
+        with patch(
+                "markdown_vault.ui.preferences.embedding_subpage.threading.Thread") as T, \
+             patch("markdown_vault.ui.preferences.embedding_subpage.GLib.idle_add"), \
+             patch("markdown_vault.search.ask_models.probe") as probe:
+            dlg._refresh_sem_openai_models()
+            T.call_args.kwargs["target"]()          # run the worker the thread had
+        self.assertFalse(probe.call_args.kwargs["record"])
+
 
 class TestSearchAndAskHandlers(_DialogTest):
     """The Search page and its four subpages — the area ticket B will carve up, so
