@@ -30,6 +30,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from markdown_vault.core import config
+from markdown_vault.core import secret_store
 # openai_base is a pure URL normaliser; ask.py has no module-level markdown_vault
 # import (an AST guard in tests/test_layering.py holds that), so this edge is
 # import-light and cannot close a cycle — ask_models imports us? no: nothing in
@@ -429,6 +430,16 @@ def _onnx_sig(model: str, tokenizer: str) -> str:
     return "onnx:" + "|".join(parts)
 
 
+def semantic_secret_name(url: str) -> str:
+    """Keyring name of the embedding API key for an OpenAI-compatible server:
+    ``semantic_api_key:openai|<normalised-url>``. Its own prefix, parallel to
+    ``ask_models.secret_name`` — so an embedding key is never sent to the Ask
+    server and vice versa (D2: two independently-editable settings). The name
+    carries the endpoint, so a key only ever reaches the server it was entered for.
+    """
+    return f"semantic_api_key:openai|{openai_base(url)}"
+
+
 def build_embedder(settings: dict):
     """Construct the embedder for the configured backend and its cache signature —
     ``(embedder, signature_tag)``.
@@ -445,6 +456,20 @@ def build_embedder(settings: dict):
         tokenizer = str(Path(onnx_dir) / "tokenizer.json")
         logger.info("semantic search: onnx backend (model=%s)", model)
         return OnnxEmbedder(model, tokenizer), _onnx_sig(model, tokenizer)
+    if backend == "openai":
+        model = (settings.get("semantic_openai_model")
+                 or config.default("semantic_openai_model"))
+        url = (settings.get("semantic_openai_url")
+               or config.default("semantic_openai_url"))
+        # D2: the key is read from the embedding's OWN endpoint-scoped keyring name,
+        # never the Ask entry — so a key stays with the server it was entered for.
+        api_key = secret_store.get_secret(semantic_secret_name(url))
+        base = openai_base(url)
+        logger.info("semantic search: openai backend (model=%s, url=%s)", model, base)
+        # D3: the base URL is part of identity (another server may run other
+        # weights ⇒ another vector space) but NORMALISED, so a cosmetic URL edit
+        # (added /v1, trailing slash) does not force a full rebuild.
+        return OpenAIEmbedder(model, url, api_key), f"openai:{base}|{model}"
     model = (settings.get("semantic_ollama_model")
              or config.default("semantic_ollama_model"))
     url = (settings.get("semantic_ollama_url")

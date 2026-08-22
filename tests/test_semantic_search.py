@@ -269,6 +269,30 @@ class TestBuildEmbedder(unittest.TestCase):
         self.assertTrue(tag.startswith("onnx:"))
         self.assertNotIn("/models/x", tag)                           # signature: no dir
 
+    def test_openai_backend_and_normalised_tag(self):
+        import unittest.mock as m
+        with m.patch("markdown_vault.core.secret_store.get_secret", return_value=""):
+            emb, tag = ss.build_embedder(
+                {"semantic_backend": "openai",
+                 "semantic_openai_url": "http://h:8080/v1",   # cosmetic /v1
+                 "semantic_openai_model": "bge-m3"})
+        self.assertIsInstance(emb, ss.OpenAIEmbedder)
+        # D3: base URL in the tag but normalised — a cosmetic /v1 must not change it,
+        # so it does not force a rebuild.
+        self.assertEqual(tag, "openai:http://h:8080|bge-m3")
+
+    def test_openai_key_comes_from_the_endpoint_keyring_name(self):
+        # D2: the key is read from an endpoint-scoped, embedding-own keyring name
+        # (never the Ask entry) and handed to the embedder.
+        import unittest.mock as m
+        with m.patch("markdown_vault.core.secret_store.get_secret",
+                     return_value="sk-emb") as gs:
+            emb, _ = ss.build_embedder(
+                {"semantic_backend": "openai",
+                 "semantic_openai_url": "http://h:8080", "semantic_openai_model": "m"})
+        gs.assert_called_once_with("semantic_api_key:openai|http://h:8080")
+        self.assertEqual(emb.api_key, "sk-emb")
+
 
 if __name__ == "__main__":
     unittest.main()
