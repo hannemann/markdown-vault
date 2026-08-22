@@ -21,9 +21,13 @@ used, so the feature stays free when disabled.
 
 import json
 import logging
+import os
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
+from pathlib import Path
+
+from markdown_vault.core import config
 
 logger = logging.getLogger(__name__)
 
@@ -347,3 +351,45 @@ class VectorIndex:
 
     def query(self, text: str, top_k: int = 10) -> list[tuple[Chunk, float]]:
         return self.search_vector(self.embed_query(text), top_k)
+
+
+def _onnx_sig(model: str, tokenizer: str) -> str:
+    """Cache signature for the ONNX backend: each file's **basename** + size +
+    mtime. Size + mtime catch a swapped model/tokenizer (even under the same
+    name); the basename keeps the identity readable. The **directory is left out**
+    on purpose — it is a location, not part of the model's identity, so moving the
+    models folder (an app-id change, another disk, a different ``semantic_onnx_dir``)
+    must not invalidate the cache and force a rebuild."""
+    parts = []
+    for p in (model, tokenizer):
+        name = os.path.basename(p)
+        try:
+            st = os.stat(p)
+            parts.append(f"{name}:{st.st_size}:{int(st.st_mtime)}")
+        except OSError:
+            parts.append(f"{name}:missing")
+    return "onnx:" + "|".join(parts)
+
+
+def build_embedder(settings: dict):
+    """Construct the embedder for the configured backend and its cache signature —
+    ``(embedder, signature_tag)``.
+
+    Search-domain logic: it owns the backend choice, where the model files live,
+    the signature and the backend log line. The window only calls it (with the
+    settings) and orchestrates the build; none of this needs the window.
+    """
+    backend = settings.get("semantic_backend", "onnx")
+    if backend == "onnx":
+        onnx_dir = (settings.get("semantic_onnx_dir")
+                    or str(config.DATA_DIR / "onnx"))
+        model = str(Path(onnx_dir) / "model.onnx")
+        tokenizer = str(Path(onnx_dir) / "tokenizer.json")
+        logger.info("semantic search: onnx backend (model=%s)", model)
+        return OnnxEmbedder(model, tokenizer), _onnx_sig(model, tokenizer)
+    model = (settings.get("semantic_ollama_model")
+             or config.default("semantic_ollama_model"))
+    url = (settings.get("semantic_ollama_url")
+           or config.default("semantic_ollama_url"))
+    logger.info("semantic search: ollama backend (model=%s)", model)
+    return OllamaEmbedder(model, url), f"ollama:{model}"

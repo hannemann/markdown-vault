@@ -1589,7 +1589,8 @@ class MainWindow(Adw.ApplicationWindow):
         with self._semantic_build_lock:
             try:
                 from markdown_vault.search.semantic_index import SemanticIndexManager
-                embedder, tag = self._build_semantic_embedder()
+                from markdown_vault.search import semantic_search
+                embedder, tag = semantic_search.build_embedder(self._settings)
                 manager = SemanticIndexManager(
                     embedder, self._vault_tree.get_vault_paths, config.CACHE_DIR,
                     tag,
@@ -1670,44 +1671,6 @@ class MainWindow(Adw.ApplicationWindow):
         else:
             self._status_bar.clear()
         return False
-
-    def _build_semantic_embedder(self):
-        """Construct the embedder for the configured backend; returns
-        ``(embedder, signature_tag)``."""
-        backend = self._settings.get("semantic_backend", "onnx")
-        if backend == "onnx":
-            from markdown_vault.search.semantic_search import OnnxEmbedder
-            onnx_dir = (self._settings.get("semantic_onnx_dir")
-                        or str(config.DATA_DIR / "onnx"))
-            model = str(Path(onnx_dir) / "model.onnx")
-            tokenizer = str(Path(onnx_dir) / "tokenizer.json")
-            logger.info("semantic search: onnx backend (model=%s)", model)
-            return OnnxEmbedder(model, tokenizer), self._onnx_sig(model, tokenizer)
-        from markdown_vault.search.semantic_search import OllamaEmbedder
-        model = (self._settings.get("semantic_ollama_model")
-                 or config.default("semantic_ollama_model"))
-        url = (self._settings.get("semantic_ollama_url")
-               or config.default("semantic_ollama_url"))
-        logger.info("semantic search: ollama backend (model=%s)", model)
-        return OllamaEmbedder(model, url), f"ollama:{model}"
-
-    @staticmethod
-    def _onnx_sig(model: str, tokenizer: str) -> str:
-        """Cache signature for the ONNX backend: each file's **basename** + size +
-        mtime. Size + mtime catch a swapped model/tokenizer (even under the same
-        name); the basename keeps the identity readable. The **directory is left
-        out** on purpose — it is a location, not part of the model's identity, so
-        moving the models folder (an app-id change, another disk, a different
-        ``semantic_onnx_dir``) must not invalidate the cache and force a rebuild."""
-        parts = []
-        for p in (model, tokenizer):
-            name = os.path.basename(p)
-            try:
-                st = os.stat(p)
-                parts.append(f"{name}:{st.st_size}:{int(st.st_mtime)}")
-            except OSError:
-                parts.append(f"{name}:missing")
-        return "onnx:" + "|".join(parts)
 
     def _semantic_update(self, path) -> None:
         if self._semantic_index and path and path.endswith(".md"):

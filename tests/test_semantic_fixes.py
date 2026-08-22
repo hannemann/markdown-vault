@@ -6,7 +6,7 @@ All targets are static/class methods, so no GTK widget is instantiated.
 import unittest
 
 from markdown_vault.search.search import SearchBar
-from markdown_vault.app.app_window import MainWindow
+from markdown_vault.search import semantic_search
 
 
 class TestStripOperators(unittest.TestCase):
@@ -61,7 +61,7 @@ class TestOnnxSignature(unittest.TestCase):
     def test_missing_files_are_marked(self):
         # Basename only, in the error branch too — the directory is not part of
         # the model's identity (a move must not change the signature).
-        sig = MainWindow._onnx_sig("/nope/model.onnx", "/nope/tok.json")
+        sig = semantic_search._onnx_sig("/nope/model.onnx", "/nope/tok.json")
         self.assertEqual(sig, "onnx:model.onnx:missing|tok.json:missing")
 
     def test_same_file_new_location_keeps_the_signature(self):
@@ -77,9 +77,9 @@ class TestOnnxSignature(unittest.TestCase):
                 p = Path(d) / name
                 p.write_bytes(data)
                 os.utime(p, (0, 12345))          # identical mtime in both dirs
-        sig1 = MainWindow._onnx_sig(str(Path(d1) / "model.onnx"),
+        sig1 = semantic_search._onnx_sig(str(Path(d1) / "model.onnx"),
                                     str(Path(d1) / "tokenizer.json"))
-        sig2 = MainWindow._onnx_sig(str(Path(d2) / "model.onnx"),
+        sig2 = semantic_search._onnx_sig(str(Path(d2) / "model.onnx"),
                                     str(Path(d2) / "tokenizer.json"))
         self.assertEqual(sig1, sig2)             # a move must not invalidate
         self.assertNotIn(d1, sig1)               # no directory in the signature
@@ -94,12 +94,12 @@ class TestOnnxSignature(unittest.TestCase):
             f.write(b"{}")
             tok = f.name
         try:
-            sig1 = MainWindow._onnx_sig(model, tok)
+            sig1 = semantic_search._onnx_sig(model, tok)
             with open(model, "wb") as fh:  # different size → different signature
                 fh.write(b"aaaa")
                 fh.flush()
                 os.utime(model, (0, 100))
-            sig2 = MainWindow._onnx_sig(model, tok)
+            sig2 = semantic_search._onnx_sig(model, tok)
             self.assertNotEqual(sig1, sig2)
         finally:
             os.unlink(model)
