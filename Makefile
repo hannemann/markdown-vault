@@ -14,7 +14,7 @@ PYTHONPATH_DIR := src
 PYTHON := $(shell python3 -c 'import gi' 2>/dev/null && echo python3 || echo /usr/bin/python3)
 VENV := $(HOME)/.local/share/$(APP_ID)/venv
 # Tests must never be able to reach the developer's real directories: a leaked
-# debounced write once replaced the whole settings block in the real vaults.yaml.
+# debounced write once replaced the whole settings block in the real settings.yaml.
 # Pin all four base dirs (like tests-e2e/harness.py does) at a throwaway tree, so
 # isolation is a property of the run instead of per-test discipline. Free: the suite
 # stays green, and ./tmp is gitignored.

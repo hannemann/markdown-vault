@@ -25,6 +25,48 @@ import markdown_vault.search.llama_runtime  # noqa: F401,E402
 import markdown_vault.search.ask  # noqa: F401,E402
 import markdown_vault.importers.document_import  # noqa: F401,E402
 from markdown_vault.ui.preferences.dialog import PreferencesDialog  # noqa: E402
+from markdown_vault.core import config  # noqa: E402
+
+# The settings tree is nested; fixtures and assertions below still name settings
+# the old flat way for readability, so map each flat name to its dotted path. The
+# dialog reads/writes the nested tree via config.get_setting/set_setting.
+_DOTTED = {
+    "autosave_interval": "autosave.interval",
+    "default_view_mode": "view.default_mode",
+    "editor_font_size": "editor.font_size",
+    "editor_tab_width": "editor.tab_width",
+    "editor_wrap_text": "editor.wrap_text",
+    "preview_zoom": "preview.zoom",
+    "preview_allow_remote_images": "preview.allow_remote_images",
+    "semantic_search_enabled": "semantic.enabled",
+    "semantic_backend": "semantic.backend",
+    "semantic_min_score": "semantic.min_score",
+    "semantic_openai_url": "semantic.openai.url",
+    "semantic_openai_model": "semantic.openai.model",
+    "ask_engine": "ask.engine",
+    "ask_backend": "ask.backend",
+    "ask_reasoning": "ask.reasoning",
+    "ask_hybrid": "ask.hybrid",
+    "ask_top_k": "ask.top_k",
+    "ask_num_ctx": "ask.num_ctx",
+    "ask_max_tokens": "ask.max_tokens",
+    "ask_system_prompt": "ask.system_prompt",
+    "ask_ollama_url": "ask.server.url",
+    "ask_model": "ask.server.model",
+    "ask_models_dir": "ask.gguf.dir",
+    "ask_n_gpu_layers": "ask.local.n_gpu_layers",
+    "ask_n_threads": "ask.local.n_threads",
+    "ask_flash_attn": "ask.local.flash_attn",
+    "ask_use_mmap": "ask.local.use_mmap",
+}
+
+
+def _nest(flat):
+    """Build the nested settings tree from flat legacy names."""
+    tree = {}
+    for key, value in flat.items():
+        config.set_setting(tree, _DOTTED.get(key, key), value)
+    return tree
 
 
 class _DialogTest(unittest.TestCase):
@@ -84,7 +126,7 @@ class _DialogTest(unittest.TestCase):
         # GLib.timeout from _persist_debounced / _on_secret_changed would
         # otherwise fire once some later test runs a main loop — by then
         # config.save_settings is the real one again, and it would persist this
-        # dialog's tiny snapshot over the developer's actual vaults.yaml,
+        # dialog's tiny snapshot over the developer's actual settings.yaml,
         # wiping every setting not in it (that really happened).
         from gi.repository import GLib  # type: ignore[attr-defined]
         for dlg in self._dialogs:
@@ -100,14 +142,15 @@ class _DialogTest(unittest.TestCase):
             m.stop()
 
     def _dialog(self, **settings):
-        self.load.return_value = dict(settings)
+        self.load.return_value = _nest(settings)
         dlg = PreferencesDialog()
         self._dialogs.append(dlg)   # so tearDown can cancel its pending writes
         return dlg
 
     def _assert_persisted(self, dlg, key, value):
-        self.assertEqual(dlg._settings[key], value)
-        self.assertTrue(self.saved and self.saved[-1][key] == value)
+        dotted = _DOTTED.get(key, key)
+        self.assertEqual(config.get_setting(dlg._settings, dotted), value)
+        self.assertTrue(self.saved and config.get_setting(self.saved[-1], dotted) == value)
 
 
 class TestConstruction(_DialogTest):
@@ -152,8 +195,9 @@ class TestSettingsPersist(_DialogTest):
         got = []
         dlg.connect("settings-changed", lambda _d: got.append(True))
         dlg._autosave_row.get_adjustment().set_value(90)
-        self.assertEqual(dlg._settings["autosave_interval"], 90)
-        self.assertTrue(self.saved and self.saved[-1]["autosave_interval"] == 90)
+        self.assertEqual(config.get_setting(dlg._settings, "autosave.interval"), 90)
+        self.assertTrue(self.saved and
+                        config.get_setting(self.saved[-1], "autosave.interval") == 90)
         self.assertEqual(got, [True])
 
     def test_save_failure_shows_error_and_no_signal(self):
@@ -278,7 +322,8 @@ class TestOpenAIEmbeddingBackend(_DialogTest):
         dlg = self._dialog(semantic_backend="openai")
         dlg._sem_oai_model_list.splice(0, 0, ["bge-m3", "e5-large"])
         dlg._sem_oai_model_combo.set_selected(1)   # fires notify::selected
-        self.assertEqual(dlg._settings["semantic_openai_model"], "e5-large")
+        self.assertEqual(config.get_setting(dlg._settings, "semantic.openai.model"),
+                         "e5-large")
 
     def test_d6_unusable_shown_when_no_model_and_the_server_lists(self):
         dlg = self._dialog(semantic_backend="openai", semantic_openai_model="")
@@ -387,16 +432,18 @@ class TestSearchAndAskHandlers(_DialogTest):
     def test_system_prompt_custom_persists_debounced(self):
         dlg = self._dialog()
         dlg._ask_prompt_view.get_buffer().set_text("Answer in haiku.")
-        self.assertEqual(dlg._settings["ask_system_prompt"], "Answer in haiku.")
+        self.assertEqual(config.get_setting(dlg._settings, "ask.system_prompt"),
+                         "Answer in haiku.")
         dlg._flush_persist()               # debounced write forced on close
-        self.assertEqual(self.saved[-1]["ask_system_prompt"], "Answer in haiku.")
+        self.assertEqual(config.get_setting(self.saved[-1], "ask.system_prompt"),
+                         "Answer in haiku.")
 
     def test_system_prompt_equal_to_default_stored_empty(self):
         # Matching the built-in default is stored as "" so it keeps tracking
         # future default improvements instead of pinning this snapshot.
         dlg = self._dialog()
         dlg._ask_prompt_view.get_buffer().set_text("You are a helpful assistant.")
-        self.assertEqual(dlg._settings["ask_system_prompt"], "")
+        self.assertEqual(config.get_setting(dlg._settings, "ask.system_prompt"), "")
 
 
 class TestSemanticDisabledGreysOutItsSettings(_DialogTest):
@@ -449,7 +496,7 @@ class TestApiKeyInKeyring(_DialogTest):
         dlg._ask_key_entry.set_text("sk-new")
         dlg._flush_secret()                       # force the debounced keyring write
         self.assertEqual(self.secrets.get(self._name()), "sk-new")
-        self.assertNotIn("ask_api_key", dlg._settings)   # never in vaults.yaml
+        self.assertNotIn("ask_api_key", dlg._settings)   # never in settings.yaml
 
     def test_clearing_a_key_that_was_shown_deletes_it(self):
         dlg = self._dialog(**self._SERVER)
@@ -530,7 +577,7 @@ class TestAskModelPerEndpoint(_DialogTest):
                            ask_model="llama3.2")
         dlg._remember_ask_model("llama3.2")
         self._switch_backend(dlg, "openai")
-        self.assertEqual(dlg._settings["ask_model"], "")
+        self.assertEqual(config.get_setting(dlg._settings, "ask.server.model"), "")
 
     def test_switching_back_restores_the_earlier_choice(self):
         dlg = self._dialog(ask_engine="manual", ask_backend="ollama",
@@ -540,9 +587,10 @@ class TestAskModelPerEndpoint(_DialogTest):
         self._switch_backend(dlg, "openai")
         dlg._remember_ask_model("Qwen3.5-122B")
         self._switch_backend(dlg, "ollama")
-        self.assertEqual(dlg._settings["ask_model"], "llama3.2")
+        self.assertEqual(config.get_setting(dlg._settings, "ask.server.model"), "llama3.2")
         self._switch_backend(dlg, "openai")
-        self.assertEqual(dlg._settings["ask_model"], "Qwen3.5-122B")
+        self.assertEqual(config.get_setting(dlg._settings, "ask.server.model"),
+                         "Qwen3.5-122B")
 
     def test_a_hand_typed_url_is_not_carried_to_the_other_backend(self):
         # Previously only the known default ports were swapped, so a custom URL
@@ -550,9 +598,11 @@ class TestAskModelPerEndpoint(_DialogTest):
         dlg = self._dialog(ask_engine="manual", ask_backend="openai",
                            ask_ollama_url="https://llm.example.com")
         self._switch_backend(dlg, "ollama")
-        self.assertEqual(dlg._settings["ask_ollama_url"], "http://localhost:11434")
+        self.assertEqual(config.get_setting(dlg._settings, "ask.server.url"),
+                         "http://localhost:11434")
         self._switch_backend(dlg, "openai")
-        self.assertEqual(dlg._settings["ask_ollama_url"], "https://llm.example.com")
+        self.assertEqual(config.get_setting(dlg._settings, "ask.server.url"),
+                         "https://llm.example.com")
         self.assertEqual(dlg._ask_url_entry.get_text(), "https://llm.example.com")
 
     def test_key_field_follows_the_backend(self):
@@ -574,7 +624,8 @@ class TestAskModelPerEndpoint(_DialogTest):
                  for i in range(dlg._ask_model_list.get_n_items())]
         self.assertEqual(names, ["Qwen3.5-122B", "gpt-oss"])
         # …and the active value is a real one, not the stale name.
-        self.assertEqual(dlg._settings["ask_model"], "Qwen3.5-122B")
+        self.assertEqual(config.get_setting(dlg._settings, "ask.server.model"),
+                         "Qwen3.5-122B")
 
     def test_list_keeps_the_choice_the_server_has(self):
         dlg = self._dialog(ask_engine="manual", ask_backend="ollama",
@@ -582,7 +633,7 @@ class TestAskModelPerEndpoint(_DialogTest):
                            ask_model="llama3.2")
         dlg._populate_ask_models(self._listed(["qwen3", "llama3.2"]))
         self.assertEqual(dlg._ask_model_combo.get_selected(), 1)
-        self.assertEqual(dlg._settings["ask_model"], "llama3.2")
+        self.assertEqual(config.get_setting(dlg._settings, "ask.server.model"), "llama3.2")
 
 
 class TestExternalWarning(_DialogTest):

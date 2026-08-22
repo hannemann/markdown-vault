@@ -228,7 +228,7 @@ make run-flatpak
 
 ## Vault Configuration
 
-Vaults are stored in `~/.config/de.hannemann.markdown-vault/vaults.yaml`:
+Vaults and settings are stored in `~/.config/de.hannemann.markdown-vault/settings.yaml`:
 
 ```yaml
 vaults:

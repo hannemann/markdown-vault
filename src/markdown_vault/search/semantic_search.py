@@ -500,19 +500,19 @@ def build_embedder(settings: dict):
     the signature and the backend log line. The window only calls it (with the
     settings) and orchestrates the build; none of this needs the window.
     """
-    backend = settings.get("semantic_backend", "onnx")
+    backend = config.get_setting(settings, "semantic.backend", "onnx")
     if backend == "onnx":
-        onnx_dir = (settings.get("semantic_onnx_dir")
+        onnx_dir = (config.get_setting(settings, "semantic.onnx.dir")
                     or str(config.DATA_DIR / "onnx"))
         model = str(Path(onnx_dir) / "model.onnx")
         tokenizer = str(Path(onnx_dir) / "tokenizer.json")
         logger.info("semantic search: onnx backend (model=%s)", model)
         return OnnxEmbedder(model, tokenizer), _onnx_sig(model, tokenizer)
     if backend == "openai":
-        model = (settings.get("semantic_openai_model")
-                 or config.default("semantic_openai_model"))
-        url = (settings.get("semantic_openai_url")
-               or config.default("semantic_openai_url"))
+        model = (config.get_setting(settings, "semantic.openai.model")
+                 or config.default("semantic.openai.model"))
+        url = (config.get_setting(settings, "semantic.openai.url")
+               or config.default("semantic.openai.url"))
         # D2: the key is read from the embedding's OWN endpoint-scoped keyring name,
         # never the Ask entry — so a key stays with the server it was entered for.
         api_key = secret_store.get_secret(semantic_secret_name(url))
@@ -522,9 +522,9 @@ def build_embedder(settings: dict):
         # weights ⇒ another vector space) but NORMALISED, so a cosmetic URL edit
         # (added /v1, trailing slash) does not force a full rebuild.
         return OpenAIEmbedder(model, url, api_key), f"openai:{base}|{model}"
-    model = (settings.get("semantic_ollama_model")
-             or config.default("semantic_ollama_model"))
-    url = (settings.get("semantic_ollama_url")
-           or config.default("semantic_ollama_url"))
+    model = (config.get_setting(settings, "semantic.ollama.model")
+             or config.default("semantic.ollama.model"))
+    url = (config.get_setting(settings, "semantic.ollama.url")
+           or config.default("semantic.ollama.url"))
     logger.info("semantic search: ollama backend (model=%s)", model)
     return OllamaEmbedder(model, url), f"ollama:{model}"

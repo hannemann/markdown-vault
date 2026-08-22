@@ -17,7 +17,7 @@ class _TempConfigMixin:
         self._orig_dir = _cfg.CONFIG_DIR
         self._orig_file = _cfg.CONFIG_FILE
         _cfg.CONFIG_DIR = Path(self._tmpdir)
-        _cfg.CONFIG_FILE = Path(self._tmpdir) / "vaults.yaml"
+        _cfg.CONFIG_FILE = Path(self._tmpdir) / "settings.yaml"
         # Invalidate cache so tests start fresh.
         if hasattr(_cfg, "_vaults_cache"):
             _cfg._vaults_cache = None
@@ -32,7 +32,7 @@ class _TempConfigMixin:
 
 
 class TestVaultCache(_TempConfigMixin, unittest.TestCase):
-    """Tests for the vaults.yaml in-memory cache."""
+    """Tests for the settings.yaml in-memory cache."""
 
     def test_cache_miss_reads_from_disk(self):
         _cfg.CONFIG_FILE.write_text(

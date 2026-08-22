@@ -4,6 +4,7 @@ import unittest
 import unittest.mock
 
 from markdown_vault.app.input_manager import InputManager
+from markdown_vault.core import config
 
 
 class TestInputManagerInit(unittest.TestCase):
@@ -16,7 +17,7 @@ class TestInputManagerInit(unittest.TestCase):
         nav_history = unittest.mock.MagicMock()
         back_btn = unittest.mock.MagicMock()
         forward_btn = unittest.mock.MagicMock()
-        settings = {"tab_switch_mode": "mru"}
+        settings = {"tabs": {"switch_mode": "mru"}}
 
         mgr = InputManager(
             application=application,
@@ -46,7 +47,7 @@ class TestPushHistory(unittest.TestCase):
         self.nav_history = unittest.mock.MagicMock()
         self.back_btn = unittest.mock.MagicMock()
         self.forward_btn = unittest.mock.MagicMock()
-        self.settings = {"tab_switch_mode": "mru"}
+        self.settings = {"tabs": {"switch_mode": "mru"}}
         self._mgr = InputManager(
             application=self.application,
             on_nav_file_opened=self.on_nav_file_opened,
@@ -77,7 +78,7 @@ class TestNavBack(unittest.TestCase):
         self.nav_history = unittest.mock.MagicMock()
         self.back_btn = unittest.mock.MagicMock()
         self.forward_btn = unittest.mock.MagicMock()
-        self.settings = {"tab_switch_mode": "mru"}
+        self.settings = {"tabs": {"switch_mode": "mru"}}
         self._mgr = InputManager(
             application=self.application,
             on_nav_file_opened=self.on_nav_file_opened,
@@ -135,7 +136,7 @@ class TestNavForward(unittest.TestCase):
         self.nav_history = unittest.mock.MagicMock()
         self.back_btn = unittest.mock.MagicMock()
         self.forward_btn = unittest.mock.MagicMock()
-        self.settings = {"tab_switch_mode": "mru"}
+        self.settings = {"tabs": {"switch_mode": "mru"}}
         self._mgr = InputManager(
             application=self.application,
             on_nav_file_opened=self.on_nav_file_opened,
@@ -189,7 +190,7 @@ class TestUpdateNavButtons(unittest.TestCase):
         self.nav_history = unittest.mock.MagicMock()
         self.back_btn = unittest.mock.MagicMock()
         self.forward_btn = unittest.mock.MagicMock()
-        self.settings = {"tab_switch_mode": "mru"}
+        self.settings = {"tabs": {"switch_mode": "mru"}}
         self._mgr = InputManager(
             application=self.application,
             on_nav_file_opened=self.on_nav_file_opened,
@@ -219,7 +220,7 @@ class TestApplyKeybindings(unittest.TestCase):
         self.nav_history = unittest.mock.MagicMock()
         self.back_btn = unittest.mock.MagicMock()
         self.forward_btn = unittest.mock.MagicMock()
-        self.settings = {"tab_switch_mode": "mru"}
+        self.settings = {"tabs": {"switch_mode": "mru"}}
         self._mgr = InputManager(
             application=self.application,
             on_nav_file_opened=self.on_nav_file_opened,
@@ -263,7 +264,7 @@ class TestUpdateTabShortcuts(unittest.TestCase):
         self.nav_history = unittest.mock.MagicMock()
         self.back_btn = unittest.mock.MagicMock()
         self.forward_btn = unittest.mock.MagicMock()
-        self.settings = {"tab_switch_mode": "linear"}
+        self.settings = {"tabs": {"switch_mode": "linear"}}
         self._mgr = InputManager(
             application=self.application,
             on_nav_file_opened=self.on_nav_file_opened,
@@ -278,14 +279,14 @@ class TestUpdateTabShortcuts(unittest.TestCase):
 
     def test_mru_mode_returns_early(self):
         """update_tab_shortcuts returns early in MRU mode."""
-        self._mgr._settings["tab_switch_mode"] = "mru"
+        config.set_setting(self._mgr._settings, "tabs.switch_mode", "mru")
         self._mgr._tab_shortcuts.clear()
         self._mgr.update_tab_shortcuts()
         self.assertEqual(len(self._mgr._tab_shortcuts), 0)
 
     def test_linear_mode_adds_shortcuts(self):
         """update_tab_shortcuts adds shortcuts in linear mode."""
-        self._mgr._settings["tab_switch_mode"] = "linear"
+        config.set_setting(self._mgr._settings, "tabs.switch_mode", "linear")
         self._mgr.update_tab_shortcuts()
         self.tab_shortcut_ctrl.add_shortcut.assert_called()
 
@@ -299,7 +300,7 @@ class TestUpdateNavButtonsPublic(unittest.TestCase):
         self.nav_history = unittest.mock.MagicMock()
         self.back_btn = unittest.mock.MagicMock()
         self.forward_btn = unittest.mock.MagicMock()
-        self.settings = {"tab_switch_mode": "mru"}
+        self.settings = {"tabs": {"switch_mode": "mru"}}
         self._mgr = InputManager(
             application=self.application,
             on_nav_file_opened=self.on_nav_file_opened,
@@ -334,7 +335,7 @@ class TestPositionCallbacks(unittest.TestCase):
             nav_history=self.nav_history,
             back_btn=unittest.mock.MagicMock(),
             forward_btn=unittest.mock.MagicMock(),
-            settings={"tab_switch_mode": "mru"},
+            settings={"tabs": {"switch_mode": "mru"}},
             **kw)
 
     def test_push_saves_leaving_position_before_pushing(self):

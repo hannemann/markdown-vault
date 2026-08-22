@@ -78,7 +78,7 @@ class AskController:
         if index is None:
             return []
         hits = index.retrieve(question, top_k=20, vaults=self._get_scope_paths(),
-                              hybrid=bool(self._settings.get("ask_hybrid")))
+                              hybrid=bool(config.get_setting(self._settings, "ask.hybrid")))
         return [(c.path, s) for c, s in hits]
 
     def answer_language(self) -> str:
@@ -91,18 +91,20 @@ class AskController:
         return "English"
 
     def top_k(self) -> int:
-        return int(self._settings.get("ask_top_k") or config.default("ask_top_k"))
+        return int(config.get_setting(self._settings, "ask.top_k")
+                   or config.default("ask.top_k"))
 
     # ── availability ───────────────────────────────────────────────
 
     def unavailable_reason(self) -> str:
         """Why Ask cannot answer right now — ``""`` when it can. One source for
         both the toggle's state and its tooltip, so they cannot disagree."""
-        if not self._settings.get("semantic_search_enabled"):
+        if not config.get_setting(self._settings, "semantic.enabled"):
             return "Semantic search is off — turn it on in Preferences → Search."
         if self._get_index() is None:
             return "The semantic index is not ready yet."
-        engine = self._settings.get("ask_engine") or config.default("ask_engine")
+        engine = (config.get_setting(self._settings, "ask.engine")
+                  or config.default("ask.engine"))
         if engine == "off":
             return ("The answer engine is off — turn it on in "
                     "Preferences → Search → Ask.")
@@ -114,8 +116,8 @@ class AskController:
     # ── the server and its models ──────────────────────────────────
 
     def _server_url(self) -> str:
-        return (self._settings.get("ask_ollama_url")
-                or config.default("ask_ollama_url"))
+        return (config.get_setting(self._settings, "ask.server.url")
+                or config.default("ask.server.url"))
 
     def endpoint_status(self):
         """The verdict the palette blocks and banners on: the Ask server's last

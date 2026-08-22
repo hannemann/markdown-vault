@@ -44,9 +44,9 @@ class SearchPageMixin:
 
         self._sem_enabled_row = Adw.SwitchRow(title="Enable semantic search")
         self._sem_enabled_row.set_active(
-            self._settings.get("semantic_search_enabled", False))
+            config.get_setting(self._settings, "semantic.enabled", False))
         self._sem_enabled_row.connect(
-            "notify::active", self._on_toggle_setting, "semantic_search_enabled")
+            "notify::active", self._on_toggle_setting, "semantic.enabled")
         sem_group.add(self._sem_enabled_row)
 
         self._sem_backends = list(self._SEM_BACKENDS)
@@ -64,7 +64,8 @@ class SearchPageMixin:
             title="Minimum similarity",
             subtitle="Higher = stricter (fewer, closer matches)",
             adjustment=Gtk.Adjustment.new(
-                self._settings.get("semantic_min_score", 0.35), 0.0, 1.0, 0.05, 0.1, 0.0,
+                config.get_setting(self._settings, "semantic.min_score", 0.35),
+                0.0, 1.0, 0.05, 0.1, 0.0,
             ),
             digits=2,
         )
@@ -118,8 +119,8 @@ class SearchPageMixin:
             title="Model",
             subtitle="Multilingual; bigger = more accurate, slower, larger download",
             model=Gtk.StringList.new([label for _, label in whisper_models]))
-        current = (self._settings.get("document_whisper_model")
-                   or config.default("document_whisper_model"))
+        current = (config.get_setting(self._settings, "document.whisper_model")
+                   or config.default("document.whisper_model"))
         self._whisper_model_row.set_selected(
             self._whisper_values.index(current) if current in self._whisper_values
             else self._whisper_values.index("base"))
@@ -154,13 +155,13 @@ class SearchPageMixin:
         self.add(search)
 
     def _on_min_score_changed(self, _row, _pspec) -> None:
-        self._settings["semantic_min_score"] = round(
-            self._sem_score_row.get_adjustment().get_value(), 2)
+        config.set_setting(self._settings, "semantic.min_score", round(
+            self._sem_score_row.get_adjustment().get_value(), 2))
         self._persist()
 
     def _on_sem_backend_changed(self, row, _pspec) -> None:
         backend = self._sem_backends[row.get_selected()]
-        self._settings["semantic_backend"] = backend
+        config.set_setting(self._settings, "semantic.backend", backend)
         self._persist()
         self._update_sem_backend_sensitivity()
         if backend == "openai":
@@ -174,7 +175,7 @@ class SearchPageMixin:
         """Selected-row index for the persisted backend, tolerant of an unknown
         value (hand-edited YAML, a future backend) so __init__ never raises and
         the whole dialog fails to open."""
-        backend = self._settings.get("semantic_backend", self._SEM_BACKEND_DEFAULT)
+        backend = config.get_setting(self._settings, "semantic.backend", self._SEM_BACKEND_DEFAULT)
         return self._sem_backends.index(backend) if backend in self._sem_backends else 0
 
     def _update_semantic_sensitivity(self) -> None:
@@ -185,7 +186,7 @@ class SearchPageMixin:
         embedding and Ask configuration). The switch itself stays live, or there
         would be no way back.
         """
-        on = bool(self._settings.get("semantic_search_enabled"))
+        on = bool(config.get_setting(self._settings, "semantic.enabled"))
         for row in (self._sem_backend_row, self._sem_score_row,
                     self._sem_rebuild_row, self._emb_nav_row, self._ask_nav_row):
             row.set_sensitive(on)
@@ -193,7 +194,7 @@ class SearchPageMixin:
     def _update_sem_backend_sensitivity(self) -> None:
         """Grey out the groups the selected backend does not use (one live at a
         time, three-way)."""
-        backend = self._settings.get("semantic_backend", self._SEM_BACKEND_DEFAULT)
+        backend = config.get_setting(self._settings, "semantic.backend", self._SEM_BACKEND_DEFAULT)
         for widgets, name in ((self._sem_onnx_widgets, "onnx"),
                               (self._sem_ollama_widgets, "ollama"),
                               (self._sem_openai_widgets, "openai")):
@@ -203,7 +204,7 @@ class SearchPageMixin:
     def _on_rebuild_index(self, _button) -> None:
         if self._on_reindex is None:
             return
-        if not self._settings.get("semantic_search_enabled"):
+        if not config.get_setting(self._settings, "semantic.enabled"):
             msg = "Enable semantic search first"
         else:
             self._on_reindex()
@@ -225,8 +226,8 @@ class SearchPageMixin:
         self._apply_whisper_status(document_import.whisper_model_ready())
 
     def _on_whisper_model_changed(self, row, _pspec) -> None:
-        self._settings["document_whisper_model"] = self._whisper_values[
-            row.get_selected()]
+        config.set_setting(self._settings, "document.whisper_model",
+                           self._whisper_values[row.get_selected()])
         self._persist()
         self._refresh_whisper_status()          # different size → its own folder
 

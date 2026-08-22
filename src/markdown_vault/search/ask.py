@@ -495,10 +495,11 @@ def answer_question(question: str, semantic_index, settings: dict, vaults,
         hits = semantic_index.note_hits(note_paths)
     else:
         if top_k is None:
-            top_k = int(settings.get("ask_top_k") or config.default("ask_top_k"))
+            top_k = int(config.get_setting(settings, "ask.top_k")
+                        or config.default("ask.top_k"))
         hits = semantic_index.retrieve(question, top_k=top_k, vaults=vaults,
-                                       hybrid=bool(settings.get("ask_hybrid")))
-        if settings.get("hide_deprecated"):
+                                       hybrid=bool(config.get_setting(settings, "ask.hybrid")))
+        if config.get_setting(settings, "hide_deprecated"):
             # The shared "hide deprecated" filter applies to RAG retrieval too —
             # drop deprecated notes from the context. An explicit user filter, not
             # the automatic down-ranking we deliberately avoid.
@@ -521,12 +522,13 @@ def answer_question(question: str, semantic_index, settings: dict, vaults,
             hits = kept
     # Only override thinking when the user turned reasoning OFF, so non-reasoning
     # models (and Ollama, which errors on an unknown "think") keep their default.
-    think = False if not settings.get("ask_reasoning", True) else None
-    num_ctx = int(settings.get("ask_num_ctx") or config.default("ask_num_ctx"))
+    think = False if not config.get_setting(settings, "ask.reasoning", True) else None
+    num_ctx = int(config.get_setting(settings, "ask.num_ctx")
+                  or config.default("ask.num_ctx"))
     # Answer engine: "auto" configures everything (always the in-process backend,
     # GPU offload when the build supports it, a safe thread count); "manual" honours
     # the advanced backend/threads/GPU settings; "off" produces no answers.
-    engine = settings.get("ask_engine") or config.default("ask_engine")
+    engine = config.get_setting(settings, "ask.engine") or config.default("ask.engine")
     if engine == "off":
         return Answer(text="Answers are turned off. Turn the answer engine on in "
                            "Preferences → Search → Ask.")
@@ -554,19 +556,19 @@ def answer_question(question: str, semantic_index, settings: dict, vaults,
             flash_attn = False
             n_batch = n_ubatch = 0
             use_mmap = True
-            num_ctx = int(config.default("ask_num_ctx"))
-            max_tokens = int(config.default("ask_max_tokens"))
+            num_ctx = int(config.default("ask.num_ctx"))
+            max_tokens = int(config.default("ask.max_tokens"))
         else:
-            n_gpu_layers = int(settings.get("ask_n_gpu_layers") or 0)
-            type_k = settings.get("ask_kv_type_k") or "f16"
-            type_v = settings.get("ask_kv_type_v") or "f16"
-            flash_attn = bool(settings.get("ask_flash_attn"))
-            n_batch = int(settings.get("ask_n_batch") or 0)
-            n_ubatch = int(settings.get("ask_n_ubatch") or 0)
-            use_mmap = bool(settings.get("ask_use_mmap", True))
-            max_tokens = int(settings.get("ask_max_tokens") or 1024)
+            n_gpu_layers = int(config.get_setting(settings, "ask.local.n_gpu_layers") or 0)
+            type_k = config.get_setting(settings, "ask.local.kv_type_k") or "f16"
+            type_v = config.get_setting(settings, "ask.local.kv_type_v") or "f16"
+            flash_attn = bool(config.get_setting(settings, "ask.local.flash_attn"))
+            n_batch = int(config.get_setting(settings, "ask.local.n_batch") or 0)
+            n_ubatch = int(config.get_setting(settings, "ask.local.n_ubatch") or 0)
+            use_mmap = bool(config.get_setting(settings, "ask.local.use_mmap", True))
+            max_tokens = int(config.get_setting(settings, "ask.max_tokens") or 1024)
         # 0 threads → the safe default (half the physical cores), in both modes.
-        n_threads = (int(settings.get("ask_n_threads") or 0)
+        n_threads = (int(config.get_setting(settings, "ask.local.n_threads") or 0)
                      or llama_runtime.default_threads())
         chat = llama_runtime.LlamaCppChat(
             gguf, num_ctx=num_ctx, n_gpu_layers=n_gpu_layers, n_threads=n_threads,
@@ -578,13 +580,16 @@ def answer_question(question: str, semantic_index, settings: dict, vaults,
         # No fallback to the default model name here: that default belongs to
         # Ollama, and sending it to an OpenAI-compatible server would be a model
         # it does not have. Empty means "the server's own default".
-        chat = OpenAIChat(model=settings.get("ask_model") or "",
-                          url=settings.get("ask_ollama_url") or config.default("ask_ollama_url"),
+        chat = OpenAIChat(model=config.get_setting(settings, "ask.server.model") or "",
+                          url=config.get_setting(settings, "ask.server.url")
+                          or config.default("ask.server.url"),
                           think=think, api_key=ask_models.api_key(settings))
         char_budget = None
     else:  # ollama
-        chat = OllamaChat(model=settings.get("ask_model") or config.default("ask_model"),
-                          url=settings.get("ask_ollama_url") or config.default("ask_ollama_url"),
+        chat = OllamaChat(model=config.get_setting(settings, "ask.server.model")
+                          or config.default("ask.server.model"),
+                          url=config.get_setting(settings, "ask.server.url")
+                          or config.default("ask.server.url"),
                           think=think, num_ctx=num_ctx,
                           api_key=ask_models.api_key(settings))
         char_budget = context_char_budget(num_ctx)
@@ -604,5 +609,5 @@ def answer_question(question: str, semantic_index, settings: dict, vaults,
     if on_phase is not None and backend != "local":
         on_phase("thinking")                  # local fires its own load/think phases
     return answer(question, hits, chat, language=language,
-                  system_template=settings.get("ask_system_prompt") or None,
+                  system_template=config.get_setting(settings, "ask.system_prompt") or None,
                   extra_warnings=dep_note + budget_note)

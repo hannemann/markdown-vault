@@ -25,7 +25,7 @@ config.apply_webkit_env(_settings)
 # Apply the configured log levels now that settings are available.
 logging_setup.init(_settings)
 logging_setup.set_third_party_loglevel(
-    _settings.get("third_party_loglevel", "warning")
+    config.get_setting(_settings, "log.third_party", "warning")
 )
 
 logger = logging.getLogger("markdown-vault")

@@ -16,7 +16,7 @@ logs, debug dumps     ``STATE_DIR``        state: persists, not portable, not co
 semantic index        ``CACHE_DIR``        regenerates from the notes
 ONNX + GGUF models    ``DATA_DIR``         deliberately downloaded, expensive; a cache
                                            cleaner must not silently eat a GB
-``vaults.yaml``       ``CONFIG_DIR``       user configuration
+``settings.yaml``       ``CONFIG_DIR``       user configuration
 ===================== ==================== ==========================================
 
 ``MDV_CONFIG_DIR`` overrides the config directory *verbatim* (isolated runs and the E2E
@@ -59,7 +59,7 @@ def config_dir() -> Path:
 
 #: Logs, debug dumps, ``session.json``.
 STATE_DIR = resolve("XDG_STATE_HOME", ".local/state")
-#: ``vaults.yaml`` (honours ``MDV_CONFIG_DIR``).
+#: ``settings.yaml`` (honours ``MDV_CONFIG_DIR``).
 CONFIG_DIR = config_dir()
 #: Regenerable data — the semantic index.
 CACHE_DIR = resolve("XDG_CACHE_HOME", ".cache")

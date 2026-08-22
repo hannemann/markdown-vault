@@ -23,7 +23,7 @@ class _TempSessionMixin:
         # too, or the test would mkdir the developer's real state dir.
         self._orig_state = _cfg.STATE_DIR
         _cfg.CONFIG_DIR = Path(self._tmpdir)
-        _cfg.CONFIG_FILE = Path(self._tmpdir) / "vaults.yaml"
+        _cfg.CONFIG_FILE = Path(self._tmpdir) / "settings.yaml"
         _cfg.STATE_DIR = Path(self._tmpdir) / "state"
         _ses.SESSION_FILE = Path(self._tmpdir) / "session.json"
         _cfg._vaults_cache = None
@@ -247,9 +247,9 @@ class TestLegacyMigration(_TempSessionMixin, unittest.TestCase):
         vault_dir.mkdir()
         note = vault_dir / "note.md"
         note.touch()
-        # Write vaults.yaml with our test vault.
+        # Write settings.yaml with our test vault.
         import yaml
-        (_cfg.CONFIG_DIR / "vaults.yaml").write_text(
+        (_cfg.CONFIG_DIR / "settings.yaml").write_text(
             yaml.dump({"vaults": [{"name": "test", "path": str(vault_dir)}]}),
             encoding="utf-8",
         )

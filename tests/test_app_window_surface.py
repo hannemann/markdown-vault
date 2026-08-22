@@ -18,6 +18,7 @@ Keep them apart and say which kind a new test is.
 import unittest
 import unittest.mock
 
+from markdown_vault.core import config
 from test_app_window_construction import AppWindowTest
 
 
@@ -61,33 +62,33 @@ class TestAskWiring(AppWindowTest):
     controller (`win._ask`), reached the same way the palette reaches them."""
 
     def test_no_reason_to_block_when_everything_is_configured(self):
-        self.win._settings["semantic_search_enabled"] = True
-        self.win._settings["ask_engine"] = "auto"
+        config.set_setting(self.win._settings, "semantic.enabled", True)
+        config.set_setting(self.win._settings, "ask.engine", "auto")
         self.win._semantic_index = unittest.mock.Mock()
         self.assertEqual(self.win._ask.unavailable_reason(), "")
         self.assertTrue(self.win._ask.can_ask())
 
     def test_semantic_search_off_is_named_first(self):
-        self.win._settings["semantic_search_enabled"] = False
+        config.set_setting(self.win._settings, "semantic.enabled", False)
         reason = self.win._ask.unavailable_reason()
         self.assertIn("Semantic search", reason)
         self.assertIn("Preferences", reason)          # says where to fix it
 
     def test_a_missing_index_and_a_disabled_engine_each_give_their_own_reason(self):
-        self.win._settings["semantic_search_enabled"] = True
+        config.set_setting(self.win._settings, "semantic.enabled", True)
         self.win._semantic_index = None
         self.assertIn("index", self.win._ask.unavailable_reason().lower())
 
         self.win._semantic_index = unittest.mock.Mock()
-        self.win._settings["ask_engine"] = "off"
+        config.set_setting(self.win._settings, "ask.engine", "off")
         self.assertIn("engine", self.win._ask.unavailable_reason().lower())
 
     def test_the_index_is_read_live_not_captured(self):
         # The controller gets a getter, not the index itself: Preferences drops
         # and rebuilds it at runtime, and a captured reference would keep
         # answering from an index the app has already discarded.
-        self.win._settings["semantic_search_enabled"] = True
-        self.win._settings["ask_engine"] = "auto"
+        config.set_setting(self.win._settings, "semantic.enabled", True)
+        config.set_setting(self.win._settings, "ask.engine", "auto")
         self.win._semantic_index = None
         self.assertFalse(self.win._ask.can_ask())
         self.win._semantic_index = unittest.mock.Mock()
@@ -96,7 +97,7 @@ class TestAskWiring(AppWindowTest):
     def test_endpoint_status_none_for_local_with_a_usable_model(self):
         # None is the palette's signal for "nothing to check" — a healthy local
         # model has no endpoint that could be unreachable.
-        self.win._settings["ask_engine"] = "auto"        # auto is always local
+        config.set_setting(self.win._settings, "ask.engine", "auto")  # auto is always local
         with unittest.mock.patch(
                 "markdown_vault.search.llama_runtime.availability",
                 return_value=None):
@@ -105,7 +106,7 @@ class TestAskWiring(AppWindowTest):
     def test_endpoint_status_blocks_local_when_the_model_cannot_load(self):
         # A local backend now carries its own verdict: a chosen GGUF that cannot
         # load blocks and banners exactly like a dead server.
-        self.win._settings["ask_engine"] = "auto"
+        config.set_setting(self.win._settings, "ask.engine", "auto")
         with unittest.mock.patch(
                 "markdown_vault.search.llama_runtime.availability",
                 return_value="No local model file at /x/m.gguf. Download one …"):
@@ -132,9 +133,9 @@ class TestAskWiring(AppWindowTest):
         prefs.assert_called_once_with(page="search")
 
     def test_endpoint_status_is_reported_for_a_server_backend(self):
-        self.win._settings["ask_engine"] = "manual"
-        self.win._settings["ask_backend"] = "openai"
-        self.win._settings["ask_ollama_url"] = "http://localhost:8080"
+        config.set_setting(self.win._settings, "ask.engine", "manual")
+        config.set_setting(self.win._settings, "ask.backend", "openai")
+        config.set_setting(self.win._settings, "ask.server.url", "http://localhost:8080")
         status = self.win._ask.endpoint_status()
         self.assertIsNotNone(status)
         self.assertTrue(hasattr(status, "can_ask"))
@@ -224,19 +225,19 @@ class TestPreferencesReactions(AppWindowTest):
     """
 
     def test_a_toggled_setting_is_recognised_as_a_change_exactly_once(self):
-        self.win._settings["preview_allow_remote_images"] = True
+        config.set_setting(self.win._settings, "preview.allow_remote_images", True)
         with unittest.mock.patch.object(self.win, "_tab_bar") as tabs:
             tabs.get_all_paths.return_value = []
             self.win._on_preferences_changed(None)
             self.win._on_preferences_changed(None)      # nothing changed since
-        self.assertTrue(self.win._applied["preview_allow_remote_images"])
+        self.assertTrue(self.win._applied["preview.allow_remote_images"])
 
     def test_semantic_search_turned_off_drops_the_index(self):
-        self.win._settings["semantic_search_enabled"] = True
+        config.set_setting(self.win._settings, "semantic.enabled", True)
         self.win._remember_applied_settings()
         index = unittest.mock.Mock()
         self.win._semantic_index = index
-        self.win._settings["semantic_search_enabled"] = False
+        config.set_setting(self.win._settings, "semantic.enabled", False)
         with unittest.mock.patch.object(self.win, "_tab_bar") as tabs:
             tabs.get_all_paths.return_value = []
             self.win._on_preferences_changed(None)
@@ -256,7 +257,7 @@ class TestSemanticBuildWiring(unittest.TestCase):
     def test_build_embedder_gets_the_windows_settings(self):
         import threading
         from markdown_vault.app import app_window as aw
-        settings = {"semantic_backend": "onnx", "semantic_onnx_dir": "/models/x"}
+        settings = {"semantic": {"backend": "onnx", "onnx": {"dir": "/models/x"}}}
         win = unittest.mock.MagicMock()
         win._settings = settings
         win._semantic_build_lock = threading.Lock()
@@ -283,7 +284,7 @@ class TestSemanticBuildWiring(unittest.TestCase):
         import threading
         from markdown_vault.app import app_window as aw
         win = unittest.mock.MagicMock()
-        win._settings = {"semantic_backend": "onnx"}
+        win._settings = {"semantic": {"backend": "onnx"}}
         win._semantic_build_lock = threading.Lock()
         win._semantic_index = None
         with unittest.mock.patch(

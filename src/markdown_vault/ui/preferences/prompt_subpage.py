@@ -11,6 +11,8 @@ gi.require_version("Adw", "1")
 
 from gi.repository import Gtk, Adw
 
+from markdown_vault.core import config
+
 
 class PromptSubpageMixin:
     def _build_prompt_subpage(self, _ask):
@@ -34,7 +36,8 @@ class PromptSubpageMixin:
                   self._ask_prompt_view.set_left_margin, self._ask_prompt_view.set_right_margin):
             m(6)
         self._ask_prompt_view.get_buffer().set_text(
-            self._settings.get("ask_system_prompt") or _ask.DEFAULT_SYSTEM_PROMPT)
+            config.get_setting(self._settings, "ask.system_prompt")
+            or _ask.DEFAULT_SYSTEM_PROMPT)
         self._ask_prompt_view.get_buffer().connect("changed", self._on_ask_prompt_changed)
         prompt_scroll = Gtk.ScrolledWindow(
             hscrollbar_policy=Gtk.PolicyType.NEVER, min_content_height=300,
@@ -50,6 +53,7 @@ class PromptSubpageMixin:
             buffer.get_start_iter(), buffer.get_end_iter(), False)
         # Store empty when unchanged from the built-in default, so the prompt
         # keeps tracking future improvements instead of pinning this snapshot.
-        self._settings["ask_system_prompt"] = (
+        config.set_setting(
+            self._settings, "ask.system_prompt",
             "" if text.strip() == _ask.DEFAULT_SYSTEM_PROMPT.strip() else text)
         self._persist_debounced()

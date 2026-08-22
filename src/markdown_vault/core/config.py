@@ -1,11 +1,12 @@
 """Markdown Vault — configuration management.
 
-Handles reading and writing of vault configuration stored in
-``~/.config/de.hannemann.markdown-vault/vaults.yaml``.  All paths are resolved to
+Handles reading and writing of vaults and settings stored in
+``~/.config/de.hannemann.markdown-vault/settings.yaml``.  All paths are resolved to
 absolute form on load and save to avoid duplicates that differ only
 by relative path notation.
 """
 
+import copy
 import logging
 import os
 import tempfile
@@ -18,13 +19,13 @@ from markdown_vault.core import paths, validation
 
 logger = logging.getLogger(__name__)
 
-# In-memory cache for vaults loaded from vaults.yaml.
+# In-memory cache for vaults loaded from settings.yaml.
 _vaults_cache: list[dict[str, str]] | None = None
 
 # The base directories live in core.paths (one definition for the whole app, shared
 # with logging_setup); re-exported here so existing call sites keep working.
 CONFIG_DIR = paths.CONFIG_DIR      # honours MDV_CONFIG_DIR, else XDG_CONFIG_HOME
-CONFIG_FILE = CONFIG_DIR / "vaults.yaml"
+CONFIG_FILE = CONFIG_DIR / "settings.yaml"
 
 STATE_DIR = paths.STATE_DIR        # logs, debug dumps, session.json
 CACHE_DIR = paths.CACHE_DIR        # regenerable: the semantic index
@@ -82,7 +83,7 @@ def _atomic_write(path: Path, content: str) -> None:
 
 
 def _read_vaults_from_disk() -> list[dict[str, str]]:
-    """Read vaults from vaults.yaml on disk (no caching)."""
+    """Read vaults from settings.yaml on disk (no caching)."""
     try:
         if not CONFIG_FILE.exists():
             logger.debug("No config file found, returning empty vault list")
@@ -260,144 +261,220 @@ def set_vault_icon(path: str, icon: str | None, mono: bool = False) -> list[dict
 # ── App settings ────────────────────────────────────────────────────
 
 _DEFAULT_SETTINGS = {
-    "autosave_interval": 30,
-    "default_view_mode": "edit",
+    "autosave": {"interval": 30},
+    "view": {"default_mode": "edit"},
     # OKF lifecycle: hide deprecated notes from the vault tree AND the search
     # surfaces (with a visible "N hidden" notice). One shared, persisted toggle.
+    # Top-level: it spans pages (tree + every search surface).
     "hide_deprecated": False,
-    "editor_font_size": 14,
-    "editor_tab_width": 4,
-    "editor_wrap_text": True,
-    "preview_zoom": 1.0,
-    "keybinding_next_tab": "<Control>Tab",
-    "keybinding_prev_tab": "<Shift><Control>Tab",
-    "tab_switch_mode": "mru",
-    "tab_min_width": 150,
-    "tab_wrap": False,
-    "loglevel": "info",
-    "third_party_loglevel": "warning",
-    "glib_loglevel": "critical",
-    "webkit_disable_dmabuf": False,
-    "webkit_disable_compositing": False,
-    "wikilink_autofix_normalize": False,
-    "wikilink_autofix_relink": False,
-    "wikilink_warn_on_save": False,
-    "wikilink_mark_broken": False,
-    "preview_allow_remote_images": False,
-    # Semantic (vector) search — opt-in, Ollama backend.
-    "semantic_search_enabled": False,
-    # "onnx" (local, recommended), "ollama" (server) or "openai" (an
-    # OpenAI-compatible embeddings server, e.g. llama.cpp/vLLM, POST /v1/embeddings)
-    "semantic_backend": "onnx",
-    "semantic_ollama_url": "http://localhost:11434",
-    "semantic_ollama_model": "nomic-embed-text",
-    # OpenAI-compatible embedding backend. No general default model name exists for
-    # such a server, so it starts empty (a configured-but-unusable state the UI must
-    # name). The API key is not here — it lives in the keyring under
-    # semantic_api_key:<backend>|<url>; _SECRET_KEYS masks a legacy plaintext copy.
-    "semantic_openai_url": "http://localhost:8080",
-    "semantic_openai_model": "",
-    # Folder holding the ONNX files (model.onnx + tokenizer.json); it is both the
-    # download target and the load source. Empty → the app data dir default.
-    "semantic_onnx_dir": "",
-    "semantic_onnx_model_url":
-        "https://huggingface.co/Xenova/paraphrase-multilingual-MiniLM-L12-v2/"
-        "resolve/main/onnx/model.onnx",
-    "semantic_onnx_tokenizer_url":
-        "https://huggingface.co/Xenova/paraphrase-multilingual-MiniLM-L12-v2/"
-        "resolve/main/tokenizer.json",
-    "semantic_min_score": 0.35,
-    # Answer engine — the top-level Ask control.
-    #   "auto"   — the app configures everything: in-process backend, GPU offload
-    #              when the build supports it, a safe thread count (recommended)
-    #   "manual" — honour the advanced ask_backend / thread / GPU settings below
-    #   "off"    — no answers are generated
-    "ask_engine": "auto",
-    # Ask/answer (RAG): the manual-mode chat backend.
-    #   "local"  — in-process GGUF via llama-cpp-python (no server)
-    #   "ollama" — a running Ollama server (/api/chat)
-    #   "openai" — an OpenAI-compatible server, e.g. llama.cpp (/v1)
-    "ask_backend": "local",
-    "ask_ollama_url": "http://localhost:11434",
-    "ask_model": "llama3.2",
-    # The model choice belongs to the server, not to the app: "<backend>|<url>" →
-    # model name, so switching provider restores that provider's model instead of
-    # sending the previous one to a server that does not have it.
-    "ask_model_by_endpoint": {},
-    # Same for the server URL: one per backend, so switching does not point the
-    # new backend at the previous one's host. ask_ollama_url is the active value.
-    "ask_url_by_backend": {},
-    # Local (in-process) GGUF model. The .gguf file is both the download target
-    # and the load source; empty → the app state dir default. The URL pre-fills
-    # the download button with a small llama3.2-3B instruct build.
-    "ask_gguf_path": "",
-    # Folder the Ask GGUF picker searches and downloads into; empty → the shared
-    # models_dir(). Kept separate so it does not move the Whisper models there.
-    "ask_models_dir": "",
-    "ask_gguf_url":
-        "https://huggingface.co/bartowski/Llama-3.2-3B-Instruct-GGUF/"
-        "resolve/main/Llama-3.2-3B-Instruct-Q4_K_M.gguf",
-    # llama.cpp runtime knobs. 0 GPU layers = pure CPU (safe default, works on a
-    # laptop); raise to offload layers to a GPU. 0 threads = half the physical
-    # cores (resolved at runtime).
-    "ask_n_gpu_layers": 0,
-    "ask_n_threads": 0,
-    # Prompt batch sizes. n_batch is the logical batch (max tokens per decode);
-    # n_ubatch the physical micro-batch actually processed at once — the real
-    # prefill-speed lever on the GPU. 0 = llama.cpp default (2048 / 512). Larger
-    # n_ubatch speeds up the prompt-reading phase; keep n_ubatch <= n_batch.
-    "ask_n_batch": 0,
-    "ask_n_ubatch": 0,
-    # KV-cache precision, chosen separately for the K and V caches: "f16"
-    # (default) or quantized "q8_0"/"q4_0". Quantizing K is free; quantizing V
-    # (type_v below f16) requires flash attention.
-    "ask_kv_type_k": "f16",
-    "ask_kv_type_v": "f16",
-    "ask_flash_attn": False,
-    # Memory-map the model file (default). Off loads it fully into RAM — slower
-    # first load, but no page-faults during the answer; needs enough free RAM.
-    "ask_use_mmap": True,
-    # Hard cap on generated tokens, so a model that degenerates into a repetition
-    # loop still stops (it would otherwise run until the context is full).
-    "ask_max_tokens": 1024,
-    "ask_system_prompt": "",  # empty → the built-in default (ask.DEFAULT_SYSTEM_PROMPT)
-    # Reasoning models (Qwen3, …) think before answering: accurate but slow. For
-    # grounded note Q&A, disabling it is faster and better calibrated. Only sent
-    # to the backend when False, so non-reasoning models are unaffected.
-    "ask_reasoning": True,
-    # Context window (tokens) requested from Ollama. Its own default (2048)
-    # truncates multi-note contexts; note-level retrieval needs more. Larger =
-    # fits more/longer notes, but costs memory. Only used by the Ollama backend
-    # (llama.cpp sizes its context server-side).
-    "ask_num_ctx": 8192,
-    # How many notes are retrieved as context for an answer. On CPU the model
-    # spends almost all its time *reading* this context, so fewer notes = much
-    # faster (roughly linear); 10 suits a GPU, ~5 a slow CPU.
-    "ask_top_k": 10,
-    # Hybrid retrieval: fuse a BM25 (keyword) ranking into the semantic one so
-    # exact tokens (names, config keys, shortcuts) that embeddings blur still
-    # surface, and relevant notes rank higher. On by default (measured +10/100
-    # on a gold set, never worse); the Preferences switch can disable it if the
-    # extra BM25 index is unwanted on a very large vault.
-    "ask_hybrid": True,
+    "editor": {"font_size": 14, "tab_width": 4, "wrap_text": True},
+    "preview": {"zoom": 1.0, "allow_remote_images": False},
+    "tabs": {
+        "min_width": 150,
+        "wrap": False,
+        "switch_mode": "mru",
+        "keybinding": {"next": "<Control>Tab", "prev": "<Shift><Control>Tab"},
+    },
+    "log": {"level": "info", "third_party": "warning", "glib": "critical"},
+    "webkit": {"disable_dmabuf": False, "disable_compositing": False},
+    "wikilink": {
+        "autofix_normalize": False,
+        "autofix_relink": False,
+        "warn_on_save": False,
+        "mark_broken": False,
+    },
+    # Semantic (vector) search — opt-in.
+    "semantic": {
+        "enabled": False,
+        # "onnx" (local, recommended), "ollama" (server) or "openai" (an
+        # OpenAI-compatible embeddings server, e.g. llama.cpp/vLLM, POST /v1/embeddings)
+        "backend": "onnx",
+        "min_score": 0.35,
+        "ollama": {"url": "http://localhost:11434", "model": "nomic-embed-text"},
+        # OpenAI-compatible embedding backend. No general default model name exists
+        # for such a server, so it starts empty (a configured-but-unusable state the
+        # UI must name). The API key is not here — it lives in the keyring under
+        # semantic_api_key:<backend>|<url>; the debug-log masking hides a legacy copy.
+        "openai": {"url": "http://localhost:8080", "model": ""},
+        # Folder holding the ONNX files (model.onnx + tokenizer.json); both the
+        # download target and the load source. Empty → the app data dir default.
+        "onnx": {
+            "dir": "",
+            "model_url":
+                "https://huggingface.co/Xenova/paraphrase-multilingual-MiniLM-L12-v2/"
+                "resolve/main/onnx/model.onnx",
+            "tokenizer_url":
+                "https://huggingface.co/Xenova/paraphrase-multilingual-MiniLM-L12-v2/"
+                "resolve/main/tokenizer.json",
+        },
+    },
+    "ask": {
+        # Answer engine — the top-level Ask control.
+        #   "auto"   — the app configures everything: in-process backend, GPU offload
+        #              when the build supports it, a safe thread count (recommended)
+        #   "manual" — honour the advanced ask.backend / ask.local settings below
+        #   "off"    — no answers are generated
+        "engine": "auto",
+        # Ask/answer (RAG): the manual-mode chat backend.
+        #   "local"  — in-process GGUF via llama-cpp-python (no server)
+        #   "ollama" — a running Ollama server (/api/chat)
+        #   "openai" — an OpenAI-compatible server, e.g. llama.cpp (/v1)
+        "backend": "local",
+        # Reasoning models (Qwen3, …) think before answering: accurate but slow. For
+        # grounded note Q&A, disabling it is faster and better calibrated. Only sent
+        # to the backend when False, so non-reasoning models are unaffected.
+        "reasoning": True,
+        # Hybrid retrieval: fuse a BM25 (keyword) ranking into the semantic one so
+        # exact tokens (names, config keys, shortcuts) that embeddings blur still
+        # surface. On by default (measured +10/100 on a gold set, never worse).
+        "hybrid": True,
+        # How many notes are retrieved as context for an answer. On CPU the model
+        # spends almost all its time *reading* this context, so fewer notes = much
+        # faster (roughly linear); 10 suits a GPU, ~5 a slow CPU.
+        "top_k": 10,
+        # Context window (tokens) requested from Ollama. Its own default (2048)
+        # truncates multi-note contexts. Used by the local and Ollama backends
+        # (openai sizes its context server-side).
+        "num_ctx": 8192,
+        # Hard cap on generated tokens, so a model that degenerates into a repetition
+        # loop still stops (it would otherwise run until the context is full).
+        "max_tokens": 1024,
+        "system_prompt": "",  # empty → the built-in default (ask.DEFAULT_SYSTEM_PROMPT)
+        # Everything read only by the server backends (ollama / openai).
+        "server": {
+            # The active server URL for the current server backend (ollama or openai).
+            "url": "http://localhost:11434",
+            # The server model. The model choice belongs to the server, not the app.
+            "model": "llama3.2",
+            # "<backend>|<url>" → model name, so switching provider restores that
+            # provider's model instead of sending the previous one to a server that
+            # does not have it. Opaque data leaf (not a schema branch).
+            "model_by_endpoint": {},
+            # One URL per backend, so switching does not point the new backend at the
+            # previous one's host. server.url is the active value. Opaque data leaf.
+            "url_by_backend": {},
+        },
+        # llama.cpp runtime knobs, read only in the local (in-process) branch.
+        "local": {
+            # 0 GPU layers = pure CPU (safe default, works on a laptop); raise to
+            # offload layers to a GPU. 0 threads = half the physical cores (runtime).
+            "n_gpu_layers": 0,
+            "n_threads": 0,
+            # Prompt batch sizes. n_batch is the logical batch; n_ubatch the physical
+            # micro-batch — the real prefill-speed lever on the GPU. 0 = llama.cpp
+            # default (2048 / 512). Keep n_ubatch <= n_batch.
+            "n_batch": 0,
+            "n_ubatch": 0,
+            # KV-cache precision per cache: "f16" (default) or quantized "q8_0"/"q4_0".
+            # Quantizing K is free; quantizing V below f16 requires flash attention.
+            "kv_type_k": "f16",
+            "kv_type_v": "f16",
+            "flash_attn": False,
+            # Memory-map the model file (default). Off loads it fully into RAM.
+            "use_mmap": True,
+        },
+        # The local GGUF model. The .gguf file is both the download target and the
+        # load source; empty → the app state dir default.
+        "gguf": {
+            "path": "",
+            "url":
+                "https://huggingface.co/bartowski/Llama-3.2-3B-Instruct-GGUF/"
+                "resolve/main/Llama-3.2-3B-Instruct-Q4_K_M.gguf",
+            # Folder the Ask GGUF picker searches and downloads into; empty → the
+            # shared models_dir(). Kept separate from the Whisper models.
+            "dir": "",
+        },
+    },
     # Document import — Whisper model size for audio transcription (tiny · base ·
     # small · medium · large-v3; bigger = more accurate, slower, larger download).
-    # Downloaded explicitly in Preferences, never during an import.
-    "document_whisper_model": "base",
-    # Folder the document-import file chooser reopens in — the directory of the last
-    # picked file, so importing several files in a row doesn't drop back to $HOME.
-    "document_import_last_dir": "",
+    "document": {"whisper_model": "base", "import_last_dir": ""},
 }
 
+# Dict-valued settings that are *data*, not schema branches: ``_flatten`` stops at
+# them (their contents are user endpoint keys, not settings paths).
+_OPAQUE_LEAVES = frozenset({
+    "ask.server.model_by_endpoint",
+    "ask.server.url_by_backend",
+})
 
-def default(key):
-    """The built-in default value for a setting *key* (``""`` if unknown).
 
-    Use ``settings.get(key) or config.default(key)`` at read sites so a field
-    the user has cleared to an empty string falls back to the default instead
-    of an empty value.
+def _navigate(tree: dict, path: str):
+    """Return ``(parent_dict, leaf_key, found)`` for a dotted *path* in *tree*.
+
+    ``found`` is False when any branch along the path is missing or not a dict.
     """
-    return _DEFAULT_SETTINGS.get(key, "")
+    parts = path.split(".")
+    node = tree
+    for part in parts[:-1]:
+        if not isinstance(node, dict) or part not in node:
+            return None, parts[-1], False
+        node = node[part]
+    if not isinstance(node, dict) or parts[-1] not in node:
+        return node if isinstance(node, dict) else None, parts[-1], False
+    return node, parts[-1], True
+
+
+def get_setting(settings: dict, path: str, default_value=None):
+    """Read the leaf at dotted *path* from *settings*.
+
+    Returns *default_value* when the path is absent. Use
+    ``get_setting(settings, path, config.default(path))`` at read sites so a
+    field the user cleared to empty falls back to the default — the nested
+    counterpart of the old ``settings.get(key) or config.default(key)``.
+    """
+    parent, leaf, found = _navigate(settings, path)
+    if not found:
+        return default_value
+    return parent[leaf]
+
+
+def set_setting(settings: dict, path: str, value) -> None:
+    """Write *value* to the leaf at dotted *path* in *settings*, in place.
+
+    Missing intermediate branches are created, so a partial user file still
+    accepts a write to a deep path.
+    """
+    parts = path.split(".")
+    node = settings
+    for part in parts[:-1]:
+        child = node.get(part)
+        if not isinstance(child, dict):
+            child = {}
+            node[part] = child
+        node = child
+    node[parts[-1]] = value
+
+
+def default(path):
+    """The built-in default value for a setting *path* (``""`` if unknown).
+
+    Takes a dotted path (``"ask.server.url"``) and navigates the nested
+    ``_DEFAULT_SETTINGS``. Returns ``""`` for an unknown path so a read site's
+    ``get_setting(s, path) or config.default(path)`` fallback degrades to empty
+    rather than raising.
+    """
+    parent, leaf, found = _navigate(_DEFAULT_SETTINGS, path)
+    if not found:
+        return ""
+    return parent[leaf]
+
+
+def _flatten(settings: dict, _prefix: str = "") -> dict:
+    """Flatten a nested settings tree to ``{dotted-path: leaf-value}``.
+
+    Descends into schema branches but stops at ``_OPAQUE_LEAVES`` (dict-valued
+    *data*, e.g. the per-endpoint model memory), which flatten as a single leaf.
+    Used by the lost-write, secret-masking and coverage checks, all of which
+    must compare *leaves*, not top-level branches.
+    """
+    flat = {}
+    for key, value in settings.items():
+        path = f"{_prefix}{key}"
+        if isinstance(value, dict) and path not in _OPAQUE_LEAVES:
+            flat.update(_flatten(value, f"{path}."))
+        else:
+            flat[path] = value
+    return flat
 
 
 def models_dir() -> Path:
@@ -412,7 +489,7 @@ def ask_models_dir(settings: dict) -> Path:
     ``ask_models_dir`` if set, else the shared :func:`models_dir`. Kept apart from
     ``models_dir()`` itself, which also holds the audio import's Whisper models —
     those must not move when the Ask folder is changed."""
-    raw = (settings or {}).get("ask_models_dir", "")
+    raw = get_setting(settings or {}, "ask.gguf.dir", "")
     return Path(raw) if raw else models_dir()
 
 
@@ -448,7 +525,7 @@ def resolve_model_path(settings: dict) -> str:
     model), not papered over by loading a different model. Only an **empty** choice
     falls back to the newest model in the folder.
     """
-    explicit = settings.get("ask_gguf_path") or ""
+    explicit = get_setting(settings, "ask.gguf.path") or ""
     if explicit:
         cand = Path(explicit)
         if not cand.is_absolute():
@@ -468,7 +545,7 @@ def ask_gguf_wanted_path(settings: dict) -> str:
     Unlike :func:`resolve_model_path` this does not blank a set-but-missing choice:
     the error path needs the *wanted* name to tell the user which model is gone,
     where ``resolve_model_path`` would already have returned ``""``."""
-    name = settings.get("ask_gguf_path") or ""
+    name = get_setting(settings, "ask.gguf.path") or ""
     if not name:
         return resolve_model_path(settings)
     cand = Path(name)
@@ -539,28 +616,54 @@ def gguf_n_layers(path) -> int | None:
     return None
 
 
-# Setting key → environment variable consumed by WebKitGTK at startup.
+# Setting path → environment variable consumed by WebKitGTK at startup.
 _WEBKIT_ENV_KEYS = {
-    "webkit_disable_dmabuf": "WEBKIT_DISABLE_DMABUF_RENDERER",
-    "webkit_disable_compositing": "WEBKIT_DISABLE_COMPOSITING_MODE",
+    "webkit.disable_dmabuf": "WEBKIT_DISABLE_DMABUF_RENDERER",
+    "webkit.disable_compositing": "WEBKIT_DISABLE_COMPOSITING_MODE",
 }
+
+
+def _is_secret(path: str) -> bool:
+    """Whether a flattened setting *path* names a secret (masked in logs).
+
+    Matched on the leaf so it survives nesting (``ask.api_key``,
+    ``semantic.openai.api_key``) and any legacy flat ``*_api_key``. The value
+    itself lives in the OS keyring, not the settings; this only guards a legacy
+    plaintext copy a hand-edited settings.yaml might still hold.
+
+    **Convention (a promise, because this is a pattern, not a list):** a secret
+    setting MUST use a leaf ending in ``api_key``. A secret named otherwise
+    (``token``, ``…secret``) would silently go unmasked — extend this predicate
+    when adding one, since nothing else forces the thought.
+    """
+    return path.rsplit(".", 1)[-1].endswith("api_key")
+
+
+def _deep_merge(base: dict, override: dict) -> None:
+    """Recursively merge *override* into *base*, in place.
+
+    A dict value merges branch-wise so a user file that overrides one leaf
+    (``ask: {top_k: 12}``) keeps the branch's other defaults; any non-dict value
+    replaces. Opaque data leaves default to ``{}``, so merging a user's dict into
+    them is the same as replacing — no special case needed.
+    """
+    for key, value in override.items():
+        if isinstance(value, dict) and isinstance(base.get(key), dict):
+            _deep_merge(base[key], value)
+        else:
+            base[key] = value
 
 
 # Last settings dict logged by load_settings(), so we dump the full dict only
 # when it changes — startup calls load_settings() ~7 times and logging the whole
 # config each time is pure noise.
-# Settings keys whose value is a secret and must never be logged verbatim. The
-# value lives in the OS keyring (secret_store), not here; this only guards a legacy
-# plaintext copy that a hand-edited vaults.yaml might still hold.
-_SECRET_KEYS = {"ask_api_key", "semantic_api_key"}
-
 _last_logged_settings = None
 
 
 def _migrate_settings(settings: dict) -> None:
     """In-place migration of renamed/removed settings for old configs."""
     # semantic_onnx_model / semantic_onnx_tokenizer were replaced by the folder
-    # setting semantic_onnx_dir; carry a custom old location over so semantic
+    # setting semantic.onnx.dir; carry a custom old location over so semantic
     # search keeps finding the model instead of silently reverting to default.
     # Drop both old keys unconditionally so the migration is one-shot once the
     # config is next saved — otherwise they linger and a later "reset to default"
@@ -568,12 +671,12 @@ def _migrate_settings(settings: dict) -> None:
     model = settings.pop("semantic_onnx_model", None)
     tokenizer = settings.pop("semantic_onnx_tokenizer", None)
     old = model or tokenizer
-    if old and not settings.get("semantic_onnx_dir"):
-        settings["semantic_onnx_dir"] = os.path.dirname(old)
+    if old and not get_setting(settings, "semantic.onnx.dir"):
+        set_setting(settings, "semantic.onnx.dir", os.path.dirname(old))
 
 
 def load_settings() -> dict:
-    """Load app settings from vaults.yaml, with safe defaults."""
+    """Load app settings from settings.yaml, with safe defaults."""
     try:
         if not CONFIG_FILE.exists():
             # On a genuine first run there is no config dir either — that is normal
@@ -588,21 +691,22 @@ def load_settings() -> dict:
                     CONFIG_FILE, CONFIG_DIR)
             else:
                 logger.debug("No config file, using default settings")
-            return dict(_DEFAULT_SETTINGS)
+            return copy.deepcopy(_DEFAULT_SETTINGS)
         with open(CONFIG_FILE, "r", encoding="utf-8") as fh:
             data = yaml.safe_load(fh) or {}
     except (yaml.YAMLError, OSError) as exc:
         logger.warning("Failed to parse config for settings: %s", exc)
-        return dict(_DEFAULT_SETTINGS)
-    settings = dict(_DEFAULT_SETTINGS)
-    settings.update(data.get("settings") or {})
+        return copy.deepcopy(_DEFAULT_SETTINGS)
+    settings = copy.deepcopy(_DEFAULT_SETTINGS)
+    _deep_merge(settings, data.get("settings") or {})
     _migrate_settings(settings)
     global _last_logged_settings
     # Secrets belong in the keyring, not settings — but mask them in the debug
-    # dump anyway (defence in depth: a legacy vaults.yaml may still carry one, and
-    # loglevel: debug is what the manual-testing loop sets).
-    loggable = {k: ("***" if k in _SECRET_KEYS and v else v)
-                for k, v in settings.items() if k != "loglevel"}
+    # dump anyway (defence in depth: a legacy settings.yaml may still carry one, and
+    # loglevel: debug is what the manual-testing loop sets). Flatten first so the
+    # mask and the change-detection compare leaves, not whole branches.
+    loggable = {p: ("***" if _is_secret(p) and v else v)
+                for p, v in _flatten(settings).items() if p != "log.level"}
     if loggable != _last_logged_settings:
         logger.debug("Loaded settings: %s", loggable)
         _last_logged_settings = loggable
@@ -614,8 +718,10 @@ def _log_settings_write(before: dict, after: dict) -> None:
 
     ``save_settings`` replaces the whole block, so a caller holding a stale or partial
     snapshot silently erases everything not in it — that is how a leaked timer once
-    wiped 50 settings. Dropped keys are therefore a WARNING, ordinary changes an INFO;
-    both survive the ``loglevel: info`` a reset restores.
+    wiped 50 settings. Both dicts are **flattened** first, so a dropped *nested leaf*
+    (``ask.server.url`` gone while the ``ask`` branch stays) is still seen — a
+    top-level diff would miss it. Dropped leaves are a WARNING, ordinary changes an
+    INFO; both survive the ``loglevel: info`` a reset restores.
     """
     # Which of the five writers this is. The logger name is core.config for all of
     # them and _FORMAT carries no filename, so without this a DROPS warning says what
@@ -625,20 +731,21 @@ def _log_settings_write(before: dict, after: dict) -> None:
     frame = stack[0] if len(stack) >= 3 else None
     where = f"{os.path.basename(frame.filename)}:{frame.lineno}" if frame else "?"
 
-    dropped = sorted(set(before) - set(after))
-    changed = sorted(k for k in after if k in before and before[k] != after[k])
-    added = sorted(set(after) - set(before))
+    fbefore, fafter = _flatten(before), _flatten(after)
+    dropped = sorted(set(fbefore) - set(fafter))
+    changed = sorted(k for k in fafter if k in fbefore and fbefore[k] != fafter[k])
+    added = sorted(set(fafter) - set(fbefore))
 
     def _v(key, value):
-        return "***" if key in _SECRET_KEYS and value else value
+        return "***" if _is_secret(key) and value else value
 
     if dropped:
         logger.warning(
-            "settings write from %s DROPS %d key(s) — the caller's snapshot is partial "
+            "settings write from %s DROPS %d leaf(s) — the caller's snapshot is partial "
             "or stale: %s", where, len(dropped), ", ".join(dropped))
     if changed or added:
-        parts = [f"{k}: {_v(k, before[k])!r} -> {_v(k, after[k])!r}" for k in changed]
-        parts += [f"{k}: (new) {_v(k, after[k])!r}" for k in added]
+        parts = [f"{k}: {_v(k, fbefore[k])!r} -> {_v(k, fafter[k])!r}" for k in changed]
+        parts += [f"{k}: (new) {_v(k, fafter[k])!r}" for k in added]
         logger.info("settings write from %s: %s", where, "; ".join(parts))
 
 
@@ -678,7 +785,7 @@ def reload_settings() -> dict:
 
 
 def save_settings(settings_to_save: dict | None = None) -> None:
-    """Persist settings into vaults.yaml (merged with existing vaults).
+    """Persist settings into settings.yaml (merged with existing vaults).
 
     Without an argument the owned state (:func:`settings`) is written — the normal
     case. Passing a dict stays possible for tests and one-off writes.
@@ -713,6 +820,6 @@ def apply_webkit_env(values: dict | None = None) -> None:
     """
     if values is None:
         values = settings()
-    for setting_key, env_key in _WEBKIT_ENV_KEYS.items():
-        if values.get(setting_key):
+    for setting_path, env_key in _WEBKIT_ENV_KEYS.items():
+        if get_setting(values, setting_path):
             os.environ[env_key] = "1"

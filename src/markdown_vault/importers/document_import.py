@@ -46,7 +46,8 @@ def whisper_model_name() -> str:
     """The configured Whisper model size/id (Preferences → Audio transcription),
     defaulting to ``base``."""
     from markdown_vault.core import config
-    return (config.settings().get("document_whisper_model") or _WHISPER_MODEL).strip()
+    return (config.get_setting(config.settings(), "document.whisper_model")
+            or _WHISPER_MODEL).strip()
 
 
 def _whisper_repo(name: str) -> str:

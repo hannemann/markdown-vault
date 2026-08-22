@@ -19,7 +19,7 @@ class _TempConfigMixin:
         self._orig_dir = _cfg.CONFIG_DIR
         self._orig_file = _cfg.CONFIG_FILE
         _cfg.CONFIG_DIR = Path(self._tmpdir)
-        _cfg.CONFIG_FILE = Path(self._tmpdir) / "vaults.yaml"
+        _cfg.CONFIG_FILE = Path(self._tmpdir) / "settings.yaml"
         _cfg._vaults_cache = None
         # The owned settings are process state: without this, one test's object
         # (loaded from a temp dir that is about to be deleted) would answer the
@@ -166,13 +166,13 @@ class TestSaveVaults(_TempConfigMixin, unittest.TestCase):
 
     def test_save_vaults_preserves_settings(self):
         settings = _cfg.load_settings()
-        settings["autosave_interval"] = 999
-        settings["editor_font_size"] = 22
+        _cfg.set_setting(settings, "autosave.interval", 999)
+        _cfg.set_setting(settings, "editor.font_size", 22)
         _cfg.save_settings(settings)
         _cfg.save_vaults([{"name": "Notes", "path": "/tmp/notes"}])
         loaded = _cfg.load_settings()
-        self.assertEqual(loaded["autosave_interval"], 999)
-        self.assertEqual(loaded["editor_font_size"], 22)
+        self.assertEqual(_cfg.get_setting(loaded, "autosave.interval"), 999)
+        self.assertEqual(_cfg.get_setting(loaded, "editor.font_size"), 22)
 
 
 class TestAddVault(_TempConfigMixin, unittest.TestCase):
@@ -278,42 +278,42 @@ class TestSettingsAreOneObject(_TempConfigMixin, unittest.TestCase):
 
     def test_a_change_by_one_caller_is_visible_to_the_other(self):
         a, b = _cfg.settings(), _cfg.settings()
-        a["editor_font_size"] = 21
-        self.assertEqual(b["editor_font_size"], 21)
+        _cfg.set_setting(a, "editor.font_size", 21)
+        self.assertEqual(_cfg.get_setting(b, "editor.font_size"), 21)
 
     def test_saving_needs_no_argument(self):
-        _cfg.settings()["autosave_interval"] = 99
+        _cfg.set_setting(_cfg.settings(), "autosave.interval", 99)
         _cfg.save_settings()
-        self.assertEqual(_cfg.load_settings()["autosave_interval"], 99)
+        self.assertEqual(_cfg.get_setting(_cfg.load_settings(), "autosave.interval"), 99)
 
     def test_a_second_writer_cannot_undo_the_first(self):
         # The lost update this ticket is about: two independent changes, one file.
-        _cfg.settings()["autosave_interval"] = 60      # e.g. the app window
+        _cfg.set_setting(_cfg.settings(), "autosave.interval", 60)   # e.g. app window
         _cfg.save_settings()
-        _cfg.settings()["editor_font_size"] = 18       # e.g. the dialog
+        _cfg.set_setting(_cfg.settings(), "editor.font_size", 18)    # e.g. the dialog
         _cfg.save_settings()
         written = _cfg.load_settings()
-        self.assertEqual(written["autosave_interval"], 60)
-        self.assertEqual(written["editor_font_size"], 18)
+        self.assertEqual(_cfg.get_setting(written, "autosave.interval"), 60)
+        self.assertEqual(_cfg.get_setting(written, "editor.font_size"), 18)
 
     def test_load_settings_still_returns_an_independent_copy(self):
         # It stays available for tests and one-off reads — but it is a copy, so a
         # caller cannot accidentally treat it as the app's live state.
         copy = _cfg.load_settings()
-        copy["editor_font_size"] = 99
-        self.assertNotEqual(_cfg.settings()["editor_font_size"], 99)
+        _cfg.set_setting(copy, "editor.font_size", 99)
+        self.assertNotEqual(_cfg.get_setting(_cfg.settings(), "editor.font_size"), 99)
 
     def test_reload_replaces_the_contents_not_the_object(self):
         # Callers hold the object for the process lifetime; handing out a new one
         # on reload would resurrect exactly the stale-snapshot problem.
         live = _cfg.settings()
-        live["autosave_interval"] = 60
+        _cfg.set_setting(live, "autosave.interval", 60)
         _cfg.save_settings()
-        _cfg.CONFIG_FILE.write_text("settings:\n  autosave_interval: 5\n",
+        _cfg.CONFIG_FILE.write_text("settings:\n  autosave:\n    interval: 5\n",
                                     encoding="utf-8")
         _cfg.reload_settings()
         self.assertIs(_cfg.settings(), live)
-        self.assertEqual(live["autosave_interval"], 5)
+        self.assertEqual(_cfg.get_setting(live, "autosave.interval"), 5)
 
 
 class TestSettings(_TempConfigMixin, unittest.TestCase):
@@ -321,53 +321,53 @@ class TestSettings(_TempConfigMixin, unittest.TestCase):
 
     def test_load_settings_defaults_when_no_file(self):
         s = _cfg.load_settings()
-        self.assertEqual(s["autosave_interval"], 30)
-        self.assertEqual(s["editor_font_size"], 14)
-        self.assertEqual(s["editor_tab_width"], 4)
-        self.assertTrue(s["editor_wrap_text"])
-        self.assertAlmostEqual(s["preview_zoom"], 1.0)
-        self.assertEqual(s["default_view_mode"], "edit")
+        self.assertEqual(_cfg.get_setting(s, "autosave.interval"), 30)
+        self.assertEqual(_cfg.get_setting(s, "editor.font_size"), 14)
+        self.assertEqual(_cfg.get_setting(s, "editor.tab_width"), 4)
+        self.assertTrue(_cfg.get_setting(s, "editor.wrap_text"))
+        self.assertAlmostEqual(_cfg.get_setting(s, "preview.zoom"), 1.0)
+        self.assertEqual(_cfg.get_setting(s, "view.default_mode"), "edit")
 
     def test_load_settings_on_corrupt_yaml(self):
         _cfg.CONFIG_FILE.write_text("{{bad yaml", encoding="utf-8")
         s = _cfg.load_settings()
-        self.assertEqual(s["autosave_interval"], 30)
+        self.assertEqual(_cfg.get_setting(s, "autosave.interval"), 30)
 
     def test_ask_num_ctx_default_and_round_trip(self):
-        self.assertEqual(_cfg.default("ask_num_ctx"), 8192)
-        self.assertEqual(_cfg.load_settings()["ask_num_ctx"], 8192)
+        self.assertEqual(_cfg.default("ask.num_ctx"), 8192)
+        self.assertEqual(_cfg.get_setting(_cfg.load_settings(), "ask.num_ctx"), 8192)
         settings = _cfg.load_settings()
-        settings["ask_num_ctx"] = 16384
+        _cfg.set_setting(settings, "ask.num_ctx", 16384)
         _cfg.save_settings(settings)
-        self.assertEqual(_cfg.load_settings()["ask_num_ctx"], 16384)
+        self.assertEqual(_cfg.get_setting(_cfg.load_settings(), "ask.num_ctx"), 16384)
 
     def test_ask_top_k_default_and_round_trip(self):
-        self.assertEqual(_cfg.default("ask_top_k"), 10)
-        self.assertEqual(_cfg.load_settings()["ask_top_k"], 10)
+        self.assertEqual(_cfg.default("ask.top_k"), 10)
+        self.assertEqual(_cfg.get_setting(_cfg.load_settings(), "ask.top_k"), 10)
         settings = _cfg.load_settings()
-        settings["ask_top_k"] = 5
+        _cfg.set_setting(settings, "ask.top_k", 5)
         _cfg.save_settings(settings)
-        self.assertEqual(_cfg.load_settings()["ask_top_k"], 5)
+        self.assertEqual(_cfg.get_setting(_cfg.load_settings(), "ask.top_k"), 5)
 
     def test_save_and_load_round_trip(self):
         settings = _cfg.load_settings()
-        settings["autosave_interval"] = 60
-        settings["editor_font_size"] = 18
-        settings["editor_tab_width"] = 2
-        settings["editor_wrap_text"] = False
-        settings["preview_zoom"] = 1.5
+        _cfg.set_setting(settings, "autosave.interval", 60)
+        _cfg.set_setting(settings, "editor.font_size", 18)
+        _cfg.set_setting(settings, "editor.tab_width", 2)
+        _cfg.set_setting(settings, "editor.wrap_text", False)
+        _cfg.set_setting(settings, "preview.zoom", 1.5)
         _cfg.save_settings(settings)
         loaded = _cfg.load_settings()
-        self.assertEqual(loaded["autosave_interval"], 60)
-        self.assertEqual(loaded["editor_font_size"], 18)
-        self.assertEqual(loaded["editor_tab_width"], 2)
-        self.assertFalse(loaded["editor_wrap_text"])
-        self.assertAlmostEqual(loaded["preview_zoom"], 1.5)
+        self.assertEqual(_cfg.get_setting(loaded, "autosave.interval"), 60)
+        self.assertEqual(_cfg.get_setting(loaded, "editor.font_size"), 18)
+        self.assertEqual(_cfg.get_setting(loaded, "editor.tab_width"), 2)
+        self.assertFalse(_cfg.get_setting(loaded, "editor.wrap_text"))
+        self.assertAlmostEqual(_cfg.get_setting(loaded, "preview.zoom"), 1.5)
 
     def test_save_settings_preserves_vaults(self):
         _cfg.add_vault("Notes", "/tmp/notes")
         settings = _cfg.load_settings()
-        settings["autosave_interval"] = 120
+        _cfg.set_setting(settings, "autosave.interval", 120)
         _cfg.save_settings(settings)
         vaults = _cfg.load_vaults()
         self.assertEqual(len(vaults), 1)
@@ -375,14 +375,14 @@ class TestSettings(_TempConfigMixin, unittest.TestCase):
 
     def test_save_settings_creates_dir(self):
         shutil.rmtree(self._tmpdir, ignore_errors=True)
-        _cfg.save_settings({"autosave_interval": 10})
+        _cfg.save_settings({"autosave": {"interval": 10}})
         s = _cfg.load_settings()
-        self.assertEqual(s["autosave_interval"], 10)
+        self.assertEqual(_cfg.get_setting(s, "autosave.interval"), 10)
 
     def test_load_settings_empty_yaml_key(self):
         _cfg.CONFIG_FILE.write_text("settings:\n", encoding="utf-8")
         s = _cfg.load_settings()
-        self.assertEqual(s["autosave_interval"], 30)
+        self.assertEqual(_cfg.get_setting(s, "autosave.interval"), 30)
 
     def test_no_tmp_files_after_save(self):
         _cfg.save_vaults([{"name": "A", "path": "/tmp/a"}])
@@ -395,14 +395,14 @@ class TestWebkitEnv(_TempConfigMixin, unittest.TestCase):
 
     def test_webkit_defaults_are_off(self):
         s = _cfg.load_settings()
-        self.assertFalse(s["webkit_disable_dmabuf"])
-        self.assertFalse(s["webkit_disable_compositing"])
+        self.assertFalse(_cfg.get_setting(s, "webkit.disable_dmabuf"))
+        self.assertFalse(_cfg.get_setting(s, "webkit.disable_compositing"))
 
     def test_apply_webkit_env_sets_both_when_true(self):
         import os
         from unittest import mock
 
-        settings = {"webkit_disable_dmabuf": True, "webkit_disable_compositing": True}
+        settings = {"webkit": {"disable_dmabuf": True, "disable_compositing": True}}
         with mock.patch.dict(os.environ, {}, clear=True):
             _cfg.apply_webkit_env(settings)
             self.assertEqual(os.environ["WEBKIT_DISABLE_DMABUF_RENDERER"], "1")
@@ -412,7 +412,7 @@ class TestWebkitEnv(_TempConfigMixin, unittest.TestCase):
         import os
         from unittest import mock
 
-        settings = {"webkit_disable_dmabuf": False, "webkit_disable_compositing": False}
+        settings = {"webkit": {"disable_dmabuf": False, "disable_compositing": False}}
         with mock.patch.dict(os.environ, {}, clear=True):
             _cfg.apply_webkit_env(settings)
             self.assertNotIn("WEBKIT_DISABLE_DMABUF_RENDERER", os.environ)
@@ -423,7 +423,7 @@ class TestWebkitEnv(_TempConfigMixin, unittest.TestCase):
         from unittest import mock
 
         settings = _cfg.load_settings()
-        settings["webkit_disable_dmabuf"] = True
+        _cfg.set_setting(settings, "webkit.disable_dmabuf", True)
         _cfg.save_settings(settings)
         with mock.patch.dict(os.environ, {}, clear=True):
             _cfg.apply_webkit_env()
@@ -433,29 +433,29 @@ class TestWebkitEnv(_TempConfigMixin, unittest.TestCase):
 
 class TestDefaultAndMigration(unittest.TestCase):
     def test_default_returns_builtin(self):
-        self.assertEqual(_cfg.default("ask_model"), "llama3.2")
-        self.assertEqual(_cfg.default("ask_backend"), "local")
-        self.assertEqual(_cfg.default("ask_engine"), "auto")
+        self.assertEqual(_cfg.default("ask.server.model"), "llama3.2")
+        self.assertEqual(_cfg.default("ask.backend"), "local")
+        self.assertEqual(_cfg.default("ask.engine"), "auto")
 
     def test_semantic_openai_defaults(self):
         # The embedding side gains an OpenAI-compatible backend, mirroring Ask.
-        self.assertEqual(_cfg.default("semantic_openai_url"), "http://localhost:8080")
+        self.assertEqual(_cfg.default("semantic.openai.url"), "http://localhost:8080")
         # default() returns "" for unknown keys too, so prove the key is registered.
-        self.assertIn("semantic_openai_model", _cfg._DEFAULT_SETTINGS)
-        self.assertEqual(_cfg.default("semantic_openai_model"), "")
+        self.assertIn("model", _cfg._DEFAULT_SETTINGS["semantic"]["openai"])
+        self.assertEqual(_cfg.default("semantic.openai.model"), "")
 
     def test_semantic_api_key_is_a_secret(self):
         # Defence in depth: the key lives in the keyring, but a hand-edited
-        # vaults.yaml plaintext value must be masked in the debug dump, like
+        # settings.yaml plaintext value must be masked in the debug dump, like
         # ask_api_key.
-        self.assertIn("semantic_api_key", _cfg._SECRET_KEYS)
+        self.assertTrue(_cfg._is_secret("semantic.openai.api_key"))
 
     def test_kv_cache_defaults(self):
-        self.assertEqual(_cfg.default("ask_kv_type_k"), "f16")
-        self.assertEqual(_cfg.default("ask_kv_type_v"), "f16")
-        self.assertFalse(_cfg.default("ask_flash_attn"))
-        self.assertTrue(_cfg.default("ask_use_mmap"))
-        self.assertEqual(_cfg.default("ask_max_tokens"), 1024)
+        self.assertEqual(_cfg.default("ask.local.kv_type_k"), "f16")
+        self.assertEqual(_cfg.default("ask.local.kv_type_v"), "f16")
+        self.assertFalse(_cfg.default("ask.local.flash_attn"))
+        self.assertTrue(_cfg.default("ask.local.use_mmap"))
+        self.assertEqual(_cfg.default("ask.max_tokens"), 1024)
 
     def test_model_filename_from_url(self):
         self.assertEqual(
@@ -472,7 +472,7 @@ class TestDefaultAndMigration(unittest.TestCase):
         f.close()
         try:
             self.assertEqual(
-                _cfg.resolve_model_path({"ask_gguf_path": f.name}), f.name)
+                _cfg.resolve_model_path({"ask": {"gguf": {"path": f.name}}}), f.name)
         finally:
             os.unlink(f.name)
 
@@ -529,26 +529,28 @@ class TestDefaultAndMigration(unittest.TestCase):
         d = Path(tempfile.mkdtemp())
         (d / "real.gguf").write_bytes(b"GGUF\x00\x00")
         (d / "page.gguf").write_bytes(b"<html>")     # HTML masquerading as a model
-        # An explicit ask_models_dir is searched instead of the shared models_dir.
+        # An explicit ask.gguf.dir is searched instead of the shared models_dir.
         self.assertEqual(
-            [p.name for p in _cfg.list_models({"ask_models_dir": str(d)})],
+            [p.name for p in _cfg.list_models({"ask": {"gguf": {"dir": str(d)}}})],
             ["real.gguf"])
 
     def test_ask_models_dir_defaults_to_models_dir(self):
         self.assertEqual(_cfg.ask_models_dir({}), _cfg.models_dir())
-        self.assertEqual(_cfg.ask_models_dir({"ask_models_dir": ""}), _cfg.models_dir())
+        self.assertEqual(_cfg.ask_models_dir({"ask": {"gguf": {"dir": ""}}}),
+                         _cfg.models_dir())
 
     def test_ask_models_dir_uses_the_configured_folder(self):
         from pathlib import Path
-        self.assertEqual(_cfg.ask_models_dir({"ask_models_dir": "/custom/models"}),
-                         Path("/custom/models"))
+        self.assertEqual(
+            _cfg.ask_models_dir({"ask": {"gguf": {"dir": "/custom/models"}}}),
+            Path("/custom/models"))
 
     def test_resolve_reassembles_folder_and_filename(self):
         import tempfile
         from pathlib import Path
         d = Path(tempfile.mkdtemp())
         (d / "m.gguf").write_bytes(b"GGUF\x00\x00")
-        s = {"ask_models_dir": str(d), "ask_gguf_path": "m.gguf"}
+        s = {"ask": {"gguf": {"dir": str(d), "path": "m.gguf"}}}
         self.assertEqual(_cfg.resolve_model_path(s), str(d / "m.gguf"))
 
     def test_resolve_set_but_unresolvable_returns_empty(self):
@@ -557,7 +559,7 @@ class TestDefaultAndMigration(unittest.TestCase):
         import tempfile
         from pathlib import Path
         d = Path(tempfile.mkdtemp())               # empty folder, no fallback either
-        s = {"ask_models_dir": str(d), "ask_gguf_path": "gone.gguf"}
+        s = {"ask": {"gguf": {"dir": str(d), "path": "gone.gguf"}}}
         self.assertEqual(_cfg.resolve_model_path(s), "")
 
     def test_resolve_empty_choice_falls_back_to_newest(self):
@@ -565,20 +567,21 @@ class TestDefaultAndMigration(unittest.TestCase):
         from pathlib import Path
         d = Path(tempfile.mkdtemp())
         (d / "m.gguf").write_bytes(b"GGUF\x00\x00")
-        s = {"ask_models_dir": str(d)}             # no ask_gguf_path → newest
+        s = {"ask": {"gguf": {"dir": str(d)}}}     # no gguf.path → newest
         self.assertEqual(_cfg.resolve_model_path(s), str(d / "m.gguf"))
 
     def test_resolve_empty_folder_and_choice_returns_empty(self):
         import tempfile
         from pathlib import Path
         d = Path(tempfile.mkdtemp())
-        self.assertEqual(_cfg.resolve_model_path({"ask_models_dir": str(d)}), "")
+        self.assertEqual(
+            _cfg.resolve_model_path({"ask": {"gguf": {"dir": str(d)}}}), "")
 
     def test_wanted_path_names_a_gone_choice(self):
         # resolve_model_path returns "" for a gone choice, but the error banner
         # needs the wanted name — this keeps it.
         from pathlib import Path
-        s = {"ask_models_dir": "/m", "ask_gguf_path": "gone.gguf"}
+        s = {"ask": {"gguf": {"dir": "/m", "path": "gone.gguf"}}}
         self.assertEqual(_cfg.ask_gguf_wanted_path(s), str(Path("/m") / "gone.gguf"))
 
     def test_wanted_path_empty_choice_uses_resolve(self):
@@ -586,26 +589,29 @@ class TestDefaultAndMigration(unittest.TestCase):
         from pathlib import Path
         d = Path(tempfile.mkdtemp())
         (d / "m.gguf").write_bytes(b"GGUF\x00\x00")
-        self.assertEqual(_cfg.ask_gguf_wanted_path({"ask_models_dir": str(d)}),
-                         str(d / "m.gguf"))
+        self.assertEqual(
+            _cfg.ask_gguf_wanted_path({"ask": {"gguf": {"dir": str(d)}}}),
+            str(d / "m.gguf"))
 
     def test_default_unknown_key_is_empty(self):
         self.assertEqual(_cfg.default("no_such_key"), "")
 
     def test_migrate_derives_onnx_dir_from_old_model(self):
-        s = {"semantic_onnx_dir": "", "semantic_onnx_model": "/x/y/model.onnx"}
+        s = {"semantic": {"onnx": {"dir": ""}},
+             "semantic_onnx_model": "/x/y/model.onnx"}
         _cfg._migrate_settings(s)
-        self.assertEqual(s["semantic_onnx_dir"], "/x/y")
+        self.assertEqual(_cfg.get_setting(s, "semantic.onnx.dir"), "/x/y")
 
     def test_migrate_keeps_existing_dir(self):
-        s = {"semantic_onnx_dir": "/keep", "semantic_onnx_model": "/x/y/model.onnx"}
+        s = {"semantic": {"onnx": {"dir": "/keep"}},
+             "semantic_onnx_model": "/x/y/model.onnx"}
         _cfg._migrate_settings(s)
-        self.assertEqual(s["semantic_onnx_dir"], "/keep")
+        self.assertEqual(_cfg.get_setting(s, "semantic.onnx.dir"), "/keep")
 
     def test_migrate_noop_without_old_keys(self):
-        s = {"semantic_onnx_dir": ""}
+        s = {"semantic": {"onnx": {"dir": ""}}}
         _cfg._migrate_settings(s)
-        self.assertEqual(s["semantic_onnx_dir"], "")
+        self.assertEqual(_cfg.get_setting(s, "semantic.onnx.dir"), "")
 
 
 class TestSettingsSecretMasking(_TempConfigMixin, unittest.TestCase):
@@ -627,51 +633,52 @@ class TestSettingsWriteProvenance(_TempConfigMixin, unittest.TestCase):
     (which restores loglevel: info and would silence DEBUG)."""
 
     def test_changed_keys_are_logged(self):
-        _cfg.save_settings({"autosave_interval": 30, "loglevel": "info"})
+        _cfg.save_settings({"autosave": {"interval": 30}, "log": {"level": "info"}})
         with self.assertLogs("markdown_vault.core.config", level="INFO") as cm:
-            _cfg.save_settings({"autosave_interval": 90, "loglevel": "info"})
+            _cfg.save_settings({"autosave": {"interval": 90}, "log": {"level": "info"}})
         blob = "\n".join(cm.output)
-        self.assertIn("autosave_interval", blob)
+        self.assertIn("autosave.interval", blob)
         self.assertIn("90", blob)
-        self.assertNotIn("loglevel", blob)      # unchanged keys are not noise
+        self.assertNotIn("log.level", blob)     # unchanged leaves are not noise
 
     def test_secret_values_are_masked(self):
         _cfg.save_settings({})
         with self.assertLogs("markdown_vault.core.config", level="INFO") as cm:
-            _cfg.save_settings({"ask_api_key": "sk-super-secret"})
+            _cfg.save_settings({"ask": {"api_key": "sk-super-secret"}})
         blob = "\n".join(cm.output)
         self.assertNotIn("sk-super-secret", blob)
-        self.assertIn("ask_api_key", blob)
+        self.assertIn("ask.api_key", blob)
 
     def test_dropping_keys_warns(self):
         # Exactly the shape of the leaked-timer write: a tiny snapshot replacing a
-        # full settings block. It must not pass silently.
-        _cfg.save_settings({"autosave_interval": 30, "loglevel": "debug",
-                            "semantic_search_enabled": True})
+        # full settings block. It must not pass silently — and a dropped *nested
+        # leaf* must be seen even though the top-level branch set is unchanged.
+        _cfg.save_settings({"autosave": {"interval": 30}, "log": {"level": "debug"},
+                            "semantic": {"enabled": True}})
         with self.assertLogs("markdown_vault.core.config", level="WARNING") as cm:
-            _cfg.save_settings({"ask_system_prompt": ""})
+            _cfg.save_settings({"ask": {"system_prompt": ""}})
         blob = "\n".join(cm.output)
-        self.assertIn("semantic_search_enabled", blob)
-        self.assertIn("loglevel", blob)
+        self.assertIn("semantic.enabled", blob)
+        self.assertIn("log.level", blob)
 
     def test_log_names_the_caller(self):
         # "which keys" without "from where" leaves the five writers indistinguishable —
         # exactly the question the reset investigation could not answer.
-        _cfg.save_settings({"autosave_interval": 30})
+        _cfg.save_settings({"autosave": {"interval": 30}})
         with self.assertLogs("markdown_vault.core.config", level="INFO") as cm:
-            _cfg.save_settings({"autosave_interval": 90})
+            _cfg.save_settings({"autosave": {"interval": 90}})
         self.assertIn("test_config.py:", "\n".join(cm.output))
 
     def test_drop_warning_names_the_caller(self):
-        _cfg.save_settings({"autosave_interval": 30, "loglevel": "debug"})
+        _cfg.save_settings({"autosave": {"interval": 30}, "log": {"level": "debug"}})
         with self.assertLogs("markdown_vault.core.config", level="WARNING") as cm:
-            _cfg.save_settings({"autosave_interval": 30})
+            _cfg.save_settings({"autosave": {"interval": 30}})
         self.assertIn("test_config.py:", "\n".join(cm.output))
 
     def test_no_log_when_nothing_changed(self):
-        _cfg.save_settings({"autosave_interval": 30})
+        _cfg.save_settings({"autosave": {"interval": 30}})
         with self.assertNoLogs("markdown_vault.core.config", level="INFO"):
-            _cfg.save_settings({"autosave_interval": 30})
+            _cfg.save_settings({"autosave": {"interval": 30}})
 
 
 class TestMissingConfigVisibility(_TempConfigMixin, unittest.TestCase):
@@ -689,6 +696,115 @@ class TestMissingConfigVisibility(_TempConfigMixin, unittest.TestCase):
         shutil.rmtree(_cfg.CONFIG_DIR, ignore_errors=True)   # nothing has run yet
         with self.assertNoLogs("markdown_vault.core.config", level="WARNING"):
             _cfg.load_settings()
+
+
+class TestNestedAccessors(unittest.TestCase):
+    """The dotted-path accessors over the nested settings tree."""
+
+    def test_get_setting_reads_nested_path(self):
+        s = {"ask": {"server": {"url": "http://x"}}}
+        self.assertEqual(_cfg.get_setting(s, "ask.server.url"), "http://x")
+
+    def test_get_setting_missing_returns_default(self):
+        self.assertEqual(_cfg.get_setting({}, "ask.server.url", "d"), "d")
+        self.assertIsNone(_cfg.get_setting({"ask": {}}, "ask.server.url"))
+
+    def test_set_setting_creates_branches(self):
+        s = {}
+        _cfg.set_setting(s, "ask.server.url", "http://y")
+        self.assertEqual(s, {"ask": {"server": {"url": "http://y"}}})
+
+    def test_set_setting_keeps_siblings(self):
+        s = {"ask": {"server": {"url": "a", "model": "m"}}}
+        _cfg.set_setting(s, "ask.server.url", "b")
+        self.assertEqual(s["ask"]["server"], {"url": "b", "model": "m"})
+
+    def test_default_reads_nested_default(self):
+        self.assertEqual(_cfg.default("autosave.interval"), 30)
+        self.assertEqual(_cfg.default("ask.server.url"), "http://localhost:11434")
+
+    def test_default_unknown_returns_empty_string(self):
+        self.assertEqual(_cfg.default("nope.nothing"), "")
+
+    def test_flatten_produces_dotted_leaves(self):
+        flat = _cfg._flatten({"a": {"b": 1, "c": {"d": 2}}, "e": 3})
+        self.assertEqual(flat, {"a.b": 1, "a.c.d": 2, "e": 3})
+
+    def test_flatten_stops_at_opaque_leaves(self):
+        s = {"ask": {"server": {"model_by_endpoint": {"ollama|x": "m"}}}}
+        self.assertEqual(
+            _cfg._flatten(s),
+            {"ask.server.model_by_endpoint": {"ollama|x": "m"}})
+
+    def test_opaque_leaves_default_to_empty(self):
+        # _deep_merge relies on this: with an empty default, merging a user's dict
+        # is the same as replacing it. A non-empty default would silently resurrect
+        # entries the user deleted by hand.
+        for path in _cfg._OPAQUE_LEAVES:
+            self.assertEqual(_cfg.default(path), {})
+
+    def test_deep_merge_keeps_sibling_defaults(self):
+        base = {"ask": {"top_k": 10, "server": {"url": "d"}}}
+        _cfg._deep_merge(base, {"ask": {"top_k": 12}})
+        self.assertEqual(base, {"ask": {"top_k": 12, "server": {"url": "d"}}})
+
+    def test_default_settings_not_shared(self):
+        # A nested branch must be deep-copied, never aliased to the module default.
+        a = _cfg.load_settings()
+        _cfg.set_setting(a, "ask.top_k", 999)
+        self.assertEqual(_cfg.default("ask.top_k"), 10)
+
+
+class TestNestedMechanisms(_TempConfigMixin, unittest.TestCase):
+    """The five silently-degrading mechanisms, moved to flattened leaves."""
+
+    def test_dropped_nested_leaf_still_warns(self):
+        # url dropped, but the top-level 'ask' branch stays: the exact case the old
+        # top-level diff would miss (set(before) == set(after)).
+        before = {"ask": {"server": {"url": "x", "model": "m"}}}
+        after = {"ask": {"server": {"model": "m"}}}
+        self.assertEqual(set(before), set(after))
+        with self.assertLogs("markdown_vault.core.config", level="WARNING") as cm:
+            _cfg._log_settings_write(before, after)
+        self.assertIn("ask.server.url", "\n".join(cm.output))
+
+    def test_changed_nested_leaf_reported_as_leaf(self):
+        before = {"ask": {"top_k": 10}}
+        after = {"ask": {"top_k": 12}}
+        with self.assertLogs("markdown_vault.core.config", level="INFO") as cm:
+            _cfg._log_settings_write(before, after)
+        joined = "\n".join(cm.output)
+        self.assertIn("ask.top_k", joined)   # the leaf, not a whole-branch diff
+
+    def test_nested_secret_is_masked_in_debug_dump(self):
+        _cfg.CONFIG_FILE.write_text(
+            "settings:\n  ask:\n    api_key: supersecret\n", encoding="utf-8")
+        _cfg._last_logged_settings = None
+        with self.assertLogs("markdown_vault.core.config", level="DEBUG") as cm:
+            _cfg.load_settings()
+        joined = "\n".join(cm.output)
+        self.assertNotIn("supersecret", joined)
+        self.assertIn("***", joined)
+
+    def test_existing_migration_works_against_nested(self):
+        s = {"semantic_onnx_model": "/models/m.onnx"}
+        _cfg._migrate_settings(s)
+        self.assertEqual(_cfg.get_setting(s, "semantic.onnx.dir"), "/models")
+
+    def test_webkit_env_exports_from_nested_leaf(self):
+        import os as _os
+        _os.environ.pop("WEBKIT_DISABLE_DMABUF_RENDERER", None)
+        self.addCleanup(_os.environ.pop, "WEBKIT_DISABLE_DMABUF_RENDERER", None)
+        _cfg.apply_webkit_env({"webkit": {"disable_dmabuf": True}})
+        self.assertEqual(_os.environ.get("WEBKIT_DISABLE_DMABUF_RENDERER"), "1")
+
+    def test_load_deep_merges_partial_branch(self):
+        # A user file overriding one ask leaf keeps the branch's other defaults.
+        _cfg.CONFIG_FILE.write_text(
+            "settings:\n  ask:\n    top_k: 3\n", encoding="utf-8")
+        s = _cfg.load_settings()
+        self.assertEqual(_cfg.get_setting(s, "ask.top_k"), 3)
+        self.assertEqual(_cfg.get_setting(s, "ask.server.url"), "http://localhost:11434")
 
 
 if __name__ == "__main__":

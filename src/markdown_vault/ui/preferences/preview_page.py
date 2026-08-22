@@ -11,6 +11,8 @@ gi.require_version("Adw", "1")
 
 from gi.repository import Gtk, Adw
 
+from markdown_vault.core import config
+
 
 class PreviewPageMixin:
     def _build_preview_page(self) -> None:
@@ -21,7 +23,7 @@ class PreviewPageMixin:
         zoom_group = Adw.PreferencesGroup(title="Zoom")
         preview.add(zoom_group)
 
-        zoom_value = self._settings.get("preview_zoom", 1.0)
+        zoom_value = config.get_setting(self._settings, "preview.zoom", 1.0)
         self._zoom_row = Adw.SpinRow(
             title="Default zoom level",
             adjustment=Gtk.Adjustment.new(zoom_value, 0.25, 5.0, 0.05, 0.25, 0),
@@ -41,7 +43,7 @@ class PreviewPageMixin:
             ),
         )
         self._remote_images_row.set_active(
-            self._settings.get("preview_allow_remote_images", False)
+            config.get_setting(self._settings, "preview.allow_remote_images", False)
         )
         self._remote_images_row.connect(
             "notify::active", self._on_remote_images_changed,
@@ -51,9 +53,10 @@ class PreviewPageMixin:
         self.add(preview)
 
     def _on_zoom_changed(self, _row: Adw.SpinRow, _pspec) -> None:
-        self._settings["preview_zoom"] = round(self._zoom_row.get_adjustment().get_value(), 2)
+        config.set_setting(self._settings, "preview.zoom",
+                           round(self._zoom_row.get_adjustment().get_value(), 2))
         self._persist()
 
     def _on_remote_images_changed(self, switch: Adw.SwitchRow, _pspec) -> None:
-        self._settings["preview_allow_remote_images"] = switch.get_active()
+        config.set_setting(self._settings, "preview.allow_remote_images", switch.get_active())
         self._persist()

@@ -53,7 +53,7 @@ class TestBM25(unittest.TestCase):
     def _idx(self):
         return L.BM25Index({
             "sonne": "die sonne ist ein stern im zentrum des sonnensystems",
-            "vaults": "vaults.yaml hält die einstellungen und die vault-liste",
+            "vaults": "settings.yaml hält die einstellungen und die vault-liste",
             "editor": "der editor basiert auf gtksourceview fünf",
         })
 

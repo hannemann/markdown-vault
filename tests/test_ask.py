@@ -447,7 +447,7 @@ class TestAnswerQuestionLocalBackend(unittest.TestCase):
         orig = llama_runtime.availability
         llama_runtime.availability = lambda p: "MODEL MISSING"
         try:
-            a = ask.answer_question("q", self._sem(), {"ask_backend": "local"},
+            a = ask.answer_question("q", self._sem(), {"ask": {"backend": "local"}},
                                     None, "English")
         finally:
             llama_runtime.availability = orig
@@ -489,7 +489,7 @@ class TestAnswerQuestionLocalBackend(unittest.TestCase):
             chat=lambda s, u: "answer [1]")
         try:
             a = ask.answer_question(
-                "q", sem, {"hide_deprecated": True, "ask_engine": "auto"},
+                "q", sem, {"hide_deprecated": True, "ask": {"engine": "auto"}},
                 None, "English")
         finally:
             frontmatter.status_of = orig_status
@@ -516,7 +516,7 @@ class TestAnswerQuestionLocalBackend(unittest.TestCase):
 
         llama_runtime.LlamaCppChat = fake_backend
         try:
-            ask.answer_question("q", self._sem(), {"ask_engine": "auto"}, None,
+            ask.answer_question("q", self._sem(), {"ask": {"engine": "auto"}}, None,
                                 "English", on_phase=lambda p: phases.append(p))
         finally:
             llama_runtime.availability = orig_av
@@ -539,11 +539,11 @@ class TestAnswerQuestionLocalBackend(unittest.TestCase):
 
     def test_manual_kv_settings_reach_the_local_backend(self):
         seen = self._capture_local_kwargs(
-            {"ask_engine": "manual", "ask_backend": "local",
-             "ask_kv_type_k": "q8_0", "ask_kv_type_v": "q4_0",
-             "ask_flash_attn": True, "ask_use_mmap": False,
-             "ask_n_batch": 2048, "ask_n_ubatch": 1024,
-             "ask_max_tokens": 256, "ask_num_ctx": 4096})
+            {"ask": {"engine": "manual", "backend": "local",
+                     "max_tokens": 256, "num_ctx": 4096,
+                     "local": {"kv_type_k": "q8_0", "kv_type_v": "q4_0",
+                               "flash_attn": True, "use_mmap": False,
+                               "n_batch": 2048, "n_ubatch": 1024}}})
         self.assertEqual(seen.get("type_k"), "q8_0")
         self.assertEqual(seen.get("type_v"), "q4_0")
         self.assertTrue(seen.get("flash_attn"))
@@ -558,10 +558,10 @@ class TestAnswerQuestionLocalBackend(unittest.TestCase):
         # knobs, so a leftover quantized-V-without-flash can't break loading and a
         # leftover max_tokens=128 / num_ctx=2048 can't silently degrade answers.
         seen = self._capture_local_kwargs(
-            {"ask_engine": "auto", "ask_kv_type_k": "q8_0",
-             "ask_kv_type_v": "q4_0", "ask_flash_attn": True,
-             "ask_use_mmap": False, "ask_n_batch": 2048, "ask_n_ubatch": 1024,
-             "ask_max_tokens": 128, "ask_num_ctx": 2048})
+            {"ask": {"engine": "auto", "max_tokens": 128, "num_ctx": 2048,
+                     "local": {"kv_type_k": "q8_0", "kv_type_v": "q4_0",
+                               "flash_attn": True, "use_mmap": False,
+                               "n_batch": 2048, "n_ubatch": 1024}}})
         self.assertEqual(seen.get("type_k"), "f16")
         self.assertEqual(seen.get("type_v"), "f16")
         self.assertFalse(seen.get("flash_attn"))
@@ -583,7 +583,7 @@ class TestAnswerQuestionLocalBackend(unittest.TestCase):
 
         llama_runtime.LlamaCppChat = fake
         try:
-            ask.answer_question("q", self._sem(), {"ask_engine": "auto"}, None,
+            ask.answer_question("q", self._sem(), {"ask": {"engine": "auto"}}, None,
                                 "English", should_cancel=lambda: True)
         finally:
             llama_runtime.availability = orig_av
@@ -594,7 +594,7 @@ class TestAnswerQuestionLocalBackend(unittest.TestCase):
         called = []
         sem = SimpleNamespace(
             retrieve=lambda *a, **k: called.append(1) or [(_chunk("/v/a.md", 1, "x"), 1.0)])
-        a = ask.answer_question("q", sem, {"ask_engine": "off"}, None, "English")
+        a = ask.answer_question("q", sem, {"ask": {"engine": "off"}}, None, "English")
         self.assertIn("turned off", a.text.lower())
 
     def test_auto_engine_forces_local_backend(self):
@@ -607,7 +607,7 @@ class TestAnswerQuestionLocalBackend(unittest.TestCase):
             chat=lambda system, user: "auto answer [1]")
         try:
             a = ask.answer_question("q", self._sem(),
-                                    {"ask_engine": "auto", "ask_backend": "ollama"},
+                                    {"ask": {"engine": "auto", "backend": "ollama"}},
                                     None, "English")
         finally:
             llama_runtime.availability = orig_av
@@ -622,7 +622,7 @@ class TestAnswerQuestionLocalBackend(unittest.TestCase):
         llama_runtime.LlamaCppChat = lambda *a, **k: SimpleNamespace(
             chat=lambda system, user: "the answer [1]")
         try:
-            a = ask.answer_question("q", self._sem(), {"ask_backend": "local"},
+            a = ask.answer_question("q", self._sem(), {"ask": {"backend": "local"}},
                                     None, "English")
         finally:
             llama_runtime.availability = orig_av

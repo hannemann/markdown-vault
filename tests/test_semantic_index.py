@@ -127,7 +127,7 @@ class TestSemanticIndexManager(unittest.TestCase):
     def test_hybrid_recovers_exact_token_semantic_missed(self):
         # c.md's distinctive token isn't in the stub embedder's vocab → the
         # semantic side can't rank it, but BM25 (hybrid) recovers it.
-        (self._vault / "c.md").write_text("configkey vaults.yaml here",
+        (self._vault / "c.md").write_text("configkey settings.yaml here",
                                           encoding="utf-8")
         m = self._manager(_StubEmbedder())
         m.build()
@@ -142,7 +142,7 @@ class TestSemanticIndexManager(unittest.TestCase):
     def test_hybrid_hits_carry_a_real_score(self):
         # R41.3 — fused hits must keep a ranking signal (not a flat 0.0), so the
         # source picker's ≈score and the ask log stay meaningful.
-        (self._vault / "c.md").write_text("configkey vaults.yaml here",
+        (self._vault / "c.md").write_text("configkey settings.yaml here",
                                           encoding="utf-8")
         m = self._manager(_StubEmbedder())
         m.build()

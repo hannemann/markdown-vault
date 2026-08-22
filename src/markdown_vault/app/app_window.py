@@ -213,7 +213,7 @@ class MainWindow(Adw.ApplicationWindow):
         # Restore the shared "hide deprecated" state (tree filter is applied; the
         # searches read the setting at query time).
         self._vault_tree.set_hide_deprecated(
-            self._settings.get("hide_deprecated", False))
+            config.get_setting(self._settings, "hide_deprecated", False))
 
         self._vault_monitor = vault_monitor.VaultMonitor()
         self._vault_tree.vault_monitor = self._vault_monitor
@@ -545,7 +545,7 @@ class MainWindow(Adw.ApplicationWindow):
 
         self._register_actions()
         self._load_vaults()
-        self._tab_bar.set_tab_min_width(self._settings.get("tab_min_width", 100))
+        self._tab_bar.set_tab_min_width(config.get_setting(self._settings, "tabs.min_width", 100))
 
         # Restore session: sidebar, search, tabs, active tab, expanded vaults.
         sidebar_visible = _ses.get("sidebar_visible", False)
@@ -608,7 +608,7 @@ class MainWindow(Adw.ApplicationWindow):
 
         self.connect("close-request", self._on_close_request)
         self._autosave = AutosaveManager(
-            interval=self._settings.get("autosave_interval", 30),
+            interval=config.get_setting(self._settings, "autosave.interval", 30),
             get_dirty_tabs=self._get_autosave_dirty_tabs,
             save_tab=self._autosave_save_tab,
             on_save_failed=self._autosave_on_failed,
@@ -801,9 +801,9 @@ class MainWindow(Adw.ApplicationWindow):
         """Write enabled debug dumps to JSON files.
 
         Gated only by ``loglevel: debug`` plus the per-component
-        ``debug_dump_*`` flags — no separate toggle.
+        ``debug.dump.*`` flags — no separate toggle.
         """
-        if self._settings.get("loglevel", "info") != "debug":
+        if config.get_setting(self._settings, "log.level", "info") != "debug":
             return
         state = config.STATE_DIR
         dumpers = {
@@ -815,7 +815,7 @@ class MainWindow(Adw.ApplicationWindow):
             "sidebar": lambda: self._sidebar.dump_to_file(state / "debug-sidebar.json"),
         }
         for comp in components:
-            if self._settings.get(f"debug_dump_{comp}", False):
+            if config.get_setting(self._settings, f"debug.dump.{comp}", False):
                 try:
                     dumpers[comp]()
                 except Exception:
@@ -1566,7 +1566,7 @@ class MainWindow(Adw.ApplicationWindow):
         failure (Ollama unreachable, model missing) degrades silently to
         keyword-only search.
         """
-        if not self._settings.get("semantic_search_enabled"):
+        if not config.get_setting(self._settings, "semantic.enabled"):
             return
         threading.Thread(target=self._setup_semantic_index, daemon=True).start()
 
@@ -1575,7 +1575,7 @@ class MainWindow(Adw.ApplicationWindow):
         selected* backend, live (no restart).  Wired to the Preferences button;
         also picks up a backend switch made in the same dialog session (the settings
         object is shared, so a change in the dialog is already visible here)."""
-        if not self._settings.get("semantic_search_enabled"):
+        if not config.get_setting(self._settings, "semantic.enabled"):
             logger.info("rebuild requested but semantic search is disabled")
             return
         threading.Thread(
@@ -1596,7 +1596,7 @@ class MainWindow(Adw.ApplicationWindow):
                 manager = SemanticIndexManager(
                     embedder, self._vault_tree.get_vault_paths, config.CACHE_DIR,
                     tag,
-                    min_score=float(self._settings.get("semantic_min_score", 0.35)),
+                    min_score=float(config.get_setting(self._settings, "semantic.min_score", 0.35)),
                     on_busy=self._on_index_busy,
                     on_status=self._on_semantic_status,
                     on_progress=self._on_semantic_progress,
@@ -1775,20 +1775,20 @@ class MainWindow(Adw.ApplicationWindow):
     def _on_hide_deprecated_changed(self, _tree, active: bool) -> None:
         """Persist the shared 'hide deprecated' toggle and re-filter any open
         search results so the tree and the search surfaces stay consistent."""
-        self._settings["hide_deprecated"] = bool(active)
+        config.set_setting(self._settings, "hide_deprecated", bool(active))
         config.save_settings(self._settings)
         self._refresh_search_deprecated_filter()
 
     def hide_deprecated(self) -> bool:
         """The shared 'hide deprecated' state, read by the search surfaces."""
-        return bool(self._settings.get("hide_deprecated", False))
+        return bool(config.get_setting(self._settings, "hide_deprecated", False))
 
     def set_hide_deprecated(self, active: bool) -> None:
         """Set the shared 'hide deprecated' state from anywhere (e.g. a search's
         off button, reachable even behind the quick-open modal), keeping the tree
         toggle, the setting and the search surfaces in sync."""
         active = bool(active)
-        self._settings["hide_deprecated"] = active
+        config.set_setting(self._settings, "hide_deprecated", active)
         config.save_settings(self._settings)
         self._vault_tree.set_hide_deprecated(active)   # tree toggle + filter, no signal
         self._refresh_search_deprecated_filter()
@@ -1834,7 +1834,7 @@ class MainWindow(Adw.ApplicationWindow):
         from markdown_vault.importers.dialog_import import ImportDialog
         dialog = ImportDialog(
             target_dir,
-            last_dir=self._settings.get("document_import_last_dir"),
+            last_dir=config.get_setting(self._settings, "document.import_last_dir"),
             save_last_dir=self._set_import_last_dir)
         dialog.connect("note-imported", self._on_note_imported)
         dialog.connect("import-failed", self._on_import_failed)
@@ -1844,7 +1844,7 @@ class MainWindow(Adw.ApplicationWindow):
         """Remember the folder of the last imported file so the chooser reopens there.
         Mutates the shared settings dict (not a private re-read) so the window's next
         save can't revert it."""
-        self._settings["document_import_last_dir"] = folder
+        config.set_setting(self._settings, "document.import_last_dir", folder)
         config.save_settings(self._settings)
 
     def _on_editor_attachment_added(self, _editor) -> None:
@@ -2226,7 +2226,7 @@ class MainWindow(Adw.ApplicationWindow):
 
     def _on_graph_node_activated(self, _explorer, path: str) -> None:
         """A node was clicked → open the file in the tab, leaving graph mode."""
-        default = self._settings.get("default_view_mode", "render")
+        default = config.get_setting(self._settings, "view.default_mode", "render")
         self._open_file(path, view_mode=default)
         btn = self._view_toggle_buttons.get(default)
         if btn is not None:
@@ -2259,7 +2259,7 @@ class MainWindow(Adw.ApplicationWindow):
         No-op (marks cleared) when marking is disabled or the file is not
         inside a vault.
         """
-        if not self._settings.get("wikilink_mark_broken", False):
+        if not config.get_setting(self._settings, "wikilink.mark_broken", False):
             editor.set_broken_link_ranges([])
             return
         path = editor.file_path
@@ -2288,9 +2288,9 @@ class MainWindow(Adw.ApplicationWindow):
         """
         editor = tab.editor
         path = editor.file_path
-        normalize = self._settings.get("wikilink_autofix_normalize", False)
-        relink = self._settings.get("wikilink_autofix_relink", False)
-        warn = self._settings.get("wikilink_warn_on_save", False)
+        normalize = config.get_setting(self._settings, "wikilink.autofix_normalize", False)
+        relink = config.get_setting(self._settings, "wikilink.autofix_relink", False)
+        warn = config.get_setting(self._settings, "wikilink.warn_on_save", False)
         if not path or not (normalize or relink or warn):
             return []
         source_vault = path_utils.find_vault_name_for_path(path)
@@ -2699,13 +2699,14 @@ class MainWindow(Adw.ApplicationWindow):
 
     #: Settings whose change needs work here (reload previews, start/stop the
     #: index) rather than just being read on the next access.
-    _APPLIED_KEYS = ("preview_allow_remote_images", "semantic_search_enabled")
+    _APPLIED_KEYS = ("preview.allow_remote_images", "semantic.enabled")
 
     def _remember_applied_settings(self) -> None:
         """Snapshot the few settings this window *acts on*, so a later change can
         still be recognised as a change. The settings object itself is shared with
         the dialog and already carries the new value when the signal arrives."""
-        self._applied = {k: self._settings.get(k, False) for k in self._APPLIED_KEYS}
+        self._applied = {k: config.get_setting(self._settings, k, False)
+                         for k in self._APPLIED_KEYS}
 
     def _on_preferences_changed(self, _dlg) -> None:
         # settings-changed fires on EVERY preference row change; only reload
@@ -2714,16 +2715,16 @@ class MainWindow(Adw.ApplicationWindow):
         # The dialog edits the same settings object, so by the time this runs the
         # new value is already in self._settings — "before" has to come from what
         # was last *applied* here, not from re-reading the settings.
-        old_remote_images = self._applied.get("preview_allow_remote_images", False)
-        old_semantic = self._applied.get("semantic_search_enabled", False)
+        old_remote_images = self._applied.get("preview.allow_remote_images", False)
+        old_semantic = self._applied.get("semantic.enabled", False)
         remote_images_changed = (
-            self._settings.get("preview_allow_remote_images", False)
+            config.get_setting(self._settings, "preview.allow_remote_images", False)
             != old_remote_images
         )
         # Toggling semantic search takes effect live: dropping the manager stops
         # new ≈ results and reindexing (in-flight daemon threads just finish);
         # turning it back on rebuilds the index.
-        new_semantic = self._settings.get("semantic_search_enabled", False)
+        new_semantic = config.get_setting(self._settings, "semantic.enabled", False)
         if new_semantic != old_semantic:
             if new_semantic:
                 self._start_semantic_search()
@@ -2732,15 +2733,15 @@ class MainWindow(Adw.ApplicationWindow):
                 self._semantic_index = None
         self._remember_applied_settings()
         self._apply_keybindings()
-        self._tab_bar.set_tab_min_width(self._settings.get("tab_min_width", 100))
+        self._tab_bar.set_tab_min_width(config.get_setting(self._settings, "tabs.min_width", 100))
         # Apply to all open editors.
         for path in self._tab_bar.get_all_paths():
             tab = self._tab_bar.get_tab(path)
             if tab:
                 tab.editor.update_settings(
-                    font_size=self._settings.get("editor_font_size", 14),
-                    tab_width=self._settings.get("editor_tab_width", 4),
-                    wrap_text=self._settings.get("editor_wrap_text", True),
+                    font_size=config.get_setting(self._settings, "editor.font_size", 14),
+                    tab_width=config.get_setting(self._settings, "editor.tab_width", 4),
+                    wrap_text=config.get_setting(self._settings, "editor.wrap_text", True),
                 )
                 # Reflect a changed broken-link marking toggle immediately.
                 self._refresh_broken_marks(tab.editor)
@@ -2753,7 +2754,7 @@ class MainWindow(Adw.ApplicationWindow):
                     base_dir = str(Path(tab.editor.file_path).parent) if tab.editor.file_path else ""
                     tab.preview.update_from_text(text, base_dir, tab.editor.file_path or "")
         # Restart autosave with new interval.
-        self._autosave.update_interval(self._settings.get("autosave_interval", 30))
+        self._autosave.update_interval(config.get_setting(self._settings, "autosave.interval", 30))
 
     # ── AppWindow alias (for tests) ────────────────────────────────
 

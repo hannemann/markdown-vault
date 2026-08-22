@@ -1,7 +1,7 @@
 """Sparse BM25 retrieval over vault notes — the lexical half of hybrid Ask.
 
 The semantic index matches by *meaning*, which blurs exact tokens (proper nouns,
-config keys, shortcuts like ``Strg+B`` or identifiers like ``vaults.yaml``). BM25
+config keys, shortcuts like ``Strg+B`` or identifiers like ``settings.yaml``). BM25
 matches those literally. Fusing the two (see :func:`reciprocal_rank_fusion`) gets
 both. Pure and GTK-free, so it is unit-testable on its own.
 

@@ -9,6 +9,8 @@ import logging
 
 from gi.repository import Gtk
 
+from markdown_vault.core import config
+
 logger = logging.getLogger(__name__)
 
 
@@ -69,20 +71,20 @@ class InputManager:
         """Configure application-level keyboard accelerators."""
         app.set_accels_for_action("win.nav-back", ["<Alt>Left"])
         app.set_accels_for_action("win.nav-forward", ["<Alt>Right"])
-        is_mru = self._settings.get("tab_switch_mode", "mru") == "mru"
+        is_mru = config.get_setting(self._settings, "tabs.switch_mode", "mru") == "mru"
         if is_mru:
-            next_accel = self._settings.get("keybinding_next_tab", "<Control>Tab")
-            prev_accel = self._settings.get("keybinding_prev_tab", "<Shift><Control>Tab")
+            next_accel = config.get_setting(self._settings, "tabs.keybinding.next", "<Control>Tab")
+            prev_accel = config.get_setting(self._settings, "tabs.keybinding.prev", "<Shift><Control>Tab")
             app.set_accels_for_action("win.mru-switcher-next", [next_accel] if next_accel else [])
             app.set_accels_for_action("win.mru-switcher-prev", [prev_accel] if prev_accel else [])
             app.set_accels_for_action("win.next-tab", [])
             app.set_accels_for_action("win.prev-tab", [])
         else:
             for setting_key, cycle_action in (
-                ("keybinding_next_tab", "next-tab"),
-                ("keybinding_prev_tab", "prev-tab"),
+                ("tabs.keybinding.next", "next-tab"),
+                ("tabs.keybinding.prev", "prev-tab"),
             ):
-                accel = self._settings.get(setting_key, "")
+                accel = config.get_setting(self._settings, setting_key, "")
                 if accel:
                     app.set_accels_for_action(f"win.{cycle_action}", [accel])
                 else:
@@ -98,15 +100,15 @@ class InputManager:
             self._tab_shortcut_ctrl.remove_shortcut(shortcut)
         self._tab_shortcuts.clear()
 
-        is_mru = self._settings.get("tab_switch_mode", "mru") == "mru"
+        is_mru = config.get_setting(self._settings, "tabs.switch_mode", "mru") == "mru"
         if is_mru:
             # MRU mode drives Ctrl+Tab through application accelerators
             # (win.mru-switcher-*); registering ShortcutController entries too
             # would double-handle the same keypress, so skip them here.
             return
 
-        next_accel = self._settings.get("keybinding_next_tab", "<Control>Tab")
-        prev_accel = self._settings.get("keybinding_prev_tab", "<Shift><Control>Tab")
+        next_accel = config.get_setting(self._settings, "tabs.keybinding.next", "<Control>Tab")
+        prev_accel = config.get_setting(self._settings, "tabs.keybinding.prev", "<Shift><Control>Tab")
         if next_accel:
             trigger = Gtk.ShortcutTrigger.parse_string(next_accel)
             action = Gtk.NamedAction.new("win.next-tab")

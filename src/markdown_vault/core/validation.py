@@ -43,7 +43,7 @@ def validate_vault_name(name: str) -> str | None:
 def sanitize_vault_name(name: str) -> str:
     """Strip forbidden characters and all whitespace from *name*.
 
-    Used on load to make a hand-edited ``vaults.yaml`` name safe for the
+    Used on load to make a hand-edited ``settings.yaml`` name safe for the
     wikilink key formats (R19.4/R21.7).  May return an empty string — callers
     must fall back to another source (e.g. the directory name).
     """

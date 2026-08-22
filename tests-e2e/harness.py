@@ -57,17 +57,17 @@ class AppSession(unittest.TestCase):
         for name, text in SAMPLE.items():
             with open(os.path.join(cls._vault, name), "w", encoding="utf-8") as fh:
                 fh.write(text)
-        with open(os.path.join(cls._cfg, "vaults.yaml"), "w", encoding="utf-8") as fh:
+        with open(os.path.join(cls._cfg, "settings.yaml"), "w", encoding="utf-8") as fh:
             fh.write(
                 "vaults:\n- name: Test\n  path: %s\n"
                 "settings:\n"
-                "  semantic_search_enabled: false\n"   # keep it light: no ONNX build
-                "  default_view_mode: edit\n"          # avoid the WebKit preview
-                "  autosave_interval: 3600\n" % cls._vault)
+                "  semantic:\n    enabled: false\n"    # keep it light: no ONNX build
+                "  view:\n    default_mode: edit\n"    # avoid the WebKit preview
+                "  autosave:\n    interval: 3600\n" % cls._vault)
 
         env = dict(os.environ)
         # All four base dirs, or the run reaches into the developer's real ones:
-        # config (vaults.yaml), state (logs, session), cache (semantic index),
+        # config (settings.yaml), state (logs, session), cache (semantic index),
         # data (downloaded models). Pinning only some is how the log leak happened.
         env["MDV_CONFIG_DIR"] = cls._cfg
         env["XDG_STATE_HOME"] = os.path.join(cls._tmp, "state")

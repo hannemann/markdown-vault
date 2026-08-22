@@ -16,6 +16,7 @@ gi.require_version("Adw", "1")
 
 from gi.repository import Gtk, Gio
 
+from markdown_vault.core import config
 from markdown_vault.editor.editor import Editor
 from markdown_vault.preview.preview import Preview
 from markdown_vault.uikit import banners as banner_mod
@@ -172,9 +173,9 @@ class TabOrchestrator:
             view_mode = cur.view_mode if cur else "edit"
 
         editor = Editor(
-            base_font_size=self._settings.get("editor_font_size", 14),
-            tab_width=self._settings.get("editor_tab_width", 4),
-            wrap_text=self._settings.get("editor_wrap_text", True),
+            base_font_size=config.get_setting(self._settings, "editor.font_size", 14),
+            tab_width=config.get_setting(self._settings, "editor.tab_width", 4),
+            wrap_text=config.get_setting(self._settings, "editor.wrap_text", True),
         )
         preview = Preview()
         preview.connect("link-clicked", self._on_preview_link_clicked)
@@ -301,14 +302,14 @@ class TabOrchestrator:
 
     def next_tab(self) -> None:
         """Switch to the next tab (linear or MRU depending on settings)."""
-        if self._settings.get("tab_switch_mode", "mru") == "mru":
+        if config.get_setting(self._settings, "tabs.switch_mode", "mru") == "mru":
             self._mru_next()
         else:
             self.cycle_tab(+1)
 
     def prev_tab(self) -> None:
         """Switch to the previous tab (linear or MRU depending on settings)."""
-        if self._settings.get("tab_switch_mode", "mru") == "mru":
+        if config.get_setting(self._settings, "tabs.switch_mode", "mru") == "mru":
             self._mru_prev()
         else:
             self.cycle_tab(-1)
