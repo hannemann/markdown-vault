@@ -489,7 +489,13 @@ class TabBar(Gtk.Box):
         return Path(file_path).name
 
     def _build_tab_widget(self, file_path: str, title: str) -> Gtk.Box:
-        """Create the visual widget for a single tab."""
+        """Create the visual widget for a single tab.
+
+        The close button and click gestures must read the current path from the
+        container's ``_file_path`` attribute at click time, not capture
+        *file_path* from this scope — after :meth:`update_path` rewrites
+        ``_file_path``, a value captured at creation points at a dead path.
+        """
         container = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
         container.add_css_class("tab")
         container.set_hexpand(False)

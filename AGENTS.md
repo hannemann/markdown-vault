@@ -108,61 +108,23 @@ RIGHT:  "How does the sidebar refresh?"  →  make graph-query Q="how does the s
 Markdown Vault — a GNOME desktop app for editing and previewing Markdown files organized in vault directories.
 
 - **App ID**: `de.hannemann.markdown-vault`
-- **Language**: Python 3
-- **UI toolkit**: GTK 4 + libadwaita
-- **Markdown rendering**: HTML/CSS via WebKitGTK (WebView)
-- **Config**: `~/.config/de.hannemann.markdown-vault/vaults.yaml` (vaults + settings)
-- **Session**: `session.json` in the XDG **state** dir (default
-  `~/.local/state/de.hannemann.markdown-vault/`) — window geometry, tabs, view modes, split positions, sidebar, expanded_vaults, editor_zoom, preview_zoom, and the per-tab reading position (editor_scroll/editor_cursor, preview_scroll — restored on startup and vault switch). It is view/layout state, not configuration.
+- **Stack**: Python 3, GTK 4 + libadwaita, editor in GtkSourceView 5, preview
+  rendered as HTML/CSS in WebKitGTK.
+- **Config**: `vaults.yaml` in the XDG config dir — vaults + settings
+  (`core/config.py`).
+- **Session**: `session.json` in the XDG **state** dir — window/layout state,
+  not configuration; `core/session.py` owns the fields.
 
 ## Tech decisions
 
-- Use `gi.require_version("Gtk", "4.0")` and `gi.require_version("Adw", "1")` before importing.
-- **GtkSourceView 5** for editor (`gi.require_version("GtkSource", "5")`).
-- Markdown → HTML conversion uses Python `markdown` library.
-- **Math rendering**: `latex2mathml` converts LaTeX → MathML, WebKitGTK renders MathML natively. No JavaScript/CDN.
-- WebView is `WebKitGTK` via `gi.repository.WebKit`.
-- Vault list stored in YAML (`vaults.yaml`), not dconf — simpler to debug and version.
-- Images referenced in Markdown are resolved relative to the `.md` file's directory.
-- **Flatpak** as primary distribution format (sandboxed file access via portal).
-- **Dependencies**: never install packages yourself and never add a dependency without asking first — see the **Dependencies** section for the only allowed flow.
+Decisions the code alone does not explain — the stack itself is under *Project*,
+the `gi.require_version` pins and per-file mechanics live in the code:
 
-## Layout
-
-- **Left panel**: vault tree — all vaults as expandable file trees (IDE-style project browser).
-- **Center panel**: editor/preview/split with tabs.
-  - **Edit** — GtkSourceView with syntax highlighting.
-  - **Render** — WebKitGTK WebView with styled HTML.
-  - **Split** — editor + preview side by side.
-  - Default view is user-configurable.
-- **Right sidebar** (toggleable via hamburger menu or shortcut; a vertical
-  icon rail on the far right switches sections):
-  - Outline (headings of current file)
-  - Backlinks / `[[wikilink]]` references, grouped by vault
-  - Metadaten (renders the current file's YAML frontmatter as key/value rows)
-  - Git panel (status, diff, commit)
-  - File details (word count, last modified)
-- **Bottom bar** (Ctrl+Shift+F): live full-text search across vaults — `search.py` (UI) over `search_backend.py` (ripgrep engine with a Python fallback). Results are grouped per file and relevance-ranked (name/title > heading > body). Match modifiers `Aa` (case), `W` (whole word), `.*` (regex); non-regex queries also support operators/filters: multiple terms are AND-combined, `"phrase"` matches literally, `-term` excludes, and `tag:`/`path:`/`vault:` narrow the set. A shared **vault-scope dropdown** (`search/vault_scope.py`) picks the search scope — current vault (default), all vaults, or a specific vault — and is honoured by every search: full-text, semantic, Ask, and the quick-open file switcher (the same selector appears in both the search bar and the quick-open palette, backed by one `_search_scope` in `app_window`). A `?` popover shows the syntax.
-- **Quick Open** (Ctrl+Space): fuzzy file switcher — `quick_open_palette.py` (Adw.Dialog) over `quick_open.py`. An empty query lists recent files (MRU then mtime); typing fuzzy-matches note names, frontmatter aliases, and (when the query contains a `/`) the vault-relative path, with match highlighting. Built on a provider/engine design (`QuickOpenEngine` merges providers), so more result sources — e.g. a future semantic/vector provider — slot in via `_make_quick_open_engine` in `app_window` without touching the palette.
-- **Semantic search & Ask** (opt-in): vector retrieval over the vaults. `semantic_search.py` chunks notes and embeds them — local ONNX MiniLM in-process (recommended), an Ollama backend, or an OpenAI-compatible `/v1/embeddings` server (llama.cpp/vLLM/LocalAI/hosted; its API key lives in the keyring under `semantic_api_key:<backend>|<url>`, never the Ask entry; a rate limit (429/503) backs off instead of aborting the build, and a *same-signature, different-dimension* server — a swapped model — triggers a rebuild via `on_dim_mismatch` rather than a numpy crash) — and `semantic_index.py` owns the per-file cache, incremental updates, and query, plus a manual rebuild. The **Ask** mode (Quick Open toggle) answers a question *from* your notes (local RAG): `semantic_index.retrieve` returns **note-level** passages (best chunk per note → whole note, title/heading-boosted), and `ask.py` grounds a chat model in them with `[n]` source citations, answering in the OS locale via a user-editable system prompt (the prompt permits comparison/aggregation across excerpts but forbids outside knowledge). The chat backend is Ollama (`/api/chat`) or an OpenAI-compatible server such as llama.cpp (`/v1/chat/completions`), with a reasoning on/off toggle (Qwen3 etc.). All configured under Preferences → Search (Embedding / Ask subpages). What belongs to a chat *provider* is remembered per provider by `ask_models.py` — its model, its server URL (`ask_url_by_backend`) and its API key (keyring name `ask_api_key:<backend>|<url>`) — so switching backend never sends one server's model or key to another; `ask_model` / `ask_ollama_url` stay the active values the answer path reads. The same module lists the models of the active backend for both pickers (Preferences and the Quick-Open footer), cached per endpoint and refreshed in the background so opening the palette never waits on the network. The server's answer to the model-list request is classified once (`ask_models.EndpointStatus`: `ok` / `empty` / `no_list` / `unauthorized` / `list_error` / `unreachable` / `probing`) and both surfaces read that one verdict: Quick Open shows a banner with "Try again", greys the picker when there is no usable list, and blocks submitting **only** when asking is certain to fail (unreachable, or credentials rejected) — a server without a list endpoint (llama.cpp) answers fine and stays usable. Enter during a running check holds the question until the verdict arrives instead of firing it into the chat call's 120 s timeout, and closing the palette drops it; a failing chat request records the same verdict, so a server that dies with the palette open stops pretending to work. Semantic search is the master switch: while it is off, Preferences greys out everything that depends on it (backend, minimum similarity, rebuild, and both subpages) and the palette's Ask toggle is insensitive with a tooltip naming the reason — `app_window._ask_unavailable_reason` is the single source for both that text and `can_ask`.
-- **In-view find** (Ctrl+F): a find bar (`find_bar.py`) that searches whichever view is focused — the editor (GtkSource search: highlight, next/prev, current/total counter) or the preview (WebKit find controller: total count). Enter / Shift+Enter step matches, Esc closes; the non-searched view is dimmed while open.
-
-## Features
-
-- **Multiple vaults**: freely selectable directories; add/remove via UI.
-- **Tabs**: open multiple files simultaneously in center panel. Each tab owns its own `Editor` + `Preview` instance.
-- **Dark mode**: `Adw.StyleManager` with System / Light / Dark toggle in hamburger menu. WebView CSS uses `@theme_*` named colours for automatic adaptation.
-- **Git integration**: status indicators in file tree, diff view, commit from app.
-- **Tags/backlinks**: wikilink-style `[[page]]` parsing and backlink discovery.
-- **Wikilink autofix**: opt-in pre-save handling of `[[wikilinks]]` (all off by default) — normalize whitespace, redirect a broken link when exactly one vault file matches the basename (moved/renamed/casing), inform after a manual save about links that stay unresolved, and mark broken links live in the editor (gutter warning triangle + red underline). Runs on manual and close saves, never on autosave. Logic in `wikilink_autofix.py`.
-- **Managed image attachments** (`core/attachments.py`): a note's downloaded/inserted images live under one per-vault tree mirroring the note tree — `<vault>/attachments/<note-relative-path>/<note-stem>/` — and are kept in sync with the note. Added by web import (opt-in download), paste (Ctrl+V / "Paste Image"), drag-drop onto the editor, or "Insert Image…" (hamburger + editor context menu); never by hand-copying into the tree. Deleting a note/folder removes its attachments; renaming/moving moves them and relinks the note (in the editor buffer if open, else on disk) — driven from both the in-app tree handlers and the file monitor (external), idempotent. The attachments tree shows dimmed in the sidebar with an "internal" pill, is not a drop target and blocks new-file/folder/import; its images are visible but not openable/draggable. Hand-typed image links are classified live: a broken target gets a gutter warning + red underline, a local image outside the tree gets a gutter hint + hover tooltip and adopts into the tree on a gutter double-click.
-- **Keybindings**: GNOME-style defaults, vim/emacs modes optional.
-- **Markdown + images**: `![alt](path)` with relative and absolute path resolution.
-- **Preferences dialog**: `Adw.PreferencesDialog` for autosave interval, default view mode, editor font size/tab width/wrap, preview zoom, and wikilink autofix (normalize / auto-fix moved links / warn on save / mark broken links).
-- **Zoom**: Ctrl+plus/minus/0 keyboard shortcuts; Ctrl+Wheel zoom on content area; per-tab zoom persisted in session.
-- **Session persistence**: window size, sidebar, tabs (view modes + split positions), active tab, expanded vaults, editor/preview zoom.
-- **Rich Markdown (pymdown-extensions)**: strikethrough `~~text~~`, highlight `==text==`, superscript `^sup^`, subscript `~sub~`, task lists `- [ ]`, tasklist `- [x]`, superfences (tabs, line numbers, highlight lines), magic links (auto URLs, @mentions, #issues), keyboard keys `++ctrl+c++`, smart symbols (quotes, dashes, ellipsis), emoji shortcodes `:smile:`, math formulas `$...$`, footnotes `[^1]` … `[^1]: …` (Python-Markdown `footnotes`; in-page anchor clicks are ordinary history entries — back/forward returns to the previous spot without reloading the note), task lists with checkboxes.
-- **CLI launcher**: `src/bin/markdown-vault.in` — a Meson-generated template installed as `bin/markdown-vault`; it pins the PyGObject interpreter and `PYTHONPATH`, then runs `python3 -m markdown_vault.main`. Match the running process by its command line (`markdown_vault.main`).
+- **Math** is `latex2mathml` → MathML, rendered natively by WebKitGTK —
+  deliberately no JavaScript/CDN.
+- **Vault list and settings live in YAML** (`vaults.yaml`), not dconf — simpler
+  to debug and version.
+- **Flatpak** is the primary distribution format (sandboxed file access via portal).
 
 ## Project structure
 
@@ -208,6 +170,21 @@ key files.
   `load_settings()` in application code: a private copy silently resets whatever another
   component changed meanwhile, because the whole block is written back.
   `tests/test_settings_ownership.py` enforces this.
+- **Add an embedding backend:** `search/semantic_search.py` — add an `Embedder`
+  class and a branch in `build_embedder()` returning `(embedder, signature_tag)`;
+  defaults go in `core/config.py`, the picker in
+  `ui/preferences/embedding_subpage.py`.
+- **Add a Preferences page:** a `…PageMixin` in `ui/preferences/<name>_page.py` —
+  add it to the `PreferencesDialog` bases **and** to `_page_names` (so `open_page`
+  accepts it) in `ui/preferences/dialog.py`, plus the module to
+  `ui/preferences/meson.build`.
+- **Add a sidebar panel:** `ui/sidebar.py` — **two** places: `add_titled(...)` in
+  `Sidebar.__init__` **and** an entry in `_SIDEBAR_SECTIONS`, which `_build_rail()`
+  turns into the icon-rail button. Miss the second and the panel exists in the
+  stack but is unreachable — no error, no warning.
+- **Add a Quick Open result source:** `app_window._make_quick_open_engine` —
+  append a provider; `QuickOpenEngine` (`search/quick_open.py`) merges them, the
+  palette is untouched.
 
 For anything finer-grained, query the graph rather than reading top-to-bottom.
 
@@ -218,36 +195,23 @@ For anything finer-grained, query the graph rather than reading top-to-bottom.
 
 <!-- DEPENDENCY_MAP_END -->
 
-**Installation paths:**
+**Installation paths** (Meson install prefix):
 
-- **Binaries:** `~/.local/bin/` (user) or `/usr/bin/` (system)
-- **Python code:** `<datadir>/de.hannemann.markdown-vault/python/markdown_vault/` — a private
-  directory, not the interpreter's `site-packages`, which may sit outside the install prefix. The
-  generated launcher puts it on `PYTHONPATH`.
-- **Data files:** `~/.local/share/de.hannemann.markdown-vault/` or
-  `/usr/share/de.hannemann.markdown-vault/`
-- **Every directory the app owns is named after the application ID**
-  (`de.hannemann.markdown-vault`) — the installed tree (`meson.build`, `pkgdatadir`) and all
-  four XDG dirs (`core/paths.py`, `_APP`). One name for the app everywhere; reverse-DNS keeps
-  it unique among all programs sharing these bases. **File** names stay short
-  (`markdown-vault.log`), as does the **binary** `bin/markdown-vault` — it is the command
-  users type, the path `scripts/app.sh` starts (`BIN`), and the path the AppArmor profile
-  is bound to (`packaging/apparmor/markdown-vault:9`), without which WebKitGTK aborts the
-  process on Ubuntu 24.04. It does **not** decide where WebKit puts its own directories:
-  the launcher execs the interpreter, so `g_get_prgname()` is `python3` and WebKit writes
-  to `~/.local/share/python3/`.
-- **Base directories follow the XDG Base Directory Specification** — one definition for
-  the whole app in `core/paths.py`, re-exported by `core.config` (`CONFIG_DIR`,
-  `STATE_DIR`, `CACHE_DIR`, `DATA_DIR`). Each honours its `XDG_*_HOME` variable (an unset,
-  empty or relative value falls back to the spec default), so a sandboxed build gets the
-  sandbox's dirs and a normal install the usual ones:
-  - **Config** (`vaults.yaml`): `$XDG_CONFIG_HOME/de.hannemann.markdown-vault/`, default
-    `~/.config/…`. `MDV_CONFIG_DIR` overrides it verbatim (isolated runs, E2E harness).
-  - **State** (logs, `session.json`, debug dumps): `$XDG_STATE_HOME/…`, default `~/.local/state/…`
-  - **Cache** (semantic index — regenerates): `$XDG_CACHE_HOME/…`, default `~/.cache/…`
-  - **Data** (downloaded ONNX/GGUF models): `$XDG_DATA_HOME/…`, default `~/.local/share/…`
-  Under Flatpak all of these land in `~/.var/app/<app-id>/…`, so a sandboxed build keeps
-  its own config, models and logs — do not expect to debug it through the host's log.
+- **Binaries:** `~/.local/bin/` (user) or `/usr/bin/` (system) — the short command
+  `markdown-vault`.
+- **Python code:** `<datadir>/de.hannemann.markdown-vault/python/markdown_vault/`, a
+  private directory the launcher puts on `PYTHONPATH` (not `site-packages`).
+- **Data files:** `<datadir>/de.hannemann.markdown-vault/`.
+
+Every directory the app owns is named after the **app ID**; file and binary names stay
+short. The binary path is bound in the AppArmor profile (`packaging/apparmor/`), without
+which WebKitGTK aborts on Ubuntu 24.04 (see the WebKit note under *Conventions*).
+
+**XDG base directories** — config (`vaults.yaml`), state (logs, `session.json`, debug
+dumps), cache (semantic index), data (downloaded models). `core/paths.py` owns the
+mapping, the rationale, and the `XDG_*_HOME` / `MDV_CONFIG_DIR` overrides. Under Flatpak
+they land in `~/.var/app/<app-id>/…`, so debug a sandboxed build there, not in the host's
+dirs.
 
 ## Running the app — agents MUST use ONLY these commands
 
@@ -306,7 +270,9 @@ Hard rules:
   `~/.var/app/de.hannemann.markdown-vault/.local/state/de.hannemann.markdown-vault/` and an E2E run
   to its throwaway dir — check there, not in the host's log, when diagnosing those.
 - NEVER use `killall python3` — that also kills firewalld and other system
-  Python processes.
+  Python processes. The app runs as `python3 -m markdown_vault.main`; match it
+  by that command line when you must identify the process (but prefer
+  `make status` / `make stop`).
 
 ## Dependencies
 
@@ -392,6 +358,15 @@ opening files in editor, toggling sidebar etc.) ask the user.
 
 ## Conventions
 
+- **Hold description against behaviour — a comment, a symbol name, an `AGENTS.md`
+  line, or a key name is a *claim*, not evidence.** When it matters, grep before you
+  trust it; it is cheap. Two claims in this very file were spot-checked and **both
+  were wrong**: `app_window._ask_unavailable_reason` (no such symbol — it is
+  `AskController.unavailable_reason()`) and "WebView CSS uses `@theme_*` colours"
+  (it uses runtime-injected `var(--…)`; `@theme_*` is syntax WebKit silently
+  ignores) — cost: **one `grep` each**. Prefer a docstring beside the code over a
+  prose copy in a doc (which drifts); when a doc must state behaviour, cite the
+  symbol and keep it thin.
 - **Build generalists, never one-case special-cases** (applies everywhere, not just
   the importer). A solution must handle the general class of a problem, not target
   exactly one input / site / page. Special-casing a single case is how an app rots
@@ -437,23 +412,23 @@ opening files in editor, toggling sidebar etc.) ask the user.
   into a shell plus focused collaborators; `src/markdown_vault/app/AGENTS.md` holds the full
   criteria ("Two kinds of neighbours", "Rules for the next cut", and the `make callbacks`
   metric). It applies everywhere, not just in `app/`.
-- **New Python modules**: the code lives in **subpackages** (`src/markdown_vault/<pkg>/`), each with its own `meson.build`. A new `.py` MUST be added to the `py_sources` list in **its subpackage's** `meson.build` (alphabetically sorted), not the root one — the root `meson.build` only lists the loaders (`__init__`/`__main__`/`main`) and one `subdir('<pkg>')` per subpackage. A brand-new subpackage needs its own `meson.build` (with `__init__.py` in the list) plus a `subdir()` line in the root. Meson has no `glob()`; forgetting means the file is not installed and the app crashes with `ModuleNotFoundError`. Use **absolute** imports (`from markdown_vault.<pkg>.<mod> import …`); keep the package DAG acyclic (`tests/test_layering.py` guards it). A subpackage may nest one level where a single surface got too big — `ui/preferences/` is the dialog split into a shell plus one module per page — wired the same way (own `meson.build` + `subdir()` in the parent). The "not deeper than package level" rule concerns where an `AGENTS.md` may sit, not Python nesting. Watch the direction of the new edge: it is `ui → ui.preferences`, so nothing under `ui/preferences/` may import `ui/sidebar.py` or `ui/status_bar.py` — that would close a cycle and turn the layering guard red.
+- **New Python modules**: a new `.py` goes into its subpackage's `meson.build`
+  `py_sources` — see the *Project structure* table for that mechanic and the
+  `ModuleNotFoundError` it prevents. Use **absolute** imports
+  (`from markdown_vault.<pkg>.<mod> import …`); keep the package DAG acyclic
+  (`tests/test_layering.py` guards it). A subpackage may nest one level where a
+  single surface got too big — `ui/preferences/` is the dialog split into a shell
+  plus one module per page (own `meson.build` + `subdir()` in the parent). The
+  "not deeper than package level" rule concerns where an `AGENTS.md` may sit, not
+  Python nesting. Watch the direction of the new edge: `ui → ui.preferences`, so
+  nothing under `ui/preferences/` may import `ui/sidebar.py` or `ui/status_bar.py`
+  — that would close a cycle and turn the layering guard red.
 - **GTK CSS in `css/gtk.css`**: Target GTK 4.14 / libadwaita 1.5. `var(--name)` and `color-mix()` need GTK 4.16+ and are silently dropped with "Expected a valid color" parser warnings. Use `@accent_bg_color` and `alpha(@color, 0.3)` instead. This does not apply to `css/style.css`, which is rendered by WebKit.
 - **WebKit needs an unprivileged user namespace**: WebKitGTK 2.46+ always sets up a `bwrap` sandbox and aborts the whole process if it cannot (`Failed to fully launch dbus-proxy`). On Ubuntu 24.04 this requires the AppArmor profile in `packaging/apparmor/` — see README. There is no API or env var to disable the sandbox.
 - **Test organization**: Add tests to existing test files grouped by topic (e.g. vault_monitor events → `test_vault_monitor_events.py`). Do not create new test files with arbitrary context names — distribute into the files that already cover the module under test. When in doubt, ask.
 - **Error handling**: Never use bare `except Exception: pass` — always log the exception at a minimum. Use `logging.warning()` or `logging.error()` with exc_info=True so errors are visible and debuggable.
 - **Logging**: Every module MUST use the standard `logging` module. Add `import logging` and `logger = logging.getLogger(__name__)` at the top of each file. Use `logger.debug()`/`logger.info()`/`logger.warning()`/`logger.error()` — NEVER use `print()` or any other ad-hoc output for diagnostics. Every `except` block must log at minimum with `exc_info=True`. Log level is configurable via `settings.loglevel` (debug/info/warning/error), effective after restart.
 - **Temp files**: NEVER use the system `/tmp` directory. Use the local `./tmp/` directory instead. The system `/tmp` is shared, unpredictable, and cleaned up by the OS. Local `./tmp/` is project-scoped and ignored by `.gitignore`, so it stays fully under your control.
-
-## MRU Tab Switcher (Ctrl+Tab / Ctrl+Shift+Tab)
-
-- **Single instance**: Only one `MRUSwitcher` dialog may be open at a time. Subsequent Ctrl+Tab while open is ignored.
-- **Exclusive during open**: While the switcher is shown, no other actions (editor typing, sidebar toggling, etc.) are possible — only Tab/Ctrl+Tab navigation and Escape to close.
-- **Alt+Tab behaviour**: Starts at MRU[1] (the previously active tab; MRU[0] is always the current tab), cycles forward with Tab, backward with Ctrl+Shift+Tab. Ctrl+release commits the selection and closes the dialog.
-- **MRU list**: Maintained by `MRUManager` in `src/markdown_vault/editor/mru.py`; rebuilt on every tab change (`_on_tab_changed` → `mru.push()`).
-- **No persistence**: The MRU list is in-memory only; it is rebuilt from session tab order on startup.
-- **Double-cycle prevention**: Application accelerators (`app.set_accels_for_action`) AND the switcher's key controller both handle Ctrl+Tab. `cycle_from_accelerator()` sets `_accel_handled` flag so the key controller skips the event. If only the key controller fires (no accelerator), it cycles normally.
-- **No ShortcutController in MRU mode**: `_update_tab_shortcuts()` skips registering shortcuts when `tab_switch_mode == "mru"` to avoid conflicts with application accelerators.
 
 ## Gotchas
 
@@ -471,11 +446,6 @@ opening files in editor, toggling sidebar etc.) ask the user.
 - `editor.file_path` is a `str`, not `Path` — use `Path(editor.file_path).parent` for directory.
 - Kill all existing app instances before starting a new one: always use `make stop` (or `make restart`, which stops first) — never hand-roll `pkill`/`kill`/`killall`. Duplicate instances cause confusing state.
 - Shift+Tab generates `Gdk.KEY_ISO_Left_Tab`, not `Gdk.KEY_Tab`. Always check for both keyvals.
-- **Gtk.Stack remove/add destroys WebView DOM**: When a tab is renamed externally, `_on_tab_renamed` removes and re-adds the content stack child. This destroys the WebView's rendered DOM, but `_loaded` and `_last_html_hash` remain stale. Always call `preview.reset()` before `_refresh_preview()` after stack manipulation.
-- **Tab button closures capture file_path**: Close buttons and click gestures in `TabBar._build_tab_widget` must read `_file_path` from the container widget at click time, not capture `file_path` at creation time. After `update_path()`, the old capture points to a dead path.
-- **`mkdir -p` race**: A newly created subdirectory's CREATED event fires before monitors exist for its children. After `_start_monitor()` on a new dir, scan existing children with `os.listdir()` and emit CREATED signals for each so the tree picks them up.
-- **RENAMED convention**: `Gio.FileMonitorEvent.RENAMED` sets `file=old, other=new` — the **opposite** of `MOVED_IN` (`file=new, other=old`). Always swap in `_on_monitor_event` before emitting.
-- **VaultMonitor directory events**: on DELETE and on a RENAME's old path the directory is already gone, so `os.path.isdir()` returns False — determine directory-ness from bookkeeping (`fpath in self._monitors`), NOT the filesystem, or child monitors leak and the tree/index go stale. Directories must pass through to signal emission (don't `return` early after managing child monitors).
 
 ## Tickets
 

@@ -7,6 +7,7 @@ A GNOME desktop application for editing and previewing Markdown files organized 
 - **Three-panel layout** — vault file tree (left), editor/preview (center), sidebar (right, toggleable)
 - **Multiple vaults** — work with several Markdown directories at once
 - **View modes** — Edit, Render, or Split (side-by-side)
+- **Dark mode** — System / Light / Dark theme, switched from the hamburger menu
 - **Tab system** — open multiple files simultaneously
 - **Sidebar** — outline, backlinks, frontmatter metadata, git status, file details
 - **Git integration** — status indicators, diff, commit
@@ -18,10 +19,13 @@ A GNOME desktop application for editing and previewing Markdown files organized 
 - **Full-text search** — live results across all vaults in the bottom bar (Ctrl+Shift+F), with operators/filters and a vault-scope selector
 - **In-view find** — search the focused editor or preview (Ctrl+F)
 - **Tags & backlinks** — wikilink-style `[[page]]` navigation
+- **Wikilink autofix** — opt-in `[[wikilink]]` maintenance (off by default): normalize whitespace, redirect a link whose target was moved or renamed, warn on save about links that stay unresolved, and mark broken links live in the editor
 - **Live reload** — external file changes (edits, git pulls) are detected and the affected tab offers a reload
 - **Interactive checkboxes** — toggle `- [ ]`/`- [x]` task items directly in the rendered preview
 - **Zoom & session** — per-tab zoom (Ctrl+±/0, Ctrl+wheel); window, tabs, view modes and zoom are restored on restart
+- **Preferences** — a settings dialog for autosave interval, default view mode, editor font size / tab width / wrap, preview zoom, and the wikilink-autofix toggles
 - **Math** — LaTeX `$...$`/`$$...$$` rendered as native MathML (no JavaScript/CDN)
+- **Markdown images** — `![alt](path)` with both relative and absolute paths
 - **Customizable keybindings** — GNOME defaults, optional vim/emacs modes
 - **Rich Markdown (pymdown-extensions)** — strikethrough `~~text~~`, highlight `==text==`, superscript `^sup^`, subscript `~sub~`, task lists `- [ ]`/`- [x]`, superfences (tabs, line numbers, highlight lines), magic links (auto URLs, @mentions, #issues), keyboard keys `++ctrl+c++`, smart symbols (quotes, dashes, ellipsis), emoji shortcodes `:smile:`, math formulas `$...$`, task lists with checkboxes
 

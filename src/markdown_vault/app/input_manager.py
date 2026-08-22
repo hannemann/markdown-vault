@@ -100,7 +100,10 @@ class InputManager:
 
         is_mru = self._settings.get("tab_switch_mode", "mru") == "mru"
         if is_mru:
-            return  # MRU mode uses application accelerators only
+            # MRU mode drives Ctrl+Tab through application accelerators
+            # (win.mru-switcher-*); registering ShortcutController entries too
+            # would double-handle the same keypress, so skip them here.
+            return
 
         next_accel = self._settings.get("keybinding_next_tab", "<Control>Tab")
         prev_accel = self._settings.get("keybinding_prev_tab", "<Shift><Control>Tab")

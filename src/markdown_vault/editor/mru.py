@@ -105,8 +105,19 @@ class MRUManager:
 class MRUSwitcher(Gtk.Window):
     """IntelliJ-style MRU tab switcher (shown on Ctrl+Tab).
 
-    Only one instance may exist at a time.  Ctrl is held when the switcher
-    opens; releasing Ctrl commits the selection and closes the dialog.
+    Only one instance may exist at a time (``is_open`` / ``_instance``); a
+    further Ctrl+Tab while it is open cycles the existing dialog rather than
+    opening a second one. The window is modal, so while it is shown no other
+    action (editor typing, sidebar toggle) reaches through — only Tab / Ctrl+Tab
+    and Ctrl+Shift+Tab to cycle and Escape to cancel.
+
+    Selection starts at MRU[1] — the previously active tab, since MRU[0] is
+    always the current one — cycles forward with Tab and backward with
+    Ctrl+Shift+Tab. Ctrl is held when the switcher opens; releasing it commits
+    the selection and closes the dialog.
+
+    The MRU list itself is not persisted: :class:`MRUManager` keeps it in memory
+    and it is rebuilt from the session tab order on startup.
     """
 
     _instance: MRUSwitcher | None = None
@@ -203,7 +214,16 @@ class MRUSwitcher(Gtk.Window):
         self._update_selection()
 
     def cycle_from_accelerator(self, direction: int) -> None:
-        """Called by the app accelerator. Sets flag to prevent key controller double-cycle."""
+        """Cycle the selection, driven by the application accelerator.
+
+        Ctrl+Tab is handled *twice*: by the application accelerator
+        (``app.set_accels_for_action``) and by this window's own key controller.
+        Setting ``_accel_handled`` makes the key controller
+        (:meth:`_on_key_pressed`) skip the event it is about to see, so one
+        keypress cycles once. When only the key controller fires (no accelerator,
+        e.g. the switcher already holds focus) the flag stays False and it
+        cycles normally.
+        """
         self._accel_handled = True
         self.cycle(direction)
 

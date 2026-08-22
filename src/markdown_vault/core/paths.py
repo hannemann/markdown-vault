@@ -21,6 +21,12 @@ ONNX + GGUF models    ``DATA_DIR``         deliberately downloaded, expensive; a
 
 ``MDV_CONFIG_DIR`` overrides the config directory *verbatim* (isolated runs and the E2E
 harness point it at a throwaway dir) and takes precedence over ``XDG_CONFIG_HOME``.
+
+These are the *application's* dirs. WebKit keeps its own caches elsewhere: the launcher
+execs the interpreter, so ``g_get_prgname()`` is ``python3`` and WebKit writes under
+``~/.local/share/python3/``, not the app ID. Under Flatpak everything (the app's dirs and
+WebKit's) lands in ``~/.var/app/<app-id>/…``, so a sandboxed build must be debugged there,
+not through the host's dirs.
 """
 import os
 from pathlib import Path
