@@ -32,12 +32,6 @@ _EXT = frozenset({
     "odt", "ods", "odp", "mp3", "wav", "m4a", "flac",
 })
 
-# JSON Schema type for a Python default. ``bool`` is checked by exact type (it is
-# a subclass of int), so ``type(value)`` — not isinstance — is the right key.
-_JSON_TYPE = {bool: "boolean", int: "integer", float: "number",
-              str: "string", dict: "object"}
-
-
 def _schema_leaves(node, prefix=""):
     """Map ``{dotted-path: leaf-node}`` for a JSON Schema. A node without
     ``properties`` is a leaf (including the opaque object leaves)."""
@@ -72,7 +66,7 @@ class TestSettingsSchema(unittest.TestCase):
         for path, default in self.defaults.items():
             with self.subTest(path=path):
                 self.assertEqual(
-                    self.leaves[path].get("type"), _JSON_TYPE[type(default)])
+                    self.leaves[path].get("type"), _cfg._JSON_TYPE[type(default)])
 
     def test_default_is_within_its_enum(self):
         for path, default in self.defaults.items():

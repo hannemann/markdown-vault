@@ -398,6 +398,13 @@ _OPAQUE_LEAVES = frozenset({
     "ask.server.url_by_backend",
 })
 
+# JSON Schema type name for a Python value's exact type. ``bool`` is a subclass of
+# ``int``, so this is keyed by ``type(value)`` (not ``isinstance``): a bool for an
+# integer leaf is a type error, not a silent pass. One source, shared by the schema
+# coverage test and the load-time validator, so the two cannot drift.
+_JSON_TYPE = {bool: "boolean", int: "integer", float: "number",
+              str: "string", dict: "object"}
+
 
 def _navigate(tree: dict, path: str):
     """Return ``(parent_dict, leaf_key, found)`` for a dotted *path* in *tree*.
