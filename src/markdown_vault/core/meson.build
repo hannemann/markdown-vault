@@ -11,6 +11,7 @@ install_data(
     'paths.py',
     'secret_store.py',
     'session.py',
+    'settings.schema.json',
     'validation.py',
   ),
   install_dir: pythondir / 'markdown_vault' / 'core',

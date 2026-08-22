@@ -238,6 +238,10 @@ vaults:
     path: "/home/user/Work/docs"
 ```
 
+The `settings:` block below it holds every preference as a nested tree. See
+[`docs/settings.md`](docs/settings.md) for each setting's path, type, default and
+meaning (and [`docs/README.md`](docs/README.md) for the documentation index).
+
 ## License
 
 AGPL-3.0-or-later — see [`LICENSE`](LICENSE). The app bundles PyMuPDF
