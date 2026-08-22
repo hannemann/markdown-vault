@@ -147,7 +147,9 @@ class MainWindow(Adw.ApplicationWindow):
         self._setup_complete = False
         self._view_toggle_buttons: dict[str, Gtk.ToggleButton] = {}
         self._active_vault: str | None = None
-        # Shared search scope for all searches: "current" | "all" | vault path.
+        # Shared search scope for all searches — full-text, semantic, Ask AND
+        # Quick Open (a file switcher is not obviously a "search", but it honours
+        # this too): "current" | "all" | vault path.
         self._search_scope: str = "current"
 
         # Guard against re-entrant position clamping.
