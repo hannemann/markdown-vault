@@ -119,6 +119,13 @@ Generated from `src/markdown_vault/core/settings.schema.json` — **do not edit 
 | `document.whisper_model` | string | `"base"` | Whisper model size for audio transcription on import. Bigger is more accurate, slower and a larger download. Values: `tiny`, `base`, `small`, `medium`, `large-v3`. |
 | `document.import_last_dir` | string | `""` | Directory the document-import file chooser reopens in. Managed by the app. |
 
+## debug
+
+| Setting | Type | Default | Description |
+| --- | --- | --- | --- |
+| `debug.active` | boolean | `false` | Developer flag: turn on extra diagnostic behaviour. For troubleshooting only. |
+| `debug.dump` | object | `{}` | Developer flags: write a debug dump per named component (file_index, backlink_index, preview_html, vault_tree, tabs, sidebar, …). An open map — any component name is valid, its value must be boolean. For troubleshooting only. |
+
 ## Keys that depend on others
 
 A per-key schema cannot express when one setting only takes effect under another, so those couplings are listed here:

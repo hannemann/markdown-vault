@@ -54,8 +54,20 @@ class TestSettingsSchema(unittest.TestCase):
 
     def test_leaf_sets_match(self):
         # Every runtime leaf documented, and nothing documented that is not a
-        # runtime leaf — the exact ZH1 gap, but for docs.
-        self.assertEqual(set(self.leaves), set(self.defaults))
+        # runtime leaf — the exact ZH1 gap, but for docs. Branches marked
+        # ``x-runtime: false`` (developer/debug flags) are documented on purpose
+        # but deliberately absent from _DEFAULT_SETTINGS, so exclude them here.
+        excluded = {k for k, v in self.schema["properties"].items()
+                    if v.get("x-runtime") is False}
+        documented = {p for p in self.leaves if p.split(".")[0] not in excluded}
+        self.assertEqual(documented, set(self.defaults))
+
+    def test_opaque_leaves_carry_no_additionalProperties(self):
+        # _flatten stops at _OPAQUE_LEAVES, so the validator never sees their
+        # contents. A schema that promised additionalProperties there would be
+        # silently ineffective — two sources for one "don't descend" decision.
+        for path in _cfg._OPAQUE_LEAVES:
+            self.assertNotIn("additionalProperties", self.leaves[path], path)
 
     def test_every_leaf_has_a_description(self):
         missing = [p for p, n in self.leaves.items()
