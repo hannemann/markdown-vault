@@ -87,6 +87,27 @@ class TestSettingsSchema(unittest.TestCase):
                 with self.subTest(path=path):
                     self.assertIn(default, enum)
 
+    def test_schema_default_matches_the_runtime_default(self):
+        # The load-time validator resets an invalid value to the default. Schema and
+        # runtime defaults must agree, or a reset would install a value the code
+        # never uses — a silent drift between the two artifacts.
+        for path, default in self.defaults.items():
+            with self.subTest(path=path):
+                self.assertEqual(self.leaves[path].get("default"), default)
+
+    def test_schema_is_installed_via_meson(self):
+        # settings.schema.json must ship as data, or the runtime validator finds no
+        # schema and silently skips validation — the py_sources / ModuleNotFoundError
+        # gotcha in new clothes.
+        meson = (Path(_cfg.__file__).parent / "meson.build").read_text(encoding="utf-8")
+        self.assertIn("settings.schema.json", meson)
+
+    def test_debug_dump_additionalProperties_has_a_default(self):
+        # The validator resets a wrong-typed debug.dump.<x> to this default; without
+        # it, a reset would install None instead of False. The runtime-default test
+        # above cannot catch this — debug.dump.* is not a runtime leaf (ZP1).
+        self.assertIn("default", self.leaves["debug.dump"]["additionalProperties"])
+
     def test_generated_docs_are_in_step_with_the_schema(self):
         # docs/settings.md is a *committed generated* file. Editing the schema
         # without re-running `make docs-settings` leaves a published doc that

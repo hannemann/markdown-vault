@@ -806,5 +806,79 @@ class TestNestedMechanisms(_TempConfigMixin, unittest.TestCase):
         self.assertEqual(_cfg.get_setting(s, "ask.server.url"), "http://localhost:11434")
 
 
+class TestSettingsValidation(_TempConfigMixin, unittest.TestCase):
+    """Warn (never block) on an invalid settings.yaml at load, against the schema."""
+
+    _LOG = "markdown_vault.core.config"
+
+    def _write(self, body):
+        _cfg.CONFIG_FILE.write_text("settings:\n" + body, encoding="utf-8")
+
+    def test_unknown_path_warns_and_names_the_file(self):
+        self._write("  ask:\n    bogus_leaf: 1\n")
+        with self.assertLogs(self._LOG, "WARNING") as cm:
+            s = _cfg.load_settings()
+        blob = "\n".join(cm.output)
+        self.assertIn("ask.bogus_leaf", blob)
+        self.assertIn(str(_cfg.CONFIG_FILE), blob)          # tells the user where to edit
+        self.assertEqual(_cfg.get_setting(s, "ask.bogus_leaf"), 1)   # survives — no data loss
+
+    def test_wrong_type_warns_and_resets_to_default(self):
+        self._write("  ask:\n    top_k: ten\n")
+        with self.assertLogs(self._LOG, "WARNING") as cm:
+            s = _cfg.load_settings()
+        self.assertIn("ask.top_k", "\n".join(cm.output))
+        self.assertEqual(_cfg.get_setting(s, "ask.top_k"), 10)
+
+    def test_invalid_enum_warns_and_resets(self):
+        self._write("  ask:\n    engine: automatic\n")
+        with self.assertLogs(self._LOG, "WARNING") as cm:
+            s = _cfg.load_settings()
+        self.assertIn("ask.engine", "\n".join(cm.output))
+        self.assertEqual(_cfg.get_setting(s, "ask.engine"), "auto")
+
+    def test_invalid_log_level_warns_and_defaults(self):
+        # The setting that configures logging still produces a visible warning.
+        self._write("  log:\n    level: verbose\n")
+        with self.assertLogs(self._LOG, "WARNING") as cm:
+            s = _cfg.load_settings()
+        self.assertIn("log.level", "\n".join(cm.output))
+        self.assertEqual(_cfg.get_setting(s, "log.level"), "info")
+
+    def test_integer_satisfies_a_number_leaf(self):
+        # preview.zoom is a "number"; an integer 2 is a valid number, not a warning.
+        self._write("  preview:\n    zoom: 2\n")
+        with self.assertNoLogs(self._LOG, "WARNING"):
+            s = _cfg.load_settings()
+        self.assertEqual(_cfg.get_setting(s, "preview.zoom"), 2)
+
+    def test_debug_flags_are_type_validated(self):
+        self._write("  debug:\n    active: 3\n    dump:\n      tabs: 3\n")
+        with self.assertLogs(self._LOG, "WARNING") as cm:
+            _cfg.load_settings()
+        blob = "\n".join(cm.output)
+        self.assertIn("debug.active", blob)
+        self.assertIn("debug.dump.tabs", blob)
+
+    def test_debug_dump_open_key_with_boolean_is_ok(self):
+        # An open map: any component name is valid, only the boolean value matters.
+        self._write("  debug:\n    dump:\n      a_new_component: true\n")
+        with self.assertNoLogs(self._LOG, "WARNING"):
+            _cfg.load_settings()
+
+    def test_valid_settings_emit_no_validation_warning(self):
+        self._write("  ask:\n    top_k: 5\n  editor:\n    font_size: 16\n")
+        with self.assertNoLogs(self._LOG, "WARNING"):
+            _cfg.load_settings()
+
+    def test_missing_schema_skips_validation_without_crashing(self):
+        from unittest import mock
+        self._write("  ask:\n    bogus_leaf: 1\n")
+        with mock.patch.object(_cfg, "_load_schema", return_value=None):
+            with self.assertNoLogs(self._LOG, "WARNING"):
+                s = _cfg.load_settings()
+        self.assertEqual(_cfg.get_setting(s, "ask.bogus_leaf"), 1)
+
+
 if __name__ == "__main__":
     unittest.main()
