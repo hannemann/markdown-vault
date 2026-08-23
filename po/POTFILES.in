@@ -20,6 +20,14 @@ src/markdown_vault/search/search.py
 src/markdown_vault/search/search_backend.py
 src/markdown_vault/search/search_logic.py
 src/markdown_vault/search/vault_scope.py
+src/markdown_vault/ui/preferences/constants.py
+src/markdown_vault/ui/preferences/debug_page.py
+src/markdown_vault/ui/preferences/dialog.py
+src/markdown_vault/ui/preferences/editor_page.py
+src/markdown_vault/ui/preferences/general_page.py
+src/markdown_vault/ui/preferences/keyboard_page.py
+src/markdown_vault/ui/preferences/preview_page.py
+src/markdown_vault/ui/preferences/web_page.py
 src/markdown_vault/ui/sidebar.py
 src/markdown_vault/uikit/banners.py
 src/markdown_vault/uikit/dialogs.py

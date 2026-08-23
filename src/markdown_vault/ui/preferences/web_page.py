@@ -10,6 +10,8 @@ gi.require_version("Adw", "1")
 
 from gi.repository import Adw
 
+from markdown_vault.core.i18n import _
+
 from markdown_vault.core import config
 
 
@@ -21,11 +23,11 @@ class WebPageMixin:
         )
         web.set_name("web")   # addressable via PreferencesDialog.open_page
 
-        web_group = Adw.PreferencesGroup(title="WebKit Rendering")
+        web_group = Adw.PreferencesGroup(title=_("WebKit Rendering"))
         web.add(web_group)
 
-        self._dmabuf_row = Adw.SwitchRow(title="Disable DMA-BUF renderer")
-        self._dmabuf_row.subtitle = (
+        self._dmabuf_row = Adw.SwitchRow(title=_("Disable DMA-BUF renderer"))
+        self._dmabuf_row.subtitle = _(
             "Lowers GPU/video memory usage "
             "(WEBKIT_DISABLE_DMABUF_RENDERER). Takes effect after restart."
         )
@@ -39,9 +41,9 @@ class WebPageMixin:
         web_group.add(self._dmabuf_row)
 
         self._compositing_row = Adw.SwitchRow(
-            title="Disable hardware acceleration",
+            title=_("Disable hardware acceleration"),
         )
-        self._compositing_row.subtitle = (
+        self._compositing_row.subtitle = _(
             "Render without the GPU (WEBKIT_DISABLE_COMPOSITING_MODE). "
             "Takes effect after restart."
         )

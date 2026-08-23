@@ -12,6 +12,8 @@ gi.require_version("Gdk", "4.0")
 
 from gi.repository import Gtk, Adw, Gdk
 
+from markdown_vault.core.i18n import _
+
 from markdown_vault.core import config
 from markdown_vault.ui.preferences.constants import _RELEVANT_MODS, _accel_to_label
 
@@ -22,10 +24,10 @@ class KeyboardPageMixin:
         keyboard = Adw.PreferencesPage(title="Keyboard", icon_name="input-keyboard-symbolic")
         keyboard.set_name("keyboard")   # addressable via PreferencesDialog.open_page
 
-        kb_group = Adw.PreferencesGroup(title="Keybindings")
+        kb_group = Adw.PreferencesGroup(title=_("Keybindings"))
         keyboard.add(kb_group)
 
-        self._next_tab_row = Adw.ActionRow(title="Next tab")
+        self._next_tab_row = Adw.ActionRow(title=_("Next tab"))
         self._next_tab_btn = Gtk.Button()
         self._next_tab_btn.add_css_class("flat")
         self._next_tab_btn.set_valign(Gtk.Align.CENTER)
@@ -35,7 +37,7 @@ class KeyboardPageMixin:
         self._next_tab_row.add_suffix(self._next_tab_btn)
         kb_group.add(self._next_tab_row)
 
-        self._prev_tab_row = Adw.ActionRow(title="Previous tab")
+        self._prev_tab_row = Adw.ActionRow(title=_("Previous tab"))
         self._prev_tab_btn = Gtk.Button()
         self._prev_tab_btn.add_css_class("flat")
         self._prev_tab_btn.set_valign(Gtk.Align.CENTER)
@@ -45,13 +47,13 @@ class KeyboardPageMixin:
         self._prev_tab_row.add_suffix(self._prev_tab_btn)
         kb_group.add(self._prev_tab_row)
 
-        switch_group = Adw.PreferencesGroup(title="Tab switching")
+        switch_group = Adw.PreferencesGroup(title=_("Tab switching"))
         keyboard.add(switch_group)
 
         self._mode_row = Adw.ComboRow(
-            title="Tab switch behaviour",
-            subtitle="MRU switches to the most recently used tab, Cycle goes in order",
-            model=Gtk.StringList.new(["Most Recently Used", "Cycle in Order"]),
+            title=_("Tab switch behaviour"),
+            subtitle=_("MRU switches to the most recently used tab, Cycle goes in order"),
+            model=Gtk.StringList.new([_("Most Recently Used"), _("Cycle in Order")]),
         )
         current_mode = config.get_setting(self._settings, "tabs.switch_mode", "mru")
         self._mode_row.set_selected(0 if current_mode == "mru" else 1)
@@ -78,7 +80,7 @@ class KeyboardPageMixin:
         if button._capturing:
             return
         button._capturing = True
-        button.set_label("Press shortcut...")
+        button.set_label(_("Press shortcut..."))
         ctrl = Gtk.EventControllerKey()
         ctrl.connect("key-pressed", self._on_keybinding_key_pressed, button)
         button.add_controller(ctrl)

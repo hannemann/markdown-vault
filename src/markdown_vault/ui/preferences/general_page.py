@@ -11,6 +11,8 @@ gi.require_version("Adw", "1")
 
 from gi.repository import Gtk, Adw
 
+from markdown_vault.core.i18n import _
+
 from markdown_vault.core import config
 from markdown_vault.ui.preferences.constants import _VIEW_MODES
 
@@ -22,11 +24,11 @@ class GeneralPageMixin:
         general.set_name("general")   # addressable via PreferencesDialog.open_page
 
         # Autosave group.
-        autosave_group = Adw.PreferencesGroup(title="Autosave")
+        autosave_group = Adw.PreferencesGroup(title=_("Autosave"))
         general.add(autosave_group)
 
         self._autosave_row = Adw.SpinRow(
-            title="Autosave interval (seconds)",
+            title=_("Autosave interval (seconds)"),
             adjustment=Gtk.Adjustment.new(
                 config.get_setting(self._settings, "autosave.interval", 30), 0, 600, 5, 10, 0,
             ),
@@ -35,11 +37,11 @@ class GeneralPageMixin:
         autosave_group.add(self._autosave_row)
 
         # Default view mode group.
-        view_group = Adw.PreferencesGroup(title="Default View Mode")
+        view_group = Adw.PreferencesGroup(title=_("Default View Mode"))
         general.add(view_group)
 
         self._view_row = Adw.ComboRow(
-            title="View mode for new tabs",
+            title=_("View mode for new tabs"),
             model=Gtk.StringList.new(list(_VIEW_MODES.values())),
         )
         modes = list(_VIEW_MODES.keys())

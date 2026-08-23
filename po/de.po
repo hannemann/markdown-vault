@@ -946,3 +946,263 @@ msgstr "Datei:  {name}\nPfad:  {parent}\nWörter: {words}\nZeilen: {lines}\nGrö
 #: src/markdown_vault/ui/sidebar.py
 msgid "No frontmatter"
 msgstr "Kein Frontmatter"
+
+#: src/markdown_vault/ui/preferences/constants.py
+msgid "Edit"
+msgstr "Bearbeiten"
+
+#: src/markdown_vault/ui/preferences/constants.py
+msgid "Render"
+msgstr "Rendern"
+
+#: src/markdown_vault/ui/preferences/constants.py
+msgid "Split"
+msgstr "Geteilt"
+
+#: src/markdown_vault/ui/preferences/constants.py
+msgid "Debug"
+msgstr "Debug"
+
+#: src/markdown_vault/ui/preferences/constants.py
+msgid "Info"
+msgstr "Info"
+
+#: src/markdown_vault/ui/preferences/constants.py
+msgid "Warning"
+msgstr "Warnung"
+
+#: src/markdown_vault/ui/preferences/constants.py
+msgid "Error"
+msgstr "Fehler"
+
+#: src/markdown_vault/ui/preferences/constants.py
+msgid "All (debug+)"
+msgstr "Alle (Debug+)"
+
+#: src/markdown_vault/ui/preferences/constants.py
+msgid "Warning and up"
+msgstr "Warnung und höher"
+
+#: src/markdown_vault/ui/preferences/constants.py
+msgid "Critical and up"
+msgstr "Kritisch und höher"
+
+#: src/markdown_vault/ui/preferences/constants.py
+msgid "Error only"
+msgstr "Nur Fehler"
+
+#: src/markdown_vault/ui/preferences/debug_page.py
+msgid "Logging"
+msgstr "Protokollierung"
+
+#: src/markdown_vault/ui/preferences/debug_page.py
+msgid "Log level"
+msgstr "Protokollstufe"
+
+#: src/markdown_vault/ui/preferences/debug_page.py
+msgid "Third-party log level"
+msgstr "Protokollstufe Drittanbieter"
+
+#: src/markdown_vault/ui/preferences/debug_page.py
+msgid "markdown, pymdownx, pygments, xml"
+msgstr "markdown, pymdownx, pygments, xml"
+
+#: src/markdown_vault/ui/preferences/debug_page.py
+msgid "GLib log level"
+msgstr "GLib-Protokollstufe"
+
+#: src/markdown_vault/ui/preferences/debug_page.py
+msgid "Gtk, WebKit, Gjs messages"
+msgstr "Gtk-, WebKit-, Gjs-Meldungen"
+
+#: src/markdown_vault/ui/preferences/debug_page.py
+msgid "Debug Dumps"
+msgstr "Debug-Dumps"
+
+#: src/markdown_vault/ui/preferences/debug_page.py
+msgid "File Index"
+msgstr "Datei-Index"
+
+#: src/markdown_vault/ui/preferences/debug_page.py
+msgid "Backlink Index"
+msgstr "Rückverweis-Index"
+
+#: src/markdown_vault/ui/preferences/debug_page.py
+msgid "Preview HTML"
+msgstr "Vorschau-HTML"
+
+#: src/markdown_vault/ui/preferences/debug_page.py
+msgid "Vault Tree"
+msgstr "Vault-Baum"
+
+#: src/markdown_vault/ui/preferences/debug_page.py
+msgid "Tabs"
+msgstr "Tabs"
+
+#: src/markdown_vault/ui/preferences/debug_page.py
+msgid "Sidebar"
+msgstr "Seitenleiste"
+
+#: src/markdown_vault/ui/preferences/dialog.py
+msgid "no keyring available — key won't be saved"
+msgstr "kein Schlüsselbund verfügbar — Schlüssel wird nicht gespeichert"
+
+#: src/markdown_vault/ui/preferences/dialog.py
+msgid "Keyring"
+msgstr "Schlüsselbund"
+
+#: src/markdown_vault/ui/preferences/dialog.py
+msgid "Could not store the API key in the keyring."
+msgstr "Der API-Schlüssel konnte nicht im Schlüsselbund gespeichert werden."
+
+#: src/markdown_vault/ui/preferences/editor_page.py
+msgid "Font &amp; Layout"
+msgstr "Schrift &amp; Layout"
+
+#: src/markdown_vault/ui/preferences/editor_page.py
+msgid "Font size"
+msgstr "Schriftgröße"
+
+#: src/markdown_vault/ui/preferences/editor_page.py
+msgid "Tab width"
+msgstr "Tabulatorbreite"
+
+#: src/markdown_vault/ui/preferences/editor_page.py
+msgid "Word wrap"
+msgstr "Zeilenumbruch"
+
+#: src/markdown_vault/ui/preferences/editor_page.py
+msgid "Minimum tab width (px)"
+msgstr "Minimale Tab-Breite (px)"
+
+#: src/markdown_vault/ui/preferences/editor_page.py
+msgid "Wrap tabs"
+msgstr "Tabs umbrechen"
+
+#: src/markdown_vault/ui/preferences/editor_page.py
+msgid "Wikilinks"
+msgstr "Wikilinks"
+
+#: src/markdown_vault/ui/preferences/editor_page.py
+msgid "Autofix and validation of [[wikilinks]] when saving."
+msgstr "Autokorrektur und Prüfung von [[Wikilinks]] beim Speichern."
+
+#: src/markdown_vault/ui/preferences/editor_page.py
+msgid "Normalize on save"
+msgstr "Beim Speichern normalisieren"
+
+#: src/markdown_vault/ui/preferences/editor_page.py
+msgid "Trim whitespace inside [[…]] when saving."
+msgstr "Leerzeichen in [[…]] beim Speichern entfernen."
+
+#: src/markdown_vault/ui/preferences/editor_page.py
+msgid "Auto-fix moved links"
+msgstr "Verschobene Links automatisch korrigieren"
+
+#: src/markdown_vault/ui/preferences/editor_page.py
+msgid "Redirect a broken link when exactly one matching file exists."
+msgstr "Einen defekten Link umleiten, wenn genau eine passende Datei existiert."
+
+#: src/markdown_vault/ui/preferences/editor_page.py
+msgid "Warn about broken links"
+msgstr "Vor defekten Links warnen"
+
+#: src/markdown_vault/ui/preferences/editor_page.py
+msgid "After saving, show a notice for links that can't be resolved."
+msgstr "Nach dem Speichern auf nicht auflösbare Links hinweisen."
+
+#: src/markdown_vault/ui/preferences/editor_page.py
+msgid "Mark broken links in the editor"
+msgstr "Defekte Links im Editor markieren"
+
+#: src/markdown_vault/ui/preferences/editor_page.py
+msgid "Gutter warning triangle and red underline on unresolved links."
+msgstr "Warndreieck am Rand und rote Unterstreichung bei nicht aufgelösten Links."
+
+#: src/markdown_vault/ui/preferences/general_page.py
+msgid "Autosave"
+msgstr "Automatisches Speichern"
+
+#: src/markdown_vault/ui/preferences/general_page.py
+msgid "Autosave interval (seconds)"
+msgstr "Intervall für automatisches Speichern (Sekunden)"
+
+#: src/markdown_vault/ui/preferences/general_page.py
+msgid "Default View Mode"
+msgstr "Standard-Ansichtsmodus"
+
+#: src/markdown_vault/ui/preferences/general_page.py
+msgid "View mode for new tabs"
+msgstr "Ansichtsmodus für neue Tabs"
+
+#: src/markdown_vault/ui/preferences/keyboard_page.py
+msgid "Keybindings"
+msgstr "Tastenkürzel"
+
+#: src/markdown_vault/ui/preferences/keyboard_page.py
+msgid "Next tab"
+msgstr "Nächster Tab"
+
+#: src/markdown_vault/ui/preferences/keyboard_page.py
+msgid "Previous tab"
+msgstr "Vorheriger Tab"
+
+#: src/markdown_vault/ui/preferences/keyboard_page.py
+msgid "Tab switching"
+msgstr "Tab-Wechsel"
+
+#: src/markdown_vault/ui/preferences/keyboard_page.py
+msgid "Tab switch behaviour"
+msgstr "Verhalten beim Tab-Wechsel"
+
+#: src/markdown_vault/ui/preferences/keyboard_page.py
+msgid "MRU switches to the most recently used tab, Cycle goes in order"
+msgstr "MRU wechselt zum zuletzt genutzten Tab, Zyklus geht der Reihe nach"
+
+#: src/markdown_vault/ui/preferences/keyboard_page.py
+msgid "Most Recently Used"
+msgstr "Zuletzt verwendet"
+
+#: src/markdown_vault/ui/preferences/keyboard_page.py
+msgid "Cycle in Order"
+msgstr "Der Reihe nach"
+
+#: src/markdown_vault/ui/preferences/keyboard_page.py
+msgid "Press shortcut..."
+msgstr "Tastenkürzel drücken…"
+
+#: src/markdown_vault/ui/preferences/preview_page.py
+msgid "Zoom"
+msgstr "Zoom"
+
+#: src/markdown_vault/ui/preferences/preview_page.py
+msgid "Default zoom level"
+msgstr "Standard-Zoomstufe"
+
+#: src/markdown_vault/ui/preferences/preview_page.py
+msgid "Privacy"
+msgstr "Datenschutz"
+
+#: src/markdown_vault/ui/preferences/preview_page.py
+msgid "Allow remote images"
+msgstr "Externe Bilder erlauben"
+
+#: src/markdown_vault/ui/preferences/web_page.py
+msgid "WebKit Rendering"
+msgstr "WebKit-Rendering"
+
+#: src/markdown_vault/ui/preferences/web_page.py
+msgid "Disable DMA-BUF renderer"
+msgstr "DMA-BUF-Renderer deaktivieren"
+
+#: src/markdown_vault/ui/preferences/web_page.py
+msgid "Lowers GPU/video memory usage (WEBKIT_DISABLE_DMABUF_RENDERER). Takes effect after restart."
+msgstr "Senkt GPU-/Videospeicher-Nutzung (WEBKIT_DISABLE_DMABUF_RENDERER). Wird nach Neustart wirksam."
+
+#: src/markdown_vault/ui/preferences/web_page.py
+msgid "Disable hardware acceleration"
+msgstr "Hardwarebeschleunigung deaktivieren"
+
+#: src/markdown_vault/ui/preferences/web_page.py
+msgid "Render without the GPU (WEBKIT_DISABLE_COMPOSITING_MODE). Takes effect after restart."
+msgstr "Ohne GPU rendern (WEBKIT_DISABLE_COMPOSITING_MODE). Wird nach Neustart wirksam."
