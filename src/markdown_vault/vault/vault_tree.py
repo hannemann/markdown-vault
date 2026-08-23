@@ -1324,8 +1324,13 @@ class VaultTree(Gtk.Box):
         """Handle the folder chooser response."""
         try:
             folder = dialog.select_folder_finish(result)
-        except GLib.Error:
-            logger.debug("Folder chooser cancelled or failed", exc_info=True)
+        except GLib.Error as exc:
+            # A cancel and a real portal/backend failure raise the same type; stay
+            # silent on cancel, surface a genuine failure instead of dropping it.
+            if not dialogs.dialog_cancelled(exc):
+                logger.warning("vault-folder chooser failed", exc_info=True)
+                dialogs.show_error(self.get_root(), "Folder Selection Failed",
+                                   "Could not open the folder chooser.")
             return
         if folder:
             path = folder.get_path()

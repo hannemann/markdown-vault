@@ -97,6 +97,28 @@ def _load_monitor(mock_gio, mock_glib):
     return markdown_vault.vault.vault_monitor
 
 
+class TestStartMonitorFailure(unittest.TestCase):
+    """A directory that cannot be watched is skipped — silently today, which leaves a
+    stale tree with no events. It must warn (its listdir twin already does)."""
+
+    def test_unwatchable_dir_logs_warning(self):
+        mock_gio = _make_mock_gio()
+
+        def make_failing_file(path):
+            f = MagicMock()
+            f.monitor_directory.side_effect = _REAL_GLIB.Error.new_literal(
+                _REAL_GLIB.quark_from_string("test"), "no watch", 0)
+            return f
+
+        mock_gio.File.new_for_path.side_effect = make_failing_file
+        with patch("markdown_vault.vault.vault_monitor.os.path.isdir", return_value=True), \
+                patch("markdown_vault.vault.vault_monitor.os.listdir", return_value=[]):
+            mod = _load_monitor(mock_gio, _REAL_GLIB)   # real GLib → real GLib.Error caught
+            monitor = mod.VaultMonitor()
+            with self.assertLogs("markdown_vault.vault.vault_monitor", level="WARNING"):
+                monitor.set_vaults(["/tmp/testvault"])
+
+
 class TestVaultMonitorInit(unittest.TestCase):
     """Phase 1: VaultMonitor Initialisierung."""
 

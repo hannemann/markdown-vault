@@ -201,6 +201,7 @@ class VaultMonitor:
             monitor.connect("changed", self._on_monitor_event)
             self._monitors[vault_path] = monitor
         except GLib.Error:
+            logger.warning("Could not watch %s", vault_path, exc_info=True)
             return
 
         # Rekursiv Unterverzeichnisse monitorieren
