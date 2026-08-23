@@ -26,6 +26,87 @@ import markdown_vault.search.ask  # noqa: F401,E402
 import markdown_vault.importers.document_import  # noqa: F401,E402
 from markdown_vault.ui.preferences.dialog import PreferencesDialog  # noqa: E402
 from markdown_vault.core import config  # noqa: E402
+from gi.repository import GLib, Gtk  # noqa: E402
+from markdown_vault.ui.preferences.ask_subpage import AskSubpageMixin  # noqa: E402
+from markdown_vault.ui.preferences.embedding_subpage import EmbeddingSubpageMixin  # noqa: E402
+
+
+def _dialog_error():
+    return GLib.Error.new_literal(GLib.quark_from_string("test"), "boom", 0)
+
+
+class TestPreferencesFolderChooserFailure(unittest.TestCase):
+    """Seam guard: the two Preferences folder-chooser callbacks split a user cancel
+    from a real dialog failure — silent on cancel, log + error dialog on a real
+    failure. The shared helper is patched here (it has its own tests in
+    test_dialogs); this pins the *caller's* response to each branch."""
+
+    @patch("markdown_vault.ui.preferences.ask_subpage.dialogs")
+    def test_models_dir_cancel_is_silent(self, mock_dialogs):
+        mock_dialogs.dialog_cancelled.return_value = True
+        me = MagicMock()
+        dlg = MagicMock()
+        dlg.select_folder_finish.side_effect = _dialog_error()
+        with self.assertNoLogs("markdown_vault.ui.preferences.ask_subpage", level="WARNING"):
+            AskSubpageMixin._on_models_dir_chosen(me, dlg, None)
+        me._on_models_dir_selected.assert_not_called()
+        mock_dialogs.show_error.assert_not_called()
+
+    @patch("markdown_vault.ui.preferences.ask_subpage.dialogs")
+    def test_models_dir_failure_logs_and_shows_error(self, mock_dialogs):
+        mock_dialogs.dialog_cancelled.return_value = False
+        me = MagicMock()
+        dlg = MagicMock()
+        dlg.select_folder_finish.side_effect = _dialog_error()
+        with self.assertLogs("markdown_vault.ui.preferences.ask_subpage", level="WARNING"):
+            AskSubpageMixin._on_models_dir_chosen(me, dlg, None)
+        mock_dialogs.show_error.assert_called_once()
+
+    @patch("markdown_vault.ui.preferences.embedding_subpage.dialogs")
+    def test_onnx_dir_cancel_is_silent(self, mock_dialogs):
+        mock_dialogs.dialog_cancelled.return_value = True
+        me = MagicMock()
+        dlg = MagicMock()
+        dlg.select_folder_finish.side_effect = _dialog_error()
+        with self.assertNoLogs("markdown_vault.ui.preferences.embedding_subpage", level="WARNING"):
+            EmbeddingSubpageMixin._on_onnx_dir_chosen(me, dlg, None)
+        me._on_onnx_dir_selected.assert_not_called()
+        mock_dialogs.show_error.assert_not_called()
+
+    @patch("markdown_vault.ui.preferences.embedding_subpage.dialogs")
+    def test_onnx_dir_failure_logs_and_shows_error(self, mock_dialogs):
+        mock_dialogs.dialog_cancelled.return_value = False
+        me = MagicMock()
+        dlg = MagicMock()
+        dlg.select_folder_finish.side_effect = _dialog_error()
+        with self.assertLogs("markdown_vault.ui.preferences.embedding_subpage", level="WARNING"):
+            EmbeddingSubpageMixin._on_onnx_dir_chosen(me, dlg, None)
+        mock_dialogs.show_error.assert_called_once()
+
+
+class TestOnnxRuntimeProbe(unittest.TestCase):
+    """The onnxruntime status line distinguishes genuinely-absent from
+    present-but-unloadable (ZZ6): the common broken-install case (wheel against the
+    wrong native env) raises a PLAIN ImportError, not ModuleNotFoundError, and must
+    not be reported as 'not found — install it'."""
+
+    @patch("markdown_vault.ui.preferences.embedding_subpage.importlib.import_module")
+    def test_absent_says_install_it(self, mock_import):
+        mock_import.side_effect = ModuleNotFoundError("no onnxruntime")
+        me = MagicMock()
+        with self.assertNoLogs("markdown_vault.ui.preferences.embedding_subpage",
+                               level="WARNING"):
+            line = EmbeddingSubpageMixin._onnxruntime_status(me)
+        self.assertIn("not found", line)
+
+    @patch("markdown_vault.ui.preferences.embedding_subpage.importlib.import_module")
+    def test_broken_native_import_says_failed_to_load_and_logs(self, mock_import):
+        mock_import.side_effect = ImportError("libonnxruntime.so: cannot open")
+        me = MagicMock()
+        with self.assertLogs("markdown_vault.ui.preferences.embedding_subpage",
+                             level="WARNING"):
+            line = EmbeddingSubpageMixin._onnxruntime_status(me)
+        self.assertIn("failed to load", line)
 
 # The settings tree is nested; fixtures and assertions below still name settings
 # the old flat way for readability, so map each flat name to its dotted path. The
