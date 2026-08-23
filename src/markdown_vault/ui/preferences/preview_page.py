@@ -39,7 +39,7 @@ class PreviewPageMixin:
 
         self._remote_images_row = Adw.SwitchRow(
             title=_("Allow remote images"),
-            subtitle=(
+            subtitle=_(
                 "Load images from https:// URLs in notes. Off blocks them so a "
                 "note cannot beacon your IP; scripts stay blocked either way."
             ),

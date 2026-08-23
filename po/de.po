@@ -1781,6 +1781,10 @@ msgstr "Tastatur"
 msgid "Preview"
 msgstr "Vorschau"
 
+#: src/markdown_vault/ui/preferences/preview_page.py
+msgid "Load images from https:// URLs in notes. Off blocks them so a note cannot beacon your IP; scripts stay blocked either way."
+msgstr "Bilder von https://-URLs in Notizen laden. Aus blockiert sie, damit eine Notiz nicht deine IP verraten kann; Skripte bleiben ohnehin blockiert."
+
 #: src/markdown_vault/ui/preferences/search_page.py
 msgid "Search"
 msgstr "Suche"
