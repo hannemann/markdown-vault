@@ -21,7 +21,7 @@ from markdown_vault.ui.preferences.constants import _RELEVANT_MODS, _accel_to_la
 class KeyboardPageMixin:
     def _build_keyboard_page(self) -> None:
         # ── Keyboard page ──────────────────────────────────────────
-        keyboard = Adw.PreferencesPage(title="Keyboard", icon_name="input-keyboard-symbolic")
+        keyboard = Adw.PreferencesPage(title=_("Keyboard"), icon_name="input-keyboard-symbolic")
         keyboard.set_name("keyboard")   # addressable via PreferencesDialog.open_page
 
         kb_group = Adw.PreferencesGroup(title=_("Keybindings"))

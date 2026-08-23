@@ -238,7 +238,7 @@ class EmbeddingSubpageMixin:
         self._sem_onnx_widgets = [local]
         self._sem_ollama_widgets = [ollama]
         self._sem_openai_widgets = [openai]
-        subpage = self._subpage("Embedding", page)
+        subpage = self._subpage(_("Embedding"), page)
         # Don't auto-focus the first entry: an empty (default) field would open
         # with a focus ring + placeholder, which looks half-filled. Let the
         # resting state show the plain title; the hint appears on click.

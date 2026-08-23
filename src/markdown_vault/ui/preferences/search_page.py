@@ -30,12 +30,12 @@ class SearchPageMixin:
         self._subpages.update(embedding=self._emb_subpage, ask=self._ask_subpage,
                               prompt=self._prompt_subpage, runtime=self._runtime_subpage)
 
-        search = Adw.PreferencesPage(title="Search", icon_name="edit-find-symbolic")
+        search = Adw.PreferencesPage(title=_("Search"), icon_name="edit-find-symbolic")
         # Addressable so a banner can navigate here by name — see open_page.
         search.set_name("search")
         sem_group = Adw.PreferencesGroup(
             title=_("Semantic search"),
-            description=(
+            description=_(
                 "Find notes by meaning. Off by default; nothing is downloaded "
                 "or contacted while disabled. Recommended backend: Local (ONNX) "
                 "— runs in-process, no server, nothing leaves your machine. "

@@ -235,7 +235,7 @@ class AskSubpageMixin:
         self._refresh_gguf_status()
         self._update_ask_rows()          # show only the rows the engine/backend use
         self._update_external_warning()  # reveal the leak warning iff URL is non-local
-        subpage = self._subpage("Ask", page)
+        subpage = self._subpage(_("Ask"), page)
         subpage.connect("shown", lambda *_: self.set_focus(None))  # see Embedding
         return subpage
 

@@ -1760,3 +1760,35 @@ msgstr "Präzision des Value-Cache. V zu quantisieren (unter f16) braucht Flash 
 #: src/markdown_vault/ui/preferences/runtime_subpage.py
 msgid " ⚠ Turn on Flash attention below."
 msgstr " ⚠ Flash Attention unten einschalten."
+
+#: src/markdown_vault/ui/preferences/dialog.py
+msgid "Preferences"
+msgstr "Einstellungen"
+
+#: src/markdown_vault/ui/preferences/editor_page.py
+msgid "Editor"
+msgstr "Editor"
+
+#: src/markdown_vault/ui/preferences/general_page.py
+msgid "General"
+msgstr "Allgemein"
+
+#: src/markdown_vault/ui/preferences/keyboard_page.py
+msgid "Keyboard"
+msgstr "Tastatur"
+
+#: src/markdown_vault/ui/preferences/preview_page.py
+msgid "Preview"
+msgstr "Vorschau"
+
+#: src/markdown_vault/ui/preferences/search_page.py
+msgid "Search"
+msgstr "Suche"
+
+#: src/markdown_vault/ui/preferences/search_page.py
+msgid "Find notes by meaning. Off by default; nothing is downloaded or contacted while disabled. Recommended backend: Local (ONNX) — runs in-process, no server, nothing leaves your machine. Ollama is an alternative if you already run a server (e.g. with a GPU). Changes take effect after restart."
+msgstr "Notizen nach Bedeutung finden. Standardmäßig aus; solange deaktiviert, wird nichts heruntergeladen oder kontaktiert. Empfohlenes Backend: Lokal (ONNX) — läuft im Prozess, kein Server, nichts verlässt deinen Rechner. Ollama ist eine Alternative, falls du bereits einen Server betreibst (z. B. mit GPU). Änderungen werden nach Neustart wirksam."
+
+#: src/markdown_vault/ui/preferences/web_page.py
+msgid "Web"
+msgstr "Web"

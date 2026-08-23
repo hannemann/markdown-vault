@@ -67,7 +67,7 @@ class PreferencesDialog(
         cache and rebuilds the index against the currently selected backend,
         live.  When ``None`` the rebuild button is disabled.
         """
-        super().__init__(title="Preferences")
+        super().__init__(title=_("Preferences"))
 
         # The one owned settings object, not a copy: the dialog applies instantly
         # (no OK/Cancel), so a private snapshot bought nothing and was one of the

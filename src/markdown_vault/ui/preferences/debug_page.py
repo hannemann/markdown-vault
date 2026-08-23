@@ -22,7 +22,7 @@ from markdown_vault.ui.preferences.constants import (
 class DebugPageMixin:
     def _build_debug_page(self) -> None:
         # ── Debug page ──────────────────────────────────────────────
-        debug = Adw.PreferencesPage(title="Debug", icon_name="utilities-system-monitor-symbolic")
+        debug = Adw.PreferencesPage(title=_("Debug"), icon_name="utilities-system-monitor-symbolic")
         debug.set_name("debug")   # addressable via PreferencesDialog.open_page
 
         log_group = Adw.PreferencesGroup(title=_("Logging"))

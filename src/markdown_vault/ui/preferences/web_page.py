@@ -19,7 +19,7 @@ class WebPageMixin:
     def _build_web_page(self) -> None:
         # ── Web page ────────────────────────────────────────────────
         web = Adw.PreferencesPage(
-            title="Web", icon_name="applications-internet-symbolic",
+            title=_("Web"), icon_name="applications-internet-symbolic",
         )
         web.set_name("web")   # addressable via PreferencesDialog.open_page
 

@@ -19,7 +19,7 @@ from markdown_vault.core import config
 class PreviewPageMixin:
     def _build_preview_page(self) -> None:
         # ── Preview page ────────────────────────────────────────────
-        preview = Adw.PreferencesPage(title="Preview", icon_name="document-properties-symbolic")
+        preview = Adw.PreferencesPage(title=_("Preview"), icon_name="document-properties-symbolic")
         preview.set_name("preview")   # addressable via PreferencesDialog.open_page
 
         zoom_group = Adw.PreferencesGroup(title=_("Zoom"))
