@@ -79,6 +79,7 @@ def _atomic_write(path: Path, content: str) -> None:
         try:
             os.unlink(tmp)
         except OSError:
+            # best-effort temp removal; the failed write is re-raised right below
             pass
         raise
 
@@ -191,6 +192,8 @@ def save_vaults(vaults: list[dict[str, str]]) -> None:
             with open(CONFIG_FILE, "r", encoding="utf-8") as fh:
                 existing = yaml.safe_load(fh) or {}
         except (yaml.YAMLError, OSError):
+            logger.warning("Could not read existing %s while saving vaults; other "
+                           "sections may be dropped", CONFIG_FILE, exc_info=True)
             existing = {}
     existing["vaults"] = unique
     yaml_str = yaml.dump(existing, default_flow_style=False, sort_keys=False)
@@ -579,6 +582,7 @@ def is_gguf(path) -> bool:
         with open(path, "rb") as fh:
             return fh.read(4) == b"GGUF"
     except OSError:
+        # an unreadable file is not a usable GGUF; the caller filters it out
         return False
 
 
@@ -686,6 +690,7 @@ def gguf_n_layers(path) -> int | None:
                     return None
                 skip(vtype)
     except (OSError, ValueError, struct.error):
+        # metadata probe: None means 'block count unknown', handled by the caller
         return None
     return None
 
@@ -874,6 +879,8 @@ def save_settings(settings_to_save: dict | None = None) -> None:
             with open(CONFIG_FILE, "r", encoding="utf-8") as fh:
                 existing = yaml.safe_load(fh) or {}
         except (yaml.YAMLError, OSError):
+            logger.warning("Could not read existing %s while saving settings; other "
+                           "sections may be dropped", CONFIG_FILE, exc_info=True)
             existing = {}
     _log_settings_write(existing.get("settings") or {}, values)
     existing["settings"] = dict(values)     # a copy: the file gets a snapshot
