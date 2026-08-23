@@ -174,6 +174,18 @@ class TestSaveVaults(_TempConfigMixin, unittest.TestCase):
         self.assertEqual(_cfg.get_setting(loaded, "autosave.interval"), 999)
         self.assertEqual(_cfg.get_setting(loaded, "editor.font_size"), 22)
 
+    def test_save_vaults_logs_when_existing_file_is_corrupt(self):
+        # A corrupt settings.yaml can't be merged, so the sibling settings block is
+        # dropped on the next write — that silent partial loss must be diagnosable.
+        _cfg.CONFIG_FILE.write_text("{{invalid yaml::", encoding="utf-8")
+        with self.assertLogs("markdown_vault.core.config", level="WARNING"):
+            _cfg.save_vaults([{"name": "V", "path": "/tmp/v"}])
+
+    def test_save_settings_logs_when_existing_file_is_corrupt(self):
+        _cfg.CONFIG_FILE.write_text("{{invalid yaml::", encoding="utf-8")
+        with self.assertLogs("markdown_vault.core.config", level="WARNING"):
+            _cfg.save_settings({"autosave": {"interval": 30}})
+
 
 class TestAddVault(_TempConfigMixin, unittest.TestCase):
     """Tests for ``add_vault``."""

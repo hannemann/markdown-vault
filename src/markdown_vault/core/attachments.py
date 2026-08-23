@@ -97,6 +97,7 @@ def _prune_empty(start, stop) -> None:
         try:
             start.rmdir()
         except OSError:
+            # best-effort upward prune; stop as soon as a dir won't remove
             return
         start = start.parent
 

@@ -351,7 +351,8 @@ def _setup_glib_logging(level_str="warning"):
             )
             _glib_handler_id.append((domain, handler_id))
         except Exception:
-            pass
+            logging.getLogger("markdown-vault").debug(
+                "Could not install GLib log handler for %s", domain, exc_info=True)
     # Default handler catches every other domain.
     try:
         default_handler_id = GLib.log_set_default_handler(
@@ -359,7 +360,8 @@ def _setup_glib_logging(level_str="warning"):
         )
         _glib_handler_id.append((None, default_handler_id))
     except Exception:
-        pass
+        logging.getLogger("markdown-vault").debug(
+            "Could not install the default GLib log handler", exc_info=True)
 
 
 _llama_logger_ready = False
@@ -402,6 +404,7 @@ def _is_tty(stream) -> bool:
     try:
         return bool(stream.isatty())
     except Exception:
+        # any stream without a working isatty() is treated as non-interactive
         return False
 
 
