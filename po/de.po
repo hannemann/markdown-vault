@@ -1,0 +1,33 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: markdown-vault\n"
+"Report-Msgid-Bugs-To: \n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Language: de\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+#: src/markdown_vault/ui/sidebar.py
+msgid "Outline"
+msgstr "Gliederung"
+
+#: src/markdown_vault/ui/sidebar.py
+msgid "Backlinks"
+msgstr "Rückverweise"
+
+#: src/markdown_vault/ui/sidebar.py
+msgid "Graph"
+msgstr "Graph"
+
+#: src/markdown_vault/ui/sidebar.py
+msgid "Metadata"
+msgstr "Metadaten"
+
+#: src/markdown_vault/ui/sidebar.py
+msgid "Git"
+msgstr "Git"
+
+#: src/markdown_vault/ui/sidebar.py
+msgid "Details"
+msgstr "Details"

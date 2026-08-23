@@ -6,6 +6,7 @@ install_data(
     'debug_control.py',
     'event_router.py',
     'history.py',
+    'i18n.py',
     'logging_setup.py',
     'path_utils.py',
     'paths.py',

@@ -1,0 +1,3 @@
+# Source files with translatable strings, relative to the project root.
+# Add a file here when it gets its first _() / ngettext() marker.
+src/markdown_vault/ui/sidebar.py
