@@ -27,6 +27,8 @@ src/markdown_vault/ui/preferences/editor_page.py
 src/markdown_vault/ui/preferences/general_page.py
 src/markdown_vault/ui/preferences/keyboard_page.py
 src/markdown_vault/ui/preferences/preview_page.py
+src/markdown_vault/ui/preferences/prompt_subpage.py
+src/markdown_vault/ui/preferences/search_page.py
 src/markdown_vault/ui/preferences/web_page.py
 src/markdown_vault/ui/sidebar.py
 src/markdown_vault/uikit/banners.py

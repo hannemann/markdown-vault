@@ -13,6 +13,8 @@ gi.require_version("Adw", "1")
 
 from gi.repository import Gtk, Adw, GLib
 
+from markdown_vault.core.i18n import _
+
 from markdown_vault.core import config
 
 
@@ -32,7 +34,7 @@ class SearchPageMixin:
         # Addressable so a banner can navigate here by name — see open_page.
         search.set_name("search")
         sem_group = Adw.PreferencesGroup(
-            title="Semantic search",
+            title=_("Semantic search"),
             description=(
                 "Find notes by meaning. Off by default; nothing is downloaded "
                 "or contacted while disabled. Recommended backend: Local (ONNX) "
@@ -43,7 +45,7 @@ class SearchPageMixin:
         )
         search.add(sem_group)
 
-        self._sem_enabled_row = Adw.SwitchRow(title="Enable semantic search")
+        self._sem_enabled_row = Adw.SwitchRow(title=_("Enable semantic search"))
         self._sem_enabled_row.set_active(
             config.get_setting(self._settings, "semantic.enabled", False))
         self._sem_enabled_row.connect(
@@ -52,18 +54,18 @@ class SearchPageMixin:
 
         self._sem_backends = list(self._SEM_BACKENDS)
         self._sem_backend_row = Adw.ComboRow(
-            title="Backend",
-            subtitle="Local runs in-process (recommended); the servers need one running",
-            model=Gtk.StringList.new(["Local (ONNX) — recommended", "Ollama (server)",
-                                      "OpenAI-compatible (server)"]),
+            title=_("Backend"),
+            subtitle=_("Local runs in-process (recommended); the servers need one running"),
+            model=Gtk.StringList.new([_("Local (ONNX) — recommended"), _("Ollama (server)"),
+                                      _("OpenAI-compatible (server)")]),
         )
         self._sem_backend_row.set_selected(self._sem_backend_index())
         self._sem_backend_row.connect("notify::selected", self._on_sem_backend_changed)
         sem_group.add(self._sem_backend_row)
 
         self._sem_score_row = Adw.SpinRow(
-            title="Minimum similarity",
-            subtitle="Higher = stricter (fewer, closer matches)",
+            title=_("Minimum similarity"),
+            subtitle=_("Higher = stricter (fewer, closer matches)"),
             adjustment=Gtk.Adjustment.new(
                 config.get_setting(self._settings, "semantic.min_score", 0.35),
                 0.0, 1.0, 0.05, 0.1, 0.0,
@@ -77,11 +79,11 @@ class SearchPageMixin:
         # currently selected backend, live — the way to apply a backend switch
         # (or a freshly downloaded model) without restarting.
         self._sem_rebuild_row = Adw.ActionRow(
-            title="Rebuild index now",
-            subtitle="Clear the cache and re-embed all notes with the selected backend",
+            title=_("Rebuild index now"),
+            subtitle=_("Clear the cache and re-embed all notes with the selected backend"),
         )
         self._sem_rebuild_btn = Gtk.Button(
-            label="Rebuild", valign=Gtk.Align.CENTER)
+            label=_("Rebuild"), valign=Gtk.Align.CENTER)
         self._sem_rebuild_btn.add_css_class("destructive-action")
         self._sem_rebuild_btn.set_sensitive(self._on_reindex is not None)
         self._sem_rebuild_btn.connect("clicked", self._on_rebuild_index)
@@ -90,22 +92,22 @@ class SearchPageMixin:
         sem_group.add(self._sem_rebuild_row)
 
         # Navigation into the detailed configuration subpages.
-        cfg_group = Adw.PreferencesGroup(title="Configuration")
+        cfg_group = Adw.PreferencesGroup(title=_("Configuration"))
         self._emb_nav_row = self._nav_row(
-            "Embedding", "Model that turns notes into vectors", self._emb_subpage)
+            _("Embedding"), _("Model that turns notes into vectors"), self._emb_subpage)
         cfg_group.add(self._emb_nav_row)
         self._ask_nav_row = self._nav_row(
-            "Ask (answers from your notes)",
-            "Chat model + prompt for synthesized answers", self._ask_subpage)
+            _("Ask (answers from your notes)"),
+            _("Chat model + prompt for synthesized answers"), self._ask_subpage)
         cfg_group.add(self._ask_nav_row)
         search.add(cfg_group)
 
         # ── Audio transcription (used by the document importer's File tab) ──
         audio_group = Adw.PreferencesGroup(
-            title="Audio transcription",
-            description=("Turn audio files into text when you import them. Pick a "
-                         "model size and download it once (bigger = more accurate, "
-                         "slower, larger)."))
+            title=_("Audio transcription"),
+            description=_("Turn audio files into text when you import them. Pick a "
+                          "model size and download it once (bigger = more accurate, "
+                          "slower, larger)."))
         # Model picker: the multilingual sizes (one model handles ~99 languages,
         # auto-detected). Bigger = more accurate but slower and a larger download.
         whisper_models = [
@@ -115,11 +117,11 @@ class SearchPageMixin:
             ("medium", "medium (~1.5 GB)"),
             ("large-v3", "large-v3 (~3 GB)"),
         ]
-        self._whisper_values = [v for v, _ in whisper_models]
+        self._whisper_values = [v for v, _lbl in whisper_models]
         self._whisper_model_row = Adw.ComboRow(
-            title="Model",
-            subtitle="Multilingual; bigger = more accurate, slower, larger download",
-            model=Gtk.StringList.new([label for _, label in whisper_models]))
+            title=_("Model"),
+            subtitle=_("Multilingual; bigger = more accurate, slower, larger download"),
+            model=Gtk.StringList.new([label for _v, label in whisper_models]))
         current = (config.get_setting(self._settings, "document.whisper_model")
                    or config.default("document.whisper_model"))
         self._whisper_model_row.set_selected(
@@ -134,12 +136,12 @@ class SearchPageMixin:
             margin_start=12, margin_end=12, margin_bottom=6)
         audio_group.add(self._whisper_progress)
 
-        self._whisper_row = Adw.ActionRow(title="Model files")
+        self._whisper_row = Adw.ActionRow(title=_("Model files"))
         self._whisper_status_icon = Gtk.Image()
         self._whisper_row.add_prefix(self._whisper_status_icon)
         self._whisper_dl_btn = Gtk.Button(
             icon_name="folder-download-symbolic", valign=Gtk.Align.CENTER,
-            tooltip_text="Download the selected model")
+            tooltip_text=_("Download the selected model"))
         self._whisper_dl_btn.add_css_class("flat")
         self._whisper_dl_btn.connect("clicked", self._on_download_whisper)
         self._whisper_row.add_suffix(self._whisper_dl_btn)
@@ -206,10 +208,10 @@ class SearchPageMixin:
         if self._on_reindex is None:
             return
         if not config.get_setting(self._settings, "semantic.enabled"):
-            msg = "Enable semantic search first"
+            msg = _("Enable semantic search first")
         else:
             self._on_reindex()
-            msg = "Rebuilding semantic index in the background…"
+            msg = _("Rebuilding semantic index in the background…")
         try:
             self.add_toast(Adw.Toast.new(msg))
         except Exception:  # noqa: BLE001 — toast is cosmetic; fall back to a log line
@@ -221,7 +223,7 @@ class SearchPageMixin:
         from markdown_vault.importers import document_import
         if document_import.is_available(".mp3"):          # faster_whisper absent
             self._whisper_status_icon.set_from_icon_name("dialog-warning-symbolic")
-            self._whisper_row.set_subtitle("Needs the optional AI stack — make install-ai")
+            self._whisper_row.set_subtitle(_("Needs the optional AI stack — make install-ai"))
             self._whisper_dl_btn.set_sensitive(False)
             return
         self._apply_whisper_status(document_import.whisper_model_ready())
@@ -235,10 +237,10 @@ class SearchPageMixin:
     def _apply_whisper_status(self, ready: bool) -> bool:
         if ready:
             self._whisper_status_icon.set_from_icon_name("emblem-ok-symbolic")
-            self._whisper_row.set_subtitle("Downloaded — audio import ready")
+            self._whisper_row.set_subtitle(_("Downloaded — audio import ready"))
         else:
             self._whisper_status_icon.set_from_icon_name("folder-download-symbolic")
-            self._whisper_row.set_subtitle("Not downloaded")
+            self._whisper_row.set_subtitle(_("Not downloaded"))
         self._whisper_dl_btn.set_sensitive(True)
         return False
 
@@ -260,7 +262,7 @@ class SearchPageMixin:
     def _on_download_whisper(self, _btn) -> None:
         self._whisper_dl_btn.set_sensitive(False)
         self._whisper_status_icon.set_from_icon_name("folder-download-symbolic")
-        self._whisper_row.set_subtitle("Downloading…")
+        self._whisper_row.set_subtitle(_("Downloading…"))
         self._whisper_progress.set_fraction(0.0)
         self._whisper_progress.set_visible(True)
         model = self._whisper_values[self._whisper_model_row.get_selected()]
@@ -283,6 +285,6 @@ class SearchPageMixin:
             self._apply_whisper_status(True)
         else:
             self._whisper_status_icon.set_from_icon_name("dialog-error-symbolic")
-            self._whisper_row.set_subtitle(f"Download failed: {msg[:70]}")
+            self._whisper_row.set_subtitle(_("Download failed: {error}").format(error=msg[:70]))
             self._whisper_dl_btn.set_sensitive(True)
         return False

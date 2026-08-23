@@ -1206,3 +1206,141 @@ msgstr "Hardwarebeschleunigung deaktivieren"
 #: src/markdown_vault/ui/preferences/web_page.py
 msgid "Render without the GPU (WEBKIT_DISABLE_COMPOSITING_MODE). Takes effect after restart."
 msgstr "Ohne GPU rendern (WEBKIT_DISABLE_COMPOSITING_MODE). Wird nach Neustart wirksam."
+
+#: src/markdown_vault/ui/preferences/prompt_subpage.py
+msgid "System prompt"
+msgstr "System-Prompt"
+
+#: src/markdown_vault/ui/preferences/prompt_subpage.py
+#, python-brace-format
+msgid "Grounding instructions sent to the model. {language} is replaced with the answer language. Reset restores the built-in default and keeps tracking future improvements."
+msgstr "Anweisungen, die die Antwort an die Notizen binden. {language} wird durch die Antwortsprache ersetzt. Zurücksetzen stellt den eingebauten Standard wieder her und verfolgt künftige Verbesserungen weiter."
+
+#: src/markdown_vault/ui/preferences/prompt_subpage.py
+msgid "Reset"
+msgstr "Zurücksetzen"
+
+#: src/markdown_vault/ui/preferences/prompt_subpage.py
+msgid "Reset to the built-in default prompt"
+msgstr "Auf den eingebauten Standard-Prompt zurücksetzen"
+
+#: src/markdown_vault/ui/preferences/search_page.py
+msgid "Semantic search"
+msgstr "Semantische Suche"
+
+#: src/markdown_vault/ui/preferences/search_page.py
+msgid "Enable semantic search"
+msgstr "Semantische Suche aktivieren"
+
+#: src/markdown_vault/ui/preferences/search_page.py
+msgid "Backend"
+msgstr "Backend"
+
+#: src/markdown_vault/ui/preferences/search_page.py
+msgid "Local runs in-process (recommended); the servers need one running"
+msgstr "Lokal läuft im Prozess (empfohlen); die Server brauchen einen laufenden Dienst"
+
+#: src/markdown_vault/ui/preferences/search_page.py
+msgid "Local (ONNX) — recommended"
+msgstr "Lokal (ONNX) — empfohlen"
+
+#: src/markdown_vault/ui/preferences/search_page.py
+msgid "Ollama (server)"
+msgstr "Ollama (Server)"
+
+#: src/markdown_vault/ui/preferences/search_page.py
+msgid "OpenAI-compatible (server)"
+msgstr "OpenAI-kompatibel (Server)"
+
+#: src/markdown_vault/ui/preferences/search_page.py
+msgid "Minimum similarity"
+msgstr "Mindestähnlichkeit"
+
+#: src/markdown_vault/ui/preferences/search_page.py
+msgid "Higher = stricter (fewer, closer matches)"
+msgstr "Höher = strenger (weniger, genauere Treffer)"
+
+#: src/markdown_vault/ui/preferences/search_page.py
+msgid "Rebuild index now"
+msgstr "Index jetzt neu aufbauen"
+
+#: src/markdown_vault/ui/preferences/search_page.py
+msgid "Clear the cache and re-embed all notes with the selected backend"
+msgstr "Den Cache leeren und alle Notizen mit dem gewählten Backend neu einbetten"
+
+#: src/markdown_vault/ui/preferences/search_page.py
+msgid "Rebuild"
+msgstr "Neu aufbauen"
+
+#: src/markdown_vault/ui/preferences/search_page.py
+msgid "Configuration"
+msgstr "Konfiguration"
+
+#: src/markdown_vault/ui/preferences/search_page.py
+msgid "Embedding"
+msgstr "Embedding"
+
+#: src/markdown_vault/ui/preferences/search_page.py
+msgid "Model that turns notes into vectors"
+msgstr "Modell, das Notizen in Vektoren umwandelt"
+
+#: src/markdown_vault/ui/preferences/search_page.py
+msgid "Ask (answers from your notes)"
+msgstr "Fragen (Antworten aus deinen Notizen)"
+
+#: src/markdown_vault/ui/preferences/search_page.py
+msgid "Chat model + prompt for synthesized answers"
+msgstr "Chat-Modell + Prompt für synthetisierte Antworten"
+
+#: src/markdown_vault/ui/preferences/search_page.py
+msgid "Audio transcription"
+msgstr "Audio-Transkription"
+
+#: src/markdown_vault/ui/preferences/search_page.py
+msgid "Turn audio files into text when you import them. Pick a model size and download it once (bigger = more accurate, slower, larger)."
+msgstr "Audiodateien beim Import in Text umwandeln. Eine Modellgröße wählen und einmal herunterladen (größer = genauer, langsamer, mehr Speicher)."
+
+#: src/markdown_vault/ui/preferences/search_page.py
+msgid "Model"
+msgstr "Modell"
+
+#: src/markdown_vault/ui/preferences/search_page.py
+msgid "Multilingual; bigger = more accurate, slower, larger download"
+msgstr "Mehrsprachig; größer = genauer, langsamer, größerer Download"
+
+#: src/markdown_vault/ui/preferences/search_page.py
+msgid "Model files"
+msgstr "Modelldateien"
+
+#: src/markdown_vault/ui/preferences/search_page.py
+msgid "Download the selected model"
+msgstr "Das gewählte Modell herunterladen"
+
+#: src/markdown_vault/ui/preferences/search_page.py
+msgid "Enable semantic search first"
+msgstr "Zuerst die semantische Suche aktivieren"
+
+#: src/markdown_vault/ui/preferences/search_page.py
+msgid "Rebuilding semantic index in the background…"
+msgstr "Semantischer Index wird im Hintergrund neu aufgebaut…"
+
+#: src/markdown_vault/ui/preferences/search_page.py
+msgid "Needs the optional AI stack — make install-ai"
+msgstr "Braucht den optionalen KI-Stack — make install-ai"
+
+#: src/markdown_vault/ui/preferences/search_page.py
+msgid "Downloaded — audio import ready"
+msgstr "Heruntergeladen — Audio-Import bereit"
+
+#: src/markdown_vault/ui/preferences/search_page.py
+msgid "Not downloaded"
+msgstr "Nicht heruntergeladen"
+
+#: src/markdown_vault/ui/preferences/search_page.py
+msgid "Downloading…"
+msgstr "Wird heruntergeladen…"
+
+#: src/markdown_vault/ui/preferences/search_page.py
+#, python-brace-format
+msgid "Download failed: {error}"
+msgstr "Download fehlgeschlagen: {error}"
