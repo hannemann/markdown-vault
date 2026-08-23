@@ -115,7 +115,7 @@ class GraphExplorer(Gtk.Box):
 
     def _update_tags_label(self) -> None:
         n = len(self._active_tags)
-        self._tags_btn.set_label(f"Tags ({n})" if n else "Tags")
+        self._tags_btn.set_label(_("Tags ({n})").format(n=n) if n else _("Tags"))
 
     def _on_search(self, entry: Gtk.SearchEntry) -> None:
         self._graph.search(entry.get_text())

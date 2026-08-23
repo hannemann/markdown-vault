@@ -255,9 +255,9 @@ class Editor(Gtk.ScrolledWindow):
         self._view.set_has_tooltip(True)
         self._view.connect("query-tooltip", self._on_image_link_tooltip)
 
-    _BROKEN_TOOLTIP = "Broken image link — the file does not exist"
-    _ADOPT_TOOLTIP = ("Not in the attachments folder — double-click the gutter icon "
-                      "to adopt it for auto-management")
+    _BROKEN_TOOLTIP = _("Broken image link — the file does not exist")
+    _ADOPT_TOOLTIP = _("Not in the attachments folder — double-click the gutter icon "
+                       "to adopt it for auto-management")
 
     def _on_image_link_tooltip(self, view, x, y, _keyboard, tooltip) -> bool:
         bx, by = view.window_to_buffer_coords(Gtk.TextWindowType.WIDGET, x, y)

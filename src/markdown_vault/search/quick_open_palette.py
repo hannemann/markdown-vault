@@ -156,7 +156,7 @@ class QuickOpenPalette(Adw.Dialog):
         # because _clear() wipes the result list on every question, and this notice
         # must survive exactly the moment the user asks anyway.
         self._banner = Adw.Banner(revealed=False)
-        self._banner.set_button_label("Try again")
+        self._banner.set_button_label(_("Try again"))
         self._banner.connect("button-clicked", lambda *_: self._on_banner_clicked())
         box.append(self._banner)
 
@@ -308,7 +308,7 @@ class QuickOpenPalette(Adw.Dialog):
         if self._banner is not None:
             message = st.message if (st is not None and self._ask_mode) else ""
             local = st is not None and getattr(st, "is_local", False)
-            self._banner.set_button_label("Settings" if local else "Try again")
+            self._banner.set_button_label(_("Settings") if local else _("Try again"))
             self._banner.set_title(message)
             self._banner.set_revealed(bool(message))
         self._update_submit_state(st)
@@ -553,7 +553,7 @@ class QuickOpenPalette(Adw.Dialog):
             self._results.append(self._message_row(
                 search_logic.deprecated_hidden_message(len(hidden), empty)))
         elif empty:
-            self._results.append(self._message_row("No files"))
+            self._results.append(self._message_row(_("No files")))
         first = self._results.get_row_at_index(0)
         if first is not None and getattr(first, "_mv_open", None) is not None:
             self._results.select_row(first)
@@ -665,9 +665,9 @@ class QuickOpenPalette(Adw.Dialog):
     #: before any backend phase fires; 'reading' is the prefill (reading the
     #: prompt/notes — usually the longest part), 'writing' the token generation;
     #: 'thinking' is a fallback (servers).
-    _PHASE_TEXT = {"initializing": "Initializing…", "loading": "Loading model…",
-                   "reading": "Reading your notes…", "writing": "Writing the answer…",
-                   "thinking": "Thinking…", "checking": "Checking the server…"}
+    _PHASE_TEXT = {"initializing": _("Initializing…"), "loading": _("Loading model…"),
+                   "reading": _("Reading your notes…"), "writing": _("Writing the answer…"),
+                   "thinking": _("Thinking…"), "checking": _("Checking the server…")}
 
     def _status_row(self) -> Gtk.ListBoxRow:
         """The running-status row with a spinner — its label reflects the current
@@ -775,7 +775,7 @@ class QuickOpenPalette(Adw.Dialog):
         """Draw the running row's label: '<phase>  <elapsed>'."""
         if self._phase_label is None:
             return
-        text = self._PHASE_TEXT.get(self._phase_key, "Thinking…")
+        text = self._PHASE_TEXT.get(self._phase_key, _("Thinking…"))
         elapsed = self._fmt_secs(time.monotonic() - self._ask_started)
         self._phase_label.set_text(f"{text}  {elapsed}")
 
@@ -872,7 +872,7 @@ class QuickOpenPalette(Adw.Dialog):
         alone would be false as soon as the focus leaves the entry.
         """
         self._clear()
-        self._results.append(self._message_row("Type a question, then ↵"))
+        self._results.append(self._message_row(_("Type a question, then ↵")))
 
     def _hold_question(self) -> None:
         """Keep the typed question until the server check settles, instead of firing
@@ -976,13 +976,13 @@ class QuickOpenPalette(Adw.Dialog):
         self._clear()          # also stops the ticking timer + clears its label
         if ans.error:
             self._results.append(self._message_row(_("Error: {error}").format(error=ans.error)))
-            self._results.append(self._duration_row("Failed after", elapsed))
+            self._results.append(self._duration_row(_("Failed after"), elapsed))
             # The failure may have proved the server is gone (the answer path
             # records that): show the banner and lock submitting now, instead of
             # letting the user fire the same question again and again.
             self.refresh_endpoint_status()
             return False
-        self._answer_text = ans.text or "(empty answer)"
+        self._answer_text = ans.text or _("(empty answer)")
         self._results.append(self._answer_row(self._answer_text))
         for source in ans.sources:
             self._results.append(self._source_row(source))
@@ -992,7 +992,7 @@ class QuickOpenPalette(Adw.Dialog):
             self._results.append(self._message_row(f"⚠ {warning}"))
         # The total time closes off the answer; arm the copy button (hidden until
         # the pointer hovers the results — up-front it distracts).
-        self._results.append(self._duration_row("Answered in", elapsed))
+        self._results.append(self._duration_row(_("Answered in"), elapsed))
         self._has_answer = True
         return False
 
@@ -1011,7 +1011,7 @@ class QuickOpenPalette(Adw.Dialog):
         self._pick_question = question
         self._last_question = question
         self._clear()
-        self._results.append(self._message_row("Finding candidates…"))
+        self._results.append(self._message_row(_("Finding candidates…")))
         self._abandon_answer()   # a candidate search supersedes any in-flight answer
         generation = self._ask_generation
 
@@ -1032,7 +1032,7 @@ class QuickOpenPalette(Adw.Dialog):
         if generation != self._ask_generation:
             return False
         self._clear()
-        self._results.append(self._message_row("Couldn't search notes — see the log."))
+        self._results.append(self._message_row(_("Couldn't search notes — see the log.")))
         return False
 
     def _show_candidate_list(self, generation: int, cands) -> bool:
@@ -1040,7 +1040,7 @@ class QuickOpenPalette(Adw.Dialog):
             return False
         self._clear()
         if not cands:
-            self._results.append(self._message_row("No candidate notes found."))
+            self._results.append(self._message_row(_("No candidate notes found.")))
             return False
         self._candidates = cands
         self._selected = [p for p, _ in cands[:self._top_k()]]  # pre-select top-k

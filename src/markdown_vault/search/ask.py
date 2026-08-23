@@ -374,7 +374,7 @@ def fit_to_budget(hits, budget: int):
 
 
 # Where the context-window control lives — the Ask subpage sits under Search.
-_CTX_WINDOW_PATH = "Preferences → Search → Ask → Context window"
+_CTX_WINDOW_PATH = _("Preferences → Search → Ask → Context window")
 
 
 def budget_warning(kept: int, retrieved: int) -> list:

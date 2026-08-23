@@ -10,6 +10,8 @@ from pathlib import Path
 
 from gi.repository import GLib
 
+from markdown_vault.core.i18n import _
+
 logger = logging.getLogger(__name__)
 
 
@@ -62,7 +64,7 @@ class AutosaveManager:
             if self._save_tab(tab):
                 pass  # save_tab handles monitor skip
             else:
-                msg = f'Could not save "{Path(tab.file_path).name}"'
+                msg = _('Could not save "{name}"').format(name=Path(tab.file_path).name)
                 logger.warning("autosave: save failed for %s: %s", tab.file_path, msg)
                 self._on_save_failed(tab.file_path, msg)
         return True  # Keep the GLib timeout running.

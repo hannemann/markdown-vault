@@ -391,7 +391,7 @@ class SearchBar(Gtk.Box):
             self._results.append(self._message_row(
                 search_logic.deprecated_hidden_message(hidden, empty)))
         elif empty:
-            self._results.append(self._message_row("No results found"))
+            self._results.append(self._message_row(_("No results found")))
 
     def _on_dep_toggled(self, btn) -> None:
         """The persistent toggle drives the shared 'hide deprecated' state."""

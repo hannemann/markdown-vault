@@ -49,10 +49,10 @@ class ContentChangeHandler:
         name = Path(file_path).name
         self._tab_bar.show_warning_banner(
             file_path,
-            f'"{name}" was modified externally.',
+            _('"{name}" was modified externally.').format(name=name),
             buttons=[
-                ("Reload", lambda: self.reload_content(file_path)),
-                ("Dismiss", lambda: self.dismiss_content(file_path)),
+                (_("Reload"), lambda: self.reload_content(file_path)),
+                (_("Dismiss"), lambda: self.dismiss_content(file_path)),
             ],
         )
 

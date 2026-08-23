@@ -40,8 +40,8 @@ from urllib.parse import parse_qsl, urlencode, urljoin, urlparse, urlsplit, urlu
 
 logger = logging.getLogger(__name__)
 
-_INSTALL_HINT = ("Web import needs Trafilatura, which isn't installed. Install it "
-                 "into the app venv:\n"
+_INSTALL_HINT = _("Web import needs Trafilatura, which isn't installed. Install it "
+                  "into the app venv:\n"
                  "  ~/.local/share/de.hannemann.markdown-vault/venv/bin/pip install "
                  "trafilatura")
 
@@ -102,13 +102,15 @@ def fetch_html(url: str, timeout: int = 20) -> str:
     opener = urllib.request.build_opener(_HttpRedirectGuard())
     with opener.open(req, timeout=timeout) as resp:
         if resp.headers.get_content_type() not in _HTML_TYPES:
-            raise ValueError(f"Not an HTML page: {resp.headers.get_content_type()}")
+            raise ValueError(
+                _("Not an HTML page: {kind}").format(kind=resp.headers.get_content_type()))
         length = resp.headers.get("Content-Length")
         if length and length.isdigit() and int(length) > _MAX_BYTES:
-            raise ValueError(f"Page too large: {length} bytes")
+            raise ValueError(_("Page too large: {length} bytes").format(length=length))
         raw = resp.read(_MAX_BYTES + 1)
         if len(raw) > _MAX_BYTES:
-            raise ValueError(f"Page exceeds the {_MAX_BYTES}-byte limit")
+            raise ValueError(
+                _("Page exceeds the {limit}-byte limit").format(limit=_MAX_BYTES))
         charset = resp.headers.get_content_charset() or "utf-8"
     return raw.decode(charset, errors="replace")
 

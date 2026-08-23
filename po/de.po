@@ -786,3 +786,126 @@ msgstr "Suchbereich — aktueller Vault, alle Vaults oder ein bestimmter Vault"
 #, python-brace-format
 msgid "{name} (current)"
 msgstr "{name} (aktuell)"
+
+#: src/markdown_vault/editor/autosave.py
+#, python-brace-format
+msgid "Could not save \"{name}\""
+msgstr "„{name}“ konnte nicht gespeichert werden"
+
+#: src/markdown_vault/editor/content_changes.py
+#, python-brace-format
+msgid "\"{name}\" was modified externally."
+msgstr "„{name}“ wurde extern geändert."
+
+#: src/markdown_vault/editor/content_changes.py
+msgid "Reload"
+msgstr "Neu laden"
+
+#: src/markdown_vault/editor/editor.py
+msgid "Broken image link — the file does not exist"
+msgstr "Defekter Bildlink — die Datei existiert nicht"
+
+#: src/markdown_vault/editor/editor.py
+msgid "Not in the attachments folder — double-click the gutter icon to adopt it for auto-management"
+msgstr "Nicht im Anhang-Ordner — Doppelklick auf das Randsymbol, um sie in die automatische Verwaltung zu übernehmen"
+
+#: src/markdown_vault/graph/graph_explorer.py
+#, python-brace-format
+msgid "Tags ({n})"
+msgstr "Tags ({n})"
+
+#: src/markdown_vault/importers/web_import.py
+msgid "Web import needs Trafilatura, which isn't installed. Install it into the app venv:\n  ~/.local/share/de.hannemann.markdown-vault/venv/bin/pip install trafilatura"
+msgstr "Web-Import braucht Trafilatura, das nicht installiert ist. Installiere es ins App-venv:\n  ~/.local/share/de.hannemann.markdown-vault/venv/bin/pip install trafilatura"
+
+#: src/markdown_vault/importers/web_import.py
+#, python-brace-format
+msgid "Not an HTML page: {kind}"
+msgstr "Keine HTML-Seite: {kind}"
+
+#: src/markdown_vault/importers/web_import.py
+#, python-brace-format
+msgid "Page too large: {length} bytes"
+msgstr "Seite zu groß: {length} Bytes"
+
+#: src/markdown_vault/importers/web_import.py
+#, python-brace-format
+msgid "Page exceeds the {limit}-byte limit"
+msgstr "Seite überschreitet das {limit}-Byte-Limit"
+
+#: src/markdown_vault/search/ask.py
+msgid "Preferences → Search → Ask → Context window"
+msgstr "Einstellungen → Suche → Ask → Kontextfenster"
+
+#: src/markdown_vault/search/llama_runtime.py
+#, python-brace-format
+msgid "{path} is not a valid GGUF model file — re-download it (use the file's download link, not its web page)."
+msgstr "{path} ist keine gültige GGUF-Modelldatei — lade sie erneut herunter (nutze den Download-Link der Datei, nicht ihre Webseite)."
+
+#: src/markdown_vault/search/quick_open_palette.py
+msgid "Try again"
+msgstr "Erneut versuchen"
+
+#: src/markdown_vault/search/quick_open_palette.py
+msgid "Settings"
+msgstr "Einstellungen"
+
+#: src/markdown_vault/search/quick_open_palette.py
+msgid "No files"
+msgstr "Keine Dateien"
+
+#: src/markdown_vault/search/quick_open_palette.py
+msgid "Initializing…"
+msgstr "Initialisieren…"
+
+#: src/markdown_vault/search/quick_open_palette.py
+msgid "Loading model…"
+msgstr "Modell wird geladen…"
+
+#: src/markdown_vault/search/quick_open_palette.py
+msgid "Reading your notes…"
+msgstr "Deine Notizen werden gelesen…"
+
+#: src/markdown_vault/search/quick_open_palette.py
+msgid "Writing the answer…"
+msgstr "Antwort wird geschrieben…"
+
+#: src/markdown_vault/search/quick_open_palette.py
+msgid "Thinking…"
+msgstr "Denkt nach…"
+
+#: src/markdown_vault/search/quick_open_palette.py
+msgid "Checking the server…"
+msgstr "Server wird geprüft…"
+
+#: src/markdown_vault/search/quick_open_palette.py
+msgid "Type a question, then ↵"
+msgstr "Eine Frage eingeben, dann ↵"
+
+#: src/markdown_vault/search/quick_open_palette.py
+msgid "Failed after"
+msgstr "Fehlgeschlagen nach"
+
+#: src/markdown_vault/search/quick_open_palette.py
+msgid "(empty answer)"
+msgstr "(leere Antwort)"
+
+#: src/markdown_vault/search/quick_open_palette.py
+msgid "Answered in"
+msgstr "Beantwortet in"
+
+#: src/markdown_vault/search/quick_open_palette.py
+msgid "Finding candidates…"
+msgstr "Kandidaten werden gesucht…"
+
+#: src/markdown_vault/search/quick_open_palette.py
+msgid "Couldn't search notes — see the log."
+msgstr "Notizen konnten nicht durchsucht werden — siehe Log."
+
+#: src/markdown_vault/search/quick_open_palette.py
+msgid "No candidate notes found."
+msgstr "Keine Kandidaten-Notizen gefunden."
+
+#: src/markdown_vault/search/search.py
+msgid "No results found"
+msgstr "Keine Ergebnisse gefunden"

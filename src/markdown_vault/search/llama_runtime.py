@@ -140,9 +140,9 @@ def availability(model_path: str) -> str | None:
     try:                                   # a GGUF starts with the 'GGUF' magic
         with open(model_path, "rb") as fh:
             if fh.read(4) != b"GGUF":
-                return (f"{model_path} is not a valid GGUF model file — "
-                        "re-download it (use the file's download link, not its "
-                        "web page).")
+                return _("{path} is not a valid GGUF model file — "
+                         "re-download it (use the file's download link, not its "
+                         "web page).").format(path=model_path)
     except OSError:
         # unreadable model file: let the real load report it, not this sniff
         pass
