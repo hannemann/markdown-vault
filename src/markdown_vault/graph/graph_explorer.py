@@ -15,6 +15,7 @@ gi.require_version("Gtk", "4.0")
 
 from gi.repository import Gtk, GObject
 
+from markdown_vault.core.i18n import _
 from markdown_vault.graph.graph_view import GraphView
 
 
@@ -35,10 +36,10 @@ class GraphExplorer(Gtk.Box):
         bar.set_margin_top(6)
         bar.set_margin_bottom(4)
         self._search = Gtk.SearchEntry(hexpand=True)
-        self._search.set_placeholder_text("Search nodes…")
+        self._search.set_placeholder_text(_("Search nodes…"))
         self._search.connect("search-changed", self._on_search)
-        self._scope = Gtk.DropDown.new_from_strings(["Current vault", "All vaults"])
-        self._scope.set_tooltip_text("Graph scope")
+        self._scope = Gtk.DropDown.new_from_strings([_("Current vault"), _("All vaults")])
+        self._scope.set_tooltip_text(_("Graph scope"))
         self._scope.connect("notify::selected", lambda *_: self.refresh())
 
         # Tags live behind a single dropdown button so the list can't crowd out
@@ -53,12 +54,12 @@ class GraphExplorer(Gtk.Box):
         scroller.set_child(self._chips)
         pop = Gtk.Popover()
         pop.set_child(scroller)
-        self._tags_btn = Gtk.MenuButton(label="Tags", popover=pop)
+        self._tags_btn = Gtk.MenuButton(label=_("Tags"), popover=pop)
         self._tags_btn.set_always_show_arrow(True)
-        self._tags_btn.set_tooltip_text("Filter by tag")
+        self._tags_btn.set_tooltip_text(_("Filter by tag"))
 
         self._fit = Gtk.Button.new_from_icon_name("zoom-fit-best-symbolic")
-        self._fit.set_tooltip_text("Fit graph to view")
+        self._fit.set_tooltip_text(_("Fit graph to view"))
         self._fit.connect("clicked", lambda *_: self._graph.fit())
         bar.append(self._search)
         bar.append(self._scope)

@@ -5,6 +5,7 @@ src/markdown_vault/editor/editor.py
 src/markdown_vault/editor/find_bar.py
 src/markdown_vault/editor/mru.py
 src/markdown_vault/editor/tabs.py
+src/markdown_vault/graph/graph_explorer.py
 src/markdown_vault/ui/sidebar.py
 src/markdown_vault/uikit/banners.py
 src/markdown_vault/uikit/dialogs.py

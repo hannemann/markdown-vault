@@ -269,3 +269,31 @@ msgstr "Tabs links schließen"
 #: src/markdown_vault/editor/tabs.py
 msgid "Close right"
 msgstr "Tabs rechts schließen"
+
+#: src/markdown_vault/graph/graph_explorer.py
+msgid "Search nodes…"
+msgstr "Knoten suchen…"
+
+#: src/markdown_vault/graph/graph_explorer.py
+msgid "Current vault"
+msgstr "Aktueller Vault"
+
+#: src/markdown_vault/graph/graph_explorer.py
+msgid "All vaults"
+msgstr "Alle Vaults"
+
+#: src/markdown_vault/graph/graph_explorer.py
+msgid "Graph scope"
+msgstr "Graph-Umfang"
+
+#: src/markdown_vault/graph/graph_explorer.py
+msgid "Tags"
+msgstr "Tags"
+
+#: src/markdown_vault/graph/graph_explorer.py
+msgid "Filter by tag"
+msgstr "Nach Tag filtern"
+
+#: src/markdown_vault/graph/graph_explorer.py
+msgid "Fit graph to view"
+msgstr "Graph einpassen"
