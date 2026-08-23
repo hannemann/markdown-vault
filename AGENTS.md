@@ -409,10 +409,13 @@ opening files in editor, toggling sidebar etc.) ask the user.
   domain fits, give the code its own module** — or, for a whole new domain or layer, a **new
   subpackage**, which groups several such modules (a subpackage is a domain, not a single
   object). Introducing a domain is a valid move, not the last resort of squeezing code into
-  the nearest existing file. This is the rule that turned `MainWindow` from owning everything
-  into a shell plus focused collaborators; `src/markdown_vault/app/AGENTS.md` holds the full
-  criteria ("Two kinds of neighbours", "Rules for the next cut", and the `make callbacks`
-  metric). It applies everywhere, not just in `app/`.
+  the nearest existing file. This is the rule that has been moving `MainWindow` from owning
+  everything toward a shell plus focused collaborators — its behaviour is extracted into
+  managers and controllers, but **phase 2 is not yet done**: the constructor wiring and the
+  callback back-edges the window still hands out are not yet bundled.
+  `src/markdown_vault/app/AGENTS.md` holds the full criteria ("Two kinds of neighbours",
+  "Rules for the next cut", and the `make callbacks` metric that tracks the remaining work).
+  It applies everywhere, not just in `app/`.
 - **New Python modules**: a new `.py` goes into its subpackage's `meson.build`
   `py_sources` — see the *Project structure* table for that mechanic and the
   `ModuleNotFoundError` it prevents. Use **absolute** imports

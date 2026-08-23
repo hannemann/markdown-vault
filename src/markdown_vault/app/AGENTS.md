@@ -38,7 +38,8 @@ to own everything the window could do; what is left is genuine window work
 `tests/test_app_window_construction.py` catches it.
 
 **Metric:** `make callbacks FILE=src/markdown_vault/app/app_window.py` — how many
-window methods are handed outward. Currently 85 methods / 107 sites.
+window methods are handed outward — run it for the current figure; a lower
+number means the split has progressed.
 
 **A new parameter on a collaborator needs a test of the caller, not only the
 receiver.** The window hands collaborators their arguments; a unit test of the
