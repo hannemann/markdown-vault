@@ -225,3 +225,47 @@ msgstr "Hinzufügen"
 #: src/markdown_vault/uikit/dialogs.py
 msgid "Enter a unique vault name"
 msgstr "Eindeutigen Vault-Namen eingeben"
+
+#: src/markdown_vault/editor/content_changes.py
+msgid "Reload Failed"
+msgstr "Neuladen fehlgeschlagen"
+
+#: src/markdown_vault/editor/content_changes.py
+msgid "Could not read \"{name}\" from disk."
+msgstr "„{name}“ konnte nicht von der Festplatte gelesen werden."
+
+#: src/markdown_vault/editor/editor.py
+msgid "Paste Image"
+msgstr "Bild einfügen"
+
+#: src/markdown_vault/editor/editor.py
+msgid "Insert Image…"
+msgstr "Bild aus Datei einfügen…"
+
+#: src/markdown_vault/editor/editor.py
+msgid "Broken wikilink"
+msgstr "Defekter Wikilink"
+
+#: src/markdown_vault/editor/mru.py
+msgid "Switch Tab"
+msgstr "Tab wechseln"
+
+#: src/markdown_vault/editor/tabs.py
+msgid "Close tab"
+msgstr "Tab schließen"
+
+#: src/markdown_vault/editor/tabs.py
+msgid "Copy path"
+msgstr "Pfad kopieren"
+
+#: src/markdown_vault/editor/tabs.py
+msgid "Close others"
+msgstr "Andere Tabs schließen"
+
+#: src/markdown_vault/editor/tabs.py
+msgid "Close left"
+msgstr "Tabs links schließen"
+
+#: src/markdown_vault/editor/tabs.py
+msgid "Close right"
+msgstr "Tabs rechts schließen"

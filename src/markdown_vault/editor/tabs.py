@@ -17,6 +17,7 @@ gi.require_version("Gdk", "4.0")
 
 from gi.repository import Gtk, GObject, Gio, Gdk, GLib
 
+from markdown_vault.core.i18n import _
 from markdown_vault.core.path_utils import find_vault_for_dir
 
 logger = logging.getLogger(__name__)
@@ -524,7 +525,7 @@ class TabBar(Gtk.Box):
         close_btn.add_css_class("flat")
         close_btn.add_css_class("circular")
         close_btn.set_size_request(24, 24)
-        close_btn.set_tooltip_text("Close tab")
+        close_btn.set_tooltip_text(_("Close tab"))
         close_btn.connect(
             "clicked",
             lambda _btn, cw=container: self._on_close_button_clicked(cw._file_path),
@@ -563,11 +564,11 @@ class TabBar(Gtk.Box):
         self._context_menu_target = path
 
         model = Gio.Menu()
-        model.append("Copy path", "tab.copy-path")
-        model.append("Close", "tab.close")
-        model.append("Close others", "tab.close-others")
-        model.append("Close left", "tab.close-left")
-        model.append("Close right", "tab.close-right")
+        model.append(_("Copy path"), "tab.copy-path")
+        model.append(_("Close"), "tab.close")
+        model.append(_("Close others"), "tab.close-others")
+        model.append(_("Close left"), "tab.close-left")
+        model.append(_("Close right"), "tab.close-right")
 
         popover = Gtk.PopoverMenu.new_from_model(model)
         popover.set_parent(widget)
