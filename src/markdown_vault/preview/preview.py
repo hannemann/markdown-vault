@@ -231,6 +231,7 @@ class PygmentsCodePostprocessor(Postprocessor):
             try:
                 stashed_html = self.md.htmlStash.rawHtmlBlocks[index]
             except (IndexError, AttributeError):
+                # index out of range, or the stash object is absent → leave the placeholder as-is
                 return match.group(0)
             lang = self._languages[index] if index < len(self._languages) else None
 
@@ -1437,7 +1438,10 @@ class Preview(Gtk.ScrolledWindow):
         try:
             value = web_view.evaluate_javascript_finish(result)
             data = json.loads(value.to_string()) if value is not None else {}
-        except Exception:
+        except Exception:  # noqa: BLE001 — WebKit JS-result callback: a marshalling
+            # error must not crash find, but must not vanish as a silent "0 matches"
+            logger.warning("find-result parse failed; treating as no matches",
+                           exc_info=True)
             data = {}
         self._search_matches = int(data.get("total", 0))
         self._search_current = int(data.get("current", 0))

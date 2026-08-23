@@ -28,6 +28,21 @@ import json
 import markdown as md
 
 
+class TestFindResultParseFailure(unittest.TestCase):
+    """A WebKit find-result callback that can't be parsed must log and fall back to
+    zero matches — not silently report 0 as if the search genuinely found nothing."""
+
+    def test_logs_and_treats_as_no_matches(self):
+        me = MagicMock()
+        web_view = MagicMock()
+        web_view.evaluate_javascript_finish.side_effect = RuntimeError("marshalling boom")
+        with self.assertLogs("markdown_vault.preview.preview", level="WARNING"):
+            Preview._on_find_result(me, web_view, object(), None)
+        self.assertEqual(me._search_matches, 0)
+        self.assertEqual(me._search_current, 0)
+        me.emit.assert_called_once_with("search-info-changed")
+
+
 _TEMPLATE_KWARGS = dict(
     csp="default-src 'none'",
     css_content=".markdown-body { color: red; }",
