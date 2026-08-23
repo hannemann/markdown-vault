@@ -16,11 +16,35 @@ import gi
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
-from gi.repository import Adw, GObject  # type: ignore[attr-defined]
+from gi.repository import Adw, GObject, GLib, Gtk  # type: ignore[attr-defined]
 
 Adw.init()
 
 from markdown_vault.importers.dialog_import import ImportDialog
+
+
+class TestFileChooserFailure(unittest.TestCase):
+    """Seam guard (stub dialog, internal name): the file-chooser callback splits a
+    user cancel from a real dialog failure — silent on cancel, log + banner on a
+    real failure. It previously swallowed both."""
+
+    def _dialog(self, code):
+        err = GLib.Error.new_literal(Gtk.DialogError.quark(), "x", code)
+        d = MagicMock()
+        d.open_finish.side_effect = err
+        return d
+
+    def test_cancel_is_silent(self):
+        win = MagicMock()
+        with self.assertNoLogs("markdown_vault.importers.dialog_import", level="WARNING"):
+            ImportDialog._on_file_chosen(win, self._dialog(Gtk.DialogError.CANCELLED), None)
+        win._show_file_error.assert_not_called()
+
+    def test_real_failure_logs_and_shows_banner(self):
+        win = MagicMock()
+        with self.assertLogs("markdown_vault.importers.dialog_import", level="WARNING"):
+            ImportDialog._on_file_chosen(win, self._dialog(Gtk.DialogError.FAILED), None)
+        win._show_file_error.assert_called_once()
 
 
 def _make_dialog(**kwargs):

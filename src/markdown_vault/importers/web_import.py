@@ -62,6 +62,7 @@ def availability() -> str | None:
     try:
         import trafilatura  # noqa: F401
     except ImportError:
+        # optional Trafilatura absent → return the install hint shown to the user
         return _INSTALL_HINT
     return None
 
@@ -519,6 +520,7 @@ def _strip_tracking(url: str) -> str:
     try:
         parts = urlsplit(url)
     except ValueError:
+        # unparseable URL: pass it through unmodified, nothing to strip
         return url
     if not parts.query:
         return url
@@ -836,6 +838,7 @@ def _addr_blocked(addr: str) -> bool:
     try:
         ip = ipaddress.ip_address(addr.split("%")[0])
     except ValueError:
+        # unparseable address is treated as blocked (fail closed)
         return True
     return (ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved
             or ip.is_multicast or ip.is_unspecified)
@@ -848,6 +851,7 @@ def _host_is_public(host: str) -> bool:
     try:
         infos = socket.getaddrinfo(host, None)
     except (socket.gaierror, UnicodeError):
+        # unresolvable host is treated as non-public and refused (fail closed)
         return False
     return bool(infos) and not any(_addr_blocked(i[4][0]) for i in infos)
 
@@ -1057,6 +1061,7 @@ def main(argv=None) -> int:
     try:
         result = import_url(args.url)
     except (ValueError, OSError) as exc:
+        # CLI driver: report to stderr and exit non-zero (stdout is the document)
         print(f"Import failed: {exc}", file=sys.stderr)
         return 1
     if not result.markdown.strip():

@@ -25,6 +25,7 @@ from gi.repository import Gtk, Adw, Gio, GObject, GLib
 
 from markdown_vault.importers import document_import, web_import
 from markdown_vault.core import path_utils
+from markdown_vault.uikit import dialogs
 
 logger = logging.getLogger(__name__)
 
@@ -137,6 +138,7 @@ class ImportDialog(Adw.Dialog):
             web_import.validate_url(self._url_row.get_text())
             valid = True
         except ValueError:
+            # invalid URL just leaves Import disabled — the raise/catch is the control flow
             valid = False
         self._import_btn.set_sensitive(valid)
 
@@ -247,8 +249,13 @@ class ImportDialog(Adw.Dialog):
     def _on_file_chosen(self, dialog, result) -> None:
         try:
             gfile = dialog.open_finish(result)
-        except GLib.Error:
-            return                          # cancelled or failed — leave state as-is
+        except GLib.Error as exc:
+            # A cancel and a real portal/backend failure raise the same type; stay
+            # silent on cancel, surface a genuine failure instead of dropping it.
+            if not dialogs.dialog_cancelled(exc):
+                logger.warning("import file chooser failed", exc_info=True)
+                self._show_file_error("Could not open the file chooser.")
+            return
         if gfile is None or not gfile.get_path():
             return
         self._file_path = gfile.get_path()
