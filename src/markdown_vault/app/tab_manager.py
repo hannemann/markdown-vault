@@ -326,6 +326,7 @@ class TabOrchestrator:
         try:
             idx = paths.index(current)
         except ValueError:
+            # no current tab in the list (none selected) → cycling is a no-op
             return
         self._tab_bar.set_active_tab(paths[(idx + direction) % len(paths)])
 

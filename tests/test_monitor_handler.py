@@ -76,6 +76,23 @@ class TestMonitorHandlerFileCreated(unittest.TestCase):
             p.write_bytes(b"\xff\xfe binary garbage")
             h.on_file_created("/vault", str(p))
 
+    def test_unreadable_note_logs_and_empties_backlinks(self):
+        # The empty fallback silently wipes a file's backlinks; the read failure
+        # (here a non-UTF-8 note) must leave a trace. Caller guard: drives the real
+        # on_file_created path, whose idle callback runs at once via _GLibMock.
+        with patch("markdown_vault.app.monitor_handler.GLib", _GLibMock):
+            h = self._make()
+            p = Path(self._tmp) / "bad.md"
+            p.write_bytes(b"\xff\xfe binary garbage")
+            with self.assertLogs("markdown_vault.app.monitor_handler", level="WARNING"):
+                h.on_file_created("/vault", str(p))
+            self.mock_backlink.update_file.assert_called_once_with(str(p), "")
+
+    def test_read_text_or_empty_logs_on_unreadable(self):
+        from markdown_vault.app import monitor_handler as mh
+        with self.assertLogs("markdown_vault.app.monitor_handler", level="WARNING"):
+            self.assertEqual(mh._read_text_or_empty("/nonexistent/zzz.md"), "")
+
     def test_debug_fn_called_with_correct_components(self):
         with patch("markdown_vault.app.monitor_handler.GLib", _GLibMock):
             h = self._make()
