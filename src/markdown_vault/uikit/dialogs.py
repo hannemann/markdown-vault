@@ -15,6 +15,8 @@ gi.require_version("Adw", "1")
 
 from gi.repository import Gtk, Adw, GLib
 
+from markdown_vault.core.i18n import _, ngettext
+
 logger = logging.getLogger(__name__)
 
 
@@ -42,7 +44,7 @@ def show_error(parent: Gtk.Widget, heading: str, body: str) -> None:
     """Show a modal error dialog with a single OK button."""
     dialog = Adw.AlertDialog(heading=heading, body=body)
     dialog.set_prefer_wide_layout(True)
-    dialog.add_response("ok", "OK")
+    dialog.add_response("ok", _("OK"))
     dialog.present(parent)
 
 
@@ -54,22 +56,23 @@ def show_broken_wikilinks(parent: Gtk.Widget, names: list[str]) -> None:
     """
     listed = "\n".join(f"– {n}" for n in names)
     dialog = Adw.AlertDialog(
-        heading="Broken wikilinks",
-        body=f"The file was saved, but these links could not be resolved:\n{listed}",
+        heading=_("Broken wikilinks"),
+        body=_("The file was saved, but these links could not be resolved:\n"
+               "{items}").format(items=listed),
     )
     dialog.set_prefer_wide_layout(True)
-    dialog.add_response("ok", "OK")
+    dialog.add_response("ok", _("OK"))
     dialog.present(parent)
 
 
 def show_link_not_found(parent: Gtk.Widget, path_str: str) -> None:
     """Show a dialog when a ``[[wikilink]]`` cannot be resolved."""
     dialog = Adw.AlertDialog(
-        heading="Link not found",
-        body=f"Could not find a file matching \u201c{path_str}\u201d.",
+        heading=_("Link not found"),
+        body=_("Could not find a file matching \u201c{path}\u201d.").format(path=path_str),
     )
     dialog.set_prefer_wide_layout(True)
-    dialog.add_response("close", "Close")
+    dialog.add_response("close", _("Close"))
     dialog.set_response_appearance("close", Adw.ResponseAppearance.SUGGESTED)
     dialog.present(parent)
 
@@ -91,8 +94,8 @@ def prompt_new_item(
     """
     dialog = Adw.AlertDialog(heading=heading, body=body)
     dialog.set_prefer_wide_layout(True)
-    dialog.add_response("cancel", "Cancel")
-    dialog.add_response("create", "Create")
+    dialog.add_response("cancel", _("Cancel"))
+    dialog.add_response("create", _("Create"))
     dialog.set_response_appearance("create", Adw.ResponseAppearance.SUGGESTED)
     dialog.set_default_response("create")
     dialog.set_close_response("cancel")
@@ -123,10 +126,11 @@ def prompt_rename(parent: Gtk.Widget, current_name: str, on_response) -> None:
     *on_response* is called with the entered name (stripped), or ``None``
     when the dialog is cancelled or the input is empty/unchanged.
     """
-    dialog = Adw.AlertDialog(heading="Rename", body=f"Rename “{current_name}”")
+    dialog = Adw.AlertDialog(
+        heading=_("Rename"), body=_("Rename “{name}”").format(name=current_name))
     dialog.set_prefer_wide_layout(True)
-    dialog.add_response("cancel", "Cancel")
-    dialog.add_response("rename", "Rename")
+    dialog.add_response("cancel", _("Cancel"))
+    dialog.add_response("rename", _("Rename"))
     dialog.set_response_appearance("rename", Adw.ResponseAppearance.SUGGESTED)
     dialog.set_default_response("rename")
     dialog.set_close_response("cancel")
@@ -171,9 +175,10 @@ def show_vault_icon_dialog(
     emoji/character (stripped) or ``None`` to reset to the default, *mono* is a
     bool.  Not called on cancel.
     """
-    dialog = Adw.AlertDialog(heading="Vault Icon", body="Pick a symbol or type your own.")
-    dialog.add_response("cancel", "Cancel")
-    dialog.add_response("apply", "Apply")
+    dialog = Adw.AlertDialog(
+        heading=_("Vault Icon"), body=_("Pick a symbol or type your own."))
+    dialog.add_response("cancel", _("Cancel"))
+    dialog.add_response("apply", _("Apply"))
     dialog.set_response_appearance("apply", Adw.ResponseAppearance.SUGGESTED)
     dialog.set_default_response("apply")
     dialog.set_close_response("cancel")
@@ -181,7 +186,7 @@ def show_vault_icon_dialog(
     box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
     entry = Gtk.Entry(text=current_icon or "")
     entry.set_activates_default(True)
-    entry.set_placeholder_text("e.g. 🗄️ (empty = default)")
+    entry.set_placeholder_text(_("e.g. 🗄️ (empty = default)"))
 
     flow = Gtk.FlowBox()
     flow.set_max_children_per_line(8)
@@ -195,7 +200,7 @@ def show_vault_icon_dialog(
         btn.connect("clicked", lambda _b, e=emoji: entry.set_text(e))
         flow.append(btn)
 
-    mono_check = Gtk.CheckButton(label="Monochrome")
+    mono_check = Gtk.CheckButton(label=_("Monochrome"))
     mono_check.set_active(bool(current_mono))
 
     box.append(flow)
@@ -230,14 +235,15 @@ def confirm_delete(parent: Gtk.Widget, path: str, on_response) -> None:
     is_dir = Path(path).is_dir()
 
     if is_dir:
-        body = f"Delete folder \"{name}\" and all its contents? This cannot be undone."
+        body = _("Delete folder \"{name}\" and all its contents? "
+                 "This cannot be undone.").format(name=name)
     else:
-        body = f"Delete \"{name}\"?"
+        body = _("Delete \"{name}\"?").format(name=name)
 
-    dialog = Adw.AlertDialog(heading="Delete?", body=body)
+    dialog = Adw.AlertDialog(heading=_("Delete?"), body=body)
     dialog.set_prefer_wide_layout(True)
-    dialog.add_response("cancel", "Cancel")
-    dialog.add_response("delete", "Delete")
+    dialog.add_response("cancel", _("Cancel"))
+    dialog.add_response("delete", _("Delete"))
     dialog.set_response_appearance("delete", Adw.ResponseAppearance.DESTRUCTIVE)
     dialog.set_default_response("cancel")
     dialog.set_close_response("cancel")
@@ -259,12 +265,12 @@ def confirm_file_exists(parent: Gtk.Widget, path: str, on_response) -> None:
     (cancelled).
     """
     name = Path(path).name
-    body = f"The file \"{name}\" already exists. Open it?"
+    body = _("The file \"{name}\" already exists. Open it?").format(name=name)
 
-    dialog = Adw.AlertDialog(heading="File Already Exists", body=body)
+    dialog = Adw.AlertDialog(heading=_("File Already Exists"), body=body)
     dialog.set_prefer_wide_layout(True)
-    dialog.add_response("cancel", "Cancel")
-    dialog.add_response("open", "Open")
+    dialog.add_response("cancel", _("Cancel"))
+    dialog.add_response("open", _("Open"))
     dialog.set_response_appearance("open", Adw.ResponseAppearance.SUGGESTED)
     dialog.set_default_response("open")
     dialog.set_close_response("cancel")
@@ -294,16 +300,17 @@ def confirm_discard_unsaved(
     body_lines = "\n".join(f"\u2013 {Path(p).name}" for p in dirty_paths)
 
     dialog = Adw.AlertDialog(
-        heading="Unsaved Changes",
-        body=(
-            f"{n} tab{'s' if n > 1 else ''} have unsaved changes:\n\n"
-            f"{body_lines}"
-        ),
+        heading=_("Unsaved Changes"),
+        body=ngettext(
+            "{n} tab has unsaved changes:\n\n{items}",
+            "{n} tabs have unsaved changes:\n\n{items}",
+            n,
+        ).format(n=n, items=body_lines),
     )
     dialog.set_prefer_wide_layout(True)
-    dialog.add_response("discard", "Discard")
-    dialog.add_response("cancel", "Cancel")
-    dialog.add_response("save", "Save")
+    dialog.add_response("discard", _("Discard"))
+    dialog.add_response("cancel", _("Cancel"))
+    dialog.add_response("save", _("Save"))
     dialog.set_response_appearance("save", Adw.ResponseAppearance.SUGGESTED)
     dialog.set_response_appearance("discard", Adw.ResponseAppearance.DESTRUCTIVE)
     dialog.set_default_response("save")
@@ -335,16 +342,16 @@ def show_rename_vault_dialog(
     from markdown_vault.core import config
     from markdown_vault.core import validation
 
-    base_body = "Enter a new name for the vault.\n" + validation.INVALID_VAULT_NAME_HINT
-    dialog = Adw.AlertDialog(heading="Rename Vault", body=base_body)
+    base_body = _("Enter a new name for the vault.") + "\n" + validation.INVALID_VAULT_NAME_HINT
+    dialog = Adw.AlertDialog(heading=_("Rename Vault"), body=base_body)
     dialog.set_prefer_wide_layout(True)
-    dialog.add_response("cancel", "Cancel")
-    dialog.add_response("rename", "Rename")
+    dialog.add_response("cancel", _("Cancel"))
+    dialog.add_response("rename", _("Rename"))
     dialog.set_response_appearance("rename", Adw.ResponseAppearance.SUGGESTED)
     dialog.set_default_response("rename")
     dialog.set_close_response("cancel")
 
-    entry = Gtk.Entry(placeholder_text="Enter new vault name")
+    entry = Gtk.Entry(placeholder_text=_("Enter new vault name"))
     entry.set_text(vault_name)
     entry.set_activates_default(True)
     dialog.set_extra_child(entry)
@@ -361,7 +368,7 @@ def show_rename_vault_dialog(
         if err is None:
             for v in config.load_vaults():
                 if v["path"] != vault_path and v["name"] == new_name:
-                    err = "A vault with this name already exists."
+                    err = _("A vault with this name already exists.")
                     break
         dialog.set_body(err or base_body)
         dialog.set_response_enabled("rename", err is None)
@@ -395,11 +402,11 @@ def show_remove_vault_dialog(
     *on_remove* is called with *vault_path* when the user confirms.
     """
     msg = Adw.AlertDialog.new(
-        f'Remove Vault "{vault_name}"?',
-        "The files on disk are left untouched.",
+        _('Remove Vault "{name}"?').format(name=vault_name),
+        _("The files on disk are left untouched."),
     )
-    msg.add_response("cancel", "Cancel")
-    msg.add_response("remove", "Remove")
+    msg.add_response("cancel", _("Cancel"))
+    msg.add_response("remove", _("Remove"))
     # Appearance must be set AFTER the response exists, else Adw emits a
     # g_critical and the destructive styling is silently dropped (R19.5).
     msg.set_response_appearance("remove", Adw.ResponseAppearance.DESTRUCTIVE)
@@ -428,19 +435,19 @@ def show_add_vault_name_dialog(
     from markdown_vault.core import config
     from markdown_vault.core import validation
 
-    base_body = "Enter a unique vault name.\n" + validation.INVALID_VAULT_NAME_HINT
+    base_body = _("Enter a unique vault name.") + "\n" + validation.INVALID_VAULT_NAME_HINT
     dialog = Adw.AlertDialog(
-        heading="Vault Name Collision",
+        heading=_("Vault Name Collision"),
         body=base_body,
     )
     dialog.set_prefer_wide_layout(True)
-    dialog.add_response("cancel", "Cancel")
-    dialog.add_response("add", "Add")
+    dialog.add_response("cancel", _("Cancel"))
+    dialog.add_response("add", _("Add"))
     dialog.set_response_appearance("add", Adw.ResponseAppearance.SUGGESTED)
     dialog.set_default_response("add")
     dialog.set_close_response("cancel")
 
-    entry = Gtk.Entry(placeholder_text="Enter a unique vault name")
+    entry = Gtk.Entry(placeholder_text=_("Enter a unique vault name"))
     entry.set_text(default_name)
     entry.set_activates_default(True)
     dialog.set_extra_child(entry)
@@ -450,7 +457,7 @@ def show_add_vault_name_dialog(
         new_name = entry.get_text().strip()
         err = validation.validate_vault_name(new_name)
         if err is None and any(v["name"] == new_name for v in config.load_vaults()):
-            err = "A vault with this name already exists."
+            err = _("A vault with this name already exists.")
         dialog.set_body(err or base_body)
         dialog.set_response_enabled("add", err is None)
 

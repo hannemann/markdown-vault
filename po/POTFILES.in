@@ -2,3 +2,5 @@
 # Add a file here when it gets its first _() / ngettext() marker.
 src/markdown_vault/editor/find_bar.py
 src/markdown_vault/ui/sidebar.py
+src/markdown_vault/uikit/banners.py
+src/markdown_vault/uikit/dialogs.py

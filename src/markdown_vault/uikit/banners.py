@@ -21,6 +21,8 @@ gi.require_version("Adw", "1")
 
 from gi.repository import Gtk, GObject
 
+from markdown_vault.core.i18n import _
+
 logger = logging.getLogger(__name__)
 
 _BANNER_TYPES: dict[str, tuple[str, str]] = {
@@ -79,7 +81,7 @@ class BannerBox(Gtk.Box):
         self._button_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
         self.append(self._button_box)
 
-        self._dismiss_btn = Gtk.Button(label="Dismiss")
+        self._dismiss_btn = Gtk.Button(label=_("Dismiss"))
         self._dismiss_btn.add_css_class("flat")
         self._dismiss_btn.connect("clicked", lambda _: self.emit("dismissed"))
         self._button_box.append(self._dismiss_btn)
@@ -129,7 +131,7 @@ class BannerBox(Gtk.Box):
         self._icon.set_from_icon_name(icon_name or default_icon)
         self._label.set_text("")
         self.clear_buttons()
-        self._dismiss_btn = Gtk.Button(label="Dismiss")
+        self._dismiss_btn = Gtk.Button(label=_("Dismiss"))
         self._dismiss_btn.add_css_class("flat")
         self._dismiss_btn.connect("clicked", lambda _: self.emit("dismissed"))
         self._button_box.append(self._dismiss_btn)

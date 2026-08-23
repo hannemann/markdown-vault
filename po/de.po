@@ -71,3 +71,157 @@ msgstr "Ersetzen"
 #: src/markdown_vault/editor/find_bar.py
 msgid "Replace All"
 msgstr "Alle ersetzen"
+
+#: src/markdown_vault/uikit/banners.py
+msgid "Dismiss"
+msgstr "Ausblenden"
+
+#: src/markdown_vault/uikit/dialogs.py
+msgid "OK"
+msgstr "OK"
+
+#: src/markdown_vault/uikit/dialogs.py
+msgid "Broken wikilinks"
+msgstr "Defekte Wikilinks"
+
+#: src/markdown_vault/uikit/dialogs.py
+msgid "The file was saved, but these links could not be resolved:\n{items}"
+msgstr "Die Datei wurde gespeichert, aber diese Links konnten nicht aufgelöst werden:\n{items}"
+
+#: src/markdown_vault/uikit/dialogs.py
+msgid "Link not found"
+msgstr "Link nicht gefunden"
+
+#: src/markdown_vault/uikit/dialogs.py
+msgid "Could not find a file matching “{path}”."
+msgstr "Es wurde keine Datei gefunden, die zu „{path}“ passt."
+
+#: src/markdown_vault/uikit/dialogs.py
+msgid "Close"
+msgstr "Schließen"
+
+#: src/markdown_vault/uikit/dialogs.py
+msgid "Cancel"
+msgstr "Abbrechen"
+
+#: src/markdown_vault/uikit/dialogs.py
+msgid "Create"
+msgstr "Erstellen"
+
+#: src/markdown_vault/uikit/dialogs.py
+msgid "Rename"
+msgstr "Umbenennen"
+
+#: src/markdown_vault/uikit/dialogs.py
+msgid "Rename “{name}”"
+msgstr "„{name}“ umbenennen"
+
+#: src/markdown_vault/uikit/dialogs.py
+msgid "Vault Icon"
+msgstr "Vault-Symbol"
+
+#: src/markdown_vault/uikit/dialogs.py
+msgid "Pick a symbol or type your own."
+msgstr "Ein Symbol wählen oder ein eigenes eingeben."
+
+#: src/markdown_vault/uikit/dialogs.py
+msgid "e.g. 🗄️ (empty = default)"
+msgstr "z. B. 🗄️ (leer = Standard)"
+
+#: src/markdown_vault/uikit/dialogs.py
+msgid "Apply"
+msgstr "Anwenden"
+
+#: src/markdown_vault/uikit/dialogs.py
+msgid "Monochrome"
+msgstr "Einfarbig"
+
+#: src/markdown_vault/uikit/dialogs.py
+msgid "Delete folder \"{name}\" and all its contents? This cannot be undone."
+msgstr "Ordner „{name}“ und seinen gesamten Inhalt löschen? Das kann nicht rückgängig gemacht werden."
+
+#: src/markdown_vault/uikit/dialogs.py
+msgid "Delete \"{name}\"?"
+msgstr "„{name}“ löschen?"
+
+#: src/markdown_vault/uikit/dialogs.py
+msgid "Delete?"
+msgstr "Löschen?"
+
+#: src/markdown_vault/uikit/dialogs.py
+msgid "Delete"
+msgstr "Löschen"
+
+#: src/markdown_vault/uikit/dialogs.py
+msgid "The file \"{name}\" already exists. Open it?"
+msgstr "Die Datei „{name}“ existiert bereits. Öffnen?"
+
+#: src/markdown_vault/uikit/dialogs.py
+msgid "File Already Exists"
+msgstr "Datei existiert bereits"
+
+#: src/markdown_vault/uikit/dialogs.py
+msgid "Open"
+msgstr "Öffnen"
+
+#: src/markdown_vault/uikit/dialogs.py
+msgid "{n} tab has unsaved changes:\n\n{items}"
+msgid_plural "{n} tabs have unsaved changes:\n\n{items}"
+msgstr[0] "{n} Tab hat ungespeicherte Änderungen:\n\n{items}"
+msgstr[1] "{n} Tabs haben ungespeicherte Änderungen:\n\n{items}"
+
+#: src/markdown_vault/uikit/dialogs.py
+msgid "Unsaved Changes"
+msgstr "Ungespeicherte Änderungen"
+
+#: src/markdown_vault/uikit/dialogs.py
+msgid "Discard"
+msgstr "Verwerfen"
+
+#: src/markdown_vault/uikit/dialogs.py
+msgid "Save"
+msgstr "Speichern"
+
+#: src/markdown_vault/uikit/dialogs.py
+msgid "Enter a new name for the vault."
+msgstr "Einen neuen Namen für den Vault eingeben."
+
+#: src/markdown_vault/uikit/dialogs.py
+msgid "Rename Vault"
+msgstr "Vault umbenennen"
+
+#: src/markdown_vault/uikit/dialogs.py
+msgid "Enter new vault name"
+msgstr "Neuen Vault-Namen eingeben"
+
+#: src/markdown_vault/uikit/dialogs.py
+msgid "A vault with this name already exists."
+msgstr "Ein Vault mit diesem Namen existiert bereits."
+
+#: src/markdown_vault/uikit/dialogs.py
+msgid "Remove Vault \"{name}\"?"
+msgstr "Vault „{name}“ entfernen?"
+
+#: src/markdown_vault/uikit/dialogs.py
+msgid "The files on disk are left untouched."
+msgstr "Die Dateien auf der Festplatte bleiben unangetastet."
+
+#: src/markdown_vault/uikit/dialogs.py
+msgid "Remove"
+msgstr "Entfernen"
+
+#: src/markdown_vault/uikit/dialogs.py
+msgid "Enter a unique vault name."
+msgstr "Einen eindeutigen Vault-Namen eingeben."
+
+#: src/markdown_vault/uikit/dialogs.py
+msgid "Vault Name Collision"
+msgstr "Namenskonflikt beim Vault"
+
+#: src/markdown_vault/uikit/dialogs.py
+msgid "Add"
+msgstr "Hinzufügen"
+
+#: src/markdown_vault/uikit/dialogs.py
+msgid "Enter a unique vault name"
+msgstr "Eindeutigen Vault-Namen eingeben"
