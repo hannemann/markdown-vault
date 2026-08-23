@@ -427,7 +427,7 @@ class TestLanguageExtractorPreprocessor(unittest.TestCase):
 
     def test_extracts_python(self):
         lines = ["```python", "print('hi')", "```"]
-        result = self._preprocessor.run(lines)
+        self._preprocessor.run(lines)
         self.assertEqual(self._preprocessor.languages, ["python"])
 
     def test_extracts_multiple(self):

@@ -324,7 +324,7 @@ class TestPreviewDebounce(unittest.TestCase):
         with unittest.mock.patch(
             "markdown_vault.app.view_mode_manager.GLib.timeout_add",
             return_value=42,
-        ) as mock_add:
+        ):
             with unittest.mock.patch(
                 "markdown_vault.app.view_mode_manager.GLib.source_remove"
             ) as mock_remove:
