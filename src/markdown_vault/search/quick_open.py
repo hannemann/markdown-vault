@@ -142,6 +142,7 @@ def build_candidates(vault_paths) -> list[Candidate]:
                 try:
                     mtime = os.path.getmtime(path)
                 except OSError:
+                    # file vanished during the walk → mtime 0 (sorts last)
                     mtime = 0.0
                 candidates.append(Candidate(
                     path=path, name=fname[:-3], folder=root, mtime=mtime,
@@ -165,6 +166,7 @@ def _read_aliases(path: str) -> list[str]:
                 if len(lines) > 200:  # runaway guard for a missing closing fence
                     return []
     except OSError:
+        # unreadable note contributes no aliases
         return []
 
     raw = None
@@ -174,6 +176,7 @@ def _read_aliases(path: str) -> list[str]:
         if isinstance(data, dict):
             raw = data.get("aliases", data.get("alias"))
     except Exception:
+        # malformed frontmatter → no aliases for this note
         raw = None
     return _normalize_aliases(raw)
 

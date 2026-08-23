@@ -58,6 +58,7 @@ class VaultScope(Gtk.DropDown):
         try:
             idx = values.index(scope)
         except ValueError:
+            # stored scope no longer offered (vault removed) → select the first item
             idx = 0
         self.set_selected(idx)
         self._syncing = False

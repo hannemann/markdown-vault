@@ -46,6 +46,7 @@ def _stopwords(lang: str) -> frozenset:
     try:
         return frozenset(stopwordsiso.stopwords(lang))
     except Exception:
+        # no stopword list for this language → filter nothing
         return frozenset()
 
 
@@ -54,6 +55,7 @@ def _lemma(word: str, lang: str) -> str:
     try:
         return simplemma.lemmatize(word, lang=lang).lower()
     except Exception:
+        # lemmatizer can't handle the word → keep it lowercased
         return word.lower()
 
 
@@ -62,6 +64,7 @@ def _detect(text: str):
     try:
         lang, score = simplemma.langdetect(text, lang=_LANGS)[0]
     except Exception:
+        # language detection failed → caller degrades to plain tokenization
         return None
     return lang if lang != "unk" and score >= _MIN_CONFIDENCE else None
 

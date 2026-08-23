@@ -478,6 +478,7 @@ def _onnx_sig(model: str, tokenizer: str) -> str:
             st = os.stat(p)
             parts.append(f"{name}:{st.st_size}:{int(st.st_mtime)}")
         except OSError:
+            # a missing model file is a valid signature state, encoded so the cache invalidates
             parts.append(f"{name}:missing")
     return "onnx:" + "|".join(parts)
 
