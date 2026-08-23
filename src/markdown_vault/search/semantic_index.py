@@ -541,7 +541,7 @@ class SemanticIndexManager:
                     try:
                         vecs.append(self._embedder.embed([c.text], is_query=False)[0])
                         kept.append(c)
-                    except Exception:
+                    except Exception:  # noqa: BLE001 — a chunk embed can fail many ways; skip it
                         logger.warning("semantic index: skipping chunk %s:%d "
                                        "(embed failed)", c.path, c.line)
         if not vecs:

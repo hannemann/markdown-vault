@@ -54,7 +54,7 @@ def available() -> bool:
         Secret = _secret()
         Secret.password_lookup_sync(_get_schema(), {"key": "__probe__"}, None)
         return True
-    except Exception as exc:  # libsecret missing or no service — not available
+    except Exception as exc:  # noqa: BLE001 — any libsecret failure means unavailable
         logger.debug("secret service unavailable: %s", exc)
         return False
 

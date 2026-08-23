@@ -130,7 +130,7 @@ def _decode_data_uri(src: str):
         return None
     try:
         data = base64.b64decode(payload)
-    except Exception as exc:                           # malformed padding: skip this image
+    except Exception as exc:  # noqa: BLE001 — malformed base64 padding: skip this image
         logger.warning("skipping malformed data: URI: %s", exc)  # dropped image = content loss
         return None
     if not data:                                       # b64decode ignores garbage -> 0 bytes; skip
@@ -196,7 +196,7 @@ def _pdf_title(path: Path) -> str:
         import pymupdf
         with pymupdf.open(str(path)) as doc:
             return " ".join((doc.metadata or {}).get("title", "").split())
-    except Exception as exc:                       # metadata is best-effort only
+    except Exception as exc:  # noqa: BLE001 — PDF metadata is best-effort only
         logger.debug("PDF title read failed for %s: %s", path, exc)
         return ""
 
@@ -432,7 +432,7 @@ def _openpyxl_image_bytes(img) -> tuple:
     elif hasattr(img, "_data"):
         try:
             data = img._data()
-        except Exception as exc:                       # unreadable image: skip, don't crash
+        except Exception as exc:  # noqa: BLE001 — unreadable xlsx image: skip, don't crash
             logger.warning("xlsx image read failed: %s", exc)  # skipped image = content loss
     return data, ext
 

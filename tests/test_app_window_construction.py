@@ -42,7 +42,7 @@ def _application(aw):
         _APP = aw.Adw.Application(application_id="de.hannemann.markdown-vault.test")
         try:
             _APP.register(None)
-        except Exception as exc:                      # no bus in this environment
+        except Exception as exc:  # noqa: BLE001 — no D-Bus in this environment; best-effort
             print(f"note: application not registered ({exc})")
     return _APP
 

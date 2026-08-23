@@ -222,7 +222,7 @@ def _glib_log_handler(log_domain, log_level, message, user_data=None):
                 logger.log(log_level_py, "C backtrace:\n%s", "\n".join(trace_lines))
             else:
                 raise ValueError("No symbols")
-        except Exception:
+        except Exception:  # noqa: BLE001 — native backtrace can fail unpredictably; best-effort
             logger.log(
                 log_level_py, "C backtrace failed (no traceback)", exc_info=False
             )
@@ -403,8 +403,7 @@ def _is_tty(stream) -> bool:
     """Return True if ``stream`` is attached to an interactive terminal."""
     try:
         return bool(stream.isatty())
-    except Exception:
-        # any stream without a working isatty() is treated as non-interactive
+    except Exception:  # noqa: BLE001 — any isatty() failure → treat as non-interactive
         return False
 
 

@@ -350,7 +350,7 @@ class EmbeddingSubpageMixin:
             vec = OllamaEmbedder(model, url).embed(["connection test"], is_query=True)
             dim = len(vec[0]) if vec else 0
             ok, msg = True, f"Connected — {model} OK (dim {dim})"
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 — connection test surfaces any failure to the UI
             ok, msg = False, f"Failed: {exc}"
             logger.info("Ollama test failed: %s", exc)
         GLib.idle_add(self._test_done, button, self._sem_ollama_test_row, ok, msg)
@@ -501,7 +501,7 @@ class EmbeddingSubpageMixin:
             vec = OpenAIEmbedder(model, url, key).embed(["connection test"])
             dim = len(vec[0]) if vec else 0
             ok, msg = True, f"Connected — embeds OK (dim {dim})"
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 — connection test surfaces any failure to the UI
             ok, msg = False, f"Failed: {exc}"
             logger.info("OpenAI embedding test failed: %s", exc)
         GLib.idle_add(self._test_done, button, self._sem_oai_test_row, ok, msg)
@@ -520,7 +520,7 @@ class EmbeddingSubpageMixin:
             vec = OnnxEmbedder(model_path, tok_path).embed(["probe"])
             dim = len(vec[0]) if vec else 0
             ok, msg = True, f"Model loads and embeds OK (dim {dim})"
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 — connection test surfaces any failure to the UI
             ok, msg = False, f"Failed: {exc}"
             logger.info("ONNX test failed: %s", exc)
         GLib.idle_add(self._test_onnx_done, button, ok, msg)
@@ -529,7 +529,7 @@ class EmbeddingSubpageMixin:
         button.set_sensitive(True)
         try:
             self.add_toast(Adw.Toast.new(msg))
-        except Exception:
+        except Exception:  # noqa: BLE001 — toast is cosmetic; fall back to a log line
             logger.info("%s", msg)
         # Restore the presence line (the test message was transient).
         self._refresh_onnx_status()
@@ -542,7 +542,7 @@ class EmbeddingSubpageMixin:
         row.set_subtitle(msg)
         try:
             self.add_toast(Adw.Toast.new(msg))
-        except Exception:
+        except Exception:  # noqa: BLE001 — toast is cosmetic; fall back to a log line
             logger.info("%s", msg)
         return False
 
@@ -607,7 +607,7 @@ class EmbeddingSubpageMixin:
             GLib.idle_add(
                 self._download_done, button, bar, True,
                 f"Downloaded {filename} ({mb:.0f} MB)", refresh)
-        except Exception as exc:  # network/IO/permission — report, don't crash
+        except Exception as exc:  # noqa: BLE001 — network/IO/permission — report, don't crash
             logger.warning("model download failed: %s", exc)
             GLib.idle_add(
                 self._download_done, button, bar, False, f"Failed: {exc}", refresh)
@@ -630,7 +630,7 @@ class EmbeddingSubpageMixin:
         bar.set_text(msg)
         try:
             self.add_toast(Adw.Toast.new(msg))
-        except Exception:
+        except Exception:  # noqa: BLE001 — toast is cosmetic; fall back to a log line
             logger.info("%s", msg)
         (refresh or self._refresh_onnx_status)()  # a fetched file flips the state
         return False
