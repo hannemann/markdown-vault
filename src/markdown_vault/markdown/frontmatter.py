@@ -31,6 +31,7 @@ def parse(text: str) -> dict:
     try:
         data = yaml.safe_load(m.group(1))
     except yaml.YAMLError:
+        # invalid frontmatter → treat as none, per the documented {} contract
         return {}
     return data if isinstance(data, dict) else {}
 
@@ -56,6 +57,8 @@ def _stale_after(meta: dict) -> datetime.date | None:
     try:
         return datetime.date.fromisoformat(str(raw).strip())
     except (ValueError, TypeError):
+        # a value that won't parse as a date → no date (str() coerces first, so
+        # ValueError is the live path; TypeError is a defensive belt)
         return None
 
 
@@ -80,6 +83,7 @@ def lifecycle_of(path: str, today: datetime.date | None = None) -> tuple:
     try:
         mtime = os.path.getmtime(path)
     except OSError:
+        # unreadable note → the neutral default (stable, not stale) lifecycle
         return ("stable", False)
     cached = _LIFECYCLE_CACHE.get(path)
     if cached is None or cached[0] != mtime:
@@ -88,6 +92,7 @@ def lifecycle_of(path: str, today: datetime.date | None = None) -> tuple:
             with open(path, "r", encoding="utf-8", errors="replace") as fh:
                 head = fh.read(8192)
         except OSError:
+            # unreadable head → empty parse below yields the stable default
             pass
         meta = parse(head)
         cached = (mtime, status(meta), _stale_after(meta))
@@ -127,6 +132,7 @@ def tip_of(path: str, preview_chars: int = 200) -> tuple:
         with open(path, "r", encoding="utf-8", errors="replace") as fh:
             head = fh.read(8192)
     except OSError:
+        # unreadable file → fall back to the filename stem for the tooltip
         return (_stem(path), "")
     meta = parse(head)
     t = title(meta) or _stem(path)
