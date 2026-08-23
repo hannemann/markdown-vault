@@ -302,7 +302,8 @@ class TestNoSilentSwallows(unittest.TestCase):
         silent = "try:\n    x()\nexcept OSError:\n    pass\n"
         logged = "try:\n    x()\nexcept OSError:\n    logger.warning('x', exc_info=True)\n"
         reraise = "try:\n    x()\nexcept OSError:\n    raise\n"
-        commented = "try:\n    x()\nexcept OSError:\n    # expected: caller handles None\n    return None\n"
+        commented = ("try:\n    x()\nexcept OSError:\n"
+                     "    # expected: caller handles None\n    return None\n")
         noqa = "try:\n    x()\nexcept Exception:  # noqa: BLE001 - why\n    pass\n"
         inline = "try:\n    x()\nexcept OSError:\n    n = 0  # inline reason on a body line\n"
         self.assertFalse(_handler_is_justified(handlers(silent)[0], _comment_linenos(silent)))

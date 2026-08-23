@@ -286,7 +286,8 @@ class TestVaultTreeFocusFile(unittest.TestCase):
         for child in self.tree:
             if isinstance(child, Gtk.Box):
                 for btn in child:
-                    if isinstance(btn, Gtk.Button) and btn.get_icon_name() == "find-location-symbolic":
+                    if (isinstance(btn, Gtk.Button)
+                            and btn.get_icon_name() == "find-location-symbolic"):
                         found = True
                         break
         self.assertTrue(found, "Focus-in-tree button not found in header")
@@ -297,7 +298,8 @@ class TestVaultTreeFocusFile(unittest.TestCase):
         for child in self.tree:
             if isinstance(child, Gtk.Box):
                 for btn in child:
-                    if isinstance(btn, Gtk.Button) and btn.get_icon_name() == "find-location-symbolic":
+                    if (isinstance(btn, Gtk.Button)
+                            and btn.get_icon_name() == "find-location-symbolic"):
                         btn.emit("clicked")
                         break
         self.assertEqual(emitted, [True])

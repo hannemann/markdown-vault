@@ -467,7 +467,8 @@ class TestShowAddVaultNameDialog(unittest.TestCase):
     @patch("markdown_vault.uikit.dialogs.Gtk.Entry")
     @patch("markdown_vault.uikit.dialogs.GLib.idle_add")
     @patch("markdown_vault.core.config")
-    def test_creates_dialog_with_default_name(self, MockConfig, MockIdleAdd, MockEntry, MockAlertDialog):
+    def test_creates_dialog_with_default_name(self, MockConfig, MockIdleAdd,
+                                              MockEntry, MockAlertDialog):
         MockConfig.load_vaults.return_value = [{"path": "/a", "name": "A"}]
         parent = MagicMock()
         dialogs.show_add_vault_name_dialog(parent, "/b", "MyVault", lambda *a: None)

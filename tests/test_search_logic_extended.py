@@ -77,7 +77,8 @@ class TestComputeFileDetails(unittest.TestCase):
         self.assertEqual(details["word_count"], 5)  # # Hello World More text (5 words)
         self.assertEqual(details["line_count"], 6)  # 6 lines (trailing \n adds extra)
         self.assertEqual(details["size"], stat.st_size)
-        self.assertEqual(details["modified"], datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M"))
+        self.assertEqual(details["modified"],
+                         datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M"))
 
     def test_empty_file(self):
         fpath = self._vault / "empty.md"
@@ -88,7 +89,8 @@ class TestComputeFileDetails(unittest.TestCase):
         self.assertEqual(details["word_count"], 0)
         self.assertEqual(details["line_count"], 0)
         self.assertEqual(details["size"], 0)
-        self.assertEqual(details["modified"], datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M"))
+        self.assertEqual(details["modified"],
+                         datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M"))
 
     def test_multiline_text(self):
         fpath = self._vault / "multi.md"

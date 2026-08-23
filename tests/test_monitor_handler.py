@@ -313,7 +313,8 @@ class TestMonitorHandlerFileMoved(unittest.TestCase):
             h = self._make()
             h.on_file_moved("/vault", "/vault/New.md", "/vault/Old.md")
             self.mock_backlink.rename_file.assert_called_once_with("/vault/Old.md", "/vault/New.md")
-            self.mock_file_index.rename_file.assert_called_once_with("/vault/Old.md", "/vault/New.md")
+            self.mock_file_index.rename_file.assert_called_once_with(
+                "/vault/Old.md", "/vault/New.md")
 
     def test_renamed_file_updates_vault_tree(self):
         with patch("markdown_vault.app.monitor_handler.GLib", _GLibMock):

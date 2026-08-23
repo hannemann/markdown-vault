@@ -87,7 +87,8 @@ def _make_mock_file(path):
 def _load_monitor(mock_gio, mock_glib):
     """Lädt vault_monitor mit gemoddetem Gio/GLib neu."""
     for mod in list(sys.modules.keys()):
-        if mod == "markdown_vault.vault.vault_monitor" or mod.startswith("markdown_vault.vault.vault_monitor."):
+        if (mod == "markdown_vault.vault.vault_monitor"
+                or mod.startswith("markdown_vault.vault.vault_monitor.")):
             del sys.modules[mod]
     import gi.repository
     gi.repository.Gio = mock_gio
@@ -248,7 +249,8 @@ class TestVaultMonitorSetVaults(unittest.TestCase):
         with patch("markdown_vault.vault.vault_monitor.Gio", mock_gio):
             def isdir_side_effect(path):
                 return path == "/tmp/existing"
-            with patch("markdown_vault.vault.vault_monitor.os.path.isdir", side_effect=isdir_side_effect):
+            with patch("markdown_vault.vault.vault_monitor.os.path.isdir",
+                   side_effect=isdir_side_effect):
                 with patch("markdown_vault.vault.vault_monitor.os.listdir", return_value=[]):
                     from markdown_vault.vault.vault_monitor import VaultMonitor
                     monitor = VaultMonitor()
@@ -292,8 +294,10 @@ class TestVaultMonitorSubdirectories(unittest.TestCase):
                 return ["deep.md"]
             return []
 
-        with patch("markdown_vault.vault.vault_monitor.os.path.isdir", side_effect=isdir_side_effect):
-            with patch("markdown_vault.vault.vault_monitor.os.listdir", side_effect=listdir_side_effect):
+        with patch("markdown_vault.vault.vault_monitor.os.path.isdir",
+                   side_effect=isdir_side_effect):
+            with patch("markdown_vault.vault.vault_monitor.os.listdir",
+                       side_effect=listdir_side_effect):
                 mod = _load_monitor(mock_gio, mock_glib)
                 monitor = mod.VaultMonitor()
                 monitor.set_vaults(["/tmp/vault"])
@@ -325,8 +329,10 @@ class TestVaultMonitorSubdirectories(unittest.TestCase):
                 return []
             return []
 
-        with patch("markdown_vault.vault.vault_monitor.os.path.isdir", side_effect=isdir_side_effect):
-            with patch("markdown_vault.vault.vault_monitor.os.listdir", side_effect=listdir_side_effect):
+        with patch("markdown_vault.vault.vault_monitor.os.path.isdir",
+                   side_effect=isdir_side_effect):
+            with patch("markdown_vault.vault.vault_monitor.os.listdir",
+                       side_effect=listdir_side_effect):
                 mod = _load_monitor(mock_gio, mock_glib)
                 monitor = mod.VaultMonitor()
                 monitor.set_vaults(["/tmp/vault"])
@@ -591,7 +597,8 @@ class TestEmitExistingEntries(unittest.TestCase):
         def listdir_side_effect(path):
             return ["note.md", "readme.txt"]
 
-        with patch("markdown_vault.vault.vault_monitor.os.listdir", side_effect=listdir_side_effect):
+        with patch("markdown_vault.vault.vault_monitor.os.listdir",
+                   side_effect=listdir_side_effect):
             with patch("markdown_vault.vault.vault_monitor.os.path.isdir", return_value=False):
                 monitor._emit_existing_entries("/tmp/vault", "/tmp/vault/sub")
 
@@ -612,8 +619,10 @@ class TestEmitExistingEntries(unittest.TestCase):
         def isdir_side_effect(path):
             return path == "/tmp/vault/sub/.git"
 
-        with patch("markdown_vault.vault.vault_monitor.os.listdir", side_effect=listdir_side_effect):
-            with patch("markdown_vault.vault.vault_monitor.os.path.isdir", side_effect=isdir_side_effect):
+        with patch("markdown_vault.vault.vault_monitor.os.listdir",
+                   side_effect=listdir_side_effect):
+            with patch("markdown_vault.vault.vault_monitor.os.path.isdir",
+                   side_effect=isdir_side_effect):
                 monitor._emit_existing_entries("/tmp/vault", "/tmp/vault/sub")
 
         hidden_events = [r for r in received if ".hidden" in str(r) or ".git" in str(r)]
@@ -635,8 +644,10 @@ class TestEmitExistingEntries(unittest.TestCase):
         def isdir_side_effect(path):
             return path == "/tmp/vault/sub/deep"
 
-        with patch("markdown_vault.vault.vault_monitor.os.listdir", side_effect=listdir_side_effect):
-            with patch("markdown_vault.vault.vault_monitor.os.path.isdir", side_effect=isdir_side_effect):
+        with patch("markdown_vault.vault.vault_monitor.os.listdir",
+                   side_effect=listdir_side_effect):
+            with patch("markdown_vault.vault.vault_monitor.os.path.isdir",
+                   side_effect=isdir_side_effect):
                 with patch("markdown_vault.vault.vault_monitor.Gio.File.new_for_path") as mock_file:
                     mock_file.return_value.monitor_directory.return_value = MagicMock()
                     monitor._emit_existing_entries("/tmp/vault", "/tmp/vault/sub")
@@ -664,8 +675,10 @@ class TestEmitExistingEntries(unittest.TestCase):
         def isdir_side_effect(path):
             return path == "/tmp/vault/sub/child"
 
-        with patch("markdown_vault.vault.vault_monitor.os.listdir", side_effect=listdir_side_effect):
-            with patch("markdown_vault.vault.vault_monitor.os.path.isdir", side_effect=isdir_side_effect):
+        with patch("markdown_vault.vault.vault_monitor.os.listdir",
+                   side_effect=listdir_side_effect):
+            with patch("markdown_vault.vault.vault_monitor.os.path.isdir",
+                   side_effect=isdir_side_effect):
                 monitor._emit_existing_entries("/tmp/vault", "/tmp/vault/sub")
 
         self.assertIn("/tmp/vault/sub/child", calls)

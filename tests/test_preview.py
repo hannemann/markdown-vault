@@ -546,7 +546,8 @@ class TestMarkdownConversion(unittest.TestCase):
         self.assertIn(">B<", result)
 
     def test_wikilink_preserves_spaces_no_underscore_no_trailing_slash(self):
-        """Wikilinks should generate href with spaces preserved, no underscores, no trailing slash."""
+        """Wikilinks should generate href with spaces preserved, no underscores,
+        no trailing slash."""
         result = self._render_wikilinks("[[Datei B]]")
         # Should NOT contain underscore or trailing slash
         self.assertNotIn("Datei_B", result)
