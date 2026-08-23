@@ -105,7 +105,8 @@ class TestFileIndexBuild(unittest.TestCase):
         (self._vault / "Page.md").write_text("# Page")
         (vault2 / "Other.md").write_text("# Other")
         idx = FileIndex()
-        idx.build([{"name": "vault", "path": str(self._vault)}, {"name": "Vault2", "path": str(vault2)}])
+        idx.build([{"name": "vault", "path": str(self._vault)},
+                   {"name": "Vault2", "path": str(vault2)}])
         self.assertTrue(idx.has_path(str(self._vault / "Page.md")))
         self.assertTrue(idx.has_path(str(vault2 / "Other.md")))
 
@@ -243,7 +244,8 @@ class TestFileIndexEdgeCases(unittest.TestCase):
             vault.mkdir()
             (vault / "Page.md").write_text("# Page")
             idx = FileIndex()
-            idx.build([{"name": vault.name, "path": str(vault)}, {"name": vault.name, "path": str(vault)}])
+            idx.build([{"name": vault.name, "path": str(vault)},
+                       {"name": vault.name, "path": str(vault)}])
             self.assertTrue(idx.has_path(str(vault / "Page.md")))
         finally:
             shutil.rmtree(tmp, ignore_errors=True)

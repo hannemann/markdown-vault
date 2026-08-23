@@ -11,8 +11,6 @@ Verifies:
 - R6.2: ``_on_close_request`` dirty-check prevents window close
 """
 
-import tempfile
-import shutil
 import unittest
 import unittest.mock
 
@@ -21,10 +19,8 @@ import gi
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 from gi.repository import Gtk  # type: ignore[attr-defined]
-from gi.repository import Adw  # type: ignore[attr-defined]
 
-from markdown_vault.editor.tabs import Tab, TabBar
-from markdown_vault.editor.editor import Editor
+from markdown_vault.editor.tabs import TabBar
 
 
 # ---------------------------------------------------------------------------
@@ -217,7 +213,8 @@ class TestTabBarCloseTabSignal(unittest.TestCase):
         for child in bar._box:
             if getattr(child, "_file_path", None) == "/tmp/a.md":
                 for grandchild in child:
-                    if isinstance(grandchild, Gtk.Button) and grandchild.get_icon_name() == "window-close-symbolic":
+                    if (isinstance(grandchild, Gtk.Button)
+                            and grandchild.get_icon_name() == "window-close-symbolic"):
                         grandchild.emit("clicked")
                         break
                 break
@@ -509,7 +506,9 @@ class TestOnCloseRequestDirtyCheck(unittest.TestCase):
         win = self._make_fake_window()
         win._rebuild_timeout = 99
         win._tab_bar.get_all_paths.return_value = []
-        with unittest.mock.patch("markdown_vault.app.app_window.GLib.source_remove") as source_remove:
+        with unittest.mock.patch(
+            "markdown_vault.app.app_window.GLib.source_remove"
+        ) as source_remove:
             result = win._on_close_request()
         self.assertFalse(result)
         source_remove.assert_called_once_with(99)

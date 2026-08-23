@@ -11,7 +11,6 @@ the hamburger menu.
 
 import logging
 import os
-import re
 from pathlib import Path
 
 import gi
@@ -21,15 +20,11 @@ gi.require_version("Adw", "1")
 
 from gi.repository import Gtk, Adw, Gio, GLib, Gdk
 
-import traceback
-import sys
-import faulthandler
 import threading
 
 from markdown_vault.core import logging_setup
 from markdown_vault.vault.vault_tree import VaultTree
 from markdown_vault.editor.editor import Editor
-from markdown_vault.preview.preview import Preview
 from markdown_vault.editor.tabs import TabBar
 from markdown_vault.ui.sidebar import Sidebar
 from markdown_vault.search.search import SearchBar
@@ -59,12 +54,10 @@ from markdown_vault.app.scroll_memory import ScrollMemory
 from markdown_vault.app.preview_actions import PreviewActions
 from markdown_vault.core import config
 from markdown_vault.uikit import dialogs
-from markdown_vault.uikit import banners as banner_mod
 from markdown_vault.core import session
 from markdown_vault.editor import mru
 from markdown_vault.core import history
 from markdown_vault.core import path_utils
-from markdown_vault.core import validation
 from markdown_vault.vault import vault_monitor
 from markdown_vault.vault.backlink_index import BacklinkIndex, scan_vaults
 from markdown_vault.core.event_router import FileEventDispatcher
@@ -316,7 +309,8 @@ class MainWindow(Adw.ApplicationWindow):
         # Two handlers for external-content-changed:
         # 1. MonitorHandler: updates backlink index + sidebar (data layer).
         # 2. ContentChangeHandler: shows warning banner (UI layer).
-        self._vault_monitor.connect("external-content-changed", self._monitor_handler.on_content_changed)
+        self._vault_monitor.connect("external-content-changed",
+                                    self._monitor_handler.on_content_changed)
         self._vault_monitor.connect(
             "external-content-changed",
             lambda _vp, fp: self._content_change_handler.handle_external_change(fp),
@@ -809,8 +803,11 @@ class MainWindow(Adw.ApplicationWindow):
         state = config.STATE_DIR
         dumpers = {
             "file_index": lambda: self._file_index.dump_to_file(state / "debug-file-index.json"),
-            "backlink_index": lambda: self._backlink_index.dump_to_file(state / "debug-backlink-index.json"),
-            "preview_html": lambda: self._tab_bar.get_current_tab().preview.dump_html(state / "debug-preview.html") if self._tab_bar.get_current_tab() else None,
+            "backlink_index": lambda: self._backlink_index.dump_to_file(
+                state / "debug-backlink-index.json"),
+            "preview_html": lambda: (
+                self._tab_bar.get_current_tab().preview.dump_html(state / "debug-preview.html")
+                if self._tab_bar.get_current_tab() else None),
             "vault_tree": lambda: self._vault_tree.dump_to_file(state / "debug-vault-tree.json"),
             "tabs": lambda: self._tab_bar.dump_to_file(state / "debug-tabs.json"),
             "sidebar": lambda: self._sidebar.dump_to_file(state / "debug-sidebar.json"),
@@ -1077,7 +1074,8 @@ class MainWindow(Adw.ApplicationWindow):
         # Save current vault state.
         self._session_mgr.save_vault_session(self._active_vault, self._content_stack)
         # Close all open tabs with dirty-check; on confirm continue in Phase 2.
-        logger.info("switch-vault: phase 1 — saving current vault session, checking dirty tabs (target=%s, open_file=%s)", new_vault, open_file_path)
+        logger.info("switch-vault: phase 1 — saving current vault session, checking "
+                    "dirty tabs (target=%s, open_file=%s)", new_vault, open_file_path)
         self._close_all_tabs_with_dirty_check(
             on_confirm=lambda: self._switch_vault_complete(
                 new_vault, open_file_path, post_open_fn, from_nav)
@@ -1105,7 +1103,8 @@ class MainWindow(Adw.ApplicationWindow):
         *from_nav* forwards a back/forward landing to phase 3.
         """
         self._switch_vault_pending = False
-        logger.info("switch-vault: phase 2 — switching to %s (open_file=%s)", new_vault, open_file_path)
+        logger.info("switch-vault: phase 2 — switching to %s (open_file=%s)",
+                    new_vault, open_file_path)
         self.mru.clear()
         # History is global now — a vault switch is just another navigation step,
         # so it is NOT cleared (cross-vault back/forward stays intact).
@@ -1290,7 +1289,8 @@ class MainWindow(Adw.ApplicationWindow):
         for path in paths_to_close:
             tab = self._tab_bar.get_tab(path)
             if tab and tab.editor:
-                logger.debug("close: tab %s is_modified=%s", Path(path).name, tab.editor.is_modified)
+                logger.debug("close: tab %s is_modified=%s",
+                             Path(path).name, tab.editor.is_modified)
                 if tab.editor.is_modified:
                     dirty.append(path)
             else:
@@ -1327,7 +1327,8 @@ class MainWindow(Adw.ApplicationWindow):
     def _on_save_dialog_response(self, response: str, dirty_paths: list[str], on_confirm) -> None:
         """Handle save/discard/cancel response."""
         if response == "cancel":
-            logger.info("save-dialog: user cancelled, tabs remain open (paths=%s)", [Path(p).name for p in dirty_paths])
+            logger.info("save-dialog: user cancelled, tabs remain open (paths=%s)",
+                        [Path(p).name for p in dirty_paths])
             if self._close_window_pending:
                 self._close_window_pending = False
                 self._autosave.restart()
@@ -1352,9 +1353,11 @@ class MainWindow(Adw.ApplicationWindow):
                 dialogs.show_error(self, "Save Failed", body)
                 _on_error_dismissed()
                 return
-            logger.info("save-dialog: saved %d tab(s) (paths=%s)", len(dirty_paths), [Path(p).name for p in dirty_paths])
+            logger.info("save-dialog: saved %d tab(s) (paths=%s)", len(dirty_paths),
+                        [Path(p).name for p in dirty_paths])
         if response == "discard":
-            logger.info("save-dialog: discarded %d tab(s) (paths=%s)", len(dirty_paths), [Path(p).name for p in dirty_paths])
+            logger.info("save-dialog: discarded %d tab(s) (paths=%s)", len(dirty_paths),
+                        [Path(p).name for p in dirty_paths])
         # Proceed with close for save/discard (not cancel).
         if on_confirm:
             on_confirm()
@@ -2758,7 +2761,8 @@ class MainWindow(Adw.ApplicationWindow):
                 if remote_images_changed:
                     tab.preview.reset()
                     text = tab.editor.get_text()
-                    base_dir = str(Path(tab.editor.file_path).parent) if tab.editor.file_path else ""
+                    base_dir = (str(Path(tab.editor.file_path).parent)
+                                if tab.editor.file_path else "")
                     tab.preview.update_from_text(text, base_dir, tab.editor.file_path or "")
         # Restart autosave with new interval.
         self._autosave.update_interval(config.get_setting(self._settings, "autosave.interval", 30))

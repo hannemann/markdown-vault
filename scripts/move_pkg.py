@@ -76,7 +76,8 @@ def _split(names_str):
 
 reF2 = re.compile(rf"^(\s*)from \.({alt}) import (.+)$")        # from .<mod> import X
 reF1 = re.compile(r"^(\s*)from \. import (.+?)(\s*#.*)?$")       # from . import a, b
-reF3 = re.compile(r"^(\s*)from markdown_vault import (.+?)(\s*#.*)?$")  # from markdown_vault import a, b
+# from markdown_vault import a, b
+reF3 = re.compile(r"^(\s*)from markdown_vault import (.+?)(\s*#.*)?$")
 
 
 def rewrite_line(line):

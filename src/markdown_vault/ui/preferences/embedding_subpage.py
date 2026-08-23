@@ -1,4 +1,5 @@
-"""Preferences — Embedding subpage: the vector backend, its model files, downloads and the reachability self-tests."""
+"""Preferences — Embedding subpage: the vector backend, its model files, downloads
+and the reachability self-tests."""
 
 import importlib
 import logging
@@ -257,7 +258,7 @@ class EmbeddingSubpageMixin:
             probe = start if start.exists() else start.parent
             if probe.exists():
                 dialog.set_initial_folder(Gio.File.new_for_path(str(probe)))
-        except Exception:  # noqa: BLE001 — cosmetic preset; on failure the dialog just opens at the default
+        except Exception:
             logger.debug("could not preset the ONNX-dir initial folder", exc_info=True)
 
         dialog.select_folder(self.get_root(), None, self._on_onnx_dir_chosen)
@@ -289,8 +290,9 @@ class EmbeddingSubpageMixin:
             # genuinely absent (the package itself isn't there) → install it
             return ("onnxruntime not found — install it (openSUSE: "
                     "python313-onnxruntime) or use the Flatpak build")
-        except Exception:  # noqa: BLE001 — a PLAIN ImportError here means present but
-            # unloadable (bad native lib / wrong glibc-CUDA), NOT absent — the common case
+        except Exception:
+            # onnxruntime is present but unloadable (bad native lib / wrong glibc-CUDA),
+            # NOT absent — the common case
             logger.warning("onnxruntime is installed but failed to load", exc_info=True)
             return "onnxruntime is installed but failed to load — see the log."
 
@@ -349,7 +351,7 @@ class EmbeddingSubpageMixin:
             vec = OllamaEmbedder(model, url).embed(["connection test"], is_query=True)
             dim = len(vec[0]) if vec else 0
             ok, msg = True, f"Connected — {model} OK (dim {dim})"
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 — connection test surfaces any failure to the UI
             ok, msg = False, f"Failed: {exc}"
             logger.info("Ollama test failed: %s", exc)
         GLib.idle_add(self._test_done, button, self._sem_ollama_test_row, ok, msg)
@@ -500,7 +502,7 @@ class EmbeddingSubpageMixin:
             vec = OpenAIEmbedder(model, url, key).embed(["connection test"])
             dim = len(vec[0]) if vec else 0
             ok, msg = True, f"Connected — embeds OK (dim {dim})"
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 — connection test surfaces any failure to the UI
             ok, msg = False, f"Failed: {exc}"
             logger.info("OpenAI embedding test failed: %s", exc)
         GLib.idle_add(self._test_done, button, self._sem_oai_test_row, ok, msg)
@@ -519,7 +521,7 @@ class EmbeddingSubpageMixin:
             vec = OnnxEmbedder(model_path, tok_path).embed(["probe"])
             dim = len(vec[0]) if vec else 0
             ok, msg = True, f"Model loads and embeds OK (dim {dim})"
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 — connection test surfaces any failure to the UI
             ok, msg = False, f"Failed: {exc}"
             logger.info("ONNX test failed: %s", exc)
         GLib.idle_add(self._test_onnx_done, button, ok, msg)
@@ -528,7 +530,7 @@ class EmbeddingSubpageMixin:
         button.set_sensitive(True)
         try:
             self.add_toast(Adw.Toast.new(msg))
-        except Exception:
+        except Exception:  # noqa: BLE001 — toast is cosmetic; fall back to a log line
             logger.info("%s", msg)
         # Restore the presence line (the test message was transient).
         self._refresh_onnx_status()
@@ -541,7 +543,7 @@ class EmbeddingSubpageMixin:
         row.set_subtitle(msg)
         try:
             self.add_toast(Adw.Toast.new(msg))
-        except Exception:
+        except Exception:  # noqa: BLE001 — toast is cosmetic; fall back to a log line
             logger.info("%s", msg)
         return False
 
@@ -606,7 +608,7 @@ class EmbeddingSubpageMixin:
             GLib.idle_add(
                 self._download_done, button, bar, True,
                 f"Downloaded {filename} ({mb:.0f} MB)", refresh)
-        except Exception as exc:  # network/IO/permission — report, don't crash
+        except Exception as exc:  # noqa: BLE001 — network/IO/permission — report, don't crash
             logger.warning("model download failed: %s", exc)
             GLib.idle_add(
                 self._download_done, button, bar, False, f"Failed: {exc}", refresh)
@@ -629,7 +631,7 @@ class EmbeddingSubpageMixin:
         bar.set_text(msg)
         try:
             self.add_toast(Adw.Toast.new(msg))
-        except Exception:
+        except Exception:  # noqa: BLE001 — toast is cosmetic; fall back to a log line
             logger.info("%s", msg)
         (refresh or self._refresh_onnx_status)()  # a fetched file flips the state
         return False

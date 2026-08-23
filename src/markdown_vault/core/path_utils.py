@@ -2,7 +2,6 @@
 
 import os
 import re
-from pathlib import Path
 from urllib.parse import parse_qs, quote, unquote, urlparse
 
 from markdown_vault.core import config

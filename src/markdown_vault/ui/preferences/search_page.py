@@ -1,4 +1,5 @@
-"""Preferences — Search page: the semantic-search master switch, the links to the Embedding/Ask subpages, and audio transcription for the importer."""
+"""Preferences — Search page: the semantic-search master switch, the links to the
+Embedding/Ask subpages, and audio transcription for the importer."""
 
 import logging
 import threading
@@ -211,7 +212,7 @@ class SearchPageMixin:
             msg = "Rebuilding semantic index in the background…"
         try:
             self.add_toast(Adw.Toast.new(msg))
-        except Exception:
+        except Exception:  # noqa: BLE001 — toast is cosmetic; fall back to a log line
             logger.info("%s", msg)
 
     def _refresh_whisper_status(self) -> None:

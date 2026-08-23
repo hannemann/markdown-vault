@@ -481,8 +481,7 @@ def _frontmatter_tags(text: str) -> list[str]:
         data = yaml.safe_load(front)
         if isinstance(data, dict):
             raw = data.get("tags")
-    except Exception:
-        # malformed frontmatter → fall through to the regex extractor below
+    except Exception:  # noqa: BLE001 — malformed frontmatter → regex extractor below
         raw = None
     if raw is None:
         m = re.search(r"(?m)^tags:\s*(.+)$", front)

@@ -343,7 +343,8 @@ class TestComplexity(unittest.TestCase):
             self._t("<table><tr><th>A</th><th>B</th></tr><tr><td>1</td><td>2</td></tr></table>")))
 
     def test_colspan_is_complex(self):
-        self.assertTrue(wi._is_complex_table(self._t("<table><tr><td colspan='2'>x</td></tr></table>")))
+        self.assertTrue(wi._is_complex_table(
+            self._t("<table><tr><td colspan='2'>x</td></tr></table>")))
 
     def test_list_in_cell_is_complex(self):
         self.assertTrue(wi._is_complex_table(

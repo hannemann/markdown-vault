@@ -1,0 +1,4 @@
+# Development-only tooling. NOT installed by `make install` and NOT part of the
+# Flatpak/runtime lock (requirements.txt + requirements-ai.txt), so the linter
+# never ships with the app. Pulled into the venv by `make lint`.
+ruff==0.16.4

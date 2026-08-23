@@ -109,7 +109,8 @@ class FileIndex:
     def remove_vault(self, vault_path: str) -> None:
         """Remove all entries under *vault_path* from the file index."""
         abs_path = os.path.abspath(vault_path)
-        paths_to_remove = [p for p in self._path_to_stem if p.startswith(abs_path + os.sep) or p == abs_path]
+        paths_to_remove = [p for p in self._path_to_stem
+                           if p.startswith(abs_path + os.sep) or p == abs_path]
         for p in paths_to_remove:
             self.remove_file(p)
 

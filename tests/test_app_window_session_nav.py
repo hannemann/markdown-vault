@@ -594,7 +594,8 @@ class TestScrollPositionHistory(AppWindowTest):
         tab = self._tab("/a.md", "render")
         self.win._nav_history.push("/a.md")
         with unittest.mock.patch.object(self.win._tab_bar, "get_current_tab", return_value=tab), \
-             unittest.mock.patch.object(self.win._tab_bar, "get_all_paths", return_value=["/a.md"]), \
+             unittest.mock.patch.object(self.win._tab_bar, "get_all_paths",
+                                        return_value=["/a.md"]), \
              unittest.mock.patch.object(self.win._tab_bar, "update_path"), \
              unittest.mock.patch.object(self.win, "_on_tab_changed"), \
              unittest.mock.patch.object(self.win._scroll_memory, "record_from_tab") as rec:
@@ -607,7 +608,8 @@ class TestScrollPositionHistory(AppWindowTest):
         tab = self._tab("/a.md", "render")
         self.win._nav_history.push("/a.md")
         with unittest.mock.patch.object(self.win._tab_bar, "get_current_tab", return_value=tab), \
-             unittest.mock.patch.object(self.win._tab_bar, "get_all_paths", return_value=["/a.md"]), \
+             unittest.mock.patch.object(self.win._tab_bar, "get_all_paths",
+                                        return_value=["/a.md"]), \
              unittest.mock.patch.object(self.win._tab_bar, "update_path"), \
              unittest.mock.patch.object(self.win, "_on_tab_changed"), \
              unittest.mock.patch.object(self.win._scroll_memory, "record_from_tab") as rec:

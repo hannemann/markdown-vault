@@ -30,7 +30,7 @@ try:                                    # optional AI deps (see requirements-ai.
     import simplemma
     import stopwordsiso
     _HAVE_LEMMA = True
-except Exception:                       # base install / CI — plain tokenizer
+except Exception:  # noqa: BLE001 — optional AI deps absent or broken → plain tokenizer
     _HAVE_LEMMA = False
 
 # Candidate content languages for detection; simplemma and stopwordsiso both
@@ -45,8 +45,7 @@ _MIN_CONFIDENCE = 0.5
 def _stopwords(lang: str) -> frozenset:
     try:
         return frozenset(stopwordsiso.stopwords(lang))
-    except Exception:
-        # no stopword list for this language → filter nothing
+    except Exception:  # noqa: BLE001 — no stopword list for this language → filter nothing
         return frozenset()
 
 
@@ -54,8 +53,7 @@ def _stopwords(lang: str) -> frozenset:
 def _lemma(word: str, lang: str) -> str:
     try:
         return simplemma.lemmatize(word, lang=lang).lower()
-    except Exception:
-        # lemmatizer can't handle the word → keep it lowercased
+    except Exception:  # noqa: BLE001 — lemmatizer can't handle the word → keep it lowercased
         return word.lower()
 
 
@@ -63,8 +61,7 @@ def _detect(text: str):
     """Best-fitting content language for *text*, or ``None`` if unsure."""
     try:
         lang, score = simplemma.langdetect(text, lang=_LANGS)[0]
-    except Exception:
-        # language detection failed → caller degrades to plain tokenization
+    except Exception:  # noqa: BLE001 — langdetect failed → caller degrades to plain tokenization
         return None
     return lang if lang != "unk" and score >= _MIN_CONFIDENCE else None
 

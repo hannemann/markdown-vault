@@ -48,7 +48,6 @@ class SessionManager:
 
     def collect_tab_data(self, content_stack) -> list[dict]:
         """Gather per-tab state for session saving."""
-        from gi.repository import Gtk
         data = []
         for path in self._tab_bar.get_all_paths():
             tab = self._tab_bar.get_tab(path)

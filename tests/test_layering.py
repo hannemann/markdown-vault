@@ -10,13 +10,27 @@ files move into subpackages, and stays green at every intermediate state.
 
 import ast
 import io
+import shutil
+import subprocess
 import sys
+import tempfile
 import tokenize
 import unittest
 from collections import defaultdict
 from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parents[1] / "src" / "markdown_vault"
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+_SCAN_ROOTS = (_REPO_ROOT / "src", _REPO_ROOT / "tests", _REPO_ROOT / "scripts")
+
+
+def _ruff_path():
+    """The ruff binary next to the running interpreter (the dev venv, per
+    requirements-dev.txt) or on PATH; ``None`` when ruff is not installed."""
+    candidate = Path(sys.executable).with_name("ruff")
+    if candidate.exists():
+        return str(candidate)
+    return shutil.which("ruff")
 
 
 def _package_of_file(pyfile: Path) -> str:
@@ -302,7 +316,8 @@ class TestNoSilentSwallows(unittest.TestCase):
         silent = "try:\n    x()\nexcept OSError:\n    pass\n"
         logged = "try:\n    x()\nexcept OSError:\n    logger.warning('x', exc_info=True)\n"
         reraise = "try:\n    x()\nexcept OSError:\n    raise\n"
-        commented = "try:\n    x()\nexcept OSError:\n    # expected: caller handles None\n    return None\n"
+        commented = ("try:\n    x()\nexcept OSError:\n"
+                     "    # expected: caller handles None\n    return None\n")
         noqa = "try:\n    x()\nexcept Exception:  # noqa: BLE001 - why\n    pass\n"
         inline = "try:\n    x()\nexcept OSError:\n    n = 0  # inline reason on a body line\n"
         self.assertFalse(_handler_is_justified(handlers(silent)[0], _comment_linenos(silent)))
@@ -311,6 +326,60 @@ class TestNoSilentSwallows(unittest.TestCase):
         self.assertTrue(_handler_is_justified(handlers(commented)[0], _comment_linenos(commented)))
         self.assertTrue(_handler_is_justified(handlers(noqa)[0], _comment_linenos(noqa)))
         self.assertTrue(_handler_is_justified(handlers(inline)[0], _comment_linenos(inline)))
+
+
+class TestRuffClean(unittest.TestCase):
+    """`ruff check` reports nothing over src/tests/scripts — the lint gate with
+    teeth. There is no CI, so `make lint` alone is a command someone must remember;
+    this runs it on every `make test`, and a lint regression turns the suite red.
+
+    skipUnless-guarded on ruff's presence: ruff is a dev-only tool
+    (requirements-dev.txt), so a base install without it SKIPS rather than errors,
+    keeping that suite green (AGENTS.md base-install rule).
+    """
+
+    def _run_ruff(self, *args):
+        # Absolute paths and an explicit --config, both derived from THIS test's
+        # tree — never the caller's cwd. That is exactly the config-context trap the
+        # linter work fell into (a --select that dropped the config, a run that
+        # inherited a foreign ruff.toml): a guard that measures the wrong tree stays
+        # green and guards nothing.
+        return subprocess.run(
+            [_ruff_path(), "check", "--config", str(_REPO_ROOT / "ruff.toml"), *args],
+            capture_output=True, text=True,
+        )
+
+    @unittest.skipUnless(_ruff_path() is not None, "ruff not installed (dev-only tool)")
+    def test_tree_is_lint_clean(self):
+        # Pin the roots by name: a size floor over the SUM catches a narrowed root but not
+        # a *dropped* one — (src, tests) alone is still 187 > 150 while scripts/
+        # (count_callbacks.py et al.) silently goes unchecked. Assert the exact set.
+        self.assertEqual(
+            {r.name for r in _SCAN_ROOTS}, {"src", "tests", "scripts"},
+            "scan roots changed — a dropped root would lint less than the whole tree")
+        # Then a file-count floor, like TestLayering does: a wrong _REPO_ROOT keeps the
+        # names but finds nothing. Measured ~192 .py files; 150 leaves margin as the tree
+        # grows and still trips on an empty/wrong path.
+        n_files = sum(len(list(r.rglob("*.py"))) for r in _SCAN_ROOTS)
+        self.assertGreater(
+            n_files, 150, f"scanned only {n_files} files — narrowed roots? the guard is blind")
+        result = self._run_ruff(*(str(r) for r in _SCAN_ROOTS))
+        self.assertEqual(
+            result.returncode, 0,
+            f"ruff reported violations:\n{result.stdout}\n{result.stderr}")
+
+    @unittest.skipUnless(_ruff_path() is not None, "ruff not installed (dev-only tool)")
+    def test_the_check_can_go_red(self):
+        # A guard that can only pass is worthless. Prove a violation goes red THROUGH the
+        # production path (_run_ruff, real --config) — not a bespoke invocation — so
+        # narrowing the real check above cannot leave this one falsely green.
+        with tempfile.TemporaryDirectory() as d:
+            bad = Path(d) / "bad.py"
+            bad.write_text("x = '" + "a" * 200 + "'\n")
+            result = self._run_ruff(str(bad))
+        self.assertNotEqual(
+            result.returncode, 0,
+            "ruff did not flag a 200-char line — the guard's own mechanism is broken")
 
 
 if __name__ == "__main__":

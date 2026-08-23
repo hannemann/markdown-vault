@@ -44,10 +44,12 @@ class TestR122Integration(unittest.TestCase):
 
         # Build indexes
         file_index = FileIndex()
-        file_index.build([{"name": "VaultA", "path": str(vault1)}, {"name": "VaultB", "path": str(vault2)}])
+        file_index.build([{"name": "VaultA", "path": str(vault1)},
+                          {"name": "VaultB", "path": str(vault2)}])
 
         backlink_index = BacklinkIndex()
-        backlink_index.build([{"name": "VaultA", "path": str(vault1)}, {"name": "VaultB", "path": str(vault2)}])
+        backlink_index.build([{"name": "VaultA", "path": str(vault1)},
+                              {"name": "VaultB", "path": str(vault2)}])
 
         # Vault-prefixed wikilink: [[VaultA>Note]]
         text_vaulta = "[[VaultA>Note]]"
@@ -86,10 +88,12 @@ class TestR122Integration(unittest.TestCase):
 
         # Build indexes
         file_index = FileIndex()
-        file_index.build([{"name": "VaultA", "path": str(vault1)}, {"name": "VaultB", "path": str(vault2)}])
+        file_index.build([{"name": "VaultA", "path": str(vault1)},
+                          {"name": "VaultB", "path": str(vault2)}])
 
         backlink_index = BacklinkIndex()
-        backlink_index.build([{"name": "VaultA", "path": str(vault1)}, {"name": "VaultB", "path": str(vault2)}])
+        backlink_index.build([{"name": "VaultA", "path": str(vault1)},
+                              {"name": "VaultB", "path": str(vault2)}])
 
         # Backlinks for VaultA's Note.md
         bl_a = backlink_index.find_backlinks(str(vault1 / "Note.md"))

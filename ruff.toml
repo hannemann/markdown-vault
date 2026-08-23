@@ -1,0 +1,32 @@
+# Linter configuration. Enforces two conventions AGENTS.md already states but that
+# nothing checked: PEP 8 line length (E501) and blind-except (BLE001 — the rule the
+# `# noqa: BLE001` markers throughout the code speak to).
+#
+# Rules are named individually, not by broad family, and by full code where needed:
+#   E501   line-too-long — the PEP 8 line-length convention (100).
+#   F      pyflakes — unused imports/variables, redefinitions (real dead code).
+#   BLE001 blind-except — a broad `except Exception`. Full code, not a prefix: ruff
+#          accepts full codes and the code is unambiguous regardless of which plugin
+#          groups it (BLE001 is flake8-blind-except, NOT bugbear `B`; verified with
+#          `ruff rule BLE001`).
+#   RUF100 unused-noqa — a `# noqa` that suppresses nothing. Keeps the markers honest
+#          and self-maintaining; auto-fixable.
+#
+# RUF100 PITFALL: it also flags a `# noqa: CODE` when CODE is not selected here
+# ("non-enabled"), and --fix would delete it. The `# noqa` codes present in this tree are
+# BLE001, F401 (both covered by the select above) and E402 (NOT selected). The E402
+# markers are therefore removed as cruft — deliberately, because E402 is off for good (see
+# below). If you ever add a `# noqa: <CODE>` for a rule you do not select, RUF100 will
+# strip it; select that rule or drop the marker.
+#
+# Deliberately NOT selected: the rest of pycodestyle `E`. A measurement run showed the
+# `E402` (import-not-at-top) rule alone flags 177 sites in src — the mandatory
+# `gi.require_version(...)` call PyGObject requires before `from gi.repository import …`,
+# which is structural, not a defect. Selecting all of `E` would drown the honest baseline
+# in that plus stylistic rules (E731/E702/E741) not named by any convention. bugbear (B),
+# isort (I) and pyupgrade (UP) are deferred for the same reason.
+line-length = 100
+target-version = "py313"
+
+[lint]
+select = ["E501", "F", "BLE001", "RUF100"]

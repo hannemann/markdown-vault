@@ -9,8 +9,6 @@ Tests:
 - N.4: Callback-Exceptions werden geloggt statt verschluckt
 """
 
-import gi
-import importlib
 import sys
 import unittest
 from unittest.mock import MagicMock, patch
@@ -69,7 +67,8 @@ def _load_monitor(mock_gio, mock_glib):
     """Lädt vault_monitor mit gemoddetem Gio/GLib neu."""
     # Gio aus vault_monitor entfernen
     for mod in list(sys.modules.keys()):
-        if mod == 'markdown_vault.vault.vault_monitor' or mod.startswith('markdown_vault.vault.vault_monitor.'):
+        if (mod == 'markdown_vault.vault.vault_monitor'
+                or mod.startswith('markdown_vault.vault.vault_monitor.')):
             del sys.modules[mod]
 
     # gi.repository.Gio direkt patchen
@@ -377,7 +376,8 @@ class TestR11_1_AtomicSaveRenamedFilter(unittest.TestCase):
         # is_dir=True nur für Verzeichnisse, False für Dateien
         def is_dir_side_effect(path):
             return path.endswith("/") or path in ("/tmp/testvault", "/tmp/testvault/subdir")
-        with patch("markdown_vault.vault.vault_monitor.os.path.isdir", side_effect=is_dir_side_effect):
+        with patch("markdown_vault.vault.vault_monitor.os.path.isdir",
+                   side_effect=is_dir_side_effect):
             mod = _load_monitor(mock_gio, mock_glib)
             monitor = mod.VaultMonitor()
             monitor.set_vaults(["/tmp/testvault"])

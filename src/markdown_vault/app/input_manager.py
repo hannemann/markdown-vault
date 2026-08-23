@@ -74,7 +74,8 @@ class InputManager:
         is_mru = config.get_setting(self._settings, "tabs.switch_mode", "mru") == "mru"
         if is_mru:
             next_accel = config.get_setting(self._settings, "tabs.keybinding.next", "<Control>Tab")
-            prev_accel = config.get_setting(self._settings, "tabs.keybinding.prev", "<Shift><Control>Tab")
+            prev_accel = config.get_setting(
+                self._settings, "tabs.keybinding.prev", "<Shift><Control>Tab")
             app.set_accels_for_action("win.mru-switcher-next", [next_accel] if next_accel else [])
             app.set_accels_for_action("win.mru-switcher-prev", [prev_accel] if prev_accel else [])
             app.set_accels_for_action("win.next-tab", [])
@@ -108,7 +109,8 @@ class InputManager:
             return
 
         next_accel = config.get_setting(self._settings, "tabs.keybinding.next", "<Control>Tab")
-        prev_accel = config.get_setting(self._settings, "tabs.keybinding.prev", "<Shift><Control>Tab")
+        prev_accel = config.get_setting(
+            self._settings, "tabs.keybinding.prev", "<Shift><Control>Tab")
         if next_accel:
             trigger = Gtk.ShortcutTrigger.parse_string(next_accel)
             action = Gtk.NamedAction.new("win.next-tab")

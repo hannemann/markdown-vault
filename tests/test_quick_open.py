@@ -104,7 +104,6 @@ class TestFilenameProvider(unittest.TestCase):
 
 class TestQuickOpenEngine(unittest.TestCase):
     def test_merges_and_dedupes_by_path(self):
-        c = qo.Candidate(path="/v/x.md", name="x", folder="/v", mtime=0.0)
         low = _StubProvider([qo.QuickResult(path="/v/x.md", name="x", folder="/v", score=1.0)])
         high = _StubProvider([qo.QuickResult(path="/v/x.md", name="x", folder="/v", score=9.0)])
         eng = qo.QuickOpenEngine([low, high])

@@ -22,7 +22,7 @@ def _flush(handlers):
     for handler in handlers:
         try:
             handler.flush()
-        except Exception:
+        except Exception:  # noqa: BLE001 — teardown flush is best-effort
             pass
 
 
@@ -66,7 +66,7 @@ class LoggingSetupTestCase(unittest.TestCase):
             _ROOT.removeHandler(handler)
             try:
                 handler.close()
-            except Exception:
+            except Exception:  # noqa: BLE001 — teardown close is best-effort
                 pass
         logging_setup._installed_handlers.clear()
         for handler in list(_ROOT.handlers):

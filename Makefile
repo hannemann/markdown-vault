@@ -1,5 +1,5 @@
 SHELL := /bin/bash
-.PHONY: _fetch-wheels lock-wheels download-wheels build-flatpak bundle-flatpak install-flatpak uninstall-flatpak run-flatpak test-flatpak clean clean-build clean-cache build venv venv-ai install install-ai uninstall clean-local run test test-one coverage callbacks test-e2e docs-settings graph-build graph-update graph-query graph-path graph-explain start stop restart status dbg-ready dbg-state dbg-tabs dbg-active dbg-open dbg-close dbg-select dbg-search dbg-quickopen dbg-submit dbg-waitidle dbg-answer dbg-ask dbg-prefs
+.PHONY: _fetch-wheels lock-wheels download-wheels build-flatpak bundle-flatpak install-flatpak uninstall-flatpak run-flatpak test-flatpak clean clean-build clean-cache build venv venv-ai install install-ai uninstall clean-local run test test-one coverage callbacks lint test-e2e docs-settings graph-build graph-update graph-query graph-path graph-explain start stop restart status dbg-ready dbg-state dbg-tabs dbg-active dbg-open dbg-close dbg-select dbg-search dbg-quickopen dbg-submit dbg-waitidle dbg-answer dbg-ask dbg-prefs
 
 WHEEL_DIR := src/share/markdown-vault
 WHEELS_DIR := $(WHEEL_DIR)/wheels
@@ -35,6 +35,7 @@ TEST_WARN := -W default::ResourceWarning \
 
 REQUIREMENTS := requirements.txt
 REQUIREMENTS_AI := requirements-ai.txt
+REQUIREMENTS_DEV := requirements-dev.txt
 LOCK := requirements.lock
 
 _fetch-wheels:
@@ -120,6 +121,12 @@ venv-ai: venv
 	@echo "=> Adding optional AI dependencies ($(REQUIREMENTS_AI)) to the venv..."
 	@$(VENV)/bin/pip install --upgrade --disable-pip-version-check -r $(REQUIREMENTS_AI)
 	@sh scripts/install-llama.sh $(VENV)/bin/pip
+
+lint:
+	@echo "=> Linting with ruff ($(REQUIREMENTS_DEV))..."
+	@test -d $(VENV) || $(PYTHON) -m venv --system-site-packages $(VENV)
+	@$(VENV)/bin/pip install --quiet --disable-pip-version-check -r $(REQUIREMENTS_DEV)
+	@$(VENV)/bin/ruff check src tests scripts
 
 install: build venv
 	@echo "=> Installing locally..."

@@ -65,7 +65,8 @@ class TestSetViewMode(unittest.TestCase):
         }
         self.sidebar = unittest.mock.Mock()
         self.backlink_index = unittest.mock.Mock()
-        self._mgr = ViewModeManager(self.tab_bar, self.toggle_buttons, self.sidebar, self.backlink_index)
+        self._mgr = ViewModeManager(self.tab_bar, self.toggle_buttons,
+                                    self.sidebar, self.backlink_index)
 
     def test_valid_edit_mode(self):
         """set_view_mode('edit') sets tab.view_mode and applies."""
@@ -151,7 +152,8 @@ class TestApplyViewMode(unittest.TestCase):
         self.toggle_buttons = {}
         self.sidebar = unittest.mock.Mock()
         self.backlink_index = unittest.mock.Mock()
-        self._mgr = ViewModeManager(self.tab_bar, self.toggle_buttons, self.sidebar, self.backlink_index)
+        self._mgr = ViewModeManager(self.tab_bar, self.toggle_buttons,
+                                    self.sidebar, self.backlink_index)
 
     def test_edit_mode_shows_editor_only(self):
         """View mode 'edit' shows only editor."""
@@ -184,7 +186,8 @@ class TestApplyViewMode(unittest.TestCase):
     def test_no_tab_is_noop(self):
         """No current tab → apply_view_mode does nothing."""
         self.tab_bar = _MockTabBar(current_tab=None)
-        self._mgr = ViewModeManager(self.tab_bar, self.toggle_buttons, self.sidebar, self.backlink_index)
+        self._mgr = ViewModeManager(self.tab_bar, self.toggle_buttons,
+                                    self.sidebar, self.backlink_index)
         self._mgr.apply_view_mode()  # Should not raise
 
 
@@ -200,7 +203,8 @@ class TestSyncViewToggle(unittest.TestCase):
         }
         self.sidebar = unittest.mock.Mock()
         self.backlink_index = unittest.mock.Mock()
-        self._mgr = ViewModeManager(self.tab_bar, self.toggle_buttons, self.sidebar, self.backlink_index)
+        self._mgr = ViewModeManager(self.tab_bar, self.toggle_buttons,
+                                    self.sidebar, self.backlink_index)
 
     def test_sync_sets_active(self):
         """sync_view_toggle sets the toggle button to active."""
@@ -222,7 +226,8 @@ class TestRefreshPreview(unittest.TestCase):
         self.toggle_buttons = {}
         self.sidebar = unittest.mock.Mock()
         self.backlink_index = unittest.mock.Mock()
-        self._mgr = ViewModeManager(self.tab_bar, self.toggle_buttons, self.sidebar, self.backlink_index)
+        self._mgr = ViewModeManager(self.tab_bar, self.toggle_buttons,
+                                    self.sidebar, self.backlink_index)
 
     def test_refresh_calls_update_from_text(self):
         """refresh_preview calls preview.update_from_text with text and base_dir."""
@@ -243,7 +248,8 @@ class TestRefreshPreview(unittest.TestCase):
     def test_refresh_no_tab_is_noop(self):
         """refresh_preview with no current tab does nothing."""
         self.tab_bar = _MockTabBar(current_tab=None)
-        self._mgr = ViewModeManager(self.tab_bar, self.toggle_buttons, self.sidebar, self.backlink_index)
+        self._mgr = ViewModeManager(self.tab_bar, self.toggle_buttons,
+                                    self.sidebar, self.backlink_index)
         self._mgr.refresh_preview()  # Should not raise
 
 
@@ -256,7 +262,8 @@ class TestOnEditorTextChanged(unittest.TestCase):
         self.toggle_buttons = {}
         self.sidebar = unittest.mock.Mock()
         self.backlink_index = unittest.mock.Mock()
-        self._mgr = ViewModeManager(self.tab_bar, self.toggle_buttons, self.sidebar, self.backlink_index)
+        self._mgr = ViewModeManager(self.tab_bar, self.toggle_buttons,
+                                    self.sidebar, self.backlink_index)
 
     def test_updates_backlink_index(self):
         """on_editor_text_changed updates backlink_index for file_path."""
@@ -291,7 +298,8 @@ class TestOnEditorTextChanged(unittest.TestCase):
     def test_no_tab_is_noop(self):
         """on_editor_text_changed with no current tab does nothing."""
         self.tab_bar = _MockTabBar(current_tab=None)
-        self._mgr = ViewModeManager(self.tab_bar, self.toggle_buttons, self.sidebar, self.backlink_index)
+        self._mgr = ViewModeManager(self.tab_bar, self.toggle_buttons,
+                                    self.sidebar, self.backlink_index)
         editor = self.tab.editor
         self._mgr.on_editor_text_changed(editor)  # Should not raise
 
@@ -305,7 +313,8 @@ class TestPreviewDebounce(unittest.TestCase):
         self.toggle_buttons = {}
         self.sidebar = unittest.mock.Mock()
         self.backlink_index = unittest.mock.Mock()
-        self._mgr = ViewModeManager(self.tab_bar, self.toggle_buttons, self.sidebar, self.backlink_index)
+        self._mgr = ViewModeManager(self.tab_bar, self.toggle_buttons,
+                                    self.sidebar, self.backlink_index)
 
     def test_schedule_preview_refresh_starts_timer(self):
         """_schedule_preview_refresh starts a GLib timer."""
@@ -324,7 +333,7 @@ class TestPreviewDebounce(unittest.TestCase):
         with unittest.mock.patch(
             "markdown_vault.app.view_mode_manager.GLib.timeout_add",
             return_value=42,
-        ) as mock_add:
+        ):
             with unittest.mock.patch(
                 "markdown_vault.app.view_mode_manager.GLib.source_remove"
             ) as mock_remove:

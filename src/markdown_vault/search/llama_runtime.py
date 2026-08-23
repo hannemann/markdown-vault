@@ -65,7 +65,7 @@ def _install_abort(llama) -> None:
         if _ABORT_CB is None:
             _ABORT_CB = llama_cpp.ggml_abort_callback(_abort_predicate)
         llama_cpp.llama_set_abort_callback(llama._ctx.ctx, _ABORT_CB, None)
-    except Exception:          # noqa: BLE001 — no abort API / private layout moved
+    except Exception:
         logger.debug("abort callback not installed", exc_info=True)
 
 
@@ -480,7 +480,7 @@ class LlamaCppChat:
                     add_generation_prompt=True)
         except ImportError:        # llama_cpp not installed — expected on base
             logger.debug("llama_cpp not installed; reasoning toggle unavailable")
-        except Exception:          # noqa: BLE001 — any other hiccup → plain path
+        except Exception:
             logger.warning("could not build a reasoning chat formatter; the "
                            "thinking toggle is unavailable for this model",
                            exc_info=True)
@@ -504,7 +504,7 @@ class LlamaCppChat:
             try:
                 prompt = formatter(messages=messages,
                                    enable_thinking=bool(self.think)).prompt
-            except Exception:      # noqa: BLE001 — render failure → plain path
+            except Exception:
                 logger.warning("chat template render failed; using "
                                "create_chat_completion", exc_info=True)
         if prompt is not None:
@@ -574,7 +574,7 @@ class LlamaCppChat:
                     if vis != last and self._on_token is not None:
                         self._on_token(vis)
                         last = vis
-            except Exception:          # noqa: BLE001
+            except Exception:
                 if self._cancelled():
                     return ""          # intentionally aborted; the result is discarded
                 raise

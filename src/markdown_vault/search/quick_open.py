@@ -175,8 +175,7 @@ def _read_aliases(path: str) -> list[str]:
         data = yaml.safe_load("".join(lines))
         if isinstance(data, dict):
             raw = data.get("aliases", data.get("alias"))
-    except Exception:
-        # malformed frontmatter → no aliases for this note
+    except Exception:  # noqa: BLE001 — malformed frontmatter → no aliases for this note
         raw = None
     return _normalize_aliases(raw)
 

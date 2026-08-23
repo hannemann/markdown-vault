@@ -166,7 +166,8 @@ class BacklinkIndex:
                 try:
                     Path(path_str).write_text(new_text, encoding="utf-8")
                 except OSError:
-                    logger.warning("Cannot write %s after wikilink removal", path_str, exc_info=True)
+                    logger.warning("Cannot write %s after wikilink removal",
+                                   path_str, exc_info=True)
                     continue
                 modified.append(path_str)
                 # Update _source_to_targets for this file

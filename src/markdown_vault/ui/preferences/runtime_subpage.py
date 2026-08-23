@@ -1,4 +1,5 @@
-"""Preferences — Ask runtime subpage: threads, GPU offload, KV cache, batch sizes and the answer-length cap of the in-process backend."""
+"""Preferences — Ask runtime subpage: threads, GPU offload, KV cache, batch sizes
+and the answer-length cap of the in-process backend."""
 
 import logging
 

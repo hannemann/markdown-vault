@@ -217,7 +217,8 @@ function step(){
 }
 function kick(){ if(raf)return; const loop=()=>{ step(); positions();
   if(alpha>0.02){raf=requestAnimationFrame(loop);}
-  else {raf=0; if(fitPending){fitPending=false; zoomTo(nodes);}} }; raf=requestAnimationFrame(loop);}
+  else {raf=0; if(fitPending){fitPending=false; zoomTo(nodes);}} };
+  raf=requestAnimationFrame(loop);}
 
 // newTab flag is prefixed ("1\t" / "0\t") so the host can route it.
 function post(id,newTab){ if(window.webkit&&webkit.messageHandlers&&webkit.messageHandlers.graph)

@@ -840,7 +840,8 @@ class VaultTree(Gtk.Box):
         if self._context_path and not is_vault_root:
             menu.append("Delete", "ctx.delete")
 
-        if self._context_path and not self._context_is_dir and self._is_open_file(self._context_path):
+        if (self._context_path and not self._context_is_dir
+                and self._is_open_file(self._context_path)):
             menu.append("Close File", "ctx.close-file")
 
         # Build action group.
@@ -868,7 +869,8 @@ class VaultTree(Gtk.Box):
             action.connect("activate", lambda *_: self.emit("delete-requested", self._context_path))
             action_group.add_action(action)
 
-        if self._context_path and not self._context_is_dir and self._is_open_file(self._context_path):
+        if (self._context_path and not self._context_is_dir
+                and self._is_open_file(self._context_path)):
             path = self._context_path
             action = Gio.SimpleAction.new("close-file", None)
             action.connect("activate", lambda *_: self.emit("close-file-requested", path))
@@ -892,11 +894,13 @@ class VaultTree(Gtk.Box):
             action_group.add_action(action)
 
             action = Gio.SimpleAction.new("rename-vault", None)
-            action.connect("activate", lambda *_: self._show_rename_dialog(ctx_path, ctx_vault_name))
+            action.connect("activate",
+                           lambda *_: self._show_rename_dialog(ctx_path, ctx_vault_name))
             action_group.add_action(action)
 
             action = Gio.SimpleAction.new("remove-vault", None)
-            action.connect("activate", lambda *_: self._show_remove_dialog(ctx_path, ctx_vault_name))
+            action.connect("activate",
+                           lambda *_: self._show_remove_dialog(ctx_path, ctx_vault_name))
             action_group.add_action(action)
 
         if menu.get_n_items() == 0:

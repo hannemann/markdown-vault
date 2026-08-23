@@ -393,6 +393,13 @@ opening files in editor, toggling sidebar etc.) ask the user.
 - All strings in the code or tests are english (comments etc.)
 - Follow PEP 8, max line length 100.
 - Use `snake_case` for functions/variables, `PascalCase` for classes.
+- **Lint with `make lint`** — ruff, configured in `ruff.toml` (`E501` line length, `F`
+  pyflakes, `BLE001` blind-except, `RUF100` unused-noqa; the rest of pycodestyle `E` is
+  deliberately off, see the config comment on the `gi.require_version` E402 conflict). The
+  suite enforces it: `tests/test_layering.py::TestRuffClean` runs `ruff check` and turns
+  `make test` red on a violation — skipped when ruff (a dev-only tool in
+  `requirements-dev.txt`) is absent, so a base install stays green. A deliberately broad
+  `except Exception` carries `# noqa: BLE001 — <why broad>`.
 - User-facing strings are English literals for now — `gettext` i18n is **not yet wired up** (no `_()` calls, no message catalogs; the only `gettext` in the tree is AppStream metadata). Full translatability is a tracked, not-yet-implemented goal (`tmp/Tickets/I18n/i18n-gettext-infrastructure`). Until it lands, write new user-facing strings as plain English literals matching the surrounding code; do **not** add `gettext` wrapping piecemeal — a half-wrapped codebase is worse than a consistent English-only one, and the i18n ticket will wrap them all at once.
 - CSS for WebView rendering goes in `src/css/` (Meson installs it into the package as `markdown_vault/css/`), not inline in Python.
 - Vault config YAML keys are case-sensitive, paths are absolute.

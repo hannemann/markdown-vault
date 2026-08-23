@@ -339,7 +339,6 @@ class TestTabBarScrollToActive(_TabBarTestBase):
         """With no tabs, set_active_tab should not touch the adjustment."""
         bar = TabBar()
         adj = bar._scrolled.get_hadjustment()
-        original_val = adj.get_value()
         with unittest.mock.patch.object(adj, "set_value") as mock_set:
             bar.set_active_tab("/tmp/missing.md")
             mock_set.assert_not_called()
