@@ -738,7 +738,7 @@ msgstr "Erkanntes VRAM: {gb:.1f} GB."
 
 #: src/markdown_vault/search/quick_open_palette.py
 msgid "Ask — answer from your notes (instead of jumping to a file)"
-msgstr "Fragen — aus deinen Notizen antworten (statt zu einer Datei zu springen)"
+msgstr "Ask — Antworten aus deinen Notizen (statt zu einer Datei zu springen)"
 
 #: src/markdown_vault/search/quick_open_palette.py
 msgid "Pick sources — choose which notes to answer from"
@@ -1286,7 +1286,7 @@ msgstr "Modell, das Notizen in Vektoren umwandelt"
 
 #: src/markdown_vault/ui/preferences/search_page.py
 msgid "Ask (answers from your notes)"
-msgstr "Fragen (Antworten aus deinen Notizen)"
+msgstr "Ask (Antworten aus deinen Notizen)"
 
 #: src/markdown_vault/ui/preferences/search_page.py
 msgid "Chat model + prompt for synthesized answers"
@@ -1344,3 +1344,419 @@ msgstr "Wird heruntergeladen…"
 #, python-brace-format
 msgid "Download failed: {error}"
 msgstr "Download fehlgeschlagen: {error}"
+
+#: src/markdown_vault/ui/preferences/ask_subpage.py
+msgid "Ask"
+msgstr "Ask"
+
+#: src/markdown_vault/ui/preferences/ask_subpage.py
+msgid "The quick-open 'ask' mode answers from your notes with a local model. 'Automatic' sets everything up for you; only the model download needs a click. Choose 'Manual' to pick the backend and tune it yourself."
+msgstr "Der „Ask\"-Modus im Schnell-Öffnen beantwortet Fragen aus deinen Notizen mit einem lokalen Modell. „Automatisch\" richtet alles für dich ein; nur der Modell-Download braucht einen Klick. Für „Manuell\" das Backend selbst wählen und einstellen."
+
+#: src/markdown_vault/ui/preferences/ask_subpage.py
+msgid "Answer engine"
+msgstr "Antwort-Engine"
+
+#: src/markdown_vault/ui/preferences/ask_subpage.py
+msgid "Automatic — recommended"
+msgstr "Automatisch — empfohlen"
+
+#: src/markdown_vault/ui/preferences/ask_subpage.py
+msgid "Manual (advanced)"
+msgstr "Manuell (erweitert)"
+
+#: src/markdown_vault/ui/preferences/ask_subpage.py
+msgid "Off"
+msgstr "Aus"
+
+#: src/markdown_vault/ui/preferences/ask_subpage.py
+msgid "Local — in-process, no server (recommended)"
+msgstr "Lokal — im Prozess, kein Server (empfohlen)"
+
+#: src/markdown_vault/ui/preferences/ask_subpage.py
+msgid "OpenAI-compatible — llama.cpp (/v1)"
+msgstr "OpenAI-kompatibel — llama.cpp (/v1)"
+
+#: src/markdown_vault/ui/preferences/ask_subpage.py
+msgid "Downloaded models"
+msgstr "Heruntergeladene Modelle"
+
+#: src/markdown_vault/ui/preferences/ask_subpage.py
+msgid "Rescan the models folder"
+msgstr "Modell-Ordner neu einlesen"
+
+#: src/markdown_vault/ui/preferences/ask_subpage.py
+msgid "Reset to the newest model"
+msgstr "Auf das neueste Modell zurücksetzen"
+
+#: src/markdown_vault/ui/preferences/ask_subpage.py
+msgid "Download the model"
+msgstr "Modell herunterladen"
+
+#: src/markdown_vault/ui/preferences/ask_subpage.py
+msgid "Model Download"
+msgstr "Modell-Download"
+
+#: src/markdown_vault/ui/preferences/ask_subpage.py
+msgid "Model folder"
+msgstr "Modell-Ordner"
+
+#: src/markdown_vault/ui/preferences/ask_subpage.py
+msgid "Choose folder…"
+msgstr "Ordner wählen…"
+
+#: src/markdown_vault/ui/preferences/ask_subpage.py
+msgid "Reset to default"
+msgstr "Auf Standard zurücksetzen"
+
+#: src/markdown_vault/ui/preferences/ask_subpage.py
+msgid "Model runtime"
+msgstr "Modell-Laufzeit"
+
+#: src/markdown_vault/ui/preferences/ask_subpage.py
+msgid "GPU layers, CPU threads, KV cache…"
+msgstr "GPU-Layer, CPU-Threads, KV-Cache…"
+
+#: src/markdown_vault/ui/preferences/ask_subpage.py
+msgid "Server URL"
+msgstr "Server-URL"
+
+#: src/markdown_vault/ui/preferences/ask_subpage.py
+#, python-brace-format
+msgid "{url} (default)"
+msgstr "{url} (Standard)"
+
+#: src/markdown_vault/ui/preferences/ask_subpage.py
+msgid "API key"
+msgstr "API-Schlüssel"
+
+#: src/markdown_vault/ui/preferences/ask_subpage.py
+msgid "⚠ This server is not local — the full text of every retrieved note is sent to it with each question."
+msgstr "⚠ Dieser Server ist nicht lokal — der volle Text jeder gefundenen Notiz wird bei jeder Frage an ihn gesendet."
+
+#: src/markdown_vault/ui/preferences/ask_subpage.py
+msgid "Fetched from the server"
+msgstr "Vom Server abgerufen"
+
+#: src/markdown_vault/ui/preferences/ask_subpage.py
+msgid "Refresh model list"
+msgstr "Modell-Liste aktualisieren"
+
+#: src/markdown_vault/ui/preferences/ask_subpage.py
+msgid "Reasoning"
+msgstr "Reasoning"
+
+#: src/markdown_vault/ui/preferences/ask_subpage.py
+msgid "Let a reasoning model (Qwen3, …) think before answering — more accurate but much slower. Off is faster and usually enough for grounded note answers."
+msgstr "Ein Reasoning-Modell (Qwen3, …) vor dem Antworten nachdenken lassen — genauer, aber viel langsamer. Aus ist schneller und für notengestützte Antworten meist ausreichend."
+
+#: src/markdown_vault/ui/preferences/ask_subpage.py
+msgid "Hybrid retrieval"
+msgstr "Hybrides Retrieval"
+
+#: src/markdown_vault/ui/preferences/ask_subpage.py
+msgid "Fuse a keyword (BM25) ranking into the semantic search so exact tokens — names, config keys, shortcuts — that embeddings blur still surface. Helps most on large vaults."
+msgstr "Ein Schlagwort-Ranking (BM25) in die semantische Suche einmischen, damit exakte Tokens — Namen, Config-Schlüssel, Shortcuts —, die Embeddings verwischen, trotzdem auftauchen. Hilft am meisten bei großen Vaults."
+
+#: src/markdown_vault/ui/preferences/ask_subpage.py
+msgid "Context notes"
+msgstr "Kontext-Notizen"
+
+#: src/markdown_vault/ui/preferences/ask_subpage.py
+msgid "How many notes are sent to the model as context. On CPU the model spends almost all its time reading them, so fewer = much faster (roughly linear). Recommended: 10 on a GPU, ~5 on a slow CPU."
+msgstr "Wie viele Notizen als Kontext an das Modell gehen. Auf der CPU verbringt das Modell fast die ganze Zeit mit dem Lesen, also weniger = viel schneller (grob linear). Empfohlen: 10 auf einer GPU, ~5 auf einer langsamen CPU."
+
+#: src/markdown_vault/ui/preferences/ask_subpage.py
+msgid "Context window"
+msgstr "Kontextfenster"
+
+#: src/markdown_vault/ui/preferences/ask_subpage.py
+msgid "Tokens of context. Used by the Local and Ollama backends (higher fits more/longer notes but uses more memory); the OpenAI-compatible server sizes its own context."
+msgstr "Tokens an Kontext. Von den Backends Lokal und Ollama genutzt (höher fasst mehr/längere Notizen, braucht aber mehr Speicher); der OpenAI-kompatible Server bemisst seinen Kontext selbst."
+
+#: src/markdown_vault/ui/preferences/ask_subpage.py
+msgid "Grounding instructions sent to the model"
+msgstr "Anweisungen, die die Antwort an die Notizen binden"
+
+#: src/markdown_vault/ui/preferences/ask_subpage.py
+#, python-brace-format
+msgid "{n} model"
+msgid_plural "{n} models"
+msgstr[0] "{n} Modell"
+msgstr[1] "{n} Modelle"
+
+#: src/markdown_vault/ui/preferences/ask_subpage.py
+msgid "Starting…"
+msgstr "Startet…"
+
+#: src/markdown_vault/ui/preferences/ask_subpage.py
+msgid "That URL isn't a GGUF model file — use the download (\"resolve\") link, not the web page."
+msgstr "Diese URL ist keine GGUF-Modelldatei — den Download-Link („resolve\") nutzen, nicht die Webseite."
+
+#: src/markdown_vault/ui/preferences/ask_subpage.py
+msgid "Select the models folder"
+msgstr "Modell-Ordner auswählen"
+
+#: src/markdown_vault/ui/preferences/ask_subpage.py
+msgid "newest"
+msgstr "neuestes"
+
+#: src/markdown_vault/ui/preferences/ask_subpage.py
+#, python-brace-format
+msgid "{name} — not found"
+msgstr "{name} — nicht gefunden"
+
+#: src/markdown_vault/ui/preferences/ask_subpage.py
+msgid "No models downloaded yet"
+msgstr "Noch keine Modelle heruntergeladen"
+
+#: src/markdown_vault/ui/preferences/ask_subpage.py
+msgid "Loading…"
+msgstr "Wird geladen…"
+
+#: src/markdown_vault/ui/preferences/ask_subpage.py
+#, python-brace-format
+msgid "Not reachable: {error}"
+msgstr "Nicht erreichbar: {error}"
+
+#: src/markdown_vault/ui/preferences/ask_subpage.py
+msgid "This server does not list models — it serves a fixed one"
+msgstr "Dieser Server listet keine Modelle — er stellt ein festes bereit"
+
+#: src/markdown_vault/ui/preferences/ask_subpage.py
+msgid "No models on the server"
+msgstr "Keine Modelle auf dem Server"
+
+#: src/markdown_vault/ui/preferences/embedding_subpage.py
+msgid "Local (ONNX)"
+msgstr "Lokal (ONNX)"
+
+#: src/markdown_vault/ui/preferences/embedding_subpage.py
+msgid "Runs in-process, nothing leaves your machine. Recommended model: paraphrase-multilingual-MiniLM-L12-v2 (multilingual) — the default URLs below point at it. English-only notes can use a smaller English model for a speed-up."
+msgstr "Läuft im Prozess, nichts verlässt deinen Rechner. Empfohlenes Modell: paraphrase-multilingual-MiniLM-L12-v2 (mehrsprachig) — die Standard-URLs unten zeigen darauf. Für rein englische Notizen kann ein kleineres englisches Modell den Vorgang beschleunigen."
+
+#: src/markdown_vault/ui/preferences/embedding_subpage.py
+msgid "Download model.onnx"
+msgstr "model.onnx herunterladen"
+
+#: src/markdown_vault/ui/preferences/embedding_subpage.py
+msgid "Download tokenizer.json"
+msgstr "tokenizer.json herunterladen"
+
+#: src/markdown_vault/ui/preferences/embedding_subpage.py
+msgid "Tokenizer Download"
+msgstr "Tokenizer-Download"
+
+#: src/markdown_vault/ui/preferences/embedding_subpage.py
+msgid "Test"
+msgstr "Testen"
+
+#: src/markdown_vault/ui/preferences/embedding_subpage.py
+msgid "ONNX runtime"
+msgstr "ONNX-Runtime"
+
+#: src/markdown_vault/ui/preferences/embedding_subpage.py
+msgid "Checking…"
+msgstr "Wird geprüft…"
+
+#: src/markdown_vault/ui/preferences/embedding_subpage.py
+msgid "How to pick your own ONNX model"
+msgstr "Wie du dein eigenes ONNX-Modell auswählst"
+
+#: src/markdown_vault/ui/preferences/embedding_subpage.py
+msgid "What to search for and which files you need"
+msgstr "Wonach suchen und welche Dateien du brauchst"
+
+#: src/markdown_vault/ui/preferences/embedding_subpage.py
+msgid "Alternative backend if you already run an Ollama server. Recommended embedding model: nomic-embed-text."
+msgstr "Alternatives Backend, falls du bereits einen Ollama-Server betreibst. Empfohlenes Embedding-Modell: nomic-embed-text."
+
+#: src/markdown_vault/ui/preferences/embedding_subpage.py
+msgid "Ollama URL"
+msgstr "Ollama-URL"
+
+#: src/markdown_vault/ui/preferences/embedding_subpage.py
+msgid "Embedding model"
+msgstr "Embedding-Modell"
+
+#: src/markdown_vault/ui/preferences/embedding_subpage.py
+msgid "Test connection"
+msgstr "Verbindung testen"
+
+#: src/markdown_vault/ui/preferences/embedding_subpage.py
+msgid "Embed a probe with the current URL + model"
+msgstr "Eine Probe mit aktueller URL + Modell einbetten"
+
+#: src/markdown_vault/ui/preferences/embedding_subpage.py
+msgid "A server exposing POST /v1/embeddings (llama.cpp, vLLM, LocalAI, or a hosted endpoint). The API key is stored in the OS keyring, never in the config or logs."
+msgstr "Ein Server, der POST /v1/embeddings anbietet (llama.cpp, vLLM, LocalAI oder ein gehosteter Endpunkt). Der API-Schlüssel wird im Schlüsselbund des Systems gespeichert, nie in der Config oder im Log."
+
+#: src/markdown_vault/ui/preferences/embedding_subpage.py
+msgid "⚠ This server is not local — the text of every note is sent to it while the index builds."
+msgstr "⚠ Dieser Server ist nicht lokal — der Text jeder Notiz wird beim Indexaufbau an ihn gesendet."
+
+#: src/markdown_vault/ui/preferences/embedding_subpage.py
+msgid "No model selected — semantic search won't run. Pick a model above (Refresh to load the list)."
+msgstr "Kein Modell gewählt — die semantische Suche läuft nicht. Oben ein Modell wählen (Aktualisieren lädt die Liste)."
+
+#: src/markdown_vault/ui/preferences/embedding_subpage.py
+msgid "Select ONNX model folder"
+msgstr "ONNX-Modell-Ordner auswählen"
+
+#: src/markdown_vault/ui/preferences/embedding_subpage.py
+#, python-brace-format
+msgid "onnxruntime {version} detected — recommended ≥ {recommended} for current models"
+msgstr "onnxruntime {version} erkannt — empfohlen ≥ {recommended} für aktuelle Modelle"
+
+#: src/markdown_vault/ui/preferences/embedding_subpage.py
+msgid "onnxruntime not found — install it (openSUSE: python313-onnxruntime) or use the Flatpak build"
+msgstr "onnxruntime nicht gefunden — installieren (openSUSE: python313-onnxruntime) oder den Flatpak-Build nutzen"
+
+#: src/markdown_vault/ui/preferences/embedding_subpage.py
+msgid "onnxruntime is installed but failed to load — see the log."
+msgstr "onnxruntime ist installiert, konnte aber nicht geladen werden — siehe Log."
+
+#: src/markdown_vault/ui/preferences/embedding_subpage.py
+msgid "Testing…"
+msgstr "Wird getestet…"
+
+#: src/markdown_vault/ui/preferences/embedding_subpage.py
+#, python-brace-format
+msgid "Connected — {model} OK (dim {dim})"
+msgstr "Verbunden — {model} OK (Dim {dim})"
+
+#: src/markdown_vault/ui/preferences/embedding_subpage.py
+#, python-brace-format
+msgid "Failed: {error}"
+msgstr "Fehlgeschlagen: {error}"
+
+#: src/markdown_vault/ui/preferences/embedding_subpage.py
+#, python-brace-format
+msgid "Connected — embeds OK (dim {dim})"
+msgstr "Verbunden — Embedding OK (Dim {dim})"
+
+#: src/markdown_vault/ui/preferences/embedding_subpage.py
+msgid "Loading model + embedding a probe…"
+msgstr "Modell laden + Probe einbetten…"
+
+#: src/markdown_vault/ui/preferences/embedding_subpage.py
+#, python-brace-format
+msgid "Model loads and embeds OK (dim {dim})"
+msgstr "Modell lädt und bettet ein, OK (Dim {dim})"
+
+#: src/markdown_vault/ui/preferences/embedding_subpage.py
+msgid "Refusing a non-HTTPS download URL."
+msgstr "Nicht-HTTPS-Download-URL wird abgelehnt."
+
+#: src/markdown_vault/ui/preferences/embedding_subpage.py
+#, python-brace-format
+msgid "Downloaded {name} ({size} MB)"
+msgstr "Heruntergeladen: {name} ({size} MB)"
+
+#: src/markdown_vault/ui/preferences/embedding_subpage.py
+msgid "Semantic search needs a sentence-embedding model exported to ONNX. Find one on Hugging Face and paste each file's URL above (use the file's “Copy download link”, i.e. the .../resolve/main/... address).\n\nWhat to look for:\n•  A feature-extraction / sentence-similarity model in ONNX format — e.g. the Xenova/ or sentence-transformers/ orgs. Xenova repos ship ready ONNX exports in an onnx/ folder.\n•  Two files: model.onnx (or model_quantized.onnx — smaller and faster, slightly lower quality) and tokenizer.json.\n•  Multilingual if your notes aren't English-only (e.g. paraphrase-multilingual-MiniLM-L12-v2); English-only models are smaller and faster.\n•  It must output token embeddings (the app mean-pools them). Classification or reranker models won't work.\n\nGood search terms: “sentence-transformers onnx”, “Xenova MiniLM”, “feature-extraction onnx”. Both BERT- and XLM-R-style models work — the app auto-detects the inputs a model needs."
+msgstr "Die semantische Suche braucht ein Satz-Embedding-Modell, das nach ONNX exportiert ist. Suche eines auf Hugging Face und füge oben die URL jeder Datei ein (nutze den „Copy download link“ der Datei, also die .../resolve/main/...-Adresse).\n\nWorauf achten:\n•  Ein Feature-Extraction-/Sentence-Similarity-Modell im ONNX-Format — z. B. die Orgs Xenova/ oder sentence-transformers/. Xenova-Repos liefern fertige ONNX-Exporte in einem onnx/-Ordner.\n•  Zwei Dateien: model.onnx (oder model_quantized.onnx — kleiner und schneller, leicht geringere Qualität) und tokenizer.json.\n•  Mehrsprachig, falls deine Notizen nicht rein englisch sind (z. B. paraphrase-multilingual-MiniLM-L12-v2); rein englische Modelle sind kleiner und schneller.\n•  Es muss Token-Embeddings ausgeben (die App mittelt sie per Mean-Pooling). Klassifikations- oder Reranker-Modelle funktionieren nicht.\n\nGute Suchbegriffe: „sentence-transformers onnx“, „Xenova MiniLM“, „feature-extraction onnx“. Sowohl BERT- als auch XLM-R-artige Modelle funktionieren — die App erkennt automatisch, welche Eingaben ein Modell braucht."
+
+#: src/markdown_vault/ui/preferences/runtime_subpage.py
+msgid "Local model runtime"
+msgstr "Lokale Modell-Laufzeit"
+
+#: src/markdown_vault/ui/preferences/runtime_subpage.py
+msgid "How the in-process model uses the CPU, GPU and memory."
+msgstr "Wie das In-Prozess-Modell CPU, GPU und Speicher nutzt."
+
+#: src/markdown_vault/ui/preferences/runtime_subpage.py
+msgid "GPU layers"
+msgstr "GPU-Layer"
+
+#: src/markdown_vault/ui/preferences/runtime_subpage.py
+msgid "Layers offloaded to the GPU. 0 = pure CPU, 999 = all."
+msgstr "Auf die GPU ausgelagerte Layer. 0 = reine CPU, 999 = alle."
+
+#: src/markdown_vault/ui/preferences/runtime_subpage.py
+msgid "CPU threads"
+msgstr "CPU-Threads"
+
+#: src/markdown_vault/ui/preferences/runtime_subpage.py
+msgid "0 = half your physical cores, so the machine stays responsive while an answer is generated. More = faster answers but can slow the rest of the system; raise it gradually."
+msgstr "0 = die Hälfte deiner physischen Kerne, damit der Rechner während der Antwort reaktionsfähig bleibt. Mehr = schnellere Antworten, kann aber den Rest des Systems verlangsamen; schrittweise erhöhen."
+
+#: src/markdown_vault/ui/preferences/runtime_subpage.py
+msgid "Prompt batch size"
+msgstr "Prompt-Batch-Größe"
+
+#: src/markdown_vault/ui/preferences/runtime_subpage.py
+msgid "Logical batch (n_batch). Keep ≥ the micro-batch."
+msgstr "Logischer Batch (n_batch). ≥ dem Micro-Batch halten."
+
+#: src/markdown_vault/ui/preferences/runtime_subpage.py
+msgid "Default (2048)"
+msgstr "Standard (2048)"
+
+#: src/markdown_vault/ui/preferences/runtime_subpage.py
+msgid "Prompt micro-batch size"
+msgstr "Prompt-Micro-Batch-Größe"
+
+#: src/markdown_vault/ui/preferences/runtime_subpage.py
+msgid "Physical micro-batch (n_ubatch): the GPU prefill-speed lever. Must stay ≤ the batch size — larger values are greyed out."
+msgstr "Physischer Micro-Batch (n_ubatch): der Hebel für die GPU-Prefill-Geschwindigkeit. Muss ≤ der Batch-Größe bleiben — größere Werte sind ausgegraut."
+
+#: src/markdown_vault/ui/preferences/runtime_subpage.py
+msgid "Default (512)"
+msgstr "Standard (512)"
+
+#: src/markdown_vault/ui/preferences/runtime_subpage.py
+msgid "f16 — full (default)"
+msgstr "f16 — voll (Standard)"
+
+#: src/markdown_vault/ui/preferences/runtime_subpage.py
+msgid "q8_0 — half"
+msgstr "q8_0 — halb"
+
+#: src/markdown_vault/ui/preferences/runtime_subpage.py
+msgid "q4_0 — quarter"
+msgstr "q4_0 — viertel"
+
+#: src/markdown_vault/ui/preferences/runtime_subpage.py
+msgid "K cache"
+msgstr "K-Cache"
+
+#: src/markdown_vault/ui/preferences/runtime_subpage.py
+msgid "Key-cache precision. Quantizing K saves memory without needing flash attention."
+msgstr "Präzision des Key-Cache. K zu quantisieren spart Speicher, ohne Flash Attention zu brauchen."
+
+#: src/markdown_vault/ui/preferences/runtime_subpage.py
+msgid "V cache"
+msgstr "V-Cache"
+
+#: src/markdown_vault/ui/preferences/runtime_subpage.py
+msgid "Flash attention"
+msgstr "Flash Attention"
+
+#: src/markdown_vault/ui/preferences/runtime_subpage.py
+msgid "Faster attention, less memory; required for quantizing the V cache. Needed when the V cache is q8_0/q4_0."
+msgstr "Schnellere Attention, weniger Speicher; nötig zum Quantisieren des V-Cache. Erforderlich, wenn der V-Cache q8_0/q4_0 ist."
+
+#: src/markdown_vault/ui/preferences/runtime_subpage.py
+msgid "Memory-map model"
+msgstr "Modell per Memory-Map"
+
+#: src/markdown_vault/ui/preferences/runtime_subpage.py
+msgid "On (default) maps the model file lazily. Off loads it fully into RAM — a longer 'Loading model…' but no page-faults during the answer; needs enough free RAM."
+msgstr "An (Standard) mappt die Modelldatei bei Bedarf. Aus lädt sie vollständig in den RAM — ein längeres „Modell wird geladen…“, aber keine Page-Faults während der Antwort; braucht genug freien RAM."
+
+#: src/markdown_vault/ui/preferences/runtime_subpage.py
+msgid "Max answer length"
+msgstr "Max. Antwortlänge"
+
+#: src/markdown_vault/ui/preferences/runtime_subpage.py
+msgid "Hard cap on generated tokens. Bounds the answer and stops a model that gets stuck repeating itself (~1.5 words/token)."
+msgstr "Harte Obergrenze für erzeugte Tokens. Begrenzt die Antwort und stoppt ein Modell, das sich in Wiederholungen verfängt (~1,5 Wörter/Token)."
+
+#: src/markdown_vault/ui/preferences/runtime_subpage.py
+msgid "Value-cache precision. Quantizing V (below f16) needs flash attention."
+msgstr "Präzision des Value-Cache. V zu quantisieren (unter f16) braucht Flash Attention."
+
+#: src/markdown_vault/ui/preferences/runtime_subpage.py
+msgid " ⚠ Turn on Flash attention below."
+msgstr " ⚠ Flash Attention unten einschalten."

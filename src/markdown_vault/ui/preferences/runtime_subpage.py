@@ -12,6 +12,8 @@ gi.require_version("Adw", "1")
 
 from gi.repository import Gtk, Adw
 
+from markdown_vault.core.i18n import _
+
 from markdown_vault.core import config
 
 
@@ -19,15 +21,15 @@ class RuntimeSubpageMixin:
     def _build_runtime_subpage(self):
         """GPU/CPU/KV knobs for the in-process backend — on their own page so the
         Ask overview stays light. Only relevant to the Local backend."""
-        page = Adw.PreferencesPage(title="Model runtime")
+        page = Adw.PreferencesPage(title=_("Model runtime"))
         group = Adw.PreferencesGroup(
-            title="Local model runtime",
-            description="How the in-process model uses the CPU, GPU and memory.")
+            title=_("Local model runtime"),
+            description=_("How the in-process model uses the CPU, GPU and memory."))
         page.add(group)
 
         self._ask_gpu_row = Adw.SpinRow(
-            title="GPU layers",
-            subtitle="Layers offloaded to the GPU. 0 = pure CPU, 999 = all.",
+            title=_("GPU layers"),
+            subtitle=_("Layers offloaded to the GPU. 0 = pure CPU, 999 = all."),
             adjustment=Gtk.Adjustment.new(
                 config.get_setting(self._settings, "ask.local.n_gpu_layers", 0),
                 0, 999, 1, 8, 0.0),
@@ -38,11 +40,11 @@ class RuntimeSubpageMixin:
         group.add(self._ask_gpu_row)
 
         self._ask_threads_row = Adw.SpinRow(
-            title="CPU threads",
-            subtitle="0 = half your physical cores, so the machine stays "
-                     "responsive while an answer is generated. More = faster "
-                     "answers but can slow the rest of the system; raise it "
-                     "gradually.",
+            title=_("CPU threads"),
+            subtitle=_("0 = half your physical cores, so the machine stays "
+                       "responsive while an answer is generated. More = faster "
+                       "answers but can slow the rest of the system; raise it "
+                       "gradually."),
             adjustment=Gtk.Adjustment.new(
                 config.get_setting(self._settings, "ask.local.n_threads", 0),
                 0, 128, 1, 4, 0.0),
@@ -61,21 +63,21 @@ class RuntimeSubpageMixin:
                     if v in self._ask_batch_values else 0)
 
         self._ask_batch_row = Adw.ComboRow(
-            title="Prompt batch size",
-            subtitle="Logical batch (n_batch). Keep ≥ the micro-batch.",
+            title=_("Prompt batch size"),
+            subtitle=_("Logical batch (n_batch). Keep ≥ the micro-batch."),
             model=Gtk.StringList.new(
-                ["Default (2048)", "256", "512", "1024", "2048", "4096"]))
+                [_("Default (2048)"), "256", "512", "1024", "2048", "4096"]))
         self._ask_batch_row.set_selected(_batch_index("ask.local.n_batch"))
         self._ask_batch_row.connect("notify::selected", self._on_ask_batch_changed)
         group.add(self._ask_batch_row)
 
         self._ask_ubatch_row = Adw.ComboRow(
-            title="Prompt micro-batch size",
-            subtitle="Physical micro-batch (n_ubatch): the GPU prefill-speed "
-                     "lever. Must stay ≤ the batch size — larger values are "
-                     "greyed out.",
+            title=_("Prompt micro-batch size"),
+            subtitle=_("Physical micro-batch (n_ubatch): the GPU prefill-speed "
+                       "lever. Must stay ≤ the batch size — larger values are "
+                       "greyed out."),
             model=Gtk.StringList.new(
-                ["Default (512)", "256", "512", "1024", "2048", "4096"]))
+                [_("Default (512)"), "256", "512", "1024", "2048", "4096"]))
         # Grey (and block) micro-batch values above the chosen batch size, so the
         # dropdown can't produce an n_ubatch > n_batch that llama.cpp would clamp.
         self._refresh_ubatch_factory()
@@ -87,36 +89,36 @@ class RuntimeSubpageMixin:
         # Separate K and V cache precision. Quantizing K is free; quantizing V
         # needs flash attention.
         self._ask_kv_types = ["f16", "q8_0", "q4_0"]
-        kv_labels = ["f16 — full (default)", "q8_0 — half", "q4_0 — quarter"]
+        kv_labels = [_("f16 — full (default)"), _("q8_0 — half"), _("q4_0 — quarter")]
         self._ask_kv_k_row = Adw.ComboRow(
-            title="K cache",
-            subtitle="Key-cache precision. Quantizing K saves memory without "
-                     "needing flash attention.",
+            title=_("K cache"),
+            subtitle=_("Key-cache precision. Quantizing K saves memory without "
+                       "needing flash attention."),
             model=Gtk.StringList.new(kv_labels))
         self._ask_kv_k_row.set_selected(self._kv_index("ask.local.kv_type_k"))
         self._ask_kv_k_row.connect("notify::selected", self._on_ask_kv_k_changed)
         group.add(self._ask_kv_k_row)
 
         self._ask_kv_v_row = Adw.ComboRow(
-            title="V cache", model=Gtk.StringList.new(kv_labels))
+            title=_("V cache"), model=Gtk.StringList.new(kv_labels))
         self._ask_kv_v_row.set_selected(self._kv_index("ask.local.kv_type_v"))
         self._ask_kv_v_row.connect("notify::selected", self._on_ask_kv_v_changed)
         group.add(self._ask_kv_v_row)
 
         self._ask_flash_row = Adw.SwitchRow(
-            title="Flash attention",
-            subtitle="Faster attention, less memory; required for quantizing the "
-                     "V cache. Needed when the V cache is q8_0/q4_0.")
+            title=_("Flash attention"),
+            subtitle=_("Faster attention, less memory; required for quantizing the "
+                       "V cache. Needed when the V cache is q8_0/q4_0."))
         self._ask_flash_row.set_active(
             config.get_setting(self._settings, "ask.local.flash_attn", False))
         self._ask_flash_row.connect("notify::active", self._on_ask_flash_changed)
         group.add(self._ask_flash_row)
 
         self._ask_mmap_row = Adw.SwitchRow(
-            title="Memory-map model",
-            subtitle="On (default) maps the model file lazily. Off loads it fully "
-                     "into RAM — a longer 'Loading model…' but no page-faults "
-                     "during the answer; needs enough free RAM.")
+            title=_("Memory-map model"),
+            subtitle=_("On (default) maps the model file lazily. Off loads it fully "
+                       "into RAM — a longer 'Loading model…' but no page-faults "
+                       "during the answer; needs enough free RAM."))
         self._ask_mmap_row.set_active(
             config.get_setting(self._settings, "ask.local.use_mmap", True))
         self._ask_mmap_row.connect("notify::active", self._on_toggle_setting,
@@ -124,9 +126,9 @@ class RuntimeSubpageMixin:
         group.add(self._ask_mmap_row)
 
         self._ask_maxtok_row = Adw.SpinRow(
-            title="Max answer length",
-            subtitle="Hard cap on generated tokens. Bounds the answer and stops a "
-                     "model that gets stuck repeating itself (~1.5 words/token).",
+            title=_("Max answer length"),
+            subtitle=_("Hard cap on generated tokens. Bounds the answer and stops a "
+                       "model that gets stuck repeating itself (~1.5 words/token)."),
             adjustment=Gtk.Adjustment.new(
                 config.get_setting(self._settings, "ask.max_tokens", 1024),
                 128, 8192, 128, 512, 0.0),
@@ -134,7 +136,7 @@ class RuntimeSubpageMixin:
         self._ask_maxtok_row.connect("notify::value", self._on_ask_maxtok_changed)
         group.add(self._ask_maxtok_row)
         self._refresh_kv_hint()
-        return self._subpage("Model runtime", page)
+        return self._subpage(_("Model runtime"), page)
 
     def _on_ask_maxtok_changed(self, _row, _pspec) -> None:
         config.set_setting(self._settings, "ask.max_tokens",
@@ -149,12 +151,12 @@ class RuntimeSubpageMixin:
         """V-cache subtitle: warn when it's quantized but flash attention (which
         it needs) is off — the user's decision basis."""
         from markdown_vault.search import llama_runtime
-        text = ("Value-cache precision. Quantizing V (below f16) needs flash "
-                "attention.")
+        text = _("Value-cache precision. Quantizing V (below f16) needs flash "
+                 "attention.")
         if llama_runtime.kv_needs_flash(
                 config.get_setting(self._settings, "ask.local.kv_type_v", "f16")) \
                 and not config.get_setting(self._settings, "ask.local.flash_attn"):
-            text += " ⚠ Turn on Flash attention below."
+            text += _(" ⚠ Turn on Flash attention below.")
         self._ask_kv_v_row.set_subtitle(text)
 
     def _on_ask_kv_k_changed(self, row, _pspec) -> None:
@@ -229,7 +231,7 @@ class RuntimeSubpageMixin:
     def _refresh_gpu_recommendation(self) -> None:
         """Set the GPU-layers subtitle to a hardware-aware recommendation for the
         selected model (updates when the model changes)."""
-        base = "Layers offloaded to the GPU. 0 = pure CPU, 999 = all."
+        base = _("Layers offloaded to the GPU. 0 = pure CPU, 999 = all.")
         from markdown_vault.search import llama_runtime
         advice = llama_runtime.gpu_layers_advice(
             config.resolve_model_path(self._settings))
