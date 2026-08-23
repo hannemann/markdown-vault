@@ -1,4 +1,5 @@
-"""Preferences — Embedding subpage: the vector backend, its model files, downloads and the reachability self-tests."""
+"""Preferences — Embedding subpage: the vector backend, its model files, downloads
+and the reachability self-tests."""
 
 import importlib
 import logging

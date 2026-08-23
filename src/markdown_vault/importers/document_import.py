@@ -238,7 +238,8 @@ def _convert_pdf(path: Path) -> tuple[str, str, list]:
     try:
         for pno, chunk in enumerate(chunks):
             text = chunk.get("text", "") if isinstance(chunk, dict) else str(chunk)
-            text = _MD_IMG_LINK_RE.sub("", text).strip()   # drop pymupdf4llm's own refs; we add ours
+            # drop pymupdf4llm's own image refs; we add ours
+            text = _MD_IMG_LINK_RE.sub("", text).strip()
             if text:
                 parts.append(text)
             if pno < len(doc):

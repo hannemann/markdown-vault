@@ -1,4 +1,5 @@
-"""Preferences — Search page: the semantic-search master switch, the links to the Embedding/Ask subpages, and audio transcription for the importer."""
+"""Preferences — Search page: the semantic-search master switch, the links to the
+Embedding/Ask subpages, and audio transcription for the importer."""
 
 import logging
 import threading

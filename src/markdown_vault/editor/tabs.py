@@ -220,7 +220,8 @@ class TabBar(Gtk.Box):
             Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION,
         )
 
-    def add_tab(self, file_path: str, editor, preview, warning_banner=None, error_banner=None) -> Tab:
+    def add_tab(self, file_path: str, editor, preview, warning_banner=None,
+                error_banner=None) -> Tab:
         """Register a new tab or activate an existing one.
 
         If *file_path* is already open, the existing tab is selected
@@ -366,7 +367,8 @@ class TabBar(Gtk.Box):
                 dirty.append(path)
         return dirty
 
-    def _handle_dirty_close(self, paths_to_close: list[str], dirty: list[str], method: str = "bulk") -> None:
+    def _handle_dirty_close(self, paths_to_close: list[str], dirty: list[str],
+                            method: str = "bulk") -> None:
         """Handle bulk close when dirty tabs exist.
 
         Wenn ein ``close_request_callback`` gesetzt ist wird dieser
@@ -393,7 +395,8 @@ class TabBar(Gtk.Box):
             if path in self._tabs:
                 self.close_tab(path)
                 closed.append(path)
-        logger.info("close: closed %d tab(s) (paths=%s)", len(closed), [Path(p).name for p in closed])
+        logger.info("close: closed %d tab(s) (paths=%s)", len(closed),
+                    [Path(p).name for p in closed])
 
     def _on_close_button_clicked(self, file_path: str) -> None:
         """Handle close-button click via the close_request_callback."""

@@ -109,7 +109,8 @@ HTML_TEMPLATE = """\
 <meta http-equiv="Content-Security-Policy" content="{csp}">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
-:root {{ --bg: {bg_color}; --fg: {fg_color}; --accent: {accent_color}; --dim: {dim_color}; --card-bg: {card_bg_color}; --borders: {borders_color}; }}
+:root {{ --bg: {bg_color}; --fg: {fg_color}; --accent: {accent_color};
+--dim: {dim_color}; --card-bg: {card_bg_color}; --borders: {borders_color}; }}
 {css_content}
 </style>
 </head>
@@ -567,7 +568,8 @@ _FIND_JS = r"""
         return JSON.stringify({ total: this.marks.length, current: this.marks.length ? 1 : 0 });
       },
       _activate: function () {
-        for (var i = 0; i < this.marks.length; i++) this.marks[i].classList.remove('mv-find-current');
+        for (var i = 0; i < this.marks.length; i++)
+          this.marks[i].classList.remove('mv-find-current');
         var m = this.marks[this.current];
         if (m) { m.classList.add('mv-find-current'); m.scrollIntoView({ block: 'center' }); }
       },

@@ -1,4 +1,5 @@
-"""Preferences — Ask subpage: the answer engine, the chat backend and its endpoint (URL, API key, model list), plus the local GGUF model."""
+"""Preferences — Ask subpage: the answer engine, the chat backend and its endpoint
+(URL, API key, model list), plus the local GGUF model."""
 
 import logging
 import threading
