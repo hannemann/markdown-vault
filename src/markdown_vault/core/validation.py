@@ -161,6 +161,7 @@ def validate_new_item(name: str, parent_dir: str) -> str | None:
         parent_resolved = os.path.realpath(parent_dir)
         final_resolved = os.path.realpath(resolved)
     except (OSError, ValueError):
+        # the returned message is shown to the user by the caller (core can't surface)
         return "Invalid path."
 
     if not (final_resolved == parent_resolved or

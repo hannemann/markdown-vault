@@ -58,6 +58,20 @@ class TestFolderChooserFailure(unittest.TestCase):
         mock_dialogs.show_error.assert_called_once()
 
 
+class TestAddVaultSaveError(unittest.TestCase):
+    """A failed vault save must log (a system error, str(e) shown in a dismissable
+    dialog) as well as surface the error dialog."""
+
+    @patch("markdown_vault.vault.vault_tree.dialogs")
+    @patch("markdown_vault.vault.vault_tree.config")
+    def test_logs_and_surfaces(self, mock_config, mock_dialogs):
+        mock_config.add_vault.side_effect = OSError("disk full")
+        me = MagicMock()
+        with self.assertLogs("markdown_vault.vault.vault_tree", level="WARNING"):
+            VaultTree._add_vault(me, "/path/to/vault", "Name")
+        mock_dialogs.show_error.assert_called_once()
+
+
 def _all_paths(tree: VaultTree) -> list[str]:
     """All node paths (files and directories) currently in the tree."""
     return [n.path for n in tree._iter_all_nodes()]

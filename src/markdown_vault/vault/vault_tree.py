@@ -1354,6 +1354,7 @@ class VaultTree(Gtk.Box):
         try:
             updated = config.add_vault(name, path)
         except OSError as e:
+            logger.warning("could not save the new vault %s", path, exc_info=True)
             dialogs.show_error(self.get_root(), "Save Failed", str(e))
             return
         self.set_vaults(updated)
