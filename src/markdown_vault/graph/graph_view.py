@@ -14,6 +14,8 @@ Usage:
 """
 
 import json
+import logging
+
 import gi
 
 gi.require_version("Gtk", "4.0")
@@ -23,6 +25,8 @@ gi.require_version("Adw", "1")
 from gi.repository import Gtk, WebKit, GObject, GLib, Adw
 
 from markdown_vault.markdown import frontmatter
+
+logger = logging.getLogger(__name__)
 
 
 _PAGE = r"""<!doctype html>
@@ -359,7 +363,10 @@ class GraphView(Gtk.Box):
         try:
             self._web.set_background_color(_transparent())
         except Exception:
-            pass
+            # Expected cosmetic fallback: some WebKit builds lack the setter, and a
+            # non-transparent graph background is only a minor visual regression.
+            logger.debug("could not set the graph WebView background transparent",
+                         exc_info=True)
         settings = self._web.get_settings()
         settings.set_enable_javascript(True)
         settings.set_enable_developer_extras(False)
@@ -466,6 +473,10 @@ class GraphView(Gtk.Box):
         try:
             raw = js_value.to_string()
         except Exception:
+            # The JS return channel: if this breaks, a node click is dropped and
+            # nothing happens on screen. Leave a trace instead of failing silently.
+            logger.warning("graph JS message could not be read; a click was dropped",
+                           exc_info=True)
             return
         if not raw:
             return
@@ -493,12 +504,12 @@ class GraphView(Gtk.Box):
             for hid in self._style_ids:
                 self._style.disconnect(hid)
             self._style_ids = []
-        except Exception:
-            pass
+        except Exception:      # noqa: BLE001 — teardown: the view is being released,
+            pass               # a disconnect on an already-finalised handler is harmless
         try:
             self._web.try_close()
-        except Exception:
-            pass
+        except Exception:      # noqa: BLE001 — teardown: nothing to recover if the web
+            pass               # process is already gone
 
 
 def _transparent():
