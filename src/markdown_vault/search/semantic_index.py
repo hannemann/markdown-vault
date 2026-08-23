@@ -815,8 +815,10 @@ class SemanticIndexManager:
                 try:
                     text = Path(f).read_text(encoding="utf-8", errors="replace")
                 except OSError:
-                    logger.debug("tag index: could not read %s; skipping",
-                                 f, exc_info=True)
+                    # dropped from the cached tag index → `tag:` misses it until
+                    # mtime changes; a persistent gap must show at warning
+                    logger.warning("tag index: could not read %s; skipping",
+                                   f, exc_info=True)
                     continue
                 ap = os.path.abspath(f)
                 tags = _note_tags(text)
@@ -887,8 +889,10 @@ class SemanticIndexManager:
                 try:
                     docs[f] = Path(f).read_text(encoding="utf-8", errors="replace")
                 except OSError:
-                    logger.debug("lexical index: could not read %s; skipping",
-                                 f, exc_info=True)
+                    # absent from the cached BM25 index → Ask never retrieves it
+                    # until reindex; a persistent gap must show at warning
+                    logger.warning("lexical index: could not read %s; skipping",
+                                   f, exc_info=True)
             index = lexical_search.BM25Index(docs)
             cache[roots] = (sig, index)
             while len(cache) > self._LEX_CACHE_MAX:

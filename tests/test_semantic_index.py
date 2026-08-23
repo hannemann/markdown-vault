@@ -98,18 +98,22 @@ class TestSemanticIndexManager(unittest.TestCase):
     _LOGGER = "markdown_vault.search.semantic_index"
 
     def test_tag_index_logs_when_a_note_cannot_be_read(self):
-        # An unreadable note is dropped from the tag index; that drop must leave a
-        # trace. A scope with a non-existent file drives the OSError skip directly.
+        # An unreadable note is dropped from the *cached* tag index, so `tag:`
+        # filters miss it persistently until its mtime changes — a lasting gap,
+        # not a transient live-scan skip. It must be visible at the default log
+        # level (warning), not only at debug.
         m = self._manager(_StubEmbedder())
         scope = (("scope-key",), (("/nonexistent/zzz.md", 0.0),))
-        with self.assertLogs(self._LOGGER, level="DEBUG"):
+        with self.assertLogs(self._LOGGER, level="WARNING"):
             m._tag_index([], scope=scope)
 
     def test_lexical_logs_when_a_note_cannot_be_read(self):
-        # Same for the BM25 lexical index — an excluded note is a silent search gap.
+        # Same for the BM25 lexical index — an excluded note is absent from
+        # hybrid retrieval until reindex, so Ask "never finds" it. A persistent
+        # index gap must surface at warning, not debug.
         m = self._manager(_StubEmbedder())
         scope = (("scope-key",), (("/nonexistent/zzz.md", 0.0),))
-        with self.assertLogs(self._LOGGER, level="DEBUG"):
+        with self.assertLogs(self._LOGGER, level="WARNING"):
             m._lexical([], scope=scope)
 
     def test_load_cache_logs_when_the_cache_is_corrupt(self):

@@ -43,6 +43,15 @@ class TestScanVaults(unittest.TestCase):
         self.assertIsNot(t1, t2)
         self.assertIsNot(s1, s2)
 
+    def test_scan_vaults_logs_unreadable_note_at_warning(self):
+        # An unreadable note drops its backlinks from the full index; the sibling
+        # vault-rename walk logs the same read failure at warning, so the initial
+        # scan must too — a persistent, invisible index gap otherwise.
+        (self._vault / "Bad.md").write_bytes(b"\xff\xfe not valid utf-8")
+        with self.assertLogs("markdown_vault.vault.backlink_index",
+                             level="WARNING"):
+            scan_vaults([{"name": "vault", "path": str(self._vault)}])
+
     def test_scan_vaults_empty_vault(self):
         target_to_sources, source_to_targets = scan_vaults(
             [{"name": "vault", "path": str(self._vault)}]
