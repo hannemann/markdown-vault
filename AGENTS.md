@@ -368,6 +368,11 @@ opening files in editor, toggling sidebar etc.) ask the user.
   ignores) — cost: **one `grep` each**. Prefer a docstring beside the code over a
   prose copy in a doc (which drifts); when a doc must state behaviour, cite the
   symbol and keep it thin.
+- **Question the change before adjusting what it broke.** When a change makes a test
+  red, trips a guard, or flips a doc/README claim, the first question is whether the
+  *change* must be that way — not how to silence the objection. Weakening the guard,
+  relaxing the test, or editing the doc is the *second* question, reached only once the
+  change has been confirmed necessary as written.
 - **Build generalists, never one-case special-cases** (applies everywhere, not just
   the importer). A solution must handle the general class of a problem, not target
   exactly one input / site / page. Special-casing a single case is how an app rots
