@@ -9,6 +9,7 @@ from datetime import datetime
 from pathlib import Path
 
 from markdown_vault.core.path_utils import HEADING_RE
+from markdown_vault.core.i18n import _, ngettext
 
 logger = logging.getLogger(__name__)
 
@@ -18,10 +19,12 @@ def deprecated_hidden_message(count: int, empty: bool) -> str:
     list, so the user isn't left with a bare "nothing found". *empty* means the
     filter left nothing else to show; *count* is how many notes it hid."""
     if empty:
-        return ("All matches are deprecated — hidden by the “hide deprecated” "
-                "filter. Turn it off to show them.")
-    noun = "note" if count == 1 else "notes"
-    return f"{count} deprecated {noun} hidden by the filter."
+        return _("All matches are deprecated — hidden by the “hide deprecated” "
+                 "filter. Turn it off to show them.")
+    return ngettext(
+        "{count} deprecated note hidden by the filter.",
+        "{count} deprecated notes hidden by the filter.",
+        count).format(count=count)
 
 
 def search_vaults(

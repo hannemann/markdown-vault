@@ -30,6 +30,7 @@ from gi.repository import Gtk, GObject, GLib, Gdk
 from markdown_vault.search import search_backend, search_logic
 from markdown_vault.markdown import frontmatter
 from markdown_vault.core import path_utils
+from markdown_vault.core.i18n import _
 
 logger = logging.getLogger(__name__)
 
@@ -79,10 +80,10 @@ class SearchBar(Gtk.Box):
         self._entry.set_hexpand(False)
         self._entry.set_width_chars(40)
         self._entry.set_max_width_chars(40)
-        self._entry.set_placeholder_text("Search across all vaults…")
+        self._entry.set_placeholder_text(_("Search across all vaults…"))
         self._entry.set_tooltip_text(
-            "Terms are AND-combined.  \"quoted phrase\", -exclude, "
-            "tag:foo, path:sub, vault:name"
+            _("Terms are AND-combined.  \"quoted phrase\", -exclude, "
+              "tag:foo, path:sub, vault:name")
         )
         self._entry.connect("search-changed", self._on_search_changed)
         self._entry.connect("activate", self._on_entry_activate)
@@ -93,9 +94,9 @@ class SearchBar(Gtk.Box):
         input_box.append(self._entry)
 
         # Query modifiers.
-        self._case_btn = self._make_toggle("Aa", "Case sensitive")
-        self._word_btn = self._make_toggle("W", "Whole word")
-        self._regex_btn = self._make_toggle(".*", "Regular expression")
+        self._case_btn = self._make_toggle("Aa", _("Case sensitive"))
+        self._word_btn = self._make_toggle("W", _("Whole word"))
+        self._regex_btn = self._make_toggle(".*", _("Regular expression"))
         for btn in (self._case_btn, self._word_btn, self._regex_btn):
             btn.connect("toggled", lambda *_: self._run_search())
             input_box.append(btn)
@@ -117,7 +118,7 @@ class SearchBar(Gtk.Box):
         # Persistent "hide deprecated" toggle, on the left next to the vault-scope
         # filter — mirrors and drives the shared state.
         self._dep_toggle = Gtk.ToggleButton(icon_name="view-conceal-symbolic")
-        self._dep_toggle.set_tooltip_text("Hide deprecated notes")
+        self._dep_toggle.set_tooltip_text(_("Hide deprecated notes"))
         if self._hide_deprecated is not None:
             self._dep_toggle.set_active(self._hide_deprecated())
         self._dep_toggle.connect("toggled", self._on_dep_toggled)
@@ -132,13 +133,13 @@ class SearchBar(Gtk.Box):
 
         help_btn = Gtk.MenuButton(icon_name="help-about-symbolic")
         help_btn.add_css_class("flat")
-        help_btn.set_tooltip_text("Search syntax")
+        help_btn.set_tooltip_text(_("Search syntax"))
         help_btn.set_popover(self._build_help_popover())
         input_box.append(help_btn)
 
         close_btn = Gtk.Button(icon_name="window-close-symbolic")
         close_btn.add_css_class("flat")
-        close_btn.set_tooltip_text("Close (Esc)")
+        close_btn.set_tooltip_text(_("Close (Esc)"))
         close_btn.connect("clicked", lambda *_: self.emit("close-requested"))
         input_box.append(close_btn)
 
@@ -195,18 +196,18 @@ class SearchBar(Gtk.Box):
             getattr(box, f"set_margin_{m}")(12)
 
         title = Gtk.Label()
-        title.set_markup("<b>Search syntax</b>")
+        title.set_markup(f"<b>{_('Search syntax')}</b>")
         title.set_xalign(0)
         box.append(title)
 
         grid = Gtk.Grid(column_spacing=14, row_spacing=4)
         rows = [
-            ("foo bar", "All terms must match (AND)"),
-            ('"foo bar"', "Exact phrase"),
-            ("-foo", "Exclude term"),
-            ("tag:work", "Has frontmatter tag"),
-            ("path:sub", "Path contains text"),
-            ("vault:Notes", "Restrict to a vault"),
+            ("foo bar", _("All terms must match (AND)")),
+            ('"foo bar"', _("Exact phrase")),
+            ("-foo", _("Exclude term")),
+            ("tag:work", _("Has frontmatter tag")),
+            ("path:sub", _("Path contains text")),
+            ("vault:Notes", _("Restrict to a vault")),
         ]
         for i, (code, desc) in enumerate(rows):
             c = Gtk.Label(label=code)
@@ -226,9 +227,9 @@ class SearchBar(Gtk.Box):
         foot.set_max_width_chars(34)
         foot.add_css_class("dim-label")
         foot.set_markup(
-            "<tt>Aa</tt> case · <tt>W</tt> whole word · <tt>.*</tt> regex · "
-            "folder = current vault only.\n"
-            "In regex mode the query is one raw pattern (operators off)."
+            _("<tt>Aa</tt> case · <tt>W</tt> whole word · <tt>.*</tt> regex · "
+              "folder = current vault only.\n"
+              "In regex mode the query is one raw pattern (operators off).")
         )
         box.append(foot)
 
@@ -390,7 +391,7 @@ class SearchBar(Gtk.Box):
             self._results.append(self._message_row(
                 search_logic.deprecated_hidden_message(hidden, empty)))
         elif empty:
-            self._results.append(self._message_row("No results found"))
+            self._results.append(self._message_row(_("No results found")))
 
     def _on_dep_toggled(self, btn) -> None:
         """The persistent toggle drives the shared 'hide deprecated' state."""
@@ -421,7 +422,7 @@ class SearchBar(Gtk.Box):
         if getattr(fr, "semantic", False):
             marker = Gtk.Label(label="≈")
             marker.add_css_class("dim-label")
-            marker.set_tooltip_text("Semantic match")
+            marker.set_tooltip_text(_("Semantic match"))
             box.append(marker)
 
         # The file identity is its vault-relative path ("<vault>/<path>", no
@@ -470,7 +471,7 @@ class SearchBar(Gtk.Box):
         row = Gtk.ListBoxRow()
         row._mv_open = (fr.path, fr.matches[0].line if fr.matches else 1)
         extra = fr.total_matches - len(fr.matches)
-        label = Gtk.Label(label=f"+{extra} more…")
+        label = Gtk.Label(label=_("+{count} more…").format(count=extra))
         label.set_xalign(0)
         label.set_margin_start(16)
         label.add_css_class("dim-label")

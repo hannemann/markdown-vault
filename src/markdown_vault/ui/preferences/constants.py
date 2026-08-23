@@ -14,13 +14,16 @@ gi.require_version("Gdk", "4.0")
 
 from gi.repository import Gtk, Gdk
 
-_VIEW_MODES = {"edit": "Edit", "render": "Render", "split": "Split"}
-_LOGLEVELS = {"debug": "Debug", "info": "Info", "warning": "Warning", "error": "Error"}
+from markdown_vault.core.i18n import _
+
+_VIEW_MODES = {"edit": _("Edit"), "render": _("Render"), "split": _("Split")}
+_LOGLEVELS = {"debug": _("Debug"), "info": _("Info"), "warning": _("Warning"),
+              "error": _("Error")}
 _GLIB_LOGLEVELS = {
-    "all": "All (debug+)",
-    "warning": "Warning and up",
-    "critical": "Critical and up",
-    "error": "Error only",
+    "all": _("All (debug+)"),
+    "warning": _("Warning and up"),
+    "critical": _("Critical and up"),
+    "error": _("Error only"),
 }
 _LOGLEVEL_MAP = {
     "debug": logging.DEBUG,

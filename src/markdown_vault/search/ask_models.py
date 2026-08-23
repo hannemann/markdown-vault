@@ -28,6 +28,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from markdown_vault.core import config, secret_store
+from markdown_vault.core.i18n import _
 from markdown_vault.search.ask import openai_base
 
 logger = logging.getLogger(__name__)
@@ -147,19 +148,19 @@ class EndpointStatus:
         fine, so warning about it would train the user to ignore warnings.
         """
         if self.state == UNREACHABLE:
-            return (f"{self.url} is not reachable — a question cannot be answered. "
-                    f"Check the server URL in Preferences → Search → Ask. "
-                    f"({self.error})")
+            return _("{url} is not reachable — a question cannot be answered. "
+                     "Check the server URL in Preferences → Search → Ask. "
+                     "({error})").format(url=self.url, error=self.error)
         if self.state == UNAUTHORIZED:
-            return ("The server rejected the API key — a question cannot be "
-                    "answered. Add or fix the key in Preferences → Search → Ask.")
+            return _("The server rejected the API key — a question cannot be "
+                     "answered. Add or fix the key in Preferences → Search → Ask.")
         if self.state == EMPTY:
-            return (f"{self.url} reports no models. Asking may still work if the "
-                    f"server serves a fixed model; otherwise install or configure "
-                    f"one.")
+            return _("{url} reports no models. Asking may still work if the "
+                     "server serves a fixed model; otherwise install or configure "
+                     "one.").format(url=self.url)
         if self.state == LIST_ERROR:
-            return (f"{self.url} could not list its models ({self.error}). Asking "
-                    f"may still work.")
+            return _("{url} could not list its models ({error}). Asking "
+                     "may still work.").format(url=self.url, error=self.error)
         if self.state == LOCAL_UNAVAILABLE:
             return self.error      # the availability() reason, already user-facing
         return ""
@@ -190,7 +191,8 @@ def note_chat_failure(backend: str, url: str, exc: Exception) -> str:
     if st.state in _BLOCKING:
         _set_status(backend, url, st)
         cache_put(backend, url, [])       # the cached list is no longer trustworthy
-    return st.message or f"The server could not answer: {_reason(exc)}"
+    return st.message or _("The server could not answer: {reason}").format(
+        reason=_reason(exc))
 
 
 def explain(backend: str, url: str, exc: Exception) -> str:
@@ -200,7 +202,8 @@ def explain(backend: str, url: str, exc: Exception) -> str:
     ``<urlopen error [Errno 111]>``. Falls back to the raw text for states that
     carry no message (a server without a list endpoint can still fail a chat)."""
     st = _classify(backend, url, exc)
-    return st.message or f"The server could not answer: {exc}"
+    return st.message or _("The server could not answer: {reason}").format(
+        reason=exc)
 
 
 def status(backend: str, url: str) -> EndpointStatus:

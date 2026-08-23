@@ -7,6 +7,7 @@ in a tab, and lets the user reload or dismiss the change.
 import logging
 from pathlib import Path
 
+from markdown_vault.core.i18n import _
 from markdown_vault.uikit.dialogs import show_error
 
 logger = logging.getLogger(__name__)
@@ -48,10 +49,10 @@ class ContentChangeHandler:
         name = Path(file_path).name
         self._tab_bar.show_warning_banner(
             file_path,
-            f'"{name}" was modified externally.',
+            _('"{name}" was modified externally.').format(name=name),
             buttons=[
-                ("Reload", lambda: self.reload_content(file_path)),
-                ("Dismiss", lambda: self.dismiss_content(file_path)),
+                (_("Reload"), lambda: self.reload_content(file_path)),
+                (_("Dismiss"), lambda: self.dismiss_content(file_path)),
             ],
         )
 
@@ -70,8 +71,8 @@ class ContentChangeHandler:
             if self._parent is not None:
                 show_error(
                     self._parent,
-                    "Reload Failed",
-                    f"Could not read \"{name}\" from disk.",
+                    _("Reload Failed"),
+                    _("Could not read \"{name}\" from disk.").format(name=name),
                 )
             return
         tab.preview.update_from_text(

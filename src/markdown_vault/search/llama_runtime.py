@@ -16,6 +16,8 @@ import logging
 import os
 import threading
 
+from markdown_vault.core.i18n import _
+
 logger = logging.getLogger(__name__)
 
 # One cached model: (key, Llama). Guarded because Ask runs on a worker thread.
@@ -128,19 +130,19 @@ def availability(model_path: str) -> str | None:
     """``None`` if a local answer can be generated, else a user-facing reason —
     the binding is missing, or the model file is not there yet."""
     if not is_available():
-        return ("Local answer generation needs the llama-cpp-python package. "
-                "Install the optional AI dependencies (make install-ai) and "
-                "restart, or switch the Ask backend to a server in Preferences.")
+        return _("Local answer generation needs the llama-cpp-python package. "
+                 "Install the optional AI dependencies (make install-ai) and "
+                 "restart, or switch the Ask backend to a server in Preferences.")
     if not model_path or not os.path.exists(model_path):
-        return (f"No local model file at {model_path or '(unset)'}. Download one "
-                "in Preferences → Search → Ask (Model Download), then ask "
-                "again.")
+        return _("No local model file at {path}. Download one in Preferences → "
+                 "Search → Ask (Model Download), then ask "
+                 "again.").format(path=model_path or _("(unset)"))
     try:                                   # a GGUF starts with the 'GGUF' magic
         with open(model_path, "rb") as fh:
             if fh.read(4) != b"GGUF":
-                return (f"{model_path} is not a valid GGUF model file — "
-                        "re-download it (use the file's download link, not its "
-                        "web page).")
+                return _("{path} is not a valid GGUF model file — "
+                         "re-download it (use the file's download link, not its "
+                         "web page).").format(path=model_path)
     except OSError:
         # unreadable model file: let the real load report it, not this sniff
         pass
@@ -281,18 +283,18 @@ def gpu_layers_advice(model_path: str) -> str | None:
         return None
     gb = vram / 1024 ** 3
     if is_shared_memory_gpu():         # APU: a partial offload hurts (graph splits)
-        return (f"Shared-memory GPU ({gb:.1f} GB). Use 999 for the fastest "
-                "generation (a large model or prompt can freeze the desktop while "
-                "it runs) or 0 to keep the desktop responsive — a partial offload "
-                "is slower here (constant CPU↔GPU copying).")
+        return _("Shared-memory GPU ({gb:.1f} GB). Use 999 for the fastest "
+                 "generation (a large model or prompt can freeze the desktop "
+                 "while it runs) or 0 to keep the desktop responsive — a partial "
+                 "offload is slower here (constant CPU↔GPU copying).").format(gb=gb)
     # Dedicated-VRAM GPU: a partial offload of what doesn't fit is worthwhile.
     if os.path.getsize(model_path) <= _usable_vram(vram):
-        return f"Fits in {gb:.1f} GB VRAM — offload all layers (999)."
+        return _("Fits in {gb:.1f} GB VRAM — offload all layers (999).").format(gb=gb)
     layers = recommended_gpu_layers(model_path)
     if layers is not None:
-        return (f"Bigger than the {gb:.1f} GB VRAM — about {layers} layers fit; "
-                "the rest run on the CPU.")
-    return f"Detected VRAM: {gb:.1f} GB."
+        return _("Bigger than the {gb:.1f} GB VRAM — about {layers} layers fit; "
+                 "the rest run on the CPU.").format(gb=gb, layers=layers)
+    return _("Detected VRAM: {gb:.1f} GB.").format(gb=gb)
 
 
 # KV-cache precision string → ggml type constant name. "f16" (and anything

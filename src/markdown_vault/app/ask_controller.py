@@ -23,6 +23,7 @@ gi.require_version("Gtk", "4.0")
 from gi.repository import GLib
 
 from markdown_vault.core import config
+from markdown_vault.core.i18n import _
 
 #: Locale code → English language name for the "answer in {language}" prompt.
 LANG_NAMES = {
@@ -100,14 +101,14 @@ class AskController:
         """Why Ask cannot answer right now — ``""`` when it can. One source for
         both the toggle's state and its tooltip, so they cannot disagree."""
         if not config.get_setting(self._settings, "semantic.enabled"):
-            return "Semantic search is off — turn it on in Preferences → Search."
+            return _("Semantic search is off — turn it on in Preferences → Search.")
         if self._get_index() is None:
-            return "The semantic index is not ready yet."
+            return _("The semantic index is not ready yet.")
         engine = (config.get_setting(self._settings, "ask.engine")
                   or config.default("ask.engine"))
         if engine == "off":
-            return ("The answer engine is off — turn it on in "
-                    "Preferences → Search → Ask.")
+            return _("The answer engine is off — turn it on in "
+                     "Preferences → Search → Ask.")
         return ""
 
     def can_ask(self) -> bool:

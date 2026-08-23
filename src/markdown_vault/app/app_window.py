@@ -20,6 +20,8 @@ gi.require_version("Adw", "1")
 
 from gi.repository import Gtk, Adw, Gio, GLib, Gdk
 
+from markdown_vault.core.i18n import _, ngettext
+
 import threading
 
 from markdown_vault.core import logging_setup
@@ -651,18 +653,18 @@ class MainWindow(Adw.ApplicationWindow):
         title.add_css_class("title-1")
         box.append(title)
 
-        subtitle = Gtk.Label(label="Open a file from the vault tree or create a new one")
+        subtitle = Gtk.Label(label=_("Open a file from the vault tree or create a new one"))
         subtitle.add_css_class("dim-label")
         box.append(subtitle)
 
         btn_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8,
                           halign=Gtk.Align.CENTER)
-        new_btn = Gtk.Button(label="New File")
+        new_btn = Gtk.Button(label=_("New File"))
         new_btn.add_css_class("suggested-action")
         new_btn.connect("clicked", lambda *_: self._on_new_file())
         btn_box.append(new_btn)
 
-        open_btn = Gtk.Button(label="Open Vault")
+        open_btn = Gtk.Button(label=_("Open Vault"))
         open_btn.connect("clicked", lambda *_: self._vault_tree._on_add_vault_clicked(None))
         btn_box.append(open_btn)
 
@@ -685,12 +687,12 @@ class MainWindow(Adw.ApplicationWindow):
 
         # New file + save buttons (left side).
         new_btn = Gtk.Button(icon_name="document-new-symbolic")
-        new_btn.set_tooltip_text("New file (Ctrl+N)")
+        new_btn.set_tooltip_text(_("New file (Ctrl+N)"))
         new_btn.connect("clicked", lambda *_: self._on_new_file())
         header.pack_start(new_btn)
 
         self._save_btn = Gtk.Button(icon_name="document-save-symbolic")
-        self._save_btn.set_tooltip_text("Save (Ctrl+S)")
+        self._save_btn.set_tooltip_text(_("Save (Ctrl+S)"))
         self._save_btn.connect("clicked", lambda *_: self._save_current())
         header.pack_start(self._save_btn)
 
@@ -699,13 +701,13 @@ class MainWindow(Adw.ApplicationWindow):
         # consumed here and never falls through to the header's double-click-to-
         # maximize area.
         self._back_btn = Gtk.Button(icon_name="go-previous-symbolic")
-        self._back_btn.set_tooltip_text("Back (Alt+Left)")
+        self._back_btn.set_tooltip_text(_("Back (Alt+Left)"))
         self._back_btn.set_opacity(0.35)
         self._back_btn.connect("clicked", lambda *_: self._nav_back())
         header.pack_start(self._back_btn)
 
         self._forward_btn = Gtk.Button(icon_name="go-next-symbolic")
-        self._forward_btn.set_tooltip_text("Forward (Alt+Right)")
+        self._forward_btn.set_tooltip_text(_("Forward (Alt+Right)"))
         self._forward_btn.set_opacity(0.35)
         self._forward_btn.connect("clicked", lambda *_: self._nav_forward())
         header.pack_start(self._forward_btn)
@@ -714,10 +716,10 @@ class MainWindow(Adw.ApplicationWindow):
         view_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=2)
         group = None
         for mode, icon, tooltip in (
-            ("edit",   "document-edit-symbolic",        "Edit (Ctrl+1)"),
-            ("split",  "view-dual-symbolic",            "Split (Ctrl+2)"),
-            ("render", "document-properties-symbolic",  "Preview (Ctrl+3)"),
-            ("graph",  "network-wired-symbolic",        "Graph (Ctrl+4)"),
+            ("edit",   "document-edit-symbolic",        _("Edit (Ctrl+1)")),
+            ("split",  "view-dual-symbolic",            _("Split (Ctrl+2)")),
+            ("render", "document-properties-symbolic",  _("Preview (Ctrl+3)")),
+            ("graph",  "network-wired-symbolic",        _("Graph (Ctrl+4)")),
         ):
             btn = Gtk.ToggleButton(icon_name=icon)
             btn.set_tooltip_text(tooltip)
@@ -739,23 +741,23 @@ class MainWindow(Adw.ApplicationWindow):
         menu = Gio.Menu()
 
         theme_section = Gio.Menu()
-        theme_section.append("Follow System", "win.theme-system")
-        theme_section.append("Light Mode", "win.theme-light")
-        theme_section.append("Dark Mode", "win.theme-dark")
+        theme_section.append(_("Follow System"), "win.theme-system")
+        theme_section.append(_("Light Mode"), "win.theme-light")
+        theme_section.append(_("Dark Mode"), "win.theme-dark")
         menu.append_section(None, theme_section)
 
         action_section = Gio.Menu()
-        action_section.append("Add Vault", "win.add-vault")
-        action_section.append("New File", "win.new-file")
-        action_section.append("Insert Image…", "win.insert-image")
-        action_section.append("Toggle Sidebar", "win.toggle-sidebar")
-        action_section.append("Zen Mode", "win.toggle-zen")
-        action_section.append("Total Zen", "win.toggle-zen-total")
+        action_section.append(_("Add Vault"), "win.add-vault")
+        action_section.append(_("New File"), "win.new-file")
+        action_section.append(_("Insert Image…"), "win.insert-image")
+        action_section.append(_("Toggle Sidebar"), "win.toggle-sidebar")
+        action_section.append(_("Zen Mode"), "win.toggle-zen")
+        action_section.append(_("Total Zen"), "win.toggle-zen-total")
         menu.append_section(None, action_section)
 
         prefs_section = Gio.Menu()
-        prefs_section.append("Preferences", "win.preferences")
-        prefs_section.append("About Markdown Vault", "win.about")
+        prefs_section.append(_("Preferences"), "win.preferences")
+        prefs_section.append(_("About Markdown Vault"), "win.about")
         menu.append_section(None, prefs_section)
 
         menu_btn.set_menu_model(menu)
@@ -763,13 +765,13 @@ class MainWindow(Adw.ApplicationWindow):
 
         # Sidebar toggle button (left of hamburger).
         self._sidebar_toggle = Gtk.ToggleButton(icon_name="user-bookmarks-symbolic")
-        self._sidebar_toggle.set_tooltip_text("Toggle Sidebar")
+        self._sidebar_toggle.set_tooltip_text(_("Toggle Sidebar"))
         self._sidebar_toggle.connect("toggled", self._on_sidebar_toggled)
         header.pack_end(self._sidebar_toggle)
 
         # Search toggle button (left of sidebar).
         self._search_toggle = Gtk.ToggleButton(icon_name="edit-find-symbolic")
-        self._search_toggle.set_tooltip_text("Full-Text Search (Ctrl+Shift+F)")
+        self._search_toggle.set_tooltip_text(_("Full-Text Search (Ctrl+Shift+F)"))
         self._search_toggle.connect("toggled", self._on_search_toggled)
         header.pack_end(self._search_toggle)
 
@@ -1340,7 +1342,9 @@ class MainWindow(Adw.ApplicationWindow):
                 logger.warning("save-dialog: save failed for %d tab(s) (paths=%s)",
                                len(failed), [Path(p).name for p in failed])
                 body = (
-                    f"Could not save {len(failed)} tab(s):\n\n"
+                    ngettext("Could not save {n} tab:\n\n",
+                             "Could not save {n} tabs:\n\n",
+                             len(failed)).format(n=len(failed))
                     + "\n".join(f"\u2013 {Path(p).name}" for p in failed)
                 )
 
@@ -1350,7 +1354,7 @@ class MainWindow(Adw.ApplicationWindow):
                         self._autosave.restart()
                     self._switch_vault_pending = False
 
-                dialogs.show_error(self, "Save Failed", body)
+                dialogs.show_error(self, _("Save Failed"), body)
                 _on_error_dismissed()
                 return
             logger.info("save-dialog: saved %d tab(s) (paths=%s)", len(dirty_paths),
@@ -1659,7 +1663,7 @@ class MainWindow(Adw.ApplicationWindow):
         self._sem_available = available
         self._update_status_bar()
         if notify and available and not was:
-            self._toast("Semantic search: backend reachable again")
+            self._toast(_("Semantic search: backend reachable again"))
         return False
 
     def _toast(self, text: str, timeout: int | None = None) -> None:
@@ -1674,15 +1678,15 @@ class MainWindow(Adw.ApplicationWindow):
     def _update_status_bar(self) -> bool:
         if not getattr(self, "_sem_available", True):
             self._status_bar.show_error(
-                "Semantic search: embedding backend unavailable",
+                _("Semantic search: embedding backend unavailable"),
                 actions=[("Rebuild", self.rebuild_semantic_index),
                          ("Settings", lambda: self._open_preferences(page="search"))])
         elif getattr(self, "_sem_progress", None):
             done, total = self._sem_progress
             self._status_bar.show_progress(
-                done / total, f"Indexing… {done}/{total}")
+                done / total, _("Indexing… {done}/{total}").format(done=done, total=total))
         elif getattr(self, "_sem_busy", False):
-            self._status_bar.show_busy("Updating semantic index…")
+            self._status_bar.show_busy(_("Updating semantic index…"))
         else:
             self._status_bar.clear()
         return False
@@ -1861,21 +1865,21 @@ class MainWindow(Adw.ApplicationWindow):
         out for a non-text clipboard, so this provides a working image paste."""
         tab = self._tab_bar.get_current_tab()
         if tab is None or not tab.editor.file_path:
-            self._toast("Open and save a note first, then insert an image.")
+            self._toast(_("Open and save a note first, then insert an image."))
             return
         if not tab.editor.paste_image_from_clipboard():
-            self._toast("No image in the clipboard.")
+            self._toast(_("No image in the clipboard."))
 
     def _on_insert_image(self) -> None:
         """Insert Image… — pick a local image and copy it into the note's
         attachments dir (never make the user touch that tree by hand)."""
         tab = self._tab_bar.get_current_tab()
         if tab is None or not tab.editor.file_path:
-            self._toast("Open and save a note first, then insert an image.")
+            self._toast(_("Open and save a note first, then insert an image."))
             return
-        dialog = Gtk.FileDialog(title="Insert Image")
+        dialog = Gtk.FileDialog(title=_("Insert Image"))
         img_filter = Gtk.FileFilter()
-        img_filter.set_name("Images")
+        img_filter.set_name(_("Images"))
         for mime in ("image/png", "image/jpeg", "image/gif", "image/webp",
                      "image/svg+xml", "image/bmp"):
             img_filter.add_mime_type(mime)
@@ -1892,7 +1896,7 @@ class MainWindow(Adw.ApplicationWindow):
             # silent on cancel, surface a genuine failure instead of dropping it.
             if not dialogs.dialog_cancelled(exc):
                 logger.warning("insert image: file dialog failed", exc_info=True)
-                self._toast("Could not open the image.", timeout=0)
+                self._toast(_("Could not open the image."), timeout=0)
             return
         tab = self._tab_bar.get_current_tab()
         path = gfile.get_path() if gfile else None
@@ -1902,7 +1906,7 @@ class MainWindow(Adw.ApplicationWindow):
             data = Path(path).read_bytes()
         except OSError as exc:
             logger.warning("insert image: %s", exc, exc_info=True)
-            self._toast("Could not read the image file.", timeout=0)
+            self._toast(_("Could not read the image file."), timeout=0)
             return
         tab.editor.insert_image(data, Path(path).name)
 
@@ -1915,7 +1919,7 @@ class MainWindow(Adw.ApplicationWindow):
     def _on_import_failed(self, _dialog, message: str) -> None:
         """A backgrounded import failed after its dialog was dismissed — toast it.
         Error toasts stay until dismissed (timeout 0) rather than auto-hiding."""
-        self._toast(f"Import failed: {message}", timeout=0)
+        self._toast(_("Import failed: {error}").format(error=message), timeout=0)
 
     def _show_error(self, heading: str, body: str) -> None:
         """Show an error dialog with the given message."""
@@ -2528,13 +2532,13 @@ class MainWindow(Adw.ApplicationWindow):
             if broken:
                 dialogs.show_broken_wikilinks(self, [b.display for b in broken])
         else:
-            msg = f'Could not save "{Path(tab.file_path).name}"'
+            msg = _('Could not save "{name}"').format(name=Path(tab.file_path).name)
             self._tab_bar.set_tab_error(tab.file_path, "save_error", msg)
             self._tab_bar.show_error_banner(
                 tab.file_path, msg,
-                buttons=[("Dismiss", lambda: self._tab_bar.hide_error_banner(tab.file_path))],
+                buttons=[(_("Dismiss"), lambda: self._tab_bar.hide_error_banner(tab.file_path))],
             )
-            dialogs.show_error(self, "Save Failed", msg)
+            dialogs.show_error(self, _("Save Failed"), msg)
 
     # ── Session persistence ────────────────────────────────────────
 
@@ -2649,7 +2653,7 @@ class MainWindow(Adw.ApplicationWindow):
             file_path, msg,
             buttons=[("Dismiss", lambda: self._tab_bar.hide_error_banner(file_path))],
         )
-        dialogs.show_error(self, "Save Failed", msg)
+        dialogs.show_error(self, _("Save Failed"), msg)
 
     def _on_color_scheme_changed(self) -> None:
         """Re-apply editor colour schemes and refresh all previews."""
@@ -2670,7 +2674,7 @@ class MainWindow(Adw.ApplicationWindow):
             config.check_config_access()
         except OSError as e:
             logger.warning("cannot open Preferences: config access failed", exc_info=True)
-            self._show_error("Cannot Open Preferences", str(e))
+            self._show_error(_("Cannot Open Preferences"), str(e))
             return None
         # Reuse an already-open dialog instead of stacking a second one; a repeated
         # trigger (menu, banner, dbg) just raises it and navigates.
@@ -2699,7 +2703,7 @@ class MainWindow(Adw.ApplicationWindow):
             application_icon="de.hannemann.markdown-vault",
             version=_app_version(),
             developer_name="hannemann",
-            comments="Edit and preview Markdown files organized in vaults.",
+            comments=_("Edit and preview Markdown files organized in vaults."),
             copyright="© 2026 hannemann",
             license_type=Gtk.License.AGPL_3_0,
             website="https://github.com/hannemann/markdown-vault",

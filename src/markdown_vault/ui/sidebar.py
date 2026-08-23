@@ -319,7 +319,7 @@ class Sidebar(Gtk.Box):
         self._clear_list(self._backlinks_list["list"])
         if not file_path or not self._vault_paths:
             self._backlinks_list["list"].append(
-                self._empty_label("Open a file to see backlinks")
+                self._empty_label(_("Open a file to see backlinks"))
             )
             return
         backlinks = [
@@ -327,7 +327,7 @@ class Sidebar(Gtk.Box):
         ]
         if not backlinks:
             self._backlinks_list["list"].append(
-                self._empty_label("No backlinks found")
+                self._empty_label(_("No backlinks found"))
             )
             return
         box = self._backlinks_list["list"]
@@ -389,7 +389,7 @@ class Sidebar(Gtk.Box):
         box.set_margin_start(8)
         box.set_margin_end(8)
 
-        self._git_status_label = Gtk.Label(label="No git repo")
+        self._git_status_label = Gtk.Label(label=_("No git repo"))
         self._git_status_label.set_xalign(0)
         self._git_status_label.set_wrap(True)
         box.append(self._git_status_label)
@@ -408,7 +408,7 @@ class Sidebar(Gtk.Box):
     def _refresh_git(self, file_path: str | None) -> None:
         """Update the git sub-view for the file's repository (async)."""
         if not file_path:
-            self._git_status_label.set_text("No file open")
+            self._git_status_label.set_text(_("No file open"))
             self._git_diff_label.set_text("")
             return
         repo_dir = Path(file_path).parent
@@ -429,14 +429,14 @@ class Sidebar(Gtk.Box):
             if g != self._git_generation:
                 return False
             if not is_repo:
-                status_label.set_text("Not a git repository")
+                status_label.set_text(_("Not a git repository"))
                 diff_label.set_text("")
             elif status:
                 lines = [f"{e['status']}  {e['path']}" for e in status]
                 status_label.set_text("\n".join(lines))
                 diff_label.set_text(diff[:2000] if diff else "")
             else:
-                status_label.set_text("Working tree clean")
+                status_label.set_text(_("Working tree clean"))
                 diff_label.set_text(diff[:2000] if diff else "")
             return False
 
@@ -461,7 +461,7 @@ class Sidebar(Gtk.Box):
         box.set_margin_start(8)
         box.set_margin_end(8)
 
-        self._details_label = Gtk.Label(label="No file open")
+        self._details_label = Gtk.Label(label=_("No file open"))
         self._details_label.set_xalign(0)
         self._details_label.set_wrap(True)
         box.append(self._details_label)
@@ -474,25 +474,27 @@ class Sidebar(Gtk.Box):
     def _refresh_details(self, file_path: str | None, text: str) -> None:
         """Update file metadata display."""
         if not file_path:
-            self._details_label.set_text("No file open")
+            self._details_label.set_text(_("No file open"))
             return
         p = Path(file_path)
         try:
             stat = p.stat()
         except OSError:
             logger.warning("Cannot stat file: %s", file_path, exc_info=True)
-            self._details_label.set_text("Cannot read file info")
+            self._details_label.set_text(_("Cannot read file info"))
             return
         word_count = len(text.split()) if text else 0
         line_count = text.count("\n") + 1 if text else 0
         modified = datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M")
         self._details_label.set_text(
-            f"File:  {p.name}\n"
-            f"Path:  {p.parent}\n"
-            f"Words: {word_count}\n"
-            f"Lines: {line_count}\n"
-            f"Size:  {stat.st_size:,} bytes\n"
-            f"Modified: {modified}"
+            _("File:  {name}\n"
+              "Path:  {parent}\n"
+              "Words: {words}\n"
+              "Lines: {lines}\n"
+              "Size:  {size} bytes\n"
+              "Modified: {modified}").format(
+                  name=p.name, parent=p.parent, words=word_count,
+                  lines=line_count, size=f"{stat.st_size:,}", modified=modified)
         )
 
     # ------------------------------------------------------------------
@@ -505,7 +507,7 @@ class Sidebar(Gtk.Box):
         self._clear_list(box)
         fields = _parse_frontmatter(text)
         if not fields:
-            box.append(self._empty_label("No frontmatter"))
+            box.append(self._empty_label(_("No frontmatter")))
             return
         for key, value in fields.items():
             row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)

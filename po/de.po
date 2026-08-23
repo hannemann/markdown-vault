@@ -71,3 +71,1873 @@ msgstr "Ersetzen"
 #: src/markdown_vault/editor/find_bar.py
 msgid "Replace All"
 msgstr "Alle ersetzen"
+
+#: src/markdown_vault/uikit/banners.py
+msgid "Dismiss"
+msgstr "Ausblenden"
+
+#: src/markdown_vault/uikit/dialogs.py
+msgid "OK"
+msgstr "OK"
+
+#: src/markdown_vault/uikit/dialogs.py
+msgid "Broken wikilinks"
+msgstr "Defekte Wikilinks"
+
+#: src/markdown_vault/uikit/dialogs.py
+msgid "The file was saved, but these links could not be resolved:\n{items}"
+msgstr "Die Datei wurde gespeichert, aber diese Links konnten nicht aufgelöst werden:\n{items}"
+
+#: src/markdown_vault/uikit/dialogs.py
+msgid "Link not found"
+msgstr "Link nicht gefunden"
+
+#: src/markdown_vault/uikit/dialogs.py
+msgid "Could not find a file matching “{path}”."
+msgstr "Es wurde keine Datei gefunden, die zu „{path}“ passt."
+
+#: src/markdown_vault/uikit/dialogs.py
+msgid "Close"
+msgstr "Schließen"
+
+#: src/markdown_vault/uikit/dialogs.py
+msgid "Cancel"
+msgstr "Abbrechen"
+
+#: src/markdown_vault/uikit/dialogs.py
+msgid "Create"
+msgstr "Erstellen"
+
+#: src/markdown_vault/uikit/dialogs.py
+msgid "Rename"
+msgstr "Umbenennen"
+
+#: src/markdown_vault/uikit/dialogs.py
+msgid "Rename “{name}”"
+msgstr "„{name}“ umbenennen"
+
+#: src/markdown_vault/uikit/dialogs.py
+msgid "Vault Icon"
+msgstr "Vault-Symbol"
+
+#: src/markdown_vault/uikit/dialogs.py
+msgid "Pick a symbol or type your own."
+msgstr "Ein Symbol wählen oder ein eigenes eingeben."
+
+#: src/markdown_vault/uikit/dialogs.py
+msgid "e.g. 🗄️ (empty = default)"
+msgstr "z. B. 🗄️ (leer = Standard)"
+
+#: src/markdown_vault/uikit/dialogs.py
+msgid "Apply"
+msgstr "Anwenden"
+
+#: src/markdown_vault/uikit/dialogs.py
+msgid "Monochrome"
+msgstr "Einfarbig"
+
+#: src/markdown_vault/uikit/dialogs.py
+msgid "Delete folder \"{name}\" and all its contents? This cannot be undone."
+msgstr "Ordner „{name}“ und seinen gesamten Inhalt löschen? Das kann nicht rückgängig gemacht werden."
+
+#: src/markdown_vault/uikit/dialogs.py
+msgid "Delete \"{name}\"?"
+msgstr "„{name}“ löschen?"
+
+#: src/markdown_vault/uikit/dialogs.py
+msgid "Delete?"
+msgstr "Löschen?"
+
+#: src/markdown_vault/uikit/dialogs.py
+msgid "Delete"
+msgstr "Löschen"
+
+#: src/markdown_vault/uikit/dialogs.py
+msgid "The file \"{name}\" already exists. Open it?"
+msgstr "Die Datei „{name}“ existiert bereits. Öffnen?"
+
+#: src/markdown_vault/uikit/dialogs.py
+msgid "File Already Exists"
+msgstr "Datei existiert bereits"
+
+#: src/markdown_vault/uikit/dialogs.py
+msgid "Open"
+msgstr "Öffnen"
+
+#: src/markdown_vault/uikit/dialogs.py
+msgid "{n} tab has unsaved changes:\n\n{items}"
+msgid_plural "{n} tabs have unsaved changes:\n\n{items}"
+msgstr[0] "{n} Tab hat ungespeicherte Änderungen:\n\n{items}"
+msgstr[1] "{n} Tabs haben ungespeicherte Änderungen:\n\n{items}"
+
+#: src/markdown_vault/uikit/dialogs.py
+msgid "Unsaved Changes"
+msgstr "Ungespeicherte Änderungen"
+
+#: src/markdown_vault/uikit/dialogs.py
+msgid "Discard"
+msgstr "Verwerfen"
+
+#: src/markdown_vault/uikit/dialogs.py
+msgid "Save"
+msgstr "Speichern"
+
+#: src/markdown_vault/uikit/dialogs.py
+msgid "Enter a new name for the vault."
+msgstr "Einen neuen Namen für den Vault eingeben."
+
+#: src/markdown_vault/uikit/dialogs.py
+msgid "Rename Vault"
+msgstr "Vault umbenennen"
+
+#: src/markdown_vault/uikit/dialogs.py
+msgid "Enter new vault name"
+msgstr "Neuen Vault-Namen eingeben"
+
+#: src/markdown_vault/uikit/dialogs.py
+msgid "A vault with this name already exists."
+msgstr "Ein Vault mit diesem Namen existiert bereits."
+
+#: src/markdown_vault/uikit/dialogs.py
+msgid "Remove Vault \"{name}\"?"
+msgstr "Vault „{name}“ entfernen?"
+
+#: src/markdown_vault/uikit/dialogs.py
+msgid "The files on disk are left untouched."
+msgstr "Die Dateien auf der Festplatte bleiben unangetastet."
+
+#: src/markdown_vault/uikit/dialogs.py
+msgid "Remove"
+msgstr "Entfernen"
+
+#: src/markdown_vault/uikit/dialogs.py
+msgid "Enter a unique vault name."
+msgstr "Einen eindeutigen Vault-Namen eingeben."
+
+#: src/markdown_vault/uikit/dialogs.py
+msgid "Vault Name Collision"
+msgstr "Namenskonflikt beim Vault"
+
+#: src/markdown_vault/uikit/dialogs.py
+msgid "Add"
+msgstr "Hinzufügen"
+
+#: src/markdown_vault/uikit/dialogs.py
+msgid "Enter a unique vault name"
+msgstr "Eindeutigen Vault-Namen eingeben"
+
+#: src/markdown_vault/editor/content_changes.py
+msgid "Reload Failed"
+msgstr "Neuladen fehlgeschlagen"
+
+#: src/markdown_vault/editor/content_changes.py
+msgid "Could not read \"{name}\" from disk."
+msgstr "„{name}“ konnte nicht von der Festplatte gelesen werden."
+
+#: src/markdown_vault/editor/editor.py
+msgid "Paste Image"
+msgstr "Bild einfügen"
+
+#: src/markdown_vault/editor/editor.py
+msgid "Insert Image…"
+msgstr "Bild aus Datei einfügen…"
+
+#: src/markdown_vault/editor/editor.py
+msgid "Broken wikilink"
+msgstr "Defekter Wikilink"
+
+#: src/markdown_vault/editor/mru.py
+msgid "Switch Tab"
+msgstr "Tab wechseln"
+
+#: src/markdown_vault/editor/tabs.py
+msgid "Close tab"
+msgstr "Tab schließen"
+
+#: src/markdown_vault/editor/tabs.py
+msgid "Copy path"
+msgstr "Pfad kopieren"
+
+#: src/markdown_vault/editor/tabs.py
+msgid "Close others"
+msgstr "Andere Tabs schließen"
+
+#: src/markdown_vault/editor/tabs.py
+msgid "Close left"
+msgstr "Tabs links schließen"
+
+#: src/markdown_vault/editor/tabs.py
+msgid "Close right"
+msgstr "Tabs rechts schließen"
+
+#: src/markdown_vault/graph/graph_explorer.py
+msgid "Search nodes…"
+msgstr "Knoten suchen…"
+
+#: src/markdown_vault/graph/graph_explorer.py
+msgid "Current vault"
+msgstr "Aktueller Vault"
+
+#: src/markdown_vault/graph/graph_explorer.py
+msgid "All vaults"
+msgstr "Alle Vaults"
+
+#: src/markdown_vault/graph/graph_explorer.py
+msgid "Graph scope"
+msgstr "Graph-Umfang"
+
+#: src/markdown_vault/graph/graph_explorer.py
+msgid "Tags"
+msgstr "Tags"
+
+#: src/markdown_vault/graph/graph_explorer.py
+msgid "Filter by tag"
+msgstr "Nach Tag filtern"
+
+#: src/markdown_vault/graph/graph_explorer.py
+msgid "Fit graph to view"
+msgstr "Graph einpassen"
+
+#: src/markdown_vault/importers/dialog_import.py
+msgid "Import"
+msgstr "Importieren"
+
+#: src/markdown_vault/importers/dialog_import.py
+msgid "What do you want to import?"
+msgstr "Was möchtest du importieren?"
+
+#: src/markdown_vault/importers/dialog_import.py
+msgid "Web Page"
+msgstr "Webseite"
+
+#: src/markdown_vault/importers/dialog_import.py
+msgid "Fetch a URL as a Markdown note"
+msgstr "Eine URL als Markdown-Notiz holen"
+
+#: src/markdown_vault/importers/dialog_import.py
+msgid "File"
+msgstr "Datei"
+
+#: src/markdown_vault/importers/dialog_import.py
+msgid "Import a document (PDF, Word, PowerPoint, Excel, audio)"
+msgstr "Ein Dokument importieren (PDF, Word, PowerPoint, Excel, Audio)"
+
+#: src/markdown_vault/importers/dialog_import.py
+msgid "URL"
+msgstr "URL"
+
+#: src/markdown_vault/importers/dialog_import.py
+msgid "Name (optional)"
+msgstr "Name (optional)"
+
+#: src/markdown_vault/importers/dialog_import.py
+msgid "Download images"
+msgstr "Bilder herunterladen"
+
+#: src/markdown_vault/importers/dialog_import.py
+msgid "Save images into the vault's attachments folder"
+msgstr "Bilder in den Anhang-Ordner des Vaults speichern"
+
+#: src/markdown_vault/importers/dialog_import.py
+msgid "Enter a valid http(s) URL."
+msgstr "Eine gültige http(s)-URL eingeben."
+
+#: src/markdown_vault/importers/dialog_import.py
+msgid "Nothing extractable on that page."
+msgstr "Auf dieser Seite ist nichts extrahierbar."
+
+#: src/markdown_vault/importers/dialog_import.py
+msgid "No file selected"
+msgstr "Keine Datei ausgewählt"
+
+#: src/markdown_vault/importers/dialog_import.py
+msgid "Browse…"
+msgstr "Durchsuchen…"
+
+#: src/markdown_vault/importers/dialog_import.py
+msgid "Choose a document"
+msgstr "Ein Dokument auswählen"
+
+#: src/markdown_vault/importers/dialog_import.py
+msgid "Supported documents"
+msgstr "Unterstützte Dokumente"
+
+#: src/markdown_vault/importers/dialog_import.py
+msgid "Could not open the file chooser."
+msgstr "Die Dateiauswahl konnte nicht geöffnet werden."
+
+#: src/markdown_vault/importers/dialog_import.py
+#, python-brace-format
+msgid "The '{model}' transcription model isn't downloaded — get it in Preferences → Search before importing audio."
+msgstr "Das Transkriptionsmodell „{model}“ ist nicht heruntergeladen — vor dem Audio-Import unter Einstellungen → Suche holen."
+
+#: src/markdown_vault/importers/dialog_import.py
+#, python-brace-format
+msgid "Audio import needs the '{model}' model, which isn't downloaded yet (Preferences → Search)."
+msgstr "Der Audio-Import braucht das Modell „{model}“, das noch nicht heruntergeladen ist (Einstellungen → Suche)."
+
+#: src/markdown_vault/importers/dialog_import.py
+msgid "No text could be extracted from this file."
+msgstr "Aus dieser Datei konnte kein Text extrahiert werden."
+
+#: src/markdown_vault/importers/document_import.py
+msgid "Document import needs the optional AI stack, which isn't installed. Add it to the app venv:\n  make install-ai"
+msgstr "Der Dokument-Import braucht den optionalen KI-Stack, der nicht installiert ist. Ins App-venv aufnehmen:\n  make install-ai"
+
+#: src/markdown_vault/importers/document_import.py
+#, python-brace-format
+msgid "The transcription model ('{model}') isn't downloaded yet. Download it in Preferences → Search before importing audio."
+msgstr "Das Transkriptionsmodell („{model}“) ist noch nicht heruntergeladen. Vor dem Audio-Import unter Einstellungen → Suche herunterladen."
+
+#: src/markdown_vault/importers/document_import.py
+#, python-brace-format
+msgid "Unsupported file type: {suffix}"
+msgstr "Nicht unterstützter Dateityp: {suffix}"
+
+#: src/markdown_vault/importers/document_import.py
+msgid "(none)"
+msgstr "(keiner)"
+
+#: src/markdown_vault/importers/web_import.py
+msgid "Imported page"
+msgstr "Importierte Seite"
+
+#: src/markdown_vault/preview/preview.py
+msgid "Open in New Tab"
+msgstr "In neuem Tab öffnen"
+
+#: src/markdown_vault/preview/preview.py
+msgid "Copy Link"
+msgstr "Link kopieren"
+
+#: src/markdown_vault/preview/preview.py
+msgid "Open in Browser"
+msgstr "Im Browser öffnen"
+
+#: src/markdown_vault/preview/preview.py
+msgid "Download Image"
+msgstr "Bild herunterladen"
+
+#: src/markdown_vault/vault/vault_tree.py
+msgid "Vaults"
+msgstr "Vaults"
+
+#: src/markdown_vault/vault/vault_tree.py
+msgid "Hide deprecated notes"
+msgstr "Veraltete Notizen ausblenden"
+
+#: src/markdown_vault/vault/vault_tree.py
+msgid "Focus current file in tree"
+msgstr "Aktuelle Datei im Baum fokussieren"
+
+#: src/markdown_vault/vault/vault_tree.py
+msgid "Add vault directory"
+msgstr "Vault-Verzeichnis hinzufügen"
+
+#: src/markdown_vault/vault/vault_tree.py
+msgid "internal"
+msgstr "intern"
+
+#: src/markdown_vault/vault/vault_tree.py
+msgid "New File"
+msgstr "Neue Datei"
+
+#: src/markdown_vault/vault/vault_tree.py
+msgid "New Folder"
+msgstr "Neuer Ordner"
+
+#: src/markdown_vault/vault/vault_tree.py
+msgid "Import…"
+msgstr "Importieren…"
+
+#: src/markdown_vault/vault/vault_tree.py
+msgid "Close File"
+msgstr "Datei schließen"
+
+#: src/markdown_vault/vault/vault_tree.py
+msgid "Change Icon…"
+msgstr "Symbol ändern…"
+
+#: src/markdown_vault/vault/vault_tree.py
+msgid "Remove Vault"
+msgstr "Vault entfernen"
+
+#: src/markdown_vault/vault/vault_tree.py
+msgid "Select Vault Directory"
+msgstr "Vault-Verzeichnis auswählen"
+
+#: src/markdown_vault/vault/vault_tree.py
+msgid "Folder Selection Failed"
+msgstr "Ordnerauswahl fehlgeschlagen"
+
+#: src/markdown_vault/vault/vault_tree.py
+msgid "Could not open the folder chooser."
+msgstr "Die Ordnerauswahl konnte nicht geöffnet werden."
+
+#: src/markdown_vault/vault/vault_tree.py
+msgid "Save Failed"
+msgstr "Speichern fehlgeschlagen"
+
+#: src/markdown_vault/search/quick_open_palette.py
+msgid "Quick Open"
+msgstr "Schnell öffnen"
+
+#: src/markdown_vault/search/quick_open_palette.py
+msgid "Go to file…"
+msgstr "Zu Datei springen…"
+
+#: src/markdown_vault/search/quick_open_palette.py
+msgid "Run — search or ask (Enter)"
+msgstr "Ausführen — suchen oder fragen (Eingabe)"
+
+#: src/markdown_vault/search/quick_open_palette.py
+msgid "Answer"
+msgstr "Antwort"
+
+#: src/markdown_vault/search/quick_open_palette.py
+msgid "Answer model"
+msgstr "Antwortmodell"
+
+#: src/markdown_vault/search/quick_open_palette.py
+msgid "Semantic match"
+msgstr "Semantischer Treffer"
+
+#: src/markdown_vault/search/quick_open_palette.py
+msgid "Ask a question and press Enter…"
+msgstr "Eine Frage stellen und Eingabe drücken…"
+
+#: src/markdown_vault/search/quick_open_palette.py
+#, python-brace-format
+msgid "Error: {error}"
+msgstr "Fehler: {error}"
+
+#: src/markdown_vault/search/quick_open_palette.py
+#, python-brace-format
+msgid "Answer ({n})"
+msgstr "Antwort ({n})"
+
+#: src/markdown_vault/search/quick_open_palette.py
+msgid "Copied!"
+msgstr "Kopiert!"
+
+#: src/markdown_vault/search/search.py
+msgid "Search across all vaults…"
+msgstr "Über alle Vaults suchen…"
+
+#: src/markdown_vault/search/search.py
+msgid "Search syntax"
+msgstr "Suchsyntax"
+
+#: src/markdown_vault/search/search.py
+msgid "All terms must match (AND)"
+msgstr "Alle Begriffe müssen passen (UND)"
+
+#: src/markdown_vault/search/search.py
+msgid "Exact phrase"
+msgstr "Exakte Wortgruppe"
+
+#: src/markdown_vault/search/search.py
+msgid "Exclude term"
+msgstr "Begriff ausschließen"
+
+#: src/markdown_vault/search/search.py
+msgid "Has frontmatter tag"
+msgstr "Hat Frontmatter-Tag"
+
+#: src/markdown_vault/search/search.py
+msgid "Path contains text"
+msgstr "Pfad enthält Text"
+
+#: src/markdown_vault/search/search.py
+msgid "Restrict to a vault"
+msgstr "Auf einen Vault beschränken"
+
+#: src/markdown_vault/search/search.py
+msgid "<tt>Aa</tt> case · <tt>W</tt> whole word · <tt>.*</tt> regex · folder = current vault only.\nIn regex mode the query is one raw pattern (operators off)."
+msgstr "<tt>Aa</tt> Groß/klein · <tt>W</tt> ganzes Wort · <tt>.*</tt> Regex · Ordner = nur aktueller Vault.\nIm Regex-Modus ist die Eingabe ein einziges rohes Muster (Operatoren aus)."
+
+#: src/markdown_vault/search/ask.py
+#, python-brace-format
+msgid "{n} excerpt"
+msgid_plural "{n} excerpts"
+msgstr[0] "{n} Auszug"
+msgstr[1] "{n} Auszüge"
+
+#: src/markdown_vault/search/ask.py
+#, python-brace-format
+msgid "Removed invented citation {marks} — the answer had only {excerpts} to cite."
+msgstr "Erfundene Quellenangabe {marks} entfernt — die Antwort hatte nur {excerpts} zum Zitieren."
+
+#: src/markdown_vault/search/ask.py
+#, python-brace-format
+msgid "Value {val} is attributed to {marks} but isn't in that excerpt — verify."
+msgstr "Wert {val} wird {marks} zugeschrieben, steht aber nicht in diesem Auszug — bitte prüfen."
+
+#: src/markdown_vault/search/ask.py
+#, python-brace-format
+msgid "To fit more, raise the context window ({path})."
+msgstr "Für mehr das Kontextfenster erhöhen ({path})."
+
+#: src/markdown_vault/search/ask.py
+#, python-brace-format
+msgid "None of the {retrieved} matching note fits the model's context window — it is larger than it allows. {tail}"
+msgid_plural "None of the {retrieved} matching notes fit the model's context window — they are larger than it allows. {tail}"
+msgstr[0] "Die {retrieved} passende Notiz passt nicht ins Kontextfenster des Modells — sie ist größer als erlaubt. {tail}"
+msgstr[1] "Keine der {retrieved} passenden Notizen passt ins Kontextfenster des Modells — sie sind größer als erlaubt. {tail}"
+
+#: src/markdown_vault/search/ask.py
+#, python-brace-format
+msgid "{kept} of {retrieved} matching notes fit the model's context window; the {dropped} least-relevant did not. {tail}"
+msgstr "{kept} von {retrieved} passenden Notizen passen ins Kontextfenster des Modells; die {dropped} am wenigsten relevanten nicht. {tail}"
+
+#: src/markdown_vault/search/ask.py
+#, python-brace-format
+msgid "{n} deprecated note matched but was excluded by the “hide deprecated” filter. Turn it off to include it."
+msgid_plural "{n} deprecated notes matched but were excluded by the “hide deprecated” filter. Turn it off to include them."
+msgstr[0] "{n} veraltete Notiz passte, wurde aber vom Filter „Veraltete ausblenden“ ausgeschlossen. Zum Einbeziehen ausschalten."
+msgstr[1] "{n} veraltete Notizen passten, wurden aber vom Filter „Veraltete ausblenden“ ausgeschlossen. Zum Einbeziehen ausschalten."
+
+#: src/markdown_vault/search/ask.py
+#, python-brace-format
+msgid "I found matching notes, but none fit the model's context window, so there's nothing I can ground an answer on. Raise the context window in {path}."
+msgstr "Es gibt passende Notizen, aber keine passt ins Kontextfenster des Modells — es gibt also nichts, worauf ich eine Antwort stützen kann. Das Kontextfenster in {path} erhöhen."
+
+#: src/markdown_vault/search/ask.py
+#, python-brace-format
+msgid "The model could not answer: {error}"
+msgstr "Das Modell konnte nicht antworten: {error}"
+
+#: src/markdown_vault/search/ask.py
+msgid "The model used its entire answer budget thinking and never produced an answer. Raise “Max answer length”, or turn Reasoning off."
+msgstr "Das Modell hat sein gesamtes Antwortbudget mit Nachdenken verbraucht und nie eine Antwort erzeugt. „Max. Antwortlänge“ erhöhen oder Reasoning abschalten."
+
+#: src/markdown_vault/search/ask.py
+msgid "Semantic search is not active — without an index I can't search your notes."
+msgstr "Die semantische Suche ist nicht aktiv — ohne Index kann ich deine Notizen nicht durchsuchen."
+
+#: src/markdown_vault/search/ask.py
+msgid "Only deprecated notes match your question — they're excluded by the “hide deprecated” filter. Turn it off to use them."
+msgstr "Nur veraltete Notizen passen zu deiner Frage — sie werden vom Filter „Veraltete ausblenden“ ausgeschlossen. Zum Verwenden ausschalten."
+
+#: src/markdown_vault/search/ask.py
+msgid "Answers are turned off. Turn the answer engine on in Preferences → Search → Ask."
+msgstr "Antworten sind ausgeschaltet. Die Antwort-Engine unter Einstellungen → Suche → Ask einschalten."
+
+#: src/markdown_vault/search/ask.py
+msgid "I couldn't find anything about that in your notes."
+msgstr "Dazu habe ich in deinen Notizen nichts gefunden."
+
+#: src/markdown_vault/search/ask_models.py
+#, python-brace-format
+msgid "{url} is not reachable — a question cannot be answered. Check the server URL in Preferences → Search → Ask. ({error})"
+msgstr "{url} ist nicht erreichbar — eine Frage kann nicht beantwortet werden. Prüfe die Server-URL unter Einstellungen → Suche → Ask. ({error})"
+
+#: src/markdown_vault/search/ask_models.py
+msgid "The server rejected the API key — a question cannot be answered. Add or fix the key in Preferences → Search → Ask."
+msgstr "Der Server hat den API-Schlüssel abgelehnt — eine Frage kann nicht beantwortet werden. Schlüssel unter Einstellungen → Suche → Ask hinzufügen oder korrigieren."
+
+#: src/markdown_vault/search/ask_models.py
+#, python-brace-format
+msgid "{url} reports no models. Asking may still work if the server serves a fixed model; otherwise install or configure one."
+msgstr "{url} meldet keine Modelle. Fragen kann trotzdem klappen, wenn der Server ein festes Modell bereitstellt; andernfalls eins installieren oder konfigurieren."
+
+#: src/markdown_vault/search/ask_models.py
+#, python-brace-format
+msgid "{url} could not list its models ({error}). Asking may still work."
+msgstr "{url} konnte seine Modelle nicht auflisten ({error}). Fragen kann trotzdem klappen."
+
+#: src/markdown_vault/search/ask_models.py
+#, python-brace-format
+msgid "The server could not answer: {reason}"
+msgstr "Der Server konnte nicht antworten: {reason}"
+
+#: src/markdown_vault/search/llama_runtime.py
+msgid "Local answer generation needs the llama-cpp-python package. Install the optional AI dependencies (make install-ai) and restart, or switch the Ask backend to a server in Preferences."
+msgstr "Lokale Antworterzeugung braucht das Paket llama-cpp-python. Installiere die optionalen KI-Abhängigkeiten (make install-ai) und starte neu, oder stelle das Ask-Backend in den Einstellungen auf einen Server um."
+
+#: src/markdown_vault/search/llama_runtime.py
+#, python-brace-format
+msgid "No local model file at {path}. Download one in Preferences → Search → Ask (Model Download), then ask again."
+msgstr "Keine lokale Modelldatei unter {path}. Lade eine unter Einstellungen → Suche → Ask (Modell-Download) herunter und frage dann erneut."
+
+#: src/markdown_vault/search/llama_runtime.py
+msgid "(unset)"
+msgstr "(nicht gesetzt)"
+
+#: src/markdown_vault/search/llama_runtime.py
+#, python-brace-format
+msgid "Shared-memory GPU ({gb:.1f} GB). Use 999 for the fastest generation (a large model or prompt can freeze the desktop while it runs) or 0 to keep the desktop responsive — a partial offload is slower here (constant CPU↔GPU copying)."
+msgstr "Shared-Memory-GPU ({gb:.1f} GB). 999 für die schnellste Erzeugung (ein großes Modell oder ein großer Prompt kann den Desktop währenddessen einfrieren) oder 0, um den Desktop reaktionsfähig zu halten — ein teilweises Offload ist hier langsamer (ständiges CPU↔GPU-Kopieren)."
+
+#: src/markdown_vault/search/llama_runtime.py
+#, python-brace-format
+msgid "Fits in {gb:.1f} GB VRAM — offload all layers (999)."
+msgstr "Passt in {gb:.1f} GB VRAM — alle Layer auslagern (999)."
+
+#: src/markdown_vault/search/llama_runtime.py
+#, python-brace-format
+msgid "Bigger than the {gb:.1f} GB VRAM — about {layers} layers fit; the rest run on the CPU."
+msgstr "Größer als die {gb:.1f} GB VRAM — etwa {layers} Layer passen; der Rest läuft auf der CPU."
+
+#: src/markdown_vault/search/llama_runtime.py
+#, python-brace-format
+msgid "Detected VRAM: {gb:.1f} GB."
+msgstr "Erkanntes VRAM: {gb:.1f} GB."
+
+#: src/markdown_vault/search/quick_open_palette.py
+msgid "Ask — answer from your notes (instead of jumping to a file)"
+msgstr "Ask — Antworten aus deinen Notizen (statt zu einer Datei zu springen)"
+
+#: src/markdown_vault/search/quick_open_palette.py
+msgid "Pick sources — choose which notes to answer from"
+msgstr "Quellen wählen — festlegen, aus welchen Notizen geantwortet wird"
+
+#: src/markdown_vault/search/quick_open_palette.py
+msgid "Copy the whole answer as Markdown source (select text to copy just what you highlighted)"
+msgstr "Ganze Antwort als Markdown-Quelltext kopieren (Text markieren, um nur das Markierte zu kopieren)"
+
+#: src/markdown_vault/search/quick_open_palette.py
+#, python-brace-format
+msgid "{n}/{total} selected"
+msgstr "{n}/{total} ausgewählt"
+
+#: src/markdown_vault/search/search.py
+msgid "Terms are AND-combined.  \"quoted phrase\", -exclude, tag:foo, path:sub, vault:name"
+msgstr "Begriffe werden UND-verknüpft.  \"Wortgruppe\", -ausschließen, tag:foo, path:sub, vault:name"
+
+#: src/markdown_vault/search/search.py
+#, python-brace-format
+msgid "+{count} more…"
+msgstr "+{count} weitere…"
+
+#: src/markdown_vault/search/search_backend.py
+#, python-brace-format
+msgid "Invalid search pattern: {error}"
+msgstr "Ungültiges Suchmuster: {error}"
+
+#: src/markdown_vault/search/search_logic.py
+msgid "All matches are deprecated — hidden by the “hide deprecated” filter. Turn it off to show them."
+msgstr "Alle Treffer sind veraltet — vom Filter „Veraltete ausblenden“ verborgen. Zum Anzeigen ausschalten."
+
+#: src/markdown_vault/search/search_logic.py
+#, python-brace-format
+msgid "{count} deprecated note hidden by the filter."
+msgid_plural "{count} deprecated notes hidden by the filter."
+msgstr[0] "{count} veraltete Notiz vom Filter verborgen."
+msgstr[1] "{count} veraltete Notizen vom Filter verborgen."
+
+#: src/markdown_vault/search/vault_scope.py
+msgid "Search scope — current vault, all vaults, or a specific vault"
+msgstr "Suchbereich — aktueller Vault, alle Vaults oder ein bestimmter Vault"
+
+#: src/markdown_vault/search/vault_scope.py
+#, python-brace-format
+msgid "{name} (current)"
+msgstr "{name} (aktuell)"
+
+#: src/markdown_vault/editor/autosave.py
+#, python-brace-format
+msgid "Could not save \"{name}\""
+msgstr "„{name}“ konnte nicht gespeichert werden"
+
+#: src/markdown_vault/editor/content_changes.py
+#, python-brace-format
+msgid "\"{name}\" was modified externally."
+msgstr "„{name}“ wurde extern geändert."
+
+#: src/markdown_vault/editor/content_changes.py
+msgid "Reload"
+msgstr "Neu laden"
+
+#: src/markdown_vault/editor/editor.py
+msgid "Broken image link — the file does not exist"
+msgstr "Defekter Bildlink — die Datei existiert nicht"
+
+#: src/markdown_vault/editor/editor.py
+msgid "Not in the attachments folder — double-click the gutter icon to adopt it for auto-management"
+msgstr "Nicht im Anhang-Ordner — Doppelklick auf das Randsymbol, um sie in die automatische Verwaltung zu übernehmen"
+
+#: src/markdown_vault/graph/graph_explorer.py
+#, python-brace-format
+msgid "Tags ({n})"
+msgstr "Tags ({n})"
+
+#: src/markdown_vault/importers/web_import.py
+msgid "Web import needs Trafilatura, which isn't installed. Install it into the app venv:\n  ~/.local/share/de.hannemann.markdown-vault/venv/bin/pip install trafilatura"
+msgstr "Web-Import braucht Trafilatura, das nicht installiert ist. Installiere es ins App-venv:\n  ~/.local/share/de.hannemann.markdown-vault/venv/bin/pip install trafilatura"
+
+#: src/markdown_vault/importers/web_import.py
+#, python-brace-format
+msgid "Not an HTML page: {kind}"
+msgstr "Keine HTML-Seite: {kind}"
+
+#: src/markdown_vault/importers/web_import.py
+#, python-brace-format
+msgid "Page too large: {length} bytes"
+msgstr "Seite zu groß: {length} Bytes"
+
+#: src/markdown_vault/importers/web_import.py
+#, python-brace-format
+msgid "Page exceeds the {limit}-byte limit"
+msgstr "Seite überschreitet das {limit}-Byte-Limit"
+
+#: src/markdown_vault/search/ask.py
+msgid "Preferences → Search → Ask → Context window"
+msgstr "Einstellungen → Suche → Ask → Kontextfenster"
+
+#: src/markdown_vault/search/llama_runtime.py
+#, python-brace-format
+msgid "{path} is not a valid GGUF model file — re-download it (use the file's download link, not its web page)."
+msgstr "{path} ist keine gültige GGUF-Modelldatei — lade sie erneut herunter (nutze den Download-Link der Datei, nicht ihre Webseite)."
+
+#: src/markdown_vault/search/quick_open_palette.py
+msgid "Try again"
+msgstr "Erneut versuchen"
+
+#: src/markdown_vault/search/quick_open_palette.py
+msgid "Settings"
+msgstr "Einstellungen"
+
+#: src/markdown_vault/search/quick_open_palette.py
+msgid "No files"
+msgstr "Keine Dateien"
+
+#: src/markdown_vault/search/quick_open_palette.py
+msgid "Initializing…"
+msgstr "Initialisieren…"
+
+#: src/markdown_vault/search/quick_open_palette.py
+msgid "Loading model…"
+msgstr "Modell wird geladen…"
+
+#: src/markdown_vault/search/quick_open_palette.py
+msgid "Reading your notes…"
+msgstr "Deine Notizen werden gelesen…"
+
+#: src/markdown_vault/search/quick_open_palette.py
+msgid "Writing the answer…"
+msgstr "Antwort wird geschrieben…"
+
+#: src/markdown_vault/search/quick_open_palette.py
+msgid "Thinking…"
+msgstr "Denkt nach…"
+
+#: src/markdown_vault/search/quick_open_palette.py
+msgid "Checking the server…"
+msgstr "Server wird geprüft…"
+
+#: src/markdown_vault/search/quick_open_palette.py
+msgid "Type a question, then ↵"
+msgstr "Eine Frage eingeben, dann ↵"
+
+#: src/markdown_vault/search/quick_open_palette.py
+msgid "Failed after"
+msgstr "Fehlgeschlagen nach"
+
+#: src/markdown_vault/search/quick_open_palette.py
+msgid "(empty answer)"
+msgstr "(leere Antwort)"
+
+#: src/markdown_vault/search/quick_open_palette.py
+msgid "Answered in"
+msgstr "Beantwortet in"
+
+#: src/markdown_vault/search/quick_open_palette.py
+msgid "Finding candidates…"
+msgstr "Kandidaten werden gesucht…"
+
+#: src/markdown_vault/search/quick_open_palette.py
+msgid "Couldn't search notes — see the log."
+msgstr "Notizen konnten nicht durchsucht werden — siehe Log."
+
+#: src/markdown_vault/search/quick_open_palette.py
+msgid "No candidate notes found."
+msgstr "Keine Kandidaten-Notizen gefunden."
+
+#: src/markdown_vault/search/search.py
+msgid "No results found"
+msgstr "Keine Ergebnisse gefunden"
+
+#: src/markdown_vault/ui/sidebar.py
+msgid "Open a file to see backlinks"
+msgstr "Datei öffnen, um Rückverweise zu sehen"
+
+#: src/markdown_vault/ui/sidebar.py
+msgid "No backlinks found"
+msgstr "Keine Rückverweise gefunden"
+
+#: src/markdown_vault/ui/sidebar.py
+msgid "No git repo"
+msgstr "Kein Git-Repository"
+
+#: src/markdown_vault/ui/sidebar.py
+msgid "No file open"
+msgstr "Keine Datei geöffnet"
+
+#: src/markdown_vault/ui/sidebar.py
+msgid "Not a git repository"
+msgstr "Kein Git-Repository"
+
+#: src/markdown_vault/ui/sidebar.py
+msgid "Working tree clean"
+msgstr "Arbeitsverzeichnis sauber"
+
+#: src/markdown_vault/ui/sidebar.py
+msgid "Cannot read file info"
+msgstr "Dateiinfo nicht lesbar"
+
+#: src/markdown_vault/ui/sidebar.py
+#, python-brace-format
+msgid "File:  {name}\nPath:  {parent}\nWords: {words}\nLines: {lines}\nSize:  {size} bytes\nModified: {modified}"
+msgstr "Datei:  {name}\nPfad:  {parent}\nWörter: {words}\nZeilen: {lines}\nGröße:  {size} Bytes\nGeändert: {modified}"
+
+#: src/markdown_vault/ui/sidebar.py
+msgid "No frontmatter"
+msgstr "Kein Frontmatter"
+
+#: src/markdown_vault/ui/preferences/constants.py
+msgid "Edit"
+msgstr "Bearbeiten"
+
+#: src/markdown_vault/ui/preferences/constants.py
+msgid "Render"
+msgstr "Rendern"
+
+#: src/markdown_vault/ui/preferences/constants.py
+msgid "Split"
+msgstr "Geteilt"
+
+#: src/markdown_vault/ui/preferences/constants.py
+msgid "Debug"
+msgstr "Debug"
+
+#: src/markdown_vault/ui/preferences/constants.py
+msgid "Info"
+msgstr "Info"
+
+#: src/markdown_vault/ui/preferences/constants.py
+msgid "Warning"
+msgstr "Warnung"
+
+#: src/markdown_vault/ui/preferences/constants.py
+msgid "Error"
+msgstr "Fehler"
+
+#: src/markdown_vault/ui/preferences/constants.py
+msgid "All (debug+)"
+msgstr "Alle (Debug+)"
+
+#: src/markdown_vault/ui/preferences/constants.py
+msgid "Warning and up"
+msgstr "Warnung und höher"
+
+#: src/markdown_vault/ui/preferences/constants.py
+msgid "Critical and up"
+msgstr "Kritisch und höher"
+
+#: src/markdown_vault/ui/preferences/constants.py
+msgid "Error only"
+msgstr "Nur Fehler"
+
+#: src/markdown_vault/ui/preferences/debug_page.py
+msgid "Logging"
+msgstr "Protokollierung"
+
+#: src/markdown_vault/ui/preferences/debug_page.py
+msgid "Log level"
+msgstr "Protokollstufe"
+
+#: src/markdown_vault/ui/preferences/debug_page.py
+msgid "Third-party log level"
+msgstr "Protokollstufe Drittanbieter"
+
+#: src/markdown_vault/ui/preferences/debug_page.py
+msgid "markdown, pymdownx, pygments, xml"
+msgstr "markdown, pymdownx, pygments, xml"
+
+#: src/markdown_vault/ui/preferences/debug_page.py
+msgid "GLib log level"
+msgstr "GLib-Protokollstufe"
+
+#: src/markdown_vault/ui/preferences/debug_page.py
+msgid "Gtk, WebKit, Gjs messages"
+msgstr "Gtk-, WebKit-, Gjs-Meldungen"
+
+#: src/markdown_vault/ui/preferences/debug_page.py
+msgid "Debug Dumps"
+msgstr "Debug-Dumps"
+
+#: src/markdown_vault/ui/preferences/debug_page.py
+msgid "File Index"
+msgstr "Datei-Index"
+
+#: src/markdown_vault/ui/preferences/debug_page.py
+msgid "Backlink Index"
+msgstr "Rückverweis-Index"
+
+#: src/markdown_vault/ui/preferences/debug_page.py
+msgid "Preview HTML"
+msgstr "Vorschau-HTML"
+
+#: src/markdown_vault/ui/preferences/debug_page.py
+msgid "Vault Tree"
+msgstr "Vault-Baum"
+
+#: src/markdown_vault/ui/preferences/debug_page.py
+msgid "Tabs"
+msgstr "Tabs"
+
+#: src/markdown_vault/ui/preferences/debug_page.py
+msgid "Sidebar"
+msgstr "Seitenleiste"
+
+#: src/markdown_vault/ui/preferences/dialog.py
+msgid "no keyring available — key won't be saved"
+msgstr "kein Schlüsselbund verfügbar — Schlüssel wird nicht gespeichert"
+
+#: src/markdown_vault/ui/preferences/dialog.py
+msgid "Keyring"
+msgstr "Schlüsselbund"
+
+#: src/markdown_vault/ui/preferences/dialog.py
+msgid "Could not store the API key in the keyring."
+msgstr "Der API-Schlüssel konnte nicht im Schlüsselbund gespeichert werden."
+
+#: src/markdown_vault/ui/preferences/editor_page.py
+msgid "Font &amp; Layout"
+msgstr "Schrift &amp; Layout"
+
+#: src/markdown_vault/ui/preferences/editor_page.py
+msgid "Font size"
+msgstr "Schriftgröße"
+
+#: src/markdown_vault/ui/preferences/editor_page.py
+msgid "Tab width"
+msgstr "Tabulatorbreite"
+
+#: src/markdown_vault/ui/preferences/editor_page.py
+msgid "Word wrap"
+msgstr "Zeilenumbruch"
+
+#: src/markdown_vault/ui/preferences/editor_page.py
+msgid "Minimum tab width (px)"
+msgstr "Minimale Tab-Breite (px)"
+
+#: src/markdown_vault/ui/preferences/editor_page.py
+msgid "Wrap tabs"
+msgstr "Tabs umbrechen"
+
+#: src/markdown_vault/ui/preferences/editor_page.py
+msgid "Wikilinks"
+msgstr "Wikilinks"
+
+#: src/markdown_vault/ui/preferences/editor_page.py
+msgid "Autofix and validation of [[wikilinks]] when saving."
+msgstr "Autokorrektur und Prüfung von [[Wikilinks]] beim Speichern."
+
+#: src/markdown_vault/ui/preferences/editor_page.py
+msgid "Normalize on save"
+msgstr "Beim Speichern normalisieren"
+
+#: src/markdown_vault/ui/preferences/editor_page.py
+msgid "Trim whitespace inside [[…]] when saving."
+msgstr "Leerzeichen in [[…]] beim Speichern entfernen."
+
+#: src/markdown_vault/ui/preferences/editor_page.py
+msgid "Auto-fix moved links"
+msgstr "Verschobene Links automatisch korrigieren"
+
+#: src/markdown_vault/ui/preferences/editor_page.py
+msgid "Redirect a broken link when exactly one matching file exists."
+msgstr "Einen defekten Link umleiten, wenn genau eine passende Datei existiert."
+
+#: src/markdown_vault/ui/preferences/editor_page.py
+msgid "Warn about broken links"
+msgstr "Vor defekten Links warnen"
+
+#: src/markdown_vault/ui/preferences/editor_page.py
+msgid "After saving, show a notice for links that can't be resolved."
+msgstr "Nach dem Speichern auf nicht auflösbare Links hinweisen."
+
+#: src/markdown_vault/ui/preferences/editor_page.py
+msgid "Mark broken links in the editor"
+msgstr "Defekte Links im Editor markieren"
+
+#: src/markdown_vault/ui/preferences/editor_page.py
+msgid "Gutter warning triangle and red underline on unresolved links."
+msgstr "Warndreieck am Rand und rote Unterstreichung bei nicht aufgelösten Links."
+
+#: src/markdown_vault/ui/preferences/general_page.py
+msgid "Autosave"
+msgstr "Automatisches Speichern"
+
+#: src/markdown_vault/ui/preferences/general_page.py
+msgid "Autosave interval (seconds)"
+msgstr "Intervall für automatisches Speichern (Sekunden)"
+
+#: src/markdown_vault/ui/preferences/general_page.py
+msgid "Default View Mode"
+msgstr "Standard-Ansichtsmodus"
+
+#: src/markdown_vault/ui/preferences/general_page.py
+msgid "View mode for new tabs"
+msgstr "Ansichtsmodus für neue Tabs"
+
+#: src/markdown_vault/ui/preferences/keyboard_page.py
+msgid "Keybindings"
+msgstr "Tastenkürzel"
+
+#: src/markdown_vault/ui/preferences/keyboard_page.py
+msgid "Next tab"
+msgstr "Nächster Tab"
+
+#: src/markdown_vault/ui/preferences/keyboard_page.py
+msgid "Previous tab"
+msgstr "Vorheriger Tab"
+
+#: src/markdown_vault/ui/preferences/keyboard_page.py
+msgid "Tab switching"
+msgstr "Tab-Wechsel"
+
+#: src/markdown_vault/ui/preferences/keyboard_page.py
+msgid "Tab switch behaviour"
+msgstr "Verhalten beim Tab-Wechsel"
+
+#: src/markdown_vault/ui/preferences/keyboard_page.py
+msgid "MRU switches to the most recently used tab, Cycle goes in order"
+msgstr "MRU wechselt zum zuletzt genutzten Tab, Zyklus geht der Reihe nach"
+
+#: src/markdown_vault/ui/preferences/keyboard_page.py
+msgid "Most Recently Used"
+msgstr "Zuletzt verwendet"
+
+#: src/markdown_vault/ui/preferences/keyboard_page.py
+msgid "Cycle in Order"
+msgstr "Der Reihe nach"
+
+#: src/markdown_vault/ui/preferences/keyboard_page.py
+msgid "Press shortcut..."
+msgstr "Tastenkürzel drücken…"
+
+#: src/markdown_vault/ui/preferences/preview_page.py
+msgid "Zoom"
+msgstr "Zoom"
+
+#: src/markdown_vault/ui/preferences/preview_page.py
+msgid "Default zoom level"
+msgstr "Standard-Zoomstufe"
+
+#: src/markdown_vault/ui/preferences/preview_page.py
+msgid "Privacy"
+msgstr "Datenschutz"
+
+#: src/markdown_vault/ui/preferences/preview_page.py
+msgid "Allow remote images"
+msgstr "Externe Bilder erlauben"
+
+#: src/markdown_vault/ui/preferences/web_page.py
+msgid "WebKit Rendering"
+msgstr "WebKit-Rendering"
+
+#: src/markdown_vault/ui/preferences/web_page.py
+msgid "Disable DMA-BUF renderer"
+msgstr "DMA-BUF-Renderer deaktivieren"
+
+#: src/markdown_vault/ui/preferences/web_page.py
+msgid "Lowers GPU/video memory usage (WEBKIT_DISABLE_DMABUF_RENDERER). Takes effect after restart."
+msgstr "Senkt GPU-/Videospeicher-Nutzung (WEBKIT_DISABLE_DMABUF_RENDERER). Wird nach Neustart wirksam."
+
+#: src/markdown_vault/ui/preferences/web_page.py
+msgid "Disable hardware acceleration"
+msgstr "Hardwarebeschleunigung deaktivieren"
+
+#: src/markdown_vault/ui/preferences/web_page.py
+msgid "Render without the GPU (WEBKIT_DISABLE_COMPOSITING_MODE). Takes effect after restart."
+msgstr "Ohne GPU rendern (WEBKIT_DISABLE_COMPOSITING_MODE). Wird nach Neustart wirksam."
+
+#: src/markdown_vault/ui/preferences/prompt_subpage.py
+msgid "System prompt"
+msgstr "System-Prompt"
+
+#: src/markdown_vault/ui/preferences/prompt_subpage.py
+#, python-brace-format
+msgid "Grounding instructions sent to the model. {language} is replaced with the answer language. Reset restores the built-in default and keeps tracking future improvements."
+msgstr "Anweisungen, die die Antwort an die Notizen binden. {language} wird durch die Antwortsprache ersetzt. Zurücksetzen stellt den eingebauten Standard wieder her und verfolgt künftige Verbesserungen weiter."
+
+#: src/markdown_vault/ui/preferences/prompt_subpage.py
+msgid "Reset"
+msgstr "Zurücksetzen"
+
+#: src/markdown_vault/ui/preferences/prompt_subpage.py
+msgid "Reset to the built-in default prompt"
+msgstr "Auf den eingebauten Standard-Prompt zurücksetzen"
+
+#: src/markdown_vault/ui/preferences/search_page.py
+msgid "Semantic search"
+msgstr "Semantische Suche"
+
+#: src/markdown_vault/ui/preferences/search_page.py
+msgid "Enable semantic search"
+msgstr "Semantische Suche aktivieren"
+
+#: src/markdown_vault/ui/preferences/search_page.py
+msgid "Backend"
+msgstr "Backend"
+
+#: src/markdown_vault/ui/preferences/search_page.py
+msgid "Local runs in-process (recommended); the servers need one running"
+msgstr "Lokal läuft im Prozess (empfohlen); die Server brauchen einen laufenden Dienst"
+
+#: src/markdown_vault/ui/preferences/search_page.py
+msgid "Local (ONNX) — recommended"
+msgstr "Lokal (ONNX) — empfohlen"
+
+#: src/markdown_vault/ui/preferences/search_page.py
+msgid "Ollama (server)"
+msgstr "Ollama (Server)"
+
+#: src/markdown_vault/ui/preferences/search_page.py
+msgid "OpenAI-compatible (server)"
+msgstr "OpenAI-kompatibel (Server)"
+
+#: src/markdown_vault/ui/preferences/search_page.py
+msgid "Minimum similarity"
+msgstr "Mindestähnlichkeit"
+
+#: src/markdown_vault/ui/preferences/search_page.py
+msgid "Higher = stricter (fewer, closer matches)"
+msgstr "Höher = strenger (weniger, genauere Treffer)"
+
+#: src/markdown_vault/ui/preferences/search_page.py
+msgid "Rebuild index now"
+msgstr "Index jetzt neu aufbauen"
+
+#: src/markdown_vault/ui/preferences/search_page.py
+msgid "Clear the cache and re-embed all notes with the selected backend"
+msgstr "Den Cache leeren und alle Notizen mit dem gewählten Backend neu einbetten"
+
+#: src/markdown_vault/ui/preferences/search_page.py
+msgid "Rebuild"
+msgstr "Neu aufbauen"
+
+#: src/markdown_vault/ui/preferences/search_page.py
+msgid "Configuration"
+msgstr "Konfiguration"
+
+#: src/markdown_vault/ui/preferences/search_page.py
+msgid "Embedding"
+msgstr "Embedding"
+
+#: src/markdown_vault/ui/preferences/search_page.py
+msgid "Model that turns notes into vectors"
+msgstr "Modell, das Notizen in Vektoren umwandelt"
+
+#: src/markdown_vault/ui/preferences/search_page.py
+msgid "Ask (answers from your notes)"
+msgstr "Ask (Antworten aus deinen Notizen)"
+
+#: src/markdown_vault/ui/preferences/search_page.py
+msgid "Chat model + prompt for synthesized answers"
+msgstr "Chat-Modell + Prompt für synthetisierte Antworten"
+
+#: src/markdown_vault/ui/preferences/search_page.py
+msgid "Audio transcription"
+msgstr "Audio-Transkription"
+
+#: src/markdown_vault/ui/preferences/search_page.py
+msgid "Turn audio files into text when you import them. Pick a model size and download it once (bigger = more accurate, slower, larger)."
+msgstr "Audiodateien beim Import in Text umwandeln. Eine Modellgröße wählen und einmal herunterladen (größer = genauer, langsamer, mehr Speicher)."
+
+#: src/markdown_vault/ui/preferences/search_page.py
+msgid "Model"
+msgstr "Modell"
+
+#: src/markdown_vault/ui/preferences/search_page.py
+msgid "Multilingual; bigger = more accurate, slower, larger download"
+msgstr "Mehrsprachig; größer = genauer, langsamer, größerer Download"
+
+#: src/markdown_vault/ui/preferences/search_page.py
+msgid "Model files"
+msgstr "Modelldateien"
+
+#: src/markdown_vault/ui/preferences/search_page.py
+msgid "Download the selected model"
+msgstr "Das gewählte Modell herunterladen"
+
+#: src/markdown_vault/ui/preferences/search_page.py
+msgid "Enable semantic search first"
+msgstr "Zuerst die semantische Suche aktivieren"
+
+#: src/markdown_vault/ui/preferences/search_page.py
+msgid "Rebuilding semantic index in the background…"
+msgstr "Semantischer Index wird im Hintergrund neu aufgebaut…"
+
+#: src/markdown_vault/ui/preferences/search_page.py
+msgid "Needs the optional AI stack — make install-ai"
+msgstr "Braucht den optionalen KI-Stack — make install-ai"
+
+#: src/markdown_vault/ui/preferences/search_page.py
+msgid "Downloaded — audio import ready"
+msgstr "Heruntergeladen — Audio-Import bereit"
+
+#: src/markdown_vault/ui/preferences/search_page.py
+msgid "Not downloaded"
+msgstr "Nicht heruntergeladen"
+
+#: src/markdown_vault/ui/preferences/search_page.py
+msgid "Downloading…"
+msgstr "Wird heruntergeladen…"
+
+#: src/markdown_vault/ui/preferences/search_page.py
+#, python-brace-format
+msgid "Download failed: {error}"
+msgstr "Download fehlgeschlagen: {error}"
+
+#: src/markdown_vault/ui/preferences/ask_subpage.py
+msgid "Ask"
+msgstr "Ask"
+
+#: src/markdown_vault/ui/preferences/ask_subpage.py
+msgid "The quick-open 'ask' mode answers from your notes with a local model. 'Automatic' sets everything up for you; only the model download needs a click. Choose 'Manual' to pick the backend and tune it yourself."
+msgstr "Der „Ask\"-Modus im Schnell-Öffnen beantwortet Fragen aus deinen Notizen mit einem lokalen Modell. „Automatisch\" richtet alles für dich ein; nur der Modell-Download braucht einen Klick. Für „Manuell\" das Backend selbst wählen und einstellen."
+
+#: src/markdown_vault/ui/preferences/ask_subpage.py
+msgid "Answer engine"
+msgstr "Antwort-Engine"
+
+#: src/markdown_vault/ui/preferences/ask_subpage.py
+msgid "Automatic — recommended"
+msgstr "Automatisch — empfohlen"
+
+#: src/markdown_vault/ui/preferences/ask_subpage.py
+msgid "Manual (advanced)"
+msgstr "Manuell (erweitert)"
+
+#: src/markdown_vault/ui/preferences/ask_subpage.py
+msgid "Off"
+msgstr "Aus"
+
+#: src/markdown_vault/ui/preferences/ask_subpage.py
+msgid "Local — in-process, no server (recommended)"
+msgstr "Lokal — im Prozess, kein Server (empfohlen)"
+
+#: src/markdown_vault/ui/preferences/ask_subpage.py
+msgid "OpenAI-compatible — llama.cpp (/v1)"
+msgstr "OpenAI-kompatibel — llama.cpp (/v1)"
+
+#: src/markdown_vault/ui/preferences/ask_subpage.py
+msgid "Downloaded models"
+msgstr "Heruntergeladene Modelle"
+
+#: src/markdown_vault/ui/preferences/ask_subpage.py
+msgid "Rescan the models folder"
+msgstr "Modell-Ordner neu einlesen"
+
+#: src/markdown_vault/ui/preferences/ask_subpage.py
+msgid "Reset to the newest model"
+msgstr "Auf das neueste Modell zurücksetzen"
+
+#: src/markdown_vault/ui/preferences/ask_subpage.py
+msgid "Download the model"
+msgstr "Modell herunterladen"
+
+#: src/markdown_vault/ui/preferences/ask_subpage.py
+msgid "Model Download"
+msgstr "Modell-Download"
+
+#: src/markdown_vault/ui/preferences/ask_subpage.py
+msgid "Model folder"
+msgstr "Modell-Ordner"
+
+#: src/markdown_vault/ui/preferences/ask_subpage.py
+msgid "Choose folder…"
+msgstr "Ordner wählen…"
+
+#: src/markdown_vault/ui/preferences/ask_subpage.py
+msgid "Reset to default"
+msgstr "Auf Standard zurücksetzen"
+
+#: src/markdown_vault/ui/preferences/ask_subpage.py
+msgid "Model runtime"
+msgstr "Modell-Laufzeit"
+
+#: src/markdown_vault/ui/preferences/ask_subpage.py
+msgid "GPU layers, CPU threads, KV cache…"
+msgstr "GPU-Layer, CPU-Threads, KV-Cache…"
+
+#: src/markdown_vault/ui/preferences/ask_subpage.py
+msgid "Server URL"
+msgstr "Server-URL"
+
+#: src/markdown_vault/ui/preferences/ask_subpage.py
+#, python-brace-format
+msgid "{url} (default)"
+msgstr "{url} (Standard)"
+
+#: src/markdown_vault/ui/preferences/ask_subpage.py
+msgid "API key"
+msgstr "API-Schlüssel"
+
+#: src/markdown_vault/ui/preferences/ask_subpage.py
+msgid "⚠ This server is not local — the full text of every retrieved note is sent to it with each question."
+msgstr "⚠ Dieser Server ist nicht lokal — der volle Text jeder gefundenen Notiz wird bei jeder Frage an ihn gesendet."
+
+#: src/markdown_vault/ui/preferences/ask_subpage.py
+msgid "Fetched from the server"
+msgstr "Vom Server abgerufen"
+
+#: src/markdown_vault/ui/preferences/ask_subpage.py
+msgid "Refresh model list"
+msgstr "Modell-Liste aktualisieren"
+
+#: src/markdown_vault/ui/preferences/ask_subpage.py
+msgid "Reasoning"
+msgstr "Reasoning"
+
+#: src/markdown_vault/ui/preferences/ask_subpage.py
+msgid "Let a reasoning model (Qwen3, …) think before answering — more accurate but much slower. Off is faster and usually enough for grounded note answers."
+msgstr "Ein Reasoning-Modell (Qwen3, …) vor dem Antworten nachdenken lassen — genauer, aber viel langsamer. Aus ist schneller und für notengestützte Antworten meist ausreichend."
+
+#: src/markdown_vault/ui/preferences/ask_subpage.py
+msgid "Hybrid retrieval"
+msgstr "Hybrides Retrieval"
+
+#: src/markdown_vault/ui/preferences/ask_subpage.py
+msgid "Fuse a keyword (BM25) ranking into the semantic search so exact tokens — names, config keys, shortcuts — that embeddings blur still surface. Helps most on large vaults."
+msgstr "Ein Schlagwort-Ranking (BM25) in die semantische Suche einmischen, damit exakte Tokens — Namen, Config-Schlüssel, Shortcuts —, die Embeddings verwischen, trotzdem auftauchen. Hilft am meisten bei großen Vaults."
+
+#: src/markdown_vault/ui/preferences/ask_subpage.py
+msgid "Context notes"
+msgstr "Kontext-Notizen"
+
+#: src/markdown_vault/ui/preferences/ask_subpage.py
+msgid "How many notes are sent to the model as context. On CPU the model spends almost all its time reading them, so fewer = much faster (roughly linear). Recommended: 10 on a GPU, ~5 on a slow CPU."
+msgstr "Wie viele Notizen als Kontext an das Modell gehen. Auf der CPU verbringt das Modell fast die ganze Zeit mit dem Lesen, also weniger = viel schneller (grob linear). Empfohlen: 10 auf einer GPU, ~5 auf einer langsamen CPU."
+
+#: src/markdown_vault/ui/preferences/ask_subpage.py
+msgid "Context window"
+msgstr "Kontextfenster"
+
+#: src/markdown_vault/ui/preferences/ask_subpage.py
+msgid "Tokens of context. Used by the Local and Ollama backends (higher fits more/longer notes but uses more memory); the OpenAI-compatible server sizes its own context."
+msgstr "Tokens an Kontext. Von den Backends Lokal und Ollama genutzt (höher fasst mehr/längere Notizen, braucht aber mehr Speicher); der OpenAI-kompatible Server bemisst seinen Kontext selbst."
+
+#: src/markdown_vault/ui/preferences/ask_subpage.py
+msgid "Grounding instructions sent to the model"
+msgstr "Anweisungen, die die Antwort an die Notizen binden"
+
+#: src/markdown_vault/ui/preferences/ask_subpage.py
+#, python-brace-format
+msgid "{n} model"
+msgid_plural "{n} models"
+msgstr[0] "{n} Modell"
+msgstr[1] "{n} Modelle"
+
+#: src/markdown_vault/ui/preferences/ask_subpage.py
+msgid "Starting…"
+msgstr "Startet…"
+
+#: src/markdown_vault/ui/preferences/ask_subpage.py
+msgid "That URL isn't a GGUF model file — use the download (\"resolve\") link, not the web page."
+msgstr "Diese URL ist keine GGUF-Modelldatei — den Download-Link („resolve\") nutzen, nicht die Webseite."
+
+#: src/markdown_vault/ui/preferences/ask_subpage.py
+msgid "Select the models folder"
+msgstr "Modell-Ordner auswählen"
+
+#: src/markdown_vault/ui/preferences/ask_subpage.py
+msgid "newest"
+msgstr "neuestes"
+
+#: src/markdown_vault/ui/preferences/ask_subpage.py
+#, python-brace-format
+msgid "{name} — not found"
+msgstr "{name} — nicht gefunden"
+
+#: src/markdown_vault/ui/preferences/ask_subpage.py
+msgid "No models downloaded yet"
+msgstr "Noch keine Modelle heruntergeladen"
+
+#: src/markdown_vault/ui/preferences/ask_subpage.py
+msgid "Loading…"
+msgstr "Wird geladen…"
+
+#: src/markdown_vault/ui/preferences/ask_subpage.py
+#, python-brace-format
+msgid "Not reachable: {error}"
+msgstr "Nicht erreichbar: {error}"
+
+#: src/markdown_vault/ui/preferences/ask_subpage.py
+msgid "This server does not list models — it serves a fixed one"
+msgstr "Dieser Server listet keine Modelle — er stellt ein festes bereit"
+
+#: src/markdown_vault/ui/preferences/ask_subpage.py
+msgid "No models on the server"
+msgstr "Keine Modelle auf dem Server"
+
+#: src/markdown_vault/ui/preferences/embedding_subpage.py
+msgid "Local (ONNX)"
+msgstr "Lokal (ONNX)"
+
+#: src/markdown_vault/ui/preferences/embedding_subpage.py
+msgid "Runs in-process, nothing leaves your machine. Recommended model: paraphrase-multilingual-MiniLM-L12-v2 (multilingual) — the default URLs below point at it. English-only notes can use a smaller English model for a speed-up."
+msgstr "Läuft im Prozess, nichts verlässt deinen Rechner. Empfohlenes Modell: paraphrase-multilingual-MiniLM-L12-v2 (mehrsprachig) — die Standard-URLs unten zeigen darauf. Für rein englische Notizen kann ein kleineres englisches Modell den Vorgang beschleunigen."
+
+#: src/markdown_vault/ui/preferences/embedding_subpage.py
+msgid "Download model.onnx"
+msgstr "model.onnx herunterladen"
+
+#: src/markdown_vault/ui/preferences/embedding_subpage.py
+msgid "Download tokenizer.json"
+msgstr "tokenizer.json herunterladen"
+
+#: src/markdown_vault/ui/preferences/embedding_subpage.py
+msgid "Tokenizer Download"
+msgstr "Tokenizer-Download"
+
+#: src/markdown_vault/ui/preferences/embedding_subpage.py
+msgid "Test"
+msgstr "Testen"
+
+#: src/markdown_vault/ui/preferences/embedding_subpage.py
+msgid "ONNX runtime"
+msgstr "ONNX-Runtime"
+
+#: src/markdown_vault/ui/preferences/embedding_subpage.py
+msgid "Checking…"
+msgstr "Wird geprüft…"
+
+#: src/markdown_vault/ui/preferences/embedding_subpage.py
+msgid "How to pick your own ONNX model"
+msgstr "Wie du dein eigenes ONNX-Modell auswählst"
+
+#: src/markdown_vault/ui/preferences/embedding_subpage.py
+msgid "What to search for and which files you need"
+msgstr "Wonach suchen und welche Dateien du brauchst"
+
+#: src/markdown_vault/ui/preferences/embedding_subpage.py
+msgid "Alternative backend if you already run an Ollama server. Recommended embedding model: nomic-embed-text."
+msgstr "Alternatives Backend, falls du bereits einen Ollama-Server betreibst. Empfohlenes Embedding-Modell: nomic-embed-text."
+
+#: src/markdown_vault/ui/preferences/embedding_subpage.py
+msgid "Ollama URL"
+msgstr "Ollama-URL"
+
+#: src/markdown_vault/ui/preferences/embedding_subpage.py
+msgid "Embedding model"
+msgstr "Embedding-Modell"
+
+#: src/markdown_vault/ui/preferences/embedding_subpage.py
+msgid "Test connection"
+msgstr "Verbindung testen"
+
+#: src/markdown_vault/ui/preferences/embedding_subpage.py
+msgid "Embed a probe with the current URL + model"
+msgstr "Eine Probe mit aktueller URL + Modell einbetten"
+
+#: src/markdown_vault/ui/preferences/embedding_subpage.py
+msgid "A server exposing POST /v1/embeddings (llama.cpp, vLLM, LocalAI, or a hosted endpoint). The API key is stored in the OS keyring, never in the config or logs."
+msgstr "Ein Server, der POST /v1/embeddings anbietet (llama.cpp, vLLM, LocalAI oder ein gehosteter Endpunkt). Der API-Schlüssel wird im Schlüsselbund des Systems gespeichert, nie in der Config oder im Log."
+
+#: src/markdown_vault/ui/preferences/embedding_subpage.py
+msgid "⚠ This server is not local — the text of every note is sent to it while the index builds."
+msgstr "⚠ Dieser Server ist nicht lokal — der Text jeder Notiz wird beim Indexaufbau an ihn gesendet."
+
+#: src/markdown_vault/ui/preferences/embedding_subpage.py
+msgid "No model selected — semantic search won't run. Pick a model above (Refresh to load the list)."
+msgstr "Kein Modell gewählt — die semantische Suche läuft nicht. Oben ein Modell wählen (Aktualisieren lädt die Liste)."
+
+#: src/markdown_vault/ui/preferences/embedding_subpage.py
+msgid "Select ONNX model folder"
+msgstr "ONNX-Modell-Ordner auswählen"
+
+#: src/markdown_vault/ui/preferences/embedding_subpage.py
+#, python-brace-format
+msgid "onnxruntime {version} detected — recommended ≥ {recommended} for current models"
+msgstr "onnxruntime {version} erkannt — empfohlen ≥ {recommended} für aktuelle Modelle"
+
+#: src/markdown_vault/ui/preferences/embedding_subpage.py
+msgid "onnxruntime not found — install it (openSUSE: python313-onnxruntime) or use the Flatpak build"
+msgstr "onnxruntime nicht gefunden — installieren (openSUSE: python313-onnxruntime) oder den Flatpak-Build nutzen"
+
+#: src/markdown_vault/ui/preferences/embedding_subpage.py
+msgid "onnxruntime is installed but failed to load — see the log."
+msgstr "onnxruntime ist installiert, konnte aber nicht geladen werden — siehe Log."
+
+#: src/markdown_vault/ui/preferences/embedding_subpage.py
+msgid "Testing…"
+msgstr "Wird getestet…"
+
+#: src/markdown_vault/ui/preferences/embedding_subpage.py
+#, python-brace-format
+msgid "Connected — {model} OK (dim {dim})"
+msgstr "Verbunden — {model} OK (Dim {dim})"
+
+#: src/markdown_vault/ui/preferences/embedding_subpage.py
+#, python-brace-format
+msgid "Failed: {error}"
+msgstr "Fehlgeschlagen: {error}"
+
+#: src/markdown_vault/ui/preferences/embedding_subpage.py
+#, python-brace-format
+msgid "Connected — embeds OK (dim {dim})"
+msgstr "Verbunden — Embedding OK (Dim {dim})"
+
+#: src/markdown_vault/ui/preferences/embedding_subpage.py
+msgid "Loading model + embedding a probe…"
+msgstr "Modell laden + Probe einbetten…"
+
+#: src/markdown_vault/ui/preferences/embedding_subpage.py
+#, python-brace-format
+msgid "Model loads and embeds OK (dim {dim})"
+msgstr "Modell lädt und bettet ein, OK (Dim {dim})"
+
+#: src/markdown_vault/ui/preferences/embedding_subpage.py
+msgid "Refusing a non-HTTPS download URL."
+msgstr "Nicht-HTTPS-Download-URL wird abgelehnt."
+
+#: src/markdown_vault/ui/preferences/embedding_subpage.py
+#, python-brace-format
+msgid "Downloaded {name} ({size} MB)"
+msgstr "Heruntergeladen: {name} ({size} MB)"
+
+#: src/markdown_vault/ui/preferences/embedding_subpage.py
+msgid "Semantic search needs a sentence-embedding model exported to ONNX. Find one on Hugging Face and paste each file's URL above (use the file's “Copy download link”, i.e. the .../resolve/main/... address).\n\nWhat to look for:\n•  A feature-extraction / sentence-similarity model in ONNX format — e.g. the Xenova/ or sentence-transformers/ orgs. Xenova repos ship ready ONNX exports in an onnx/ folder.\n•  Two files: model.onnx (or model_quantized.onnx — smaller and faster, slightly lower quality) and tokenizer.json.\n•  Multilingual if your notes aren't English-only (e.g. paraphrase-multilingual-MiniLM-L12-v2); English-only models are smaller and faster.\n•  It must output token embeddings (the app mean-pools them). Classification or reranker models won't work.\n\nGood search terms: “sentence-transformers onnx”, “Xenova MiniLM”, “feature-extraction onnx”. Both BERT- and XLM-R-style models work — the app auto-detects the inputs a model needs."
+msgstr "Die semantische Suche braucht ein Satz-Embedding-Modell, das nach ONNX exportiert ist. Suche eines auf Hugging Face und füge oben die URL jeder Datei ein (nutze den „Copy download link“ der Datei, also die .../resolve/main/...-Adresse).\n\nWorauf achten:\n•  Ein Feature-Extraction-/Sentence-Similarity-Modell im ONNX-Format — z. B. die Orgs Xenova/ oder sentence-transformers/. Xenova-Repos liefern fertige ONNX-Exporte in einem onnx/-Ordner.\n•  Zwei Dateien: model.onnx (oder model_quantized.onnx — kleiner und schneller, leicht geringere Qualität) und tokenizer.json.\n•  Mehrsprachig, falls deine Notizen nicht rein englisch sind (z. B. paraphrase-multilingual-MiniLM-L12-v2); rein englische Modelle sind kleiner und schneller.\n•  Es muss Token-Embeddings ausgeben (die App mittelt sie per Mean-Pooling). Klassifikations- oder Reranker-Modelle funktionieren nicht.\n\nGute Suchbegriffe: „sentence-transformers onnx“, „Xenova MiniLM“, „feature-extraction onnx“. Sowohl BERT- als auch XLM-R-artige Modelle funktionieren — die App erkennt automatisch, welche Eingaben ein Modell braucht."
+
+#: src/markdown_vault/ui/preferences/runtime_subpage.py
+msgid "Local model runtime"
+msgstr "Lokale Modell-Laufzeit"
+
+#: src/markdown_vault/ui/preferences/runtime_subpage.py
+msgid "How the in-process model uses the CPU, GPU and memory."
+msgstr "Wie das In-Prozess-Modell CPU, GPU und Speicher nutzt."
+
+#: src/markdown_vault/ui/preferences/runtime_subpage.py
+msgid "GPU layers"
+msgstr "GPU-Layer"
+
+#: src/markdown_vault/ui/preferences/runtime_subpage.py
+msgid "Layers offloaded to the GPU. 0 = pure CPU, 999 = all."
+msgstr "Auf die GPU ausgelagerte Layer. 0 = reine CPU, 999 = alle."
+
+#: src/markdown_vault/ui/preferences/runtime_subpage.py
+msgid "CPU threads"
+msgstr "CPU-Threads"
+
+#: src/markdown_vault/ui/preferences/runtime_subpage.py
+msgid "0 = half your physical cores, so the machine stays responsive while an answer is generated. More = faster answers but can slow the rest of the system; raise it gradually."
+msgstr "0 = die Hälfte deiner physischen Kerne, damit der Rechner während der Antwort reaktionsfähig bleibt. Mehr = schnellere Antworten, kann aber den Rest des Systems verlangsamen; schrittweise erhöhen."
+
+#: src/markdown_vault/ui/preferences/runtime_subpage.py
+msgid "Prompt batch size"
+msgstr "Prompt-Batch-Größe"
+
+#: src/markdown_vault/ui/preferences/runtime_subpage.py
+msgid "Logical batch (n_batch). Keep ≥ the micro-batch."
+msgstr "Logischer Batch (n_batch). ≥ dem Micro-Batch halten."
+
+#: src/markdown_vault/ui/preferences/runtime_subpage.py
+msgid "Default (2048)"
+msgstr "Standard (2048)"
+
+#: src/markdown_vault/ui/preferences/runtime_subpage.py
+msgid "Prompt micro-batch size"
+msgstr "Prompt-Micro-Batch-Größe"
+
+#: src/markdown_vault/ui/preferences/runtime_subpage.py
+msgid "Physical micro-batch (n_ubatch): the GPU prefill-speed lever. Must stay ≤ the batch size — larger values are greyed out."
+msgstr "Physischer Micro-Batch (n_ubatch): der Hebel für die GPU-Prefill-Geschwindigkeit. Muss ≤ der Batch-Größe bleiben — größere Werte sind ausgegraut."
+
+#: src/markdown_vault/ui/preferences/runtime_subpage.py
+msgid "Default (512)"
+msgstr "Standard (512)"
+
+#: src/markdown_vault/ui/preferences/runtime_subpage.py
+msgid "f16 — full (default)"
+msgstr "f16 — voll (Standard)"
+
+#: src/markdown_vault/ui/preferences/runtime_subpage.py
+msgid "q8_0 — half"
+msgstr "q8_0 — halb"
+
+#: src/markdown_vault/ui/preferences/runtime_subpage.py
+msgid "q4_0 — quarter"
+msgstr "q4_0 — viertel"
+
+#: src/markdown_vault/ui/preferences/runtime_subpage.py
+msgid "K cache"
+msgstr "K-Cache"
+
+#: src/markdown_vault/ui/preferences/runtime_subpage.py
+msgid "Key-cache precision. Quantizing K saves memory without needing flash attention."
+msgstr "Präzision des Key-Cache. K zu quantisieren spart Speicher, ohne Flash Attention zu brauchen."
+
+#: src/markdown_vault/ui/preferences/runtime_subpage.py
+msgid "V cache"
+msgstr "V-Cache"
+
+#: src/markdown_vault/ui/preferences/runtime_subpage.py
+msgid "Flash attention"
+msgstr "Flash Attention"
+
+#: src/markdown_vault/ui/preferences/runtime_subpage.py
+msgid "Faster attention, less memory; required for quantizing the V cache. Needed when the V cache is q8_0/q4_0."
+msgstr "Schnellere Attention, weniger Speicher; nötig zum Quantisieren des V-Cache. Erforderlich, wenn der V-Cache q8_0/q4_0 ist."
+
+#: src/markdown_vault/ui/preferences/runtime_subpage.py
+msgid "Memory-map model"
+msgstr "Modell per Memory-Map"
+
+#: src/markdown_vault/ui/preferences/runtime_subpage.py
+msgid "On (default) maps the model file lazily. Off loads it fully into RAM — a longer 'Loading model…' but no page-faults during the answer; needs enough free RAM."
+msgstr "An (Standard) mappt die Modelldatei bei Bedarf. Aus lädt sie vollständig in den RAM — ein längeres „Modell wird geladen…“, aber keine Page-Faults während der Antwort; braucht genug freien RAM."
+
+#: src/markdown_vault/ui/preferences/runtime_subpage.py
+msgid "Max answer length"
+msgstr "Max. Antwortlänge"
+
+#: src/markdown_vault/ui/preferences/runtime_subpage.py
+msgid "Hard cap on generated tokens. Bounds the answer and stops a model that gets stuck repeating itself (~1.5 words/token)."
+msgstr "Harte Obergrenze für erzeugte Tokens. Begrenzt die Antwort und stoppt ein Modell, das sich in Wiederholungen verfängt (~1,5 Wörter/Token)."
+
+#: src/markdown_vault/ui/preferences/runtime_subpage.py
+msgid "Value-cache precision. Quantizing V (below f16) needs flash attention."
+msgstr "Präzision des Value-Cache. V zu quantisieren (unter f16) braucht Flash Attention."
+
+#: src/markdown_vault/ui/preferences/runtime_subpage.py
+msgid " ⚠ Turn on Flash attention below."
+msgstr " ⚠ Flash Attention unten einschalten."
+
+#: src/markdown_vault/ui/preferences/dialog.py
+msgid "Preferences"
+msgstr "Einstellungen"
+
+#: src/markdown_vault/ui/preferences/editor_page.py
+msgid "Editor"
+msgstr "Editor"
+
+#: src/markdown_vault/ui/preferences/general_page.py
+msgid "General"
+msgstr "Allgemein"
+
+#: src/markdown_vault/ui/preferences/keyboard_page.py
+msgid "Keyboard"
+msgstr "Tastatur"
+
+#: src/markdown_vault/ui/preferences/preview_page.py
+msgid "Preview"
+msgstr "Vorschau"
+
+#: src/markdown_vault/ui/preferences/preview_page.py
+msgid "Load images from https:// URLs in notes. Off blocks them so a note cannot beacon your IP; scripts stay blocked either way."
+msgstr "Bilder von https://-URLs in Notizen laden. Aus blockiert sie, damit eine Notiz nicht deine IP verraten kann; Skripte bleiben ohnehin blockiert."
+
+#: src/markdown_vault/app/app_window.py
+msgid "Open a file from the vault tree or create a new one"
+msgstr "Eine Datei aus dem Vault-Baum öffnen oder eine neue anlegen"
+
+#: src/markdown_vault/app/app_window.py
+msgid "Open Vault"
+msgstr "Vault öffnen"
+
+#: src/markdown_vault/app/app_window.py
+msgid "New file (Ctrl+N)"
+msgstr "Neue Datei (Strg+N)"
+
+#: src/markdown_vault/app/app_window.py
+msgid "Save (Ctrl+S)"
+msgstr "Speichern (Strg+S)"
+
+#: src/markdown_vault/app/app_window.py
+msgid "Back (Alt+Left)"
+msgstr "Zurück (Alt+Links)"
+
+#: src/markdown_vault/app/app_window.py
+msgid "Forward (Alt+Right)"
+msgstr "Vor (Alt+Rechts)"
+
+#: src/markdown_vault/app/app_window.py
+msgid "Edit (Ctrl+1)"
+msgstr "Bearbeiten (Strg+1)"
+
+#: src/markdown_vault/app/app_window.py
+msgid "Split (Ctrl+2)"
+msgstr "Geteilt (Strg+2)"
+
+#: src/markdown_vault/app/app_window.py
+msgid "Preview (Ctrl+3)"
+msgstr "Vorschau (Strg+3)"
+
+#: src/markdown_vault/app/app_window.py
+msgid "Graph (Ctrl+4)"
+msgstr "Graph (Strg+4)"
+
+#: src/markdown_vault/app/app_window.py
+msgid "Follow System"
+msgstr "System folgen"
+
+#: src/markdown_vault/app/app_window.py
+msgid "Light Mode"
+msgstr "Heller Modus"
+
+#: src/markdown_vault/app/app_window.py
+msgid "Dark Mode"
+msgstr "Dunkler Modus"
+
+#: src/markdown_vault/app/app_window.py
+msgid "Add Vault"
+msgstr "Vault hinzufügen"
+
+#: src/markdown_vault/app/app_window.py
+msgid "Toggle Sidebar"
+msgstr "Seitenleiste umschalten"
+
+#: src/markdown_vault/app/app_window.py
+msgid "Zen Mode"
+msgstr "Zen-Modus"
+
+#: src/markdown_vault/app/app_window.py
+msgid "Total Zen"
+msgstr "Voller Zen"
+
+#: src/markdown_vault/app/app_window.py
+msgid "About Markdown Vault"
+msgstr "Über Markdown Vault"
+
+#: src/markdown_vault/app/app_window.py
+msgid "Full-Text Search (Ctrl+Shift+F)"
+msgstr "Volltextsuche (Strg+Umschalt+F)"
+
+#: src/markdown_vault/app/app_window.py
+#, python-brace-format
+msgid "Could not save {n} tab:\n\n"
+msgid_plural "Could not save {n} tabs:\n\n"
+msgstr[0] "{n} Tab konnte nicht gespeichert werden:\n\n"
+msgstr[1] "{n} Tabs konnten nicht gespeichert werden:\n\n"
+
+#: src/markdown_vault/app/app_window.py
+msgid "Semantic search: backend reachable again"
+msgstr "Semantische Suche: Backend wieder erreichbar"
+
+#: src/markdown_vault/app/app_window.py
+msgid "Semantic search: embedding backend unavailable"
+msgstr "Semantische Suche: Embedding-Backend nicht verfügbar"
+
+#: src/markdown_vault/app/app_window.py
+#, python-brace-format
+msgid "Indexing… {done}/{total}"
+msgstr "Indiziert… {done}/{total}"
+
+#: src/markdown_vault/app/app_window.py
+msgid "Updating semantic index…"
+msgstr "Semantischer Index wird aktualisiert…"
+
+#: src/markdown_vault/app/app_window.py
+msgid "Open and save a note first, then insert an image."
+msgstr "Erst eine Notiz öffnen und speichern, dann ein Bild einfügen."
+
+#: src/markdown_vault/app/app_window.py
+msgid "No image in the clipboard."
+msgstr "Kein Bild in der Zwischenablage."
+
+#: src/markdown_vault/app/app_window.py
+msgid "Insert Image"
+msgstr "Bild einfügen"
+
+#: src/markdown_vault/app/app_window.py
+msgid "Images"
+msgstr "Bilder"
+
+#: src/markdown_vault/app/app_window.py
+msgid "Could not open the image."
+msgstr "Das Bild konnte nicht geöffnet werden."
+
+#: src/markdown_vault/app/app_window.py
+msgid "Could not read the image file."
+msgstr "Die Bilddatei konnte nicht gelesen werden."
+
+#: src/markdown_vault/app/app_window.py
+#, python-brace-format
+msgid "Import failed: {error}"
+msgstr "Import fehlgeschlagen: {error}"
+
+#: src/markdown_vault/app/app_window.py
+msgid "Cannot Open Preferences"
+msgstr "Einstellungen können nicht geöffnet werden"
+
+#: src/markdown_vault/app/app_window.py
+msgid "Edit and preview Markdown files organized in vaults."
+msgstr "Markdown-Dateien bearbeiten und vorschauen, organisiert in Vaults."
+
+#: src/markdown_vault/app/ask_controller.py
+msgid "Semantic search is off — turn it on in Preferences → Search."
+msgstr "Die semantische Suche ist aus — in Einstellungen → Suche einschalten."
+
+#: src/markdown_vault/app/ask_controller.py
+msgid "The semantic index is not ready yet."
+msgstr "Der semantische Index ist noch nicht bereit."
+
+#: src/markdown_vault/app/ask_controller.py
+msgid "The answer engine is off — turn it on in Preferences → Search → Ask."
+msgstr "Die Antwort-Engine ist aus — in Einstellungen → Suche → Ask einschalten."
+
+#: src/markdown_vault/app/file_manager.py
+msgid "No Vault Open"
+msgstr "Kein Vault geöffnet"
+
+#: src/markdown_vault/app/file_manager.py
+msgid "Add a vault directory first before creating files."
+msgstr "Erst ein Vault-Verzeichnis hinzufügen, bevor Dateien angelegt werden."
+
+#: src/markdown_vault/app/file_manager.py
+msgid "File name (.md is added automatically):"
+msgstr "Dateiname (.md wird automatisch angehängt):"
+
+#: src/markdown_vault/app/file_manager.py
+msgid "e.g. My Note"
+msgstr "z. B. Meine Notiz"
+
+#: src/markdown_vault/app/file_manager.py
+msgid "Invalid Name"
+msgstr "Ungültiger Name"
+
+#: src/markdown_vault/app/file_manager.py
+msgid "Create Failed"
+msgstr "Erstellen fehlgeschlagen"
+
+#: src/markdown_vault/app/file_manager.py
+msgid "Folder name:"
+msgstr "Ordnername:"
+
+#: src/markdown_vault/app/file_manager.py
+msgid "e.g. My Folder"
+msgstr "z. B. Mein Ordner"
+
+#: src/markdown_vault/app/file_manager.py
+msgid "Delete Failed"
+msgstr "Löschen fehlgeschlagen"
+
+#: src/markdown_vault/app/preview_actions.py
+msgid "Downloading image…"
+msgstr "Bild wird heruntergeladen…"
+
+#: src/markdown_vault/app/preview_actions.py
+msgid "Image download failed"
+msgstr "Bild-Download fehlgeschlagen"
+
+#: src/markdown_vault/app/preview_actions.py
+msgid "Image downloaded"
+msgstr "Bild heruntergeladen"
+
+#: src/markdown_vault/ui/preferences/search_page.py
+msgid "Search"
+msgstr "Suche"
+
+#: src/markdown_vault/ui/preferences/search_page.py
+msgid "Find notes by meaning. Off by default; nothing is downloaded or contacted while disabled. Recommended backend: Local (ONNX) — runs in-process, no server, nothing leaves your machine. Ollama is an alternative if you already run a server (e.g. with a GPU). Changes take effect after restart."
+msgstr "Notizen nach Bedeutung finden. Standardmäßig aus; solange deaktiviert, wird nichts heruntergeladen oder kontaktiert. Empfohlenes Backend: Lokal (ONNX) — läuft im Prozess, kein Server, nichts verlässt deinen Rechner. Ollama ist eine Alternative, falls du bereits einen Server betreibst (z. B. mit GPU). Änderungen werden nach Neustart wirksam."
+
+#: src/markdown_vault/ui/preferences/web_page.py
+msgid "Web"
+msgstr "Web"

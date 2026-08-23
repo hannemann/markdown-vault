@@ -14,6 +14,8 @@ gi.require_version("Adw", "1")
 
 from gi.repository import Gtk, Adw, GLib, Gio
 
+from markdown_vault.core.i18n import _, ngettext
+
 from markdown_vault.core import config
 from markdown_vault.uikit import dialogs
 
@@ -21,20 +23,20 @@ from markdown_vault.uikit import dialogs
 class AskSubpageMixin:
     def _build_ask_subpage(self):
         """Chat model that writes grounded answers, plus a link to its prompt."""
-        page = Adw.PreferencesPage(title="Ask")
+        page = Adw.PreferencesPage(title=_("Ask"))
         group = Adw.PreferencesGroup(
-            title="Ask (answers from your notes)",
-            description="The quick-open 'ask' mode answers from your notes with a "
-                        "local model. 'Automatic' sets everything up for you; only "
-                        "the model download needs a click. Choose 'Manual' to pick "
-                        "the backend and tune it yourself.")
+            title=_("Ask (answers from your notes)"),
+            description=_("The quick-open 'ask' mode answers from your notes with a "
+                          "local model. 'Automatic' sets everything up for you; only "
+                          "the model download needs a click. Choose 'Manual' to pick "
+                          "the backend and tune it yourself."))
         page.add(group)
 
         self._ask_engines = ["auto", "manual", "off"]
         self._ask_engine_row = Adw.ComboRow(
-            title="Answer engine",
+            title=_("Answer engine"),
             model=Gtk.StringList.new(
-                ["Automatic — recommended", "Manual (advanced)", "Off"]))
+                [_("Automatic — recommended"), _("Manual (advanced)"), _("Off")]))
         e = config.get_setting(self._settings, "ask.engine", "auto")
         self._ask_engine_row.set_selected(
             self._ask_engines.index(e) if e in self._ask_engines else 0)
@@ -43,10 +45,10 @@ class AskSubpageMixin:
 
         self._ask_backends = ["local", "ollama", "openai"]
         self._ask_backend_row = Adw.ComboRow(
-            title="Backend",
+            title=_("Backend"),
             model=Gtk.StringList.new(
-                ["Local — in-process, no server (recommended)",
-                 "Ollama (/api/chat)", "OpenAI-compatible — llama.cpp (/v1)"]))
+                [_("Local — in-process, no server (recommended)"),
+                 "Ollama (/api/chat)", _("OpenAI-compatible — llama.cpp (/v1)")]))
         b = config.get_setting(self._settings, "ask.backend", "local")
         self._ask_backend_row.set_selected(
             self._ask_backends.index(b) if b in self._ask_backends else 0)
@@ -57,19 +59,19 @@ class AskSubpageMixin:
         # Model selector: pick among the GGUFs already in the models folder.
         self._ask_gguf_paths = []
         self._ask_gguf_updating = False
-        self._ask_gguf_combo = Adw.ComboRow(title="Model",
-                                            subtitle="Downloaded models")
+        self._ask_gguf_combo = Adw.ComboRow(title=_("Model"),
+                                            subtitle=_("Downloaded models"))
         self._ask_gguf_list = Gtk.StringList()
         self._ask_gguf_combo.set_model(self._ask_gguf_list)
         self._ask_gguf_combo.connect("notify::selected", self._on_ask_gguf_selected)
         gguf_rescan = Gtk.Button(icon_name="view-refresh-symbolic",
                                  valign=Gtk.Align.CENTER,
-                                 tooltip_text="Rescan the models folder")
+                                 tooltip_text=_("Rescan the models folder"))
         gguf_rescan.add_css_class("flat")
         gguf_rescan.connect("clicked", lambda *_: self._refresh_gguf_models())
         gguf_model_reset = Gtk.Button(icon_name="edit-clear-symbolic",
                                       valign=Gtk.Align.CENTER,
-                                      tooltip_text="Reset to the newest model")
+                                      tooltip_text=_("Reset to the newest model"))
         gguf_model_reset.add_css_class("flat")
         gguf_model_reset.connect("clicked", lambda *_: self._reset_gguf_path())
         self._ask_gguf_combo.add_suffix(gguf_model_reset)
@@ -79,11 +81,11 @@ class AskSubpageMixin:
         gguf_btn = Gtk.Button(icon_name="folder-download-symbolic",
                               valign=Gtk.Align.CENTER)
         gguf_btn.add_css_class("flat")
-        gguf_btn.set_tooltip_text("Download the model")
+        gguf_btn.set_tooltip_text(_("Download the model"))
         gguf_btn.connect("clicked", self._on_download_gguf)
         self._ask_gguf_dl_btn = gguf_btn
         self._ask_gguf_url_row, self._ask_gguf_url_entry = self._entry_row(
-            "Model Download", "ask.gguf.url", trailing=gguf_btn)
+            _("Model Download"), "ask.gguf.url", trailing=gguf_btn)
 
         self._ask_gguf_progress = Gtk.ProgressBar(
             show_text=True, visible=False,
@@ -92,13 +94,13 @@ class AskSubpageMixin:
         # Folder the GGUFs live in — the search folder and the download target.
         # Display-only (no typing): pick a folder or reset to the shared default.
         # Kept apart from the Whisper models under the same default (ask_models_dir).
-        self._ask_models_dir_row = Adw.ActionRow(title="Model folder")
+        self._ask_models_dir_row = Adw.ActionRow(title=_("Model folder"))
         dir_pick = Gtk.Button(icon_name="folder-open-symbolic",
-                              valign=Gtk.Align.CENTER, tooltip_text="Choose folder…")
+                              valign=Gtk.Align.CENTER, tooltip_text=_("Choose folder…"))
         dir_pick.add_css_class("flat")
         dir_pick.connect("clicked", lambda *_: self._choose_models_dir())
         dir_reset = Gtk.Button(icon_name="edit-clear-symbolic",
-                               valign=Gtk.Align.CENTER, tooltip_text="Reset to default")
+                               valign=Gtk.Align.CENTER, tooltip_text=_("Reset to default"))
         dir_reset.add_css_class("flat")
         dir_reset.connect("clicked", lambda *_: self._on_models_dir_selected(""))
         self._ask_models_dir_row.add_suffix(dir_reset)
@@ -119,7 +121,7 @@ class AskSubpageMixin:
         # GPU layers, CPU threads and the KV-cache knobs live on their own
         # subpage (built before this one), reached via this row.
         self._ask_runtime_row = self._nav_row(
-            "Model runtime", "GPU layers, CPU threads, KV cache…",
+            _("Model runtime"), _("GPU layers, CPU threads, KV cache…"),
             self._runtime_subpage)
         group.add(self._ask_runtime_row)
         # Model (download) rows: needed by the local backend in auto and manual.
@@ -127,13 +129,14 @@ class AskSubpageMixin:
 
         # --- Server (Ollama / OpenAI-compatible) rows ---------------------
         self._ask_url_row, self._ask_url_entry = self._entry_row(
-            "Server URL", "ask.server.url")
+            _("Server URL"), "ask.server.url")
         # Hint the saved backend's port immediately (not only on a later switch).
         from markdown_vault.search import ask_models
         saved_url = ask_models.DEFAULT_URLS.get(
             config.get_setting(self._settings, "ask.backend"))
         if saved_url:
-            self._ask_url_entry.set_placeholder_text(f"{saved_url} (default)")
+            self._ask_url_entry.set_placeholder_text(
+                _("{url} (default)").format(url=saved_url))
         # A non-local URL means note content leaves the device — re-check the warning
         # as the URL is typed (localhost llama.cpp/ollama stay local).
         self._ask_url_entry.connect("changed", lambda *_: self._on_ask_url_changed())
@@ -144,13 +147,13 @@ class AskSubpageMixin:
         # resolved per endpoint at read/write time, not fixed at build time.
         ask_models.adopt_legacy_key(self._settings)
         self._ask_key_row, self._ask_key_entry = self._key_row(
-            "API key", self._ask_secret_name)
+            _("API key"), self._ask_secret_name)
         group.add(self._ask_key_row)
         # Privacy: shown ONLY when the server is non-local (any server backend) —
         # a local llama.cpp/ollama sends nothing out; a remote one ships note text.
         self._ask_external_row = self._caption_row(
-            "⚠ This server is not local — the full text of every retrieved note "
-            "is sent to it with each question.")
+            _("⚠ This server is not local — the full text of every retrieved note "
+              "is sent to it with each question."))
         self._ask_external_row.set_visible(False)
         group.add(self._ask_external_row)
 
@@ -158,13 +161,13 @@ class AskSubpageMixin:
         # row next to the selected model, and the subtitle carries the status
         # (count, "Loading…", or an unreachable-server error).
         self._ask_model_combo = Adw.ComboRow(
-            title="Model", subtitle="Fetched from the server")
+            title=_("Model"), subtitle=_("Fetched from the server"))
         self._ask_model_list = Gtk.StringList()
         self._ask_model_combo.set_model(self._ask_model_list)
         self._ask_model_combo.connect("notify::selected", self._on_ask_model_selected)
         ask_refresh_btn = Gtk.Button(
             icon_name="view-refresh-symbolic", valign=Gtk.Align.CENTER,
-            tooltip_text="Refresh model list")
+            tooltip_text=_("Refresh model list"))
         ask_refresh_btn.add_css_class("flat")
         ask_refresh_btn.connect("clicked", lambda *_: self._refresh_ask_models())
         self._ask_model_combo.add_suffix(ask_refresh_btn)
@@ -173,10 +176,10 @@ class AskSubpageMixin:
                                  self._ask_model_combo]
 
         self._ask_reasoning_row = Adw.SwitchRow(
-            title="Reasoning",
-            subtitle="Let a reasoning model (Qwen3, …) think before answering — "
-                     "more accurate but much slower. Off is faster and usually "
-                     "enough for grounded note answers.")
+            title=_("Reasoning"),
+            subtitle=_("Let a reasoning model (Qwen3, …) think before answering — "
+                       "more accurate but much slower. Off is faster and usually "
+                       "enough for grounded note answers."))
         self._ask_reasoning_row.set_active(
             config.get_setting(self._settings, "ask.reasoning", True))
         self._ask_reasoning_row.connect(
@@ -184,10 +187,10 @@ class AskSubpageMixin:
         group.add(self._ask_reasoning_row)
 
         self._ask_hybrid_row = Adw.SwitchRow(
-            title="Hybrid retrieval",
-            subtitle="Fuse a keyword (BM25) ranking into the semantic search so "
-                     "exact tokens — names, config keys, shortcuts — that "
-                     "embeddings blur still surface. Helps most on large vaults.")
+            title=_("Hybrid retrieval"),
+            subtitle=_("Fuse a keyword (BM25) ranking into the semantic search so "
+                       "exact tokens — names, config keys, shortcuts — that "
+                       "embeddings blur still surface. Helps most on large vaults."))
         self._ask_hybrid_row.set_active(
             config.get_setting(self._settings, "ask.hybrid", True))
         self._ask_hybrid_row.connect(
@@ -195,11 +198,11 @@ class AskSubpageMixin:
         group.add(self._ask_hybrid_row)
 
         self._ask_topk_row = Adw.SpinRow(
-            title="Context notes",
-            subtitle="How many notes are sent to the model as context. On CPU "
-                     "the model spends almost all its time reading them, so fewer "
-                     "= much faster (roughly linear). Recommended: 10 on a GPU, "
-                     "~5 on a slow CPU.",
+            title=_("Context notes"),
+            subtitle=_("How many notes are sent to the model as context. On CPU "
+                       "the model spends almost all its time reading them, so fewer "
+                       "= much faster (roughly linear). Recommended: 10 on a GPU, "
+                       "~5 on a slow CPU."),
             adjustment=Gtk.Adjustment.new(
                 config.get_setting(self._settings, "ask.top_k", 10), 3, 20, 1, 5, 0.0),
             digits=0,
@@ -208,10 +211,10 @@ class AskSubpageMixin:
         group.add(self._ask_topk_row)
 
         self._ask_ctx_row = Adw.SpinRow(
-            title="Context window",
-            subtitle="Tokens of context. Used by the Local and Ollama backends "
-                     "(higher fits more/longer notes but uses more memory); the "
-                     "OpenAI-compatible server sizes its own context.",
+            title=_("Context window"),
+            subtitle=_("Tokens of context. Used by the Local and Ollama backends "
+                       "(higher fits more/longer notes but uses more memory); the "
+                       "OpenAI-compatible server sizes its own context."),
             adjustment=Gtk.Adjustment.new(
                 config.get_setting(self._settings, "ask.num_ctx", 8192),
                 2048, 32768, 1024, 4096, 0.0),
@@ -221,7 +224,7 @@ class AskSubpageMixin:
         group.add(self._ask_ctx_row)
 
         self._ask_prompt_row = self._nav_row(
-            "System prompt", "Grounding instructions sent to the model",
+            _("System prompt"), _("Grounding instructions sent to the model"),
             self._prompt_subpage)
         group.add(self._ask_prompt_row)
         # Rows that only make sense in Manual mode (Automatic configures them).
@@ -232,7 +235,7 @@ class AskSubpageMixin:
         self._refresh_gguf_status()
         self._update_ask_rows()          # show only the rows the engine/backend use
         self._update_external_warning()  # reveal the leak warning iff URL is non-local
-        subpage = self._subpage("Ask", page)
+        subpage = self._subpage(_("Ask"), page)
         subpage.connect("shown", lambda *_: self.set_focus(None))  # see Embedding
         return subpage
 
@@ -407,8 +410,8 @@ class AskSubpageMixin:
         """The folder row's subtitle: the models folder and how many GGUFs it holds."""
         d = config.ask_models_dir(self._settings)
         n = len(self._ask_gguf_paths)
-        self._ask_models_dir_row.set_subtitle(
-            f"{d}  ·  {n} model{'' if n == 1 else 's'}")
+        count = ngettext("{n} model", "{n} models", n).format(n=n)
+        self._ask_models_dir_row.set_subtitle(f"{d}  ·  {count}")
 
     def _on_ask_gguf_selected(self, combo, _pspec) -> None:
         if self._ask_gguf_updating:
@@ -447,10 +450,10 @@ class AskSubpageMixin:
         bar = self._ask_gguf_progress
         bar.set_visible(True)
         bar.set_fraction(0.0)
-        bar.set_text("Starting…")
+        bar.set_text(_("Starting…"))
         gguf_check = lambda p: (None if config.is_gguf(p) else
-                                "That URL isn't a GGUF model file — use the "
-                                "download (\"resolve\") link, not the web page.")
+                                _("That URL isn't a GGUF model file — use the "
+                                  "download (\"resolve\") link, not the web page."))
         threading.Thread(
             target=self._download_worker,
             args=(button, url, target, target.name, bar),
@@ -459,7 +462,7 @@ class AskSubpageMixin:
             daemon=True).start()
 
     def _choose_models_dir(self) -> None:
-        dialog = Gtk.FileDialog(title="Select the models folder")
+        dialog = Gtk.FileDialog(title=_("Select the models folder"))
         cur = config.ask_models_dir(self._settings)
         try:
             if cur.exists():
@@ -477,8 +480,8 @@ class AskSubpageMixin:
             # silent on cancel, surface a genuine failure instead of dropping it.
             if not dialogs.dialog_cancelled(exc):
                 logger.warning("models-folder chooser failed", exc_info=True)
-                dialogs.show_error(self.get_root(), "Folder Selection Failed",
-                                   "Could not open the folder chooser.")
+                dialogs.show_error(self.get_root(), _("Folder Selection Failed"),
+                                   _("Could not open the folder chooser."))
             return
         if gfile is not None and gfile.get_path():
             self._on_models_dir_selected(gfile.get_path())
@@ -505,13 +508,14 @@ class AskSubpageMixin:
         if resolved:
             p = Path(resolved)
             mb = p.stat().st_size / 1024 / 1024 if p.exists() else 0
-            via = "" if chosen else "  ·  newest"
+            via = "" if chosen else "  ·  " + _("newest")
             self._ask_gguf_combo.set_subtitle(f"{p.name}  ·  {mb:.0f} MB{via}")
         elif chosen:
             wanted = Path(config.ask_gguf_wanted_path(self._settings)).name
-            self._ask_gguf_combo.set_subtitle(f"{wanted} — not found")
+            self._ask_gguf_combo.set_subtitle(
+                _("{name} — not found").format(name=wanted))
         else:
-            self._ask_gguf_combo.set_subtitle("No models downloaded yet")
+            self._ask_gguf_combo.set_subtitle(_("No models downloaded yet"))
         self._refresh_gpu_recommendation()
 
     def _refresh_ask_models(self) -> None:
@@ -526,7 +530,7 @@ class AskSubpageMixin:
         if backend not in ask_models.SERVER_BACKENDS:
             return
         key = secret_store.get_secret(self._ask_secret_name())  # also proxied Ollama
-        self._ask_model_combo.set_subtitle("Loading…")
+        self._ask_model_combo.set_subtitle(_("Loading…"))
 
         def worker():
             # probe() classifies and records the status, so the palette sees the
@@ -544,16 +548,17 @@ class AskSubpageMixin:
         models = status.models
         if status.state in (ask_models.UNREACHABLE, ask_models.UNAUTHORIZED,
                             ask_models.LIST_ERROR):
-            self._ask_model_combo.set_subtitle(f"Not reachable: {status.error}")
+            self._ask_model_combo.set_subtitle(
+                _("Not reachable: {error}").format(error=status.error))
             self._ask_model_combo.add_css_class("error")
             return False
         self._ask_model_combo.remove_css_class("error")
         if status.state == ask_models.NO_LIST:
             self._ask_model_combo.set_subtitle(
-                "This server does not list models — it serves a fixed one")
+                _("This server does not list models — it serves a fixed one"))
             return False
         if not models:
-            self._ask_model_combo.set_subtitle("No models on the server")
+            self._ask_model_combo.set_subtitle(_("No models on the server"))
             return False
         # Only ever offer what this server actually has: a model kept from another
         # provider (or one that has since been removed) would be sent to a server
@@ -566,7 +571,8 @@ class AskSubpageMixin:
             self._ask_model_combo.set_selected(0)
             self._remember_ask_model(models[0])
             self._persist_debounced()
-        self._ask_model_combo.set_subtitle(f"{len(models)} models")
+        self._ask_model_combo.set_subtitle(
+            ngettext("{n} model", "{n} models", len(models)).format(n=len(models)))
         return False
 
     def _on_ask_num_ctx_changed(self, _row, _pspec) -> None:

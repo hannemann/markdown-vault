@@ -16,6 +16,8 @@ import gi
 gi.require_version("Gtk", "4.0")
 from gi.repository import Gtk
 
+from markdown_vault.core.i18n import _
+
 
 class VaultScope(Gtk.DropDown):
     def __init__(self, get_vaults, get_active, get_scope, set_scope, on_change=None):
@@ -31,7 +33,7 @@ class VaultScope(Gtk.DropDown):
         self.set_model(self._model)
         self.add_css_class("flat")
         self.set_tooltip_text(
-            "Search scope — current vault, all vaults, or a specific vault")
+            _("Search scope — current vault, all vaults, or a specific vault"))
         self.connect("notify::selected", self._on_selected)
         self.refresh()
 
@@ -43,9 +45,9 @@ class VaultScope(Gtk.DropDown):
         active_name = next((n for n, p in vaults if p == active), None)
         items, values = [], []
         if active and active_name is not None:
-            items.append(f"{active_name} (current)")
+            items.append(_("{name} (current)").format(name=active_name))
             values.append("current")
-        items.append("All vaults")
+        items.append(_("All vaults"))
         values.append("all")
         for name, path in vaults:
             if path != active:

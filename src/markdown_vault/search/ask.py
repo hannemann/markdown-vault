@@ -17,6 +17,11 @@ from dataclasses import dataclass, field
 from types import SimpleNamespace
 from typing import Protocol
 
+# The one module-level markdown_vault import ask.py is allowed (TestAskIsImportLight
+# exempts it): i18n is stdlib-only (no _CORE_ALLOW entry), so it pulls in no
+# markdown_vault code and cannot form the ask <-> search cycle the guard prevents.
+from markdown_vault.core.i18n import _, ngettext
+
 logger = logging.getLogger(__name__)
 
 
@@ -170,10 +175,10 @@ def verify_citations(text: str, sources: list) -> tuple[str, list, list]:
 
     if invalid:
         marks = ", ".join(f"[{c}]" for c in invalid)
-        excerpts = f"{n} excerpt{'' if n == 1 else 's'}"
+        excerpts = ngettext("{n} excerpt", "{n} excerpts", n).format(n=n)
         warnings.append(
-            f"Removed invented citation {marks} — the answer had only "
-            f"{excerpts} to cite.")
+            _("Removed invented citation {marks} — the answer had only "
+              "{excerpts} to cite.").format(marks=marks, excerpts=excerpts))
 
     cited_sources = ([by_n[c] for c in valid if c in by_n] if valid
                      else list(sources))
@@ -192,8 +197,8 @@ def verify_citations(text: str, sources: list) -> tuple[str, list, list]:
         if norm and not any(norm in _excerpt_numbers(by_n[c].text) for c in ns):
             marks = ", ".join(f"[{c}]" for c in ns)
             warnings.append(
-                f"Value {val} is attributed to {marks} but isn't in that "
-                f"excerpt — verify.")
+                _("Value {val} is attributed to {marks} but isn't in that "
+                  "excerpt — verify.").format(val=val, marks=marks))
 
     return cleaned, cited_sources, list(dict.fromkeys(warnings))
 
@@ -369,7 +374,7 @@ def fit_to_budget(hits, budget: int):
 
 
 # Where the context-window control lives — the Ask subpage sits under Search.
-_CTX_WINDOW_PATH = "Preferences → Search → Ask → Context window"
+_CTX_WINDOW_PATH = _("Preferences → Search → Ask → Context window")
 
 
 def budget_warning(kept: int, retrieved: int) -> list:
@@ -378,12 +383,18 @@ def budget_warning(kept: int, retrieved: int) -> list:
     dropped = retrieved - kept
     if dropped <= 0:
         return []
-    tail = f"To fit more, raise the context window ({_CTX_WINDOW_PATH})."
+    tail = _("To fit more, raise the context window ({path}).").format(
+        path=_CTX_WINDOW_PATH)
     if kept == 0:
-        return [f"None of the {retrieved} matching notes fit the model's "
-                f"context window — they are larger than it allows. {tail}"]
-    return [f"{kept} of {retrieved} matching notes fit the model's context "
-            f"window; the {dropped} least-relevant did not. {tail}"]
+        return [ngettext(
+            "None of the {retrieved} matching note fits the model's context "
+            "window — it is larger than it allows. {tail}",
+            "None of the {retrieved} matching notes fit the model's context "
+            "window — they are larger than it allows. {tail}",
+            retrieved).format(retrieved=retrieved, tail=tail)]
+    return [_("{kept} of {retrieved} matching notes fit the model's context "
+              "window; the {dropped} least-relevant did not. {tail}").format(
+                  kept=kept, retrieved=retrieved, dropped=dropped, tail=tail)]
 
 
 def deprecated_dropped_warning(dropped: int) -> list:
@@ -392,9 +403,12 @@ def deprecated_dropped_warning(dropped: int) -> list:
     instead of silent (Answer.warnings renders it)."""
     if dropped <= 0:
         return []
-    noun = "note" if dropped == 1 else "notes"
-    return [f"{dropped} deprecated {noun} matched but were excluded by the "
-            "“hide deprecated” filter. Turn it off to include them."]
+    return [ngettext(
+        "{n} deprecated note matched but was excluded by the “hide "
+        "deprecated” filter. Turn it off to include it.",
+        "{n} deprecated notes matched but were excluded by the “hide "
+        "deprecated” filter. Turn it off to include them.",
+        dropped).format(n=dropped)]
 
 
 def _no_context_answer() -> Answer:
@@ -403,9 +417,9 @@ def _no_context_answer() -> Answer:
     (which would only invite the model to invent). The text carries the
     explanation, so it is not also duplicated as a warning banner."""
     return Answer(
-        text="I found matching notes, but none fit the model's context window, "
-             "so there's nothing I can ground an answer on. Raise the context "
-             f"window in {_CTX_WINDOW_PATH}.")
+        text=_("I found matching notes, but none fit the model's context "
+               "window, so there's nothing I can ground an answer on. Raise "
+               "the context window in {path}.").format(path=_CTX_WINDOW_PATH))
 
 
 def _explain_chat_error(chat, exc: Exception) -> str:
@@ -423,7 +437,7 @@ def _explain_chat_error(chat, exc: Exception) -> str:
         # Records the verdict as well as wording it: a server that died while the
         # palette was open must not keep its earlier "all good" status.
         return ask_models.note_chat_failure(backend, url, exc)
-    return f"The model could not answer: {exc}"
+    return _("The model could not answer: {error}").format(error=exc)
 
 
 def answer(question: str, hits, chat: ChatBackend, language: str = "English",
@@ -440,7 +454,7 @@ def answer(question: str, hits, chat: ChatBackend, language: str = "English",
     the note through instead of having it re-computed here.
     """
     if not hits:
-        return Answer(text="I couldn't find anything about that in your notes.")
+        return Answer(text=_("I couldn't find anything about that in your notes."))
     extra = list(extra_warnings or [])
     if char_budget:
         fitted = fit_to_budget(hits, char_budget)
@@ -457,9 +471,9 @@ def answer(question: str, hits, chat: ChatBackend, language: str = "English",
         # not be shipped as the answer. Explain, and keep the retrieved notes
         # visible (dimmed) so the user can still read them directly.
         return Answer(
-            text="The model used its entire answer budget thinking and never "
-                 "produced an answer. Raise “Max answer length”, or turn "
-                 "Reasoning off.",
+            text=_("The model used its entire answer budget thinking and never "
+                   "produced an answer. Raise “Max answer length”, or turn "
+                   "Reasoning off."),
             considered=sources, warnings=extra)
     except (OSError, ValueError) as exc:  # URLError is an OSError subclass
         logger.warning("chat request failed: %s", exc)
@@ -488,8 +502,8 @@ def answer_question(question: str, semantic_index, settings: dict, vaults,
     from markdown_vault.markdown import frontmatter
     from markdown_vault.core import config  # local import keeps ask import-light
     if semantic_index is None:
-        return Answer(text="Semantic search is not active — without an index I "
-                           "can't search your notes.")
+        return Answer(text=_("Semantic search is not active — without an index "
+                             "I can't search your notes."))
     dep_note: list = []
     if note_paths:
         hits = semantic_index.note_hits(note_paths)
@@ -512,9 +526,9 @@ def answer_question(question: str, semantic_index, settings: dict, vaults,
                 excluded = [Source(n=i, path=c.path, line=c.line, text=c.text)
                             for i, (c, _s) in enumerate(hits, start=1)]
                 return Answer(
-                    text="Only deprecated notes match your question — they're "
-                         "excluded by the “hide deprecated” filter. Turn it off to "
-                         "use them.",
+                    text=_("Only deprecated notes match your question — they're "
+                           "excluded by the “hide deprecated” filter. Turn it "
+                           "off to use them."),
                     considered=excluded)
             # Partial drop: some notes were excluded — say so instead of silently
             # answering from a thinner context.
@@ -530,8 +544,8 @@ def answer_question(question: str, semantic_index, settings: dict, vaults,
     # the advanced backend/threads/GPU settings; "off" produces no answers.
     engine = config.get_setting(settings, "ask.engine") or config.default("ask.engine")
     if engine == "off":
-        return Answer(text="Answers are turned off. Turn the answer engine on in "
-                           "Preferences → Search → Ask.")
+        return Answer(text=_("Answers are turned off. Turn the answer engine on "
+                             "in Preferences → Search → Ask."))
     from markdown_vault.search import ask_models   # local: ask_models imports us
     backend = ask_models.effective_backend(settings)
     # Build the chat backend and decide whether we cap the context ourselves. We

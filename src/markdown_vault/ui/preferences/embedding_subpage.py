@@ -15,6 +15,8 @@ gi.require_version("Adw", "1")
 
 from gi.repository import Gtk, Adw, GLib, Gio
 
+from markdown_vault.core.i18n import _, ngettext
+
 from markdown_vault.core import config
 from markdown_vault.uikit import dialogs
 
@@ -25,11 +27,11 @@ class EmbeddingSubpageMixin:
     def _build_embedding_subpage(self):
         """Backend detail: the local (ONNX) model and the Ollama alternative.
         The overview's Backend combo greys whichever set is inactive."""
-        page = Adw.PreferencesPage(title="Embedding")
+        page = Adw.PreferencesPage(title=_("Embedding"))
 
         local = Adw.PreferencesGroup(
-            title="Local (ONNX)",
-            description=(
+            title=_("Local (ONNX)"),
+            description=_(
                 "Runs in-process, nothing leaves your machine. Recommended "
                 "model: paraphrase-multilingual-MiniLM-L12-v2 (multilingual) — "
                 "the default URLs below point at it. English-only notes can use "
@@ -44,10 +46,10 @@ class EmbeddingSubpageMixin:
         model_btn = Gtk.Button(
             icon_name="folder-download-symbolic", valign=Gtk.Align.CENTER)
         model_btn.add_css_class("flat")
-        model_btn.set_tooltip_text("Download model.onnx")
+        model_btn.set_tooltip_text(_("Download model.onnx"))
         model_btn.connect("clicked", self._on_download_onnx, "model")
         self._sem_model_url_row, self._sem_model_url_entry = self._entry_row(
-            "Model Download", "semantic.onnx.model_url", trailing=model_btn)
+            _("Model Download"), "semantic.onnx.model_url", trailing=model_btn)
         self._sem_model_dl_btn = model_btn
 
         self._sem_model_progress = Gtk.ProgressBar(
@@ -57,10 +59,10 @@ class EmbeddingSubpageMixin:
         tok_btn = Gtk.Button(
             icon_name="folder-download-symbolic", valign=Gtk.Align.CENTER)
         tok_btn.add_css_class("flat")
-        tok_btn.set_tooltip_text("Download tokenizer.json")
+        tok_btn.set_tooltip_text(_("Download tokenizer.json"))
         tok_btn.connect("clicked", self._on_download_onnx, "tokenizer")
         self._sem_tok_url_row, self._sem_tok_url_entry = self._entry_row(
-            "Tokenizer Download", "semantic.onnx.tokenizer_url", trailing=tok_btn)
+            _("Tokenizer Download"), "semantic.onnx.tokenizer_url", trailing=tok_btn)
         self._sem_tok_dl_btn = tok_btn
 
         self._sem_tok_progress = Gtk.ProgressBar(
@@ -70,13 +72,13 @@ class EmbeddingSubpageMixin:
         # Folder the ONNX files live in — both the download target and the load
         # source. Display-only (no typing): pick a folder or reset to the app
         # data dir default. Changing it refreshes the presence indicator below.
-        self._sem_onnx_dir_row = Adw.ActionRow(title="Model folder")
+        self._sem_onnx_dir_row = Adw.ActionRow(title=_("Model folder"))
         pick_btn = Gtk.Button(icon_name="folder-open-symbolic",
-                              valign=Gtk.Align.CENTER, tooltip_text="Choose folder…")
+                              valign=Gtk.Align.CENTER, tooltip_text=_("Choose folder…"))
         pick_btn.add_css_class("flat")
         pick_btn.connect("clicked", lambda *_: self._choose_onnx_dir())
         reset_btn = Gtk.Button(icon_name="edit-clear-symbolic",
-                               valign=Gtk.Align.CENTER, tooltip_text="Reset to default")
+                               valign=Gtk.Align.CENTER, tooltip_text=_("Reset to default"))
         reset_btn.add_css_class("flat")
         reset_btn.connect("clicked", lambda *_: self._on_onnx_dir_selected(""))
         self._sem_onnx_dir_row.add_suffix(reset_btn)
@@ -93,10 +95,10 @@ class EmbeddingSubpageMixin:
         local.add(self._sem_tok_progress)
 
         # Presence indicator for the ONNX files + a real load/embed self-test.
-        self._sem_onnx_status_row = Adw.ActionRow(title="Model files")
+        self._sem_onnx_status_row = Adw.ActionRow(title=_("Model files"))
         self._sem_onnx_status_icon = Gtk.Image()
         self._sem_onnx_status_row.add_prefix(self._sem_onnx_status_icon)
-        self._sem_onnx_test_btn = Gtk.Button(label="Test", valign=Gtk.Align.CENTER)
+        self._sem_onnx_test_btn = Gtk.Button(label=_("Test"), valign=Gtk.Align.CENTER)
         self._sem_onnx_test_btn.connect("clicked", self._on_test_onnx)
         self._sem_onnx_status_row.add_suffix(self._sem_onnx_test_btn)
         self._sem_onnx_status_row.set_activatable_widget(self._sem_onnx_test_btn)
@@ -105,16 +107,16 @@ class EmbeddingSubpageMixin:
         # Detected onnxruntime version + recommendation (probed off-thread so
         # importing the heavy library never blocks opening Preferences).
         self._sem_onnx_runtime_row = Adw.ActionRow(
-            title="ONNX runtime", subtitle="Checking…")
+            title=_("ONNX runtime"), subtitle=_("Checking…"))
         local.add(self._sem_onnx_runtime_row)
 
         # Collapsible guidance for choosing a model yourself.
         self._sem_onnx_help_row = Adw.ExpanderRow(
-            title="How to pick your own ONNX model",
-            subtitle="What to search for and which files you need",
+            title=_("How to pick your own ONNX model"),
+            subtitle=_("What to search for and which files you need"),
         )
         help_label = Gtk.Label(
-            label=(
+            label=_(
                 "Semantic search needs a sentence-embedding model exported to "
                 "ONNX. Find one on Hugging Face and paste each file's URL above "
                 "(use the file's “Copy download link”, i.e. the "
@@ -142,39 +144,39 @@ class EmbeddingSubpageMixin:
         local.add(self._sem_onnx_help_row)
 
         ollama = Adw.PreferencesGroup(
-            title="Ollama (server)",
-            description="Alternative backend if you already run an Ollama "
-                        "server. Recommended embedding model: nomic-embed-text.")
+            title=_("Ollama (server)"),
+            description=_("Alternative backend if you already run an Ollama "
+                          "server. Recommended embedding model: nomic-embed-text."))
         page.add(ollama)
 
         self._sem_url_row, self._sem_url_entry = self._entry_row(
-            "Ollama URL", "semantic.ollama.url")
+            _("Ollama URL"), "semantic.ollama.url")
         ollama.add(self._sem_url_row)
 
         self._sem_model_row, self._sem_model_entry = self._entry_row(
-            "Embedding model", "semantic.ollama.model")
+            _("Embedding model"), "semantic.ollama.model")
         ollama.add(self._sem_model_row)
 
         self._sem_ollama_test_row = Adw.ActionRow(
-            title="Test connection",
-            subtitle="Embed a probe with the current URL + model")
-        self._sem_ollama_test_btn = Gtk.Button(label="Test", valign=Gtk.Align.CENTER)
+            title=_("Test connection"),
+            subtitle=_("Embed a probe with the current URL + model"))
+        self._sem_ollama_test_btn = Gtk.Button(label=_("Test"), valign=Gtk.Align.CENTER)
         self._sem_ollama_test_btn.connect("clicked", self._on_test_ollama)
         self._sem_ollama_test_row.add_suffix(self._sem_ollama_test_btn)
         self._sem_ollama_test_row.set_activatable_widget(self._sem_ollama_test_btn)
         ollama.add(self._sem_ollama_test_row)
 
         openai = Adw.PreferencesGroup(
-            title="OpenAI-compatible (server)",
-            description="A server exposing POST /v1/embeddings (llama.cpp, vLLM, "
-                        "LocalAI, or a hosted endpoint). The API key is stored in "
-                        "the OS keyring, never in the config or logs.")
+            title=_("OpenAI-compatible (server)"),
+            description=_("A server exposing POST /v1/embeddings (llama.cpp, vLLM, "
+                          "LocalAI, or a hosted endpoint). The API key is stored in "
+                          "the OS keyring, never in the config or logs."))
         page.add(openai)
 
         self._sem_oai_url_row, self._sem_oai_url_entry = self._entry_row(
-            "Server URL", "semantic.openai.url")
+            _("Server URL"), "semantic.openai.url")
         self._sem_oai_url_entry.set_placeholder_text(
-            f"{config.default('semantic.openai.url')} (default)")
+            _("{url} (default)").format(url=config.default('semantic.openai.url')))
         self._sem_oai_url_entry.connect(
             "changed", lambda *_: self._on_sem_openai_url_changed())
         openai.add(self._sem_oai_url_row)
@@ -182,12 +184,12 @@ class EmbeddingSubpageMixin:
         # API key per endpoint, in the keyring under its OWN name
         # (semantic_api_key:openai|<url>), never the Ask entry (D2).
         self._sem_oai_key_row, self._sem_oai_key_entry = self._key_row(
-            "API key", self._sem_openai_secret_name)
+            _("API key"), self._sem_openai_secret_name)
         openai.add(self._sem_oai_key_row)
 
         self._sem_oai_external_row = self._caption_row(
-            "⚠ This server is not local — the text of every note is sent to it "
-            "while the index builds.")
+            _("⚠ This server is not local — the text of every note is sent to it "
+              "while the index builds."))
         self._sem_oai_external_row.set_visible(False)
         openai.add(self._sem_oai_external_row)
 
@@ -196,14 +198,14 @@ class EmbeddingSubpageMixin:
         # settings). A server without a list endpoint (llama.cpp) is handled, not
         # treated as an error.
         self._sem_oai_model_combo = Adw.ComboRow(
-            title="Model", subtitle="Fetched from the server")
+            title=_("Model"), subtitle=_("Fetched from the server"))
         self._sem_oai_model_list = Gtk.StringList()
         self._sem_oai_model_combo.set_model(self._sem_oai_model_list)
         self._sem_oai_model_combo.connect(
             "notify::selected", self._on_sem_openai_model_selected)
         oai_refresh_btn = Gtk.Button(
             icon_name="view-refresh-symbolic", valign=Gtk.Align.CENTER,
-            tooltip_text="Refresh model list")
+            tooltip_text=_("Refresh model list"))
         oai_refresh_btn.add_css_class("flat")
         oai_refresh_btn.connect("clicked", lambda *_: self._refresh_sem_openai_models())
         self._sem_oai_model_combo.add_suffix(oai_refresh_btn)
@@ -214,14 +216,14 @@ class EmbeddingSubpageMixin:
         # serves its one model regardless, so this stays hidden for it.)
         self._sem_oai_no_list = False
         self._sem_oai_unusable_row = self._caption_row(
-            "No model selected — semantic search won't run. Pick a model above "
-            "(Refresh to load the list).")
+            _("No model selected — semantic search won't run. Pick a model above "
+              "(Refresh to load the list)."))
         openai.add(self._sem_oai_unusable_row)
 
         self._sem_oai_test_row = Adw.ActionRow(
-            title="Test connection",
-            subtitle="Embed a probe with the current URL + model")
-        self._sem_oai_test_btn = Gtk.Button(label="Test", valign=Gtk.Align.CENTER)
+            title=_("Test connection"),
+            subtitle=_("Embed a probe with the current URL + model"))
+        self._sem_oai_test_btn = Gtk.Button(label=_("Test"), valign=Gtk.Align.CENTER)
         self._sem_oai_test_btn.connect("clicked", self._on_test_openai)
         self._sem_oai_test_row.add_suffix(self._sem_oai_test_btn)
         self._sem_oai_test_row.set_activatable_widget(self._sem_oai_test_btn)
@@ -236,7 +238,7 @@ class EmbeddingSubpageMixin:
         self._sem_onnx_widgets = [local]
         self._sem_ollama_widgets = [ollama]
         self._sem_openai_widgets = [openai]
-        subpage = self._subpage("Embedding", page)
+        subpage = self._subpage(_("Embedding"), page)
         # Don't auto-focus the first entry: an empty (default) field would open
         # with a focus ring + placeholder, which looks half-filled. Let the
         # resting state show the plain title; the hint appears on click.
@@ -252,7 +254,7 @@ class EmbeddingSubpageMixin:
 
     def _choose_onnx_dir(self) -> None:
         """Folder chooser for the ONNX directory, opening at the current one."""
-        dialog = Gtk.FileDialog(title="Select ONNX model folder")
+        dialog = Gtk.FileDialog(title=_("Select ONNX model folder"))
         start = self._onnx_dir()
         try:
             probe = start if start.exists() else start.parent
@@ -271,8 +273,8 @@ class EmbeddingSubpageMixin:
             # silent on cancel, surface a genuine failure instead of dropping it.
             if not dialogs.dialog_cancelled(exc):
                 logger.warning("ONNX-folder chooser failed", exc_info=True)
-                dialogs.show_error(self.get_root(), "Folder Selection Failed",
-                                   "Could not open the folder chooser.")
+                dialogs.show_error(self.get_root(), _("Folder Selection Failed"),
+                                   _("Could not open the folder chooser."))
             return
         if gfile is not None and gfile.get_path():
             self._on_onnx_dir_selected(gfile.get_path())
@@ -284,17 +286,19 @@ class EmbeddingSubpageMixin:
     def _onnxruntime_status(self) -> str:
         try:
             onnxruntime = importlib.import_module("onnxruntime")
-            return (f"onnxruntime {onnxruntime.__version__} detected — recommended "
-                    f"≥ {self._ONNX_RUNTIME_RECOMMENDED} for current models")
+            return _("onnxruntime {version} detected — recommended "
+                     "≥ {recommended} for current models").format(
+                         version=onnxruntime.__version__,
+                         recommended=self._ONNX_RUNTIME_RECOMMENDED)
         except ModuleNotFoundError:
             # genuinely absent (the package itself isn't there) → install it
-            return ("onnxruntime not found — install it (openSUSE: "
-                    "python313-onnxruntime) or use the Flatpak build")
+            return _("onnxruntime not found — install it (openSUSE: "
+                     "python313-onnxruntime) or use the Flatpak build")
         except Exception:
             # onnxruntime is present but unloadable (bad native lib / wrong glibc-CUDA),
             # NOT absent — the common case
             logger.warning("onnxruntime is installed but failed to load", exc_info=True)
-            return "onnxruntime is installed but failed to load — see the log."
+            return _("onnxruntime is installed but failed to load — see the log.")
 
     def _onnx_dir(self) -> Path:
         """The folder the backend loads model.onnx + tokenizer.json from (and the
@@ -340,7 +344,7 @@ class EmbeddingSubpageMixin:
         model = (self._sem_model_entry.get_text().strip()
                  or config.default("semantic.ollama.model"))
         button.set_sensitive(False)
-        self._sem_ollama_test_row.set_subtitle("Testing…")
+        self._sem_ollama_test_row.set_subtitle(_("Testing…"))
         threading.Thread(
             target=self._test_ollama_worker, args=(button, url, model),
             daemon=True).start()
@@ -350,9 +354,10 @@ class EmbeddingSubpageMixin:
             from markdown_vault.search.semantic_search import OllamaEmbedder
             vec = OllamaEmbedder(model, url).embed(["connection test"], is_query=True)
             dim = len(vec[0]) if vec else 0
-            ok, msg = True, f"Connected — {model} OK (dim {dim})"
+            ok, msg = True, _("Connected — {model} OK (dim {dim})").format(
+                model=model, dim=dim)
         except Exception as exc:  # noqa: BLE001 — connection test surfaces any failure to the UI
-            ok, msg = False, f"Failed: {exc}"
+            ok, msg = False, _("Failed: {error}").format(error=exc)
             logger.info("Ollama test failed: %s", exc)
         GLib.idle_add(self._test_done, button, self._sem_ollama_test_row, ok, msg)
 
@@ -423,7 +428,7 @@ class EmbeddingSubpageMixin:
         from markdown_vault.search import ask_models
         url = self._sem_openai_url()
         key = secret_store.get_secret(self._sem_openai_secret_name())
-        self._sem_oai_model_combo.set_subtitle("Loading…")
+        self._sem_oai_model_combo.set_subtitle(_("Loading…"))
 
         def worker():
             # record=False: this is a *second* consumer of the shared endpoint
@@ -442,19 +447,20 @@ class EmbeddingSubpageMixin:
         self._sem_oai_no_list = (status.state == ask_models.NO_LIST)
         if status.state in (ask_models.UNREACHABLE, ask_models.UNAUTHORIZED,
                             ask_models.LIST_ERROR):
-            self._sem_oai_model_combo.set_subtitle(f"Not reachable: {status.error}")
+            self._sem_oai_model_combo.set_subtitle(
+                _("Not reachable: {error}").format(error=status.error))
             self._sem_oai_model_combo.add_css_class("error")
             self._refresh_sem_openai_state()
             return False
         self._sem_oai_model_combo.remove_css_class("error")
         if status.state == ask_models.NO_LIST:
             self._sem_oai_model_combo.set_subtitle(
-                "This server does not list models — it serves a fixed one")
+                _("This server does not list models — it serves a fixed one"))
             self._refresh_sem_openai_state()
             return False
         models = status.models
         if not models:
-            self._sem_oai_model_combo.set_subtitle("No models on the server")
+            self._sem_oai_model_combo.set_subtitle(_("No models on the server"))
             self._refresh_sem_openai_state()
             return False
         current = config.get_setting(self._settings, "semantic.openai.model")
@@ -466,7 +472,8 @@ class EmbeddingSubpageMixin:
             self._sem_oai_model_combo.set_selected(0)
             config.set_setting(self._settings, "semantic.openai.model", models[0])
             self._persist_debounced()
-        self._sem_oai_model_combo.set_subtitle(f"{len(models)} models")
+        self._sem_oai_model_combo.set_subtitle(
+            ngettext("{n} model", "{n} models", len(models)).format(n=len(models)))
         self._refresh_sem_openai_state()
         return False
 
@@ -492,7 +499,7 @@ class EmbeddingSubpageMixin:
         model = (config.get_setting(self._settings, "semantic.openai.model") or "").strip()
         key = secret_store.get_secret(self._sem_openai_secret_name())
         button.set_sensitive(False)
-        self._sem_oai_test_row.set_subtitle("Testing…")
+        self._sem_oai_test_row.set_subtitle(_("Testing…"))
         threading.Thread(target=self._test_openai_worker,
                          args=(button, url, model, key), daemon=True).start()
 
@@ -501,16 +508,16 @@ class EmbeddingSubpageMixin:
             from markdown_vault.search.semantic_search import OpenAIEmbedder
             vec = OpenAIEmbedder(model, url, key).embed(["connection test"])
             dim = len(vec[0]) if vec else 0
-            ok, msg = True, f"Connected — embeds OK (dim {dim})"
+            ok, msg = True, _("Connected — embeds OK (dim {dim})").format(dim=dim)
         except Exception as exc:  # noqa: BLE001 — connection test surfaces any failure to the UI
-            ok, msg = False, f"Failed: {exc}"
+            ok, msg = False, _("Failed: {error}").format(error=exc)
             logger.info("OpenAI embedding test failed: %s", exc)
         GLib.idle_add(self._test_done, button, self._sem_oai_test_row, ok, msg)
 
     def _on_test_onnx(self, button) -> None:
         model_p, tok_p = self._onnx_paths()
         button.set_sensitive(False)
-        self._sem_onnx_status_row.set_subtitle("Loading model + embedding a probe…")
+        self._sem_onnx_status_row.set_subtitle(_("Loading model + embedding a probe…"))
         threading.Thread(
             target=self._test_onnx_worker,
             args=(button, str(model_p), str(tok_p)), daemon=True).start()
@@ -520,9 +527,9 @@ class EmbeddingSubpageMixin:
             from markdown_vault.search.semantic_search import OnnxEmbedder
             vec = OnnxEmbedder(model_path, tok_path).embed(["probe"])
             dim = len(vec[0]) if vec else 0
-            ok, msg = True, f"Model loads and embeds OK (dim {dim})"
+            ok, msg = True, _("Model loads and embeds OK (dim {dim})").format(dim=dim)
         except Exception as exc:  # noqa: BLE001 — connection test surfaces any failure to the UI
-            ok, msg = False, f"Failed: {exc}"
+            ok, msg = False, _("Failed: {error}").format(error=exc)
             logger.info("ONNX test failed: %s", exc)
         GLib.idle_add(self._test_onnx_done, button, ok, msg)
 
@@ -562,7 +569,7 @@ class EmbeddingSubpageMixin:
         button.set_sensitive(False)
         bar.set_visible(True)
         bar.set_fraction(0.0)
-        bar.set_text("Starting…")
+        bar.set_text(_("Starting…"))
         # Download to the path the backend actually loads (_onnx_paths), not a
         # fixed dir — otherwise a custom configured path never sees the file.
         threading.Thread(
@@ -576,7 +583,7 @@ class EmbeddingSubpageMixin:
         try:
             if urlparse(url).scheme != "https":
                 GLib.idle_add(self._download_done, button, bar, False,
-                              "Refusing a non-HTTPS download URL.", refresh)
+                              _("Refusing a non-HTTPS download URL."), refresh)
                 return
             target.parent.mkdir(parents=True, exist_ok=True)
             req = urllib.request.Request(
@@ -607,7 +614,8 @@ class EmbeddingSubpageMixin:
             mb = target.stat().st_size / 1024 / 1024
             GLib.idle_add(
                 self._download_done, button, bar, True,
-                f"Downloaded {filename} ({mb:.0f} MB)", refresh)
+                _("Downloaded {name} ({size} MB)").format(name=filename, size=f"{mb:.0f}"),
+                refresh)
         except Exception as exc:  # noqa: BLE001 — network/IO/permission — report, don't crash
             logger.warning("model download failed: %s", exc)
             GLib.idle_add(

@@ -11,6 +11,8 @@ gi.require_version("Adw", "1")
 
 from gi.repository import Gtk, Adw
 
+from markdown_vault.core.i18n import _
+
 from markdown_vault.core import config
 from markdown_vault.ui.preferences.constants import (
     _GLIB_LOGLEVELS, _LOGLEVELS, _LOGLEVEL_MAP,
@@ -20,14 +22,14 @@ from markdown_vault.ui.preferences.constants import (
 class DebugPageMixin:
     def _build_debug_page(self) -> None:
         # ── Debug page ──────────────────────────────────────────────
-        debug = Adw.PreferencesPage(title="Debug", icon_name="utilities-system-monitor-symbolic")
+        debug = Adw.PreferencesPage(title=_("Debug"), icon_name="utilities-system-monitor-symbolic")
         debug.set_name("debug")   # addressable via PreferencesDialog.open_page
 
-        log_group = Adw.PreferencesGroup(title="Logging")
+        log_group = Adw.PreferencesGroup(title=_("Logging"))
         debug.add(log_group)
 
         self._loglevel_row = Adw.ComboRow(
-            title="Log level",
+            title=_("Log level"),
             model=Gtk.StringList.new(list(_LOGLEVELS.values())),
         )
         current_level = config.get_setting(self._settings, "log.level", "info")
@@ -39,8 +41,8 @@ class DebugPageMixin:
         log_group.add(self._loglevel_row)
 
         self._tp_loglevel_row = Adw.ComboRow(
-            title="Third-party log level",
-            subtitle="markdown, pymdownx, pygments, xml",
+            title=_("Third-party log level"),
+            subtitle=_("markdown, pymdownx, pygments, xml"),
             model=Gtk.StringList.new(list(_LOGLEVELS.values())),
         )
         tp_level = config.get_setting(self._settings, "log.third_party", "warning")
@@ -52,8 +54,8 @@ class DebugPageMixin:
 
         # GLib log level (for Gtk/WebKit/GJS messages).
         self._glib_loglevel_row = Adw.ComboRow(
-            title="GLib log level",
-            subtitle="Gtk, WebKit, Gjs messages",
+            title=_("GLib log level"),
+            subtitle=_("Gtk, WebKit, Gjs messages"),
             model=Gtk.StringList.new(list(_GLIB_LOGLEVELS.values())),
         )
         glib_level = config.get_setting(self._settings, "log.glib", "critical")
@@ -66,17 +68,17 @@ class DebugPageMixin:
         log_group.add(self._glib_loglevel_row)
 
         # Debug dump toggles (only useful in debug mode).
-        dump_group = Adw.PreferencesGroup(title="Debug Dumps")
+        dump_group = Adw.PreferencesGroup(title=_("Debug Dumps"))
         debug.add(dump_group)
 
         self._dump_toggles: dict[str, Adw.SwitchRow] = {}
         for key, title in (
-            ("file_index", "File Index"),
-            ("backlink_index", "Backlink Index"),
-            ("preview_html", "Preview HTML"),
-            ("vault_tree", "Vault Tree"),
-            ("tabs", "Tabs"),
-            ("sidebar", "Sidebar"),
+            ("file_index", _("File Index")),
+            ("backlink_index", _("Backlink Index")),
+            ("preview_html", _("Preview HTML")),
+            ("vault_tree", _("Vault Tree")),
+            ("tabs", _("Tabs")),
+            ("sidebar", _("Sidebar")),
         ):
             row = Adw.SwitchRow(title=title)
             row.set_active(config.get_setting(self._settings, f"debug.dump.{key}", False))

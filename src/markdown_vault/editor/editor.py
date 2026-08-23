@@ -15,6 +15,8 @@ gi.require_version("GtkSource", "5")
 
 from gi.repository import Gtk, GtkSource, GObject, GLib, Gio, Adw, Gdk, Pango
 
+from markdown_vault.core.i18n import _
+
 logger = logging.getLogger(__name__)
 
 # Source-mark category / text-tag name for broken wikilinks.
@@ -150,8 +152,8 @@ class Editor(Gtk.ScrolledWindow):
         # Right-click menu: a working image paste (the built-in "Paste" greys out
         # when the clipboard holds an image, not text) plus the file picker.
         extra = Gio.Menu()
-        extra.append("Paste Image", "win.paste-image")
-        extra.append("Insert Image…", "win.insert-image")
+        extra.append(_("Paste Image"), "win.paste-image")
+        extra.append(_("Insert Image…"), "win.insert-image")
         self._view.set_extra_menu(extra)
 
     def _on_key_pressed_for_paste(self, _ctrl, keyval, _keycode, state):
@@ -219,7 +221,7 @@ class Editor(Gtk.ScrolledWindow):
         """Configure gutter warning marks + red underline for broken links."""
         attrs = GtkSource.MarkAttributes()
         attrs.set_icon_name("dialog-warning-symbolic")
-        attrs.connect("query-tooltip-text", lambda _a, _m: "Broken wikilink")
+        attrs.connect("query-tooltip-text", lambda _a, _m: _("Broken wikilink"))
         self._view.set_mark_attributes(_BROKEN_CATEGORY, attrs, 10)
         # LOW sits the underline below the text's ink extents (a visible gap),
         # and unlike the themed ERROR squiggle its colour can be set reliably.
@@ -253,9 +255,9 @@ class Editor(Gtk.ScrolledWindow):
         self._view.set_has_tooltip(True)
         self._view.connect("query-tooltip", self._on_image_link_tooltip)
 
-    _BROKEN_TOOLTIP = "Broken image link — the file does not exist"
-    _ADOPT_TOOLTIP = ("Not in the attachments folder — double-click the gutter icon "
-                      "to adopt it for auto-management")
+    _BROKEN_TOOLTIP = _("Broken image link — the file does not exist")
+    _ADOPT_TOOLTIP = _("Not in the attachments folder — double-click the gutter icon "
+                       "to adopt it for auto-management")
 
     def _on_image_link_tooltip(self, view, x, y, _keyboard, tooltip) -> bool:
         bx, by = view.window_to_buffer_coords(Gtk.TextWindowType.WIDGET, x, y)

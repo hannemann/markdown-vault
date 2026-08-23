@@ -16,6 +16,8 @@ gi.require_version("Adw", "1")
 
 from gi.repository import Gtk, Adw, GObject, GLib
 
+from markdown_vault.core.i18n import _
+
 from markdown_vault.core import config
 from markdown_vault.uikit import dialogs
 
@@ -65,7 +67,7 @@ class PreferencesDialog(
         cache and rebuilds the index against the currently selected backend,
         live.  When ``None`` the rebuild button is disabled.
         """
-        super().__init__(title="Preferences")
+        super().__init__(title=_("Preferences"))
 
         # The one owned settings object, not a copy: the dialog applies instantly
         # (no OK/Cancel), so a private snapshot bought nothing and was one of the
@@ -181,7 +183,7 @@ class PreferencesDialog(
             if stored:
                 self._known_secrets.add(name)   # so clearing it may delete it
         else:
-            entry.set_placeholder_text("no keyring available — key won't be saved")
+            entry.set_placeholder_text(_("no keyring available — key won't be saved"))
             entry.set_sensitive(False)
         entry.connect("changed", self._on_secret_changed, secret_key)
         box.append(entry)
@@ -221,8 +223,8 @@ class PreferencesDialog(
             # it like a failed settings save, so it isn't a silent no-op that only
             # shows up later as a 401 pointing at the server instead of the save.
             if not secret_store.set_secret(name, value):
-                dialogs.show_error(self.get_root(), "Keyring",
-                                   "Could not store the API key in the keyring.")
+                dialogs.show_error(self.get_root(), _("Keyring"),
+                                   _("Could not store the API key in the keyring."))
                 return False
             # Track what we know is stored: a key set here may be cleared here.
             if value:
@@ -402,7 +404,7 @@ class PreferencesDialog(
         except OSError as e:
             import logging
             logging.getLogger(__name__).error("Failed to save settings: %s", e)
-            dialogs.show_error(self.get_root(), "Save Failed", str(e))
+            dialogs.show_error(self.get_root(), _("Save Failed"), str(e))
             return
         self.emit("settings-changed")
 

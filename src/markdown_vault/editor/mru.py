@@ -18,6 +18,8 @@ gi.require_version("Adw", "1")
 
 from gi.repository import Gtk, Adw, Gdk
 
+from markdown_vault.core.i18n import _
+
 logger = logging.getLogger(__name__)
 
 
@@ -75,7 +77,7 @@ class MRUManager:
         if len(self._mru_tabs) < 2:
             return None
         new_pos = self._mru_pos
-        for _ in range(len(self._mru_tabs) - 1):
+        for _i in range(len(self._mru_tabs) - 1):
             new_pos = min(new_pos + 1, len(self._mru_tabs) - 1)
             if new_pos == self._mru_pos:
                 break
@@ -92,7 +94,7 @@ class MRUManager:
         if len(self._mru_tabs) < 2:
             return None
         new_pos = self._mru_pos
-        for _ in range(len(self._mru_tabs) - 1):
+        for _i in range(len(self._mru_tabs) - 1):
             new_pos = max(new_pos - 1, 0)
             if new_pos == self._mru_pos:
                 break
@@ -159,7 +161,7 @@ class MRUSwitcher(Gtk.Window):
         box.set_margin_end(12)
         self.set_child(box)
 
-        title = Gtk.Label(label="Switch Tab")
+        title = Gtk.Label(label=_("Switch Tab"))
         title.add_css_class("title-2")
         title.set_halign(Gtk.Align.START)
         box.append(title)

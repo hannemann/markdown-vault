@@ -31,6 +31,7 @@ from pygments.formatters import HtmlFormatter
 from urllib.parse import unquote
 from pymdownx.emoji import to_alt
 from markdown_vault.core import config
+from markdown_vault.core.i18n import _
 from markdown_vault.markdown.latex_mathml import MathMLPostprocessor
 from markdown_vault.markdown.md_fences import FenceTracker
 from markdown_vault.core.path_utils import (
@@ -1104,23 +1105,23 @@ class Preview(Gtk.ScrolledWindow):
             resolved = self._resolve_internal_link(uri)
             if resolved:
                 context_menu.append(
-                    self._ctx_item("open-link", "Open",
+                    self._ctx_item("open-link", _("Open"),
                                    lambda: self._emit_link(resolved, False)))
                 context_menu.append(
-                    self._ctx_item("open-link-new-tab", "Open in New Tab",
+                    self._ctx_item("open-link-new-tab", _("Open in New Tab"),
                                    lambda: self._emit_link(resolved, True)))
                 context_menu.append(WebKit.ContextMenuItem.new_separator())
                 context_menu.append(
-                    self._ctx_item("copy-link", "Copy Link",
+                    self._ctx_item("copy-link", _("Copy Link"),
                                    lambda: self._copy_to_clipboard(resolved)))
                 return False
             if uri and uri.startswith(("http://", "https://", "mailto:")):
                 context_menu.append(
-                    self._ctx_item("open-browser", "Open in Browser",
+                    self._ctx_item("open-browser", _("Open in Browser"),
                                    lambda: self._open_external(uri)))
                 context_menu.append(WebKit.ContextMenuItem.new_separator())
                 context_menu.append(
-                    self._ctx_item("copy-link", "Copy Link",
+                    self._ctx_item("copy-link", _("Copy Link"),
                                    lambda: self._copy_to_clipboard(uri)))
                 return False
             # A link that resolves to nothing internal — show no menu.
@@ -1130,7 +1131,7 @@ class Preview(Gtk.ScrolledWindow):
             uri = hit_test_result.get_image_uri()
             if uri and uri.startswith(("http://", "https://")):
                 context_menu.append(
-                    self._ctx_item("download-image", "Download Image",
+                    self._ctx_item("download-image", _("Download Image"),
                                    lambda: self.emit("image-download-requested", uri)))
                 return False
             # A local (already downloaded) or data: image — nothing to offer.

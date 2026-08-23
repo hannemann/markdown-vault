@@ -25,6 +25,7 @@ from gi.repository import Gtk, Adw, Gio, GObject, GLib
 
 from markdown_vault.importers import document_import, web_import
 from markdown_vault.core import path_utils
+from markdown_vault.core.i18n import _
 from markdown_vault.uikit import dialogs
 
 logger = logging.getLogger(__name__)
@@ -52,7 +53,7 @@ class ImportDialog(Adw.Dialog):
         self._save_last_dir = save_last_dir  # callback to persist the last folder
         self._busy = False
         self._closed = False
-        self.set_title("Import")
+        self.set_title(_("Import"))
         self.set_content_width(480)
         self.connect("closed", self._on_closed)
 
@@ -72,18 +73,18 @@ class ImportDialog(Adw.Dialog):
     def _build_chooser(self) -> Gtk.Widget:
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12,
                       margin_top=18, margin_bottom=18, margin_start=18, margin_end=18)
-        group = Adw.PreferencesGroup(title="What do you want to import?")
+        group = Adw.PreferencesGroup(title=_("What do you want to import?"))
 
-        web_row = Adw.ActionRow(title="Web Page",
-                                subtitle="Fetch a URL as a Markdown note",
+        web_row = Adw.ActionRow(title=_("Web Page"),
+                                subtitle=_("Fetch a URL as a Markdown note"),
                                 activatable=True)
         web_row.add_suffix(Gtk.Image.new_from_icon_name("go-next-symbolic"))
         web_row.connect("activated", self._on_choose_web)
         group.add(web_row)
 
-        file_row = Adw.ActionRow(title="File",
-                                 subtitle="Import a document (PDF, Word, PowerPoint, "
-                                          "Excel, audio)",
+        file_row = Adw.ActionRow(title=_("File"),
+                                 subtitle=_("Import a document (PDF, Word, PowerPoint, "
+                                            "Excel, audio)"),
                                  activatable=True)
         file_row.add_suffix(Gtk.Image.new_from_icon_name("go-next-symbolic"))
         file_row.connect("activated", self._on_choose_file)
@@ -106,16 +107,16 @@ class ImportDialog(Adw.Dialog):
         box.append(self._error)
 
         group = Adw.PreferencesGroup()
-        self._url_row = Adw.EntryRow(title="URL")
+        self._url_row = Adw.EntryRow(title=_("URL"))
         self._url_row.connect("changed", lambda *_: self._validate())
         self._url_row.connect("entry-activated", lambda *_: self._on_import())
         group.add(self._url_row)
 
-        self._name_row = Adw.EntryRow(title="Name (optional)")
+        self._name_row = Adw.EntryRow(title=_("Name (optional)"))
         group.add(self._name_row)
 
-        self._dl_row = Adw.SwitchRow(title="Download images",
-                                     subtitle="Save images into the vault's attachments folder")
+        self._dl_row = Adw.SwitchRow(title=_("Download images"),
+                                     subtitle=_("Save images into the vault's attachments folder"))
         group.add(self._dl_row)
         box.append(group)
 
@@ -123,7 +124,7 @@ class ImportDialog(Adw.Dialog):
                           halign=Gtk.Align.END)
         self._spinner = Gtk.Spinner()
         actions.append(self._spinner)
-        self._import_btn = Gtk.Button(label="Import")
+        self._import_btn = Gtk.Button(label=_("Import"))
         self._import_btn.add_css_class("suggested-action")
         self._import_btn.set_sensitive(False)
         self._import_btn.connect("clicked", lambda *_: self._on_import())
@@ -163,7 +164,7 @@ class ImportDialog(Adw.Dialog):
             url = web_import.validate_url(self._url_row.get_text())
         except ValueError:
             # user input error, not a fault → the banner suffices; a log would be noise
-            self._show_error("Enter a valid http(s) URL.")
+            self._show_error(_("Enter a valid http(s) URL."))
             return
         hint = web_import.availability()
         if hint:
@@ -181,7 +182,7 @@ class ImportDialog(Adw.Dialog):
         try:
             result = web_import.import_url(url)
             if not result.markdown.strip():
-                raise ValueError("Nothing extractable on that page.")
+                raise ValueError(_("Nothing extractable on that page."))
             # Attachments go under the vault root (…/attachments/<note-path>/),
             # even when importing into a subfolder.
             vault_root = path_utils.find_vault_for_dir(self._target_dir)
@@ -204,14 +205,14 @@ class ImportDialog(Adw.Dialog):
         box.append(self._file_error)
 
         group = Adw.PreferencesGroup()
-        self._file_row = Adw.ActionRow(title="File", subtitle="No file selected")
-        browse = Gtk.Button(label="Browse…", valign=Gtk.Align.CENTER)
+        self._file_row = Adw.ActionRow(title=_("File"), subtitle=_("No file selected"))
+        browse = Gtk.Button(label=_("Browse…"), valign=Gtk.Align.CENTER)
         browse.connect("clicked", lambda *_: self._browse_file())
         self._file_row.add_suffix(browse)
         self._file_row.set_activatable_widget(browse)
         group.add(self._file_row)
 
-        self._file_name_row = Adw.EntryRow(title="Name (optional)")
+        self._file_name_row = Adw.EntryRow(title=_("Name (optional)"))
         group.add(self._file_name_row)
         box.append(group)
 
@@ -219,7 +220,7 @@ class ImportDialog(Adw.Dialog):
                           halign=Gtk.Align.END)
         self._file_spinner = Gtk.Spinner()
         actions.append(self._file_spinner)
-        self._file_import_btn = Gtk.Button(label="Import")
+        self._file_import_btn = Gtk.Button(label=_("Import"))
         self._file_import_btn.add_css_class("suggested-action")
         self._file_import_btn.set_sensitive(False)
         self._file_import_btn.connect("clicked", lambda *_: self._on_file_import())
@@ -232,9 +233,9 @@ class ImportDialog(Adw.Dialog):
         self._recheck_file()                # heads-up before a file is even picked
 
     def _browse_file(self) -> None:
-        dialog = Gtk.FileDialog(title="Choose a document")
+        dialog = Gtk.FileDialog(title=_("Choose a document"))
         filt = Gtk.FileFilter()
-        filt.set_name("Supported documents")
+        filt.set_name(_("Supported documents"))
         for suffix in document_import.SUPPORTED_SUFFIXES:
             filt.add_suffix(suffix.lstrip("."))
         filters = Gio.ListStore.new(Gtk.FileFilter)
@@ -255,7 +256,7 @@ class ImportDialog(Adw.Dialog):
             # silent on cancel, surface a genuine failure instead of dropping it.
             if not dialogs.dialog_cancelled(exc):
                 logger.warning("import file chooser failed", exc_info=True)
-                self._show_file_error("Could not open the file chooser.")
+                self._show_file_error(_("Could not open the file chooser."))
             return
         if gfile is None or not gfile.get_path():
             return
@@ -289,14 +290,15 @@ class ImportDialog(Adw.Dialog):
             reason = document_import.is_available(suffix)      # this format's backend?
             if (not reason and document_import.needs_transcription_model(suffix)
                     and model_missing):
-                reason = (f"The '{document_import.whisper_model_name()}' transcription "
-                          "model isn't downloaded — get it in Preferences → Search "
-                          "before importing audio.")
+                reason = _("The '{model}' transcription model isn't downloaded — "
+                           "get it in Preferences → Search before importing "
+                           "audio.").format(model=document_import.whisper_model_name())
         elif stack_hint:
             notice = stack_hint                               # AI stack not installed
         elif model_missing:
-            notice = (f"Audio import needs the '{document_import.whisper_model_name()}' "
-                      "model, which isn't downloaded yet (Preferences → Search).")
+            notice = _("Audio import needs the '{model}' model, which isn't "
+                       "downloaded yet (Preferences → Search).").format(
+                           model=document_import.whisper_model_name())
         self._file_block_reason = reason
         message = reason or notice
         if message:
@@ -340,7 +342,7 @@ class ImportDialog(Adw.Dialog):
         try:
             result = document_import.convert(file_path)
             if not result.markdown.strip():
-                raise ValueError("No text could be extracted from this file.")
+                raise ValueError(_("No text could be extracted from this file."))
             # Attachments go under the vault root (…/attachments/<note-path>/),
             # even when importing into a subfolder — same as the web import.
             vault_root = path_utils.find_vault_for_dir(self._target_dir)

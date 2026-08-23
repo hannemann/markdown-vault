@@ -28,13 +28,14 @@ import yaml
 
 from markdown_vault.vault import note_writer
 from markdown_vault.core import attachments
+from markdown_vault.core.i18n import _
 from markdown_vault.markdown.md_fences import FenceTracker
 from markdown_vault.markdown.md_text import unwrap_bold_headings
 
 logger = logging.getLogger(__name__)
 
-_INSTALL_HINT = ("Document import needs the optional AI stack, which isn't "
-                 "installed. Add it to the app venv:\n  make install-ai")
+_INSTALL_HINT = _("Document import needs the optional AI stack, which isn't "
+                  "installed. Add it to the app venv:\n  make install-ai")
 
 # Default CTranslate2 Whisper model size for audio (overridable in Preferences).
 # Options: tiny, base, small, medium, large-v3 — bigger = more accurate, slower,
@@ -469,8 +470,9 @@ def _convert_xlsx(path: Path) -> tuple[str, str, list]:
 
 
 def _model_missing_msg() -> str:
-    return (f"The transcription model ('{whisper_model_name()}') isn't downloaded "
-            "yet. Download it in Preferences → Search before importing audio.")
+    return _("The transcription model ('{model}') isn't downloaded yet. "
+             "Download it in Preferences → Search before importing "
+             "audio.").format(model=whisper_model_name())
 
 
 def whisper_model_ready(name: str | None = None) -> bool:
@@ -531,7 +533,9 @@ def convert(path: str | Path) -> DocumentResult:
     path = Path(path)
     handler = _HANDLERS.get(path.suffix.lower())
     if handler is None:
-        raise ValueError(f"Unsupported file type: {path.suffix or '(none)'}")
+        raise ValueError(
+            _("Unsupported file type: {suffix}").format(
+                suffix=path.suffix or _("(none)")))
     markdown, title, images = handler(path)
     markdown = unwrap_bold_headings(markdown)   # e.g. pymupdf4llm's "# **Title**"
     return DocumentResult(path=str(path.resolve()), title=title or path.stem,

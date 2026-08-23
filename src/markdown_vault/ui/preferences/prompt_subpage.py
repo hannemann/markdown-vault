@@ -12,19 +12,20 @@ gi.require_version("Adw", "1")
 from gi.repository import Gtk, Adw
 
 from markdown_vault.core import config
+from markdown_vault.core.i18n import _
 
 
 class PromptSubpageMixin:
     def _build_prompt_subpage(self, _ask):
         """The editable system prompt with a reset-to-default action."""
-        page = Adw.PreferencesPage(title="System prompt")
+        page = Adw.PreferencesPage(title=_("System prompt"))
         group = Adw.PreferencesGroup(
-            title="System prompt",
-            description="Grounding instructions sent to the model. {language} is "
-                        "replaced with the answer language. Reset restores the "
-                        "built-in default and keeps tracking future improvements.")
-        reset_btn = Gtk.Button(label="Reset", valign=Gtk.Align.CENTER)
-        reset_btn.set_tooltip_text("Reset to the built-in default prompt")
+            title=_("System prompt"),
+            description=_("Grounding instructions sent to the model. {language} is "
+                          "replaced with the answer language. Reset restores the "
+                          "built-in default and keeps tracking future improvements."))
+        reset_btn = Gtk.Button(label=_("Reset"), valign=Gtk.Align.CENTER)
+        reset_btn.set_tooltip_text(_("Reset to the built-in default prompt"))
         reset_btn.connect(
             "clicked",
             lambda *_: self._ask_prompt_view.get_buffer().set_text(_ask.DEFAULT_SYSTEM_PROMPT))
@@ -45,7 +46,7 @@ class PromptSubpageMixin:
         prompt_scroll.add_css_class("card")
         prompt_scroll.set_child(self._ask_prompt_view)
         group.add(prompt_scroll)
-        return self._subpage("System prompt", page)
+        return self._subpage(_("System prompt"), page)
 
     def _on_ask_prompt_changed(self, buffer) -> None:
         from markdown_vault.search import ask as _ask

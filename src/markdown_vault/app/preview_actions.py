@@ -24,6 +24,7 @@ gi.require_version("Gtk", "4.0")
 from gi.repository import GLib
 
 from markdown_vault.core import path_utils
+from markdown_vault.core.i18n import _
 from markdown_vault.markdown import md_text
 
 
@@ -91,7 +92,7 @@ class PreviewActions:
         from markdown_vault.importers import web_import
         dest_dir, rel_prefix = web_import.attachment_target(
             vault_root, note_dir, Path(file_path).stem)
-        self._toast("Downloading image…")
+        self._toast(_("Downloading image…"))
 
         def worker():
             try:
@@ -109,7 +110,7 @@ class PreviewActions:
         """Back on the main thread: rewrite the source (if the tab still exists)
         and report via a toast. Error toasts stay until dismissed."""
         if rel is None:
-            self._toast(f"Image download failed{': ' + error if error else ''}",
+            self._toast(_("Image download failed") + (": " + error if error else ""),
                         timeout=0)
             return False
         if tab not in self._tab_bar.all_tabs():
@@ -123,5 +124,5 @@ class PreviewActions:
             buffer.set_text(new_text)
             buffer.end_user_action()
             self._after_source_change(tab)
-        self._toast("Image downloaded")
+        self._toast(_("Image downloaded"))
         return False
