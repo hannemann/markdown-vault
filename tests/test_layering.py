@@ -9,6 +9,7 @@ files move into subpackages, and stays green at every intermediate state.
 """
 
 import ast
+import sys
 import unittest
 from collections import defaultdict
 from pathlib import Path
@@ -113,6 +114,102 @@ class TestAskIsImportLight(unittest.TestCase):
                               for a in node.names
                               if a.name.startswith("markdown_vault")]
         self.assertEqual(offenders, [], "ask.py must stay import-light")
+
+
+_CORE = _ROOT / "core"
+
+# Beyond the standard library, each ``core/`` module may import only these extras.
+# The lowest layer runs before GTK is up (``logging_setup`` runs first in ``main.py``
+# with only stdlib + GLib) and is imported by pure unit tests, so a heavy import here
+# breaks both. The ``"core"`` token means "may import its own layer"; ``yaml`` / ``gi``
+# are the two deliberate weights. A module with **no entry is stdlib-only** — so
+# ``paths.py``'s stdlib purity (the comment-only promise ``logging_setup`` leans on)
+# is a structural *consequence*, and a NEW ``core/`` module falls under the strict
+# default automatically.
+_CORE_ALLOW = {
+    "config":        {"yaml", "core"},
+    "debug_control": {"gi"},
+    "logging_setup": {"gi", "core"},
+    "path_utils":    {"core"},
+    "session":       {"core"},
+}
+
+
+def _module_level_imports(pyfile: Path):
+    """Yield ``(lineno, imported-module-string)`` for each absolute module-level
+    import — deferred imports inside functions are the escape hatch and not scanned."""
+    tree = ast.parse(pyfile.read_text(encoding="utf-8"), str(pyfile))
+    for node in tree.body:
+        if isinstance(node, ast.Import):
+            for a in node.names:
+                yield node.lineno, a.name
+        elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+            yield node.lineno, node.module
+
+
+def _import_offenders(imports, allow):
+    """Imports that are neither stdlib nor in *allow*, as ``"line N: module"``."""
+    offenders = []
+    for lineno, mod in imports:
+        top = mod.split(".")[0]
+        if top in sys.stdlib_module_names or top == "__future__":
+            continue
+        if mod.startswith("markdown_vault."):
+            # same layer only (the core package); any other same-package import (the
+            # search package pulls the whole stack) is never allowed here.
+            ok = mod[len("markdown_vault."):].split(".")[0] == "core" and "core" in allow
+        else:
+            ok = top in allow                            # yaml, gi, any third party
+        if not ok:
+            offenders.append(f"line {lineno}: {mod}")
+    return offenders
+
+
+class TestCoreLayerImportWeight(unittest.TestCase):
+    """Every ``core/`` module stays import-light: stdlib + a small per-module allow-list.
+
+    Guards **weight**, whereas :class:`TestAskIsImportLight` guards **cycles** — same
+    AST shape, different reason, do not merge them. ``paths.py`` has no allow-list
+    entry, so its stdlib purity is a structural consequence rather than a comment; a
+    new ``core/`` module falls under the strict default; and the boundary is the
+    ``core`` package only — any other same-package import (the ``search`` package pulls
+    the whole AI stack) is refused. The scan is **recursive** (``rglob``) and keys on
+    the path relative to ``core/``, so a one-level subpackage (the ``ui/preferences``
+    shape ``AGENTS.md`` allows) is covered too, without same-named modules across
+    directories sharing one permission.
+    """
+
+    def test_each_core_module_imports_only_its_allowance(self):
+        offenders = {}
+        for pyfile in sorted(_CORE.rglob("*.py")):     # recursive: a core/ subpackage too
+            key = pyfile.relative_to(_CORE).with_suffix("").as_posix()  # not stem — no collision
+            bad = _import_offenders(_module_level_imports(pyfile),
+                                    _CORE_ALLOW.get(key, frozenset()))
+            if bad:
+                offenders[key] = bad
+        self.assertEqual(
+            offenders, {},
+            "core/ module(s) importing beyond stdlib + their allow-list — add a "
+            "deliberate _CORE_ALLOW entry or defer the import inside a function:\n"
+            + "\n".join(f"  {m}: {b}" for m, b in sorted(offenders.items())))
+
+    def test_the_check_flags_heavy_imports_and_the_package_boundary(self):
+        # Effectiveness: numpy, gi and a non-core same-package import are caught;
+        # stdlib and a granted same-layer import are not. Built from a variable so this
+        # file carries no bare-package string literal (the string-ref guard).
+        import tempfile
+        mv = "markdown_vault"
+        src = ("import os\nimport numpy\nfrom gi.repository import Gtk\n"
+               f"from {mv}.search import ask\nfrom {mv}.core import paths\n")
+        with tempfile.TemporaryDirectory() as d:
+            f = Path(d) / "m.py"
+            f.write_text(src, encoding="utf-8")
+            imports = list(_module_level_imports(f))
+        strict = [o.split(": ", 1)[1] for o in _import_offenders(imports, frozenset())]
+        granted = [o.split(": ", 1)[1] for o in _import_offenders(imports, {"core"})]
+        self.assertEqual(strict,
+                         ["numpy", "gi.repository", f"{mv}.search", f"{mv}.core"])
+        self.assertEqual(granted, ["numpy", "gi.repository", f"{mv}.search"])
 
 
 if __name__ == "__main__":
