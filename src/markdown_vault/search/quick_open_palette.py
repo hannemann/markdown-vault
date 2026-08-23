@@ -18,6 +18,7 @@ gi.require_version("Adw", "1")
 from gi.repository import Gtk, Adw, GObject, GLib, Gdk
 
 from markdown_vault.search import search_logic
+from markdown_vault.core.i18n import _
 from markdown_vault.preview import markdown_widgets
 from markdown_vault.markdown import frontmatter
 from markdown_vault.core import path_utils
@@ -108,7 +109,7 @@ class QuickOpenPalette(Adw.Dialog):
         self._timer_id = None           # GLib source ticking the elapsed time
         self._ask_started = 0.0         # time.monotonic() when the ask began
         self._shown_paths: set[str] = set()
-        self.set_title("Quick Open")
+        self.set_title(_("Quick Open"))
         self.set_content_width(640)
         self.set_content_height(480)
 
@@ -128,7 +129,7 @@ class QuickOpenPalette(Adw.Dialog):
         header.set_margin_start(8)
         header.set_margin_end(8)
         self._entry = Gtk.SearchEntry(hexpand=True)
-        self._entry.set_placeholder_text("Go to file…")
+        self._entry.set_placeholder_text(_("Go to file…"))
         self._entry.connect("search-changed", lambda _e: self._refresh())
         self._entry.connect("activate", self._on_entry_activate)
         self._entry.connect("stop-search", lambda _e: self.close())
@@ -140,13 +141,13 @@ class QuickOpenPalette(Adw.Dialog):
         # selected file, or run the question in Ask mode).
         self._submit = Gtk.Button(label="↵")  # ↵ return glyph (U+21B5)
         self._submit.add_css_class("suggested-action")  # reads as the primary button
-        self._submit.set_tooltip_text("Run — search or ask (Enter)")
+        self._submit.set_tooltip_text(_("Run — search or ask (Enter)"))
         self._submit.connect("clicked",
                              lambda *_: self._on_entry_activate(self._entry))
         header.append(self._submit)
         self._close_btn = Gtk.Button(icon_name="window-close-symbolic")
         self._close_btn.add_css_class("flat")
-        self._close_btn.set_tooltip_text("Close (Esc)")
+        self._close_btn.set_tooltip_text(_("Close (Esc)"))
         self._close_btn.connect("clicked", lambda *_: self.close())
         header.append(self._close_btn)
         box.append(header)
@@ -187,7 +188,7 @@ class QuickOpenPalette(Adw.Dialog):
             self._pick_toggle.connect("toggled", self._on_pick_toggled)
             self._dep_bar.append(self._pick_toggle)
         self._dep_toggle = Gtk.ToggleButton(icon_name="view-conceal-symbolic")
-        self._dep_toggle.set_tooltip_text("Hide deprecated notes")
+        self._dep_toggle.set_tooltip_text(_("Hide deprecated notes"))
         if self._hide_deprecated is not None:
             self._dep_toggle.set_active(self._hide_deprecated())
         self._dep_toggle.connect("toggled", self._on_dep_toggled)
@@ -246,7 +247,7 @@ class QuickOpenPalette(Adw.Dialog):
         self._timer_label.set_hexpand(True)
         footer.append(self._timer_label)
         # "Answer (n)" — the confirm button while picking sources (hidden otherwise).
-        self._answer_btn = Gtk.Button(label="Answer")
+        self._answer_btn = Gtk.Button(label=_("Answer"))
         self._answer_btn.add_css_class("suggested-action")
         self._answer_btn.set_visible(False)
         self._answer_btn.connect("clicked", lambda *_: self._answer_from_selection())
@@ -255,7 +256,7 @@ class QuickOpenPalette(Adw.Dialog):
         if self._list_ask_models is not None:
             self._model_list = Gtk.StringList()
             self._model_dropdown = Gtk.DropDown(model=self._model_list)
-            self._model_dropdown.set_tooltip_text("Answer model")
+            self._model_dropdown.set_tooltip_text(_("Answer model"))
             self._model_dropdown.set_visible(False)
             self._model_dropdown.connect("notify::selected", self._on_model_selected)
             footer.append(self._model_dropdown)
@@ -614,7 +615,7 @@ class QuickOpenPalette(Adw.Dialog):
         if getattr(result, "source", "") == "semantic":
             marker = Gtk.Label(label="≈")
             marker.add_css_class("dim-label")
-            marker.set_tooltip_text("Semantic match")
+            marker.set_tooltip_text(_("Semantic match"))
             box.append(marker)
 
         text = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
@@ -852,10 +853,10 @@ class QuickOpenPalette(Adw.Dialog):
         self._abandon_answer()  # cancel any in-flight answer
         self._clear()
         if self._ask_mode:
-            self._entry.set_placeholder_text("Ask a question and press Enter…")
+            self._entry.set_placeholder_text(_("Ask a question and press Enter…"))
             self._show_ask_idle()
         else:
-            self._entry.set_placeholder_text("Go to file…")
+            self._entry.set_placeholder_text(_("Go to file…"))
             self._refresh()
         # Banner, picker and submit lock are all Ask-mode only.
         self.recheck_if_stale()          # entering Ask is a retry, like reopening
@@ -974,7 +975,7 @@ class QuickOpenPalette(Adw.Dialog):
         elapsed = time.monotonic() - self._ask_started
         self._clear()          # also stops the ticking timer + clears its label
         if ans.error:
-            self._results.append(self._message_row(f"Error: {ans.error}"))
+            self._results.append(self._message_row(_("Error: {error}").format(error=ans.error)))
             self._results.append(self._duration_row("Failed after", elapsed))
             # The failure may have proved the server is gone (the answer path
             # records that): show the banner and lock submitting now, instead of
@@ -1098,7 +1099,7 @@ class QuickOpenPalette(Adw.Dialog):
 
     def _update_answer_btn(self) -> None:
         n = len(self._selected)
-        self._answer_btn.set_label(f"Answer ({n})")
+        self._answer_btn.set_label(_("Answer ({n})").format(n=n))
         self._answer_btn.set_sensitive(n >= 1)
         self._answer_btn.set_visible(True)
         self._timer_label.set_text(f"{n}/{self._top_k()} selected")
@@ -1187,7 +1188,7 @@ class QuickOpenPalette(Adw.Dialog):
     def _copy_answer(self) -> None:
         if self._answer_text:
             self.get_clipboard().set(self._answer_text)
-            self._toast_overlay.add_toast(Adw.Toast(title="Copied!", timeout=2))
+            self._toast_overlay.add_toast(Adw.Toast(title=_("Copied!"), timeout=2))
 
 
 def _match_positions(query: str, text: str) -> list:

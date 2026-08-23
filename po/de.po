@@ -529,3 +529,81 @@ msgstr "Die Ordnerauswahl konnte nicht geöffnet werden."
 #: src/markdown_vault/vault/vault_tree.py
 msgid "Save Failed"
 msgstr "Speichern fehlgeschlagen"
+
+#: src/markdown_vault/search/quick_open_palette.py
+msgid "Quick Open"
+msgstr "Schnell öffnen"
+
+#: src/markdown_vault/search/quick_open_palette.py
+msgid "Go to file…"
+msgstr "Zu Datei springen…"
+
+#: src/markdown_vault/search/quick_open_palette.py
+msgid "Run — search or ask (Enter)"
+msgstr "Ausführen — suchen oder fragen (Eingabe)"
+
+#: src/markdown_vault/search/quick_open_palette.py
+msgid "Answer"
+msgstr "Antwort"
+
+#: src/markdown_vault/search/quick_open_palette.py
+msgid "Answer model"
+msgstr "Antwortmodell"
+
+#: src/markdown_vault/search/quick_open_palette.py
+msgid "Semantic match"
+msgstr "Semantischer Treffer"
+
+#: src/markdown_vault/search/quick_open_palette.py
+msgid "Ask a question and press Enter…"
+msgstr "Eine Frage stellen und Eingabe drücken…"
+
+#: src/markdown_vault/search/quick_open_palette.py
+#, python-brace-format
+msgid "Error: {error}"
+msgstr "Fehler: {error}"
+
+#: src/markdown_vault/search/quick_open_palette.py
+#, python-brace-format
+msgid "Answer ({n})"
+msgstr "Antwort ({n})"
+
+#: src/markdown_vault/search/quick_open_palette.py
+msgid "Copied!"
+msgstr "Kopiert!"
+
+#: src/markdown_vault/search/search.py
+msgid "Search across all vaults…"
+msgstr "Über alle Vaults suchen…"
+
+#: src/markdown_vault/search/search.py
+msgid "Search syntax"
+msgstr "Suchsyntax"
+
+#: src/markdown_vault/search/search.py
+msgid "All terms must match (AND)"
+msgstr "Alle Begriffe müssen passen (UND)"
+
+#: src/markdown_vault/search/search.py
+msgid "Exact phrase"
+msgstr "Exakte Wortgruppe"
+
+#: src/markdown_vault/search/search.py
+msgid "Exclude term"
+msgstr "Begriff ausschließen"
+
+#: src/markdown_vault/search/search.py
+msgid "Has frontmatter tag"
+msgstr "Hat Frontmatter-Tag"
+
+#: src/markdown_vault/search/search.py
+msgid "Path contains text"
+msgstr "Pfad enthält Text"
+
+#: src/markdown_vault/search/search.py
+msgid "Restrict to a vault"
+msgstr "Auf einen Vault beschränken"
+
+#: src/markdown_vault/search/search.py
+msgid "<tt>Aa</tt> case · <tt>W</tt> whole word · <tt>.*</tt> regex · folder = current vault only.\nIn regex mode the query is one raw pattern (operators off)."
+msgstr "<tt>Aa</tt> Groß/klein · <tt>W</tt> ganzes Wort · <tt>.*</tt> Regex · Ordner = nur aktueller Vault.\nIm Regex-Modus ist die Eingabe ein einziges rohes Muster (Operatoren aus)."

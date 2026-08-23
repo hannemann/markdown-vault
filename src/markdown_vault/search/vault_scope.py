@@ -16,6 +16,8 @@ import gi
 gi.require_version("Gtk", "4.0")
 from gi.repository import Gtk
 
+from markdown_vault.core.i18n import _
+
 
 class VaultScope(Gtk.DropDown):
     def __init__(self, get_vaults, get_active, get_scope, set_scope, on_change=None):
@@ -45,7 +47,7 @@ class VaultScope(Gtk.DropDown):
         if active and active_name is not None:
             items.append(f"{active_name} (current)")
             values.append("current")
-        items.append("All vaults")
+        items.append(_("All vaults"))
         values.append("all")
         for name, path in vaults:
             if path != active:
