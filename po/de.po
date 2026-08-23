@@ -1785,6 +1785,203 @@ msgstr "Vorschau"
 msgid "Load images from https:// URLs in notes. Off blocks them so a note cannot beacon your IP; scripts stay blocked either way."
 msgstr "Bilder von https://-URLs in Notizen laden. Aus blockiert sie, damit eine Notiz nicht deine IP verraten kann; Skripte bleiben ohnehin blockiert."
 
+#: src/markdown_vault/app/app_window.py
+msgid "Open a file from the vault tree or create a new one"
+msgstr "Eine Datei aus dem Vault-Baum öffnen oder eine neue anlegen"
+
+#: src/markdown_vault/app/app_window.py
+msgid "Open Vault"
+msgstr "Vault öffnen"
+
+#: src/markdown_vault/app/app_window.py
+msgid "New file (Ctrl+N)"
+msgstr "Neue Datei (Strg+N)"
+
+#: src/markdown_vault/app/app_window.py
+msgid "Save (Ctrl+S)"
+msgstr "Speichern (Strg+S)"
+
+#: src/markdown_vault/app/app_window.py
+msgid "Back (Alt+Left)"
+msgstr "Zurück (Alt+Links)"
+
+#: src/markdown_vault/app/app_window.py
+msgid "Forward (Alt+Right)"
+msgstr "Vor (Alt+Rechts)"
+
+#: src/markdown_vault/app/app_window.py
+msgid "Edit (Ctrl+1)"
+msgstr "Bearbeiten (Strg+1)"
+
+#: src/markdown_vault/app/app_window.py
+msgid "Split (Ctrl+2)"
+msgstr "Geteilt (Strg+2)"
+
+#: src/markdown_vault/app/app_window.py
+msgid "Preview (Ctrl+3)"
+msgstr "Vorschau (Strg+3)"
+
+#: src/markdown_vault/app/app_window.py
+msgid "Graph (Ctrl+4)"
+msgstr "Graph (Strg+4)"
+
+#: src/markdown_vault/app/app_window.py
+msgid "Follow System"
+msgstr "System folgen"
+
+#: src/markdown_vault/app/app_window.py
+msgid "Light Mode"
+msgstr "Heller Modus"
+
+#: src/markdown_vault/app/app_window.py
+msgid "Dark Mode"
+msgstr "Dunkler Modus"
+
+#: src/markdown_vault/app/app_window.py
+msgid "Add Vault"
+msgstr "Vault hinzufügen"
+
+#: src/markdown_vault/app/app_window.py
+msgid "Toggle Sidebar"
+msgstr "Seitenleiste umschalten"
+
+#: src/markdown_vault/app/app_window.py
+msgid "Zen Mode"
+msgstr "Zen-Modus"
+
+#: src/markdown_vault/app/app_window.py
+msgid "Total Zen"
+msgstr "Voller Zen"
+
+#: src/markdown_vault/app/app_window.py
+msgid "About Markdown Vault"
+msgstr "Über Markdown Vault"
+
+#: src/markdown_vault/app/app_window.py
+msgid "Full-Text Search (Ctrl+Shift+F)"
+msgstr "Volltextsuche (Strg+Umschalt+F)"
+
+#: src/markdown_vault/app/app_window.py
+#, python-brace-format
+msgid "Could not save {n} tab:\n\n"
+msgid_plural "Could not save {n} tabs:\n\n"
+msgstr[0] "{n} Tab konnte nicht gespeichert werden:\n\n"
+msgstr[1] "{n} Tabs konnten nicht gespeichert werden:\n\n"
+
+#: src/markdown_vault/app/app_window.py
+msgid "Semantic search: backend reachable again"
+msgstr "Semantische Suche: Backend wieder erreichbar"
+
+#: src/markdown_vault/app/app_window.py
+msgid "Semantic search: embedding backend unavailable"
+msgstr "Semantische Suche: Embedding-Backend nicht verfügbar"
+
+#: src/markdown_vault/app/app_window.py
+#, python-brace-format
+msgid "Indexing… {done}/{total}"
+msgstr "Indiziert… {done}/{total}"
+
+#: src/markdown_vault/app/app_window.py
+msgid "Updating semantic index…"
+msgstr "Semantischer Index wird aktualisiert…"
+
+#: src/markdown_vault/app/app_window.py
+msgid "Open and save a note first, then insert an image."
+msgstr "Erst eine Notiz öffnen und speichern, dann ein Bild einfügen."
+
+#: src/markdown_vault/app/app_window.py
+msgid "No image in the clipboard."
+msgstr "Kein Bild in der Zwischenablage."
+
+#: src/markdown_vault/app/app_window.py
+msgid "Insert Image"
+msgstr "Bild einfügen"
+
+#: src/markdown_vault/app/app_window.py
+msgid "Images"
+msgstr "Bilder"
+
+#: src/markdown_vault/app/app_window.py
+msgid "Could not open the image."
+msgstr "Das Bild konnte nicht geöffnet werden."
+
+#: src/markdown_vault/app/app_window.py
+msgid "Could not read the image file."
+msgstr "Die Bilddatei konnte nicht gelesen werden."
+
+#: src/markdown_vault/app/app_window.py
+#, python-brace-format
+msgid "Import failed: {error}"
+msgstr "Import fehlgeschlagen: {error}"
+
+#: src/markdown_vault/app/app_window.py
+msgid "Cannot Open Preferences"
+msgstr "Einstellungen können nicht geöffnet werden"
+
+#: src/markdown_vault/app/app_window.py
+msgid "Edit and preview Markdown files organized in vaults."
+msgstr "Markdown-Dateien bearbeiten und vorschauen, organisiert in Vaults."
+
+#: src/markdown_vault/app/ask_controller.py
+msgid "Semantic search is off — turn it on in Preferences → Search."
+msgstr "Die semantische Suche ist aus — in Einstellungen → Suche einschalten."
+
+#: src/markdown_vault/app/ask_controller.py
+msgid "The semantic index is not ready yet."
+msgstr "Der semantische Index ist noch nicht bereit."
+
+#: src/markdown_vault/app/ask_controller.py
+msgid "The answer engine is off — turn it on in Preferences → Search → Ask."
+msgstr "Die Antwort-Engine ist aus — in Einstellungen → Suche → Ask einschalten."
+
+#: src/markdown_vault/app/file_manager.py
+msgid "No Vault Open"
+msgstr "Kein Vault geöffnet"
+
+#: src/markdown_vault/app/file_manager.py
+msgid "Add a vault directory first before creating files."
+msgstr "Erst ein Vault-Verzeichnis hinzufügen, bevor Dateien angelegt werden."
+
+#: src/markdown_vault/app/file_manager.py
+msgid "File name (.md is added automatically):"
+msgstr "Dateiname (.md wird automatisch angehängt):"
+
+#: src/markdown_vault/app/file_manager.py
+msgid "e.g. My Note"
+msgstr "z. B. Meine Notiz"
+
+#: src/markdown_vault/app/file_manager.py
+msgid "Invalid Name"
+msgstr "Ungültiger Name"
+
+#: src/markdown_vault/app/file_manager.py
+msgid "Create Failed"
+msgstr "Erstellen fehlgeschlagen"
+
+#: src/markdown_vault/app/file_manager.py
+msgid "Folder name:"
+msgstr "Ordnername:"
+
+#: src/markdown_vault/app/file_manager.py
+msgid "e.g. My Folder"
+msgstr "z. B. Mein Ordner"
+
+#: src/markdown_vault/app/file_manager.py
+msgid "Delete Failed"
+msgstr "Löschen fehlgeschlagen"
+
+#: src/markdown_vault/app/preview_actions.py
+msgid "Downloading image…"
+msgstr "Bild wird heruntergeladen…"
+
+#: src/markdown_vault/app/preview_actions.py
+msgid "Image download failed"
+msgstr "Bild-Download fehlgeschlagen"
+
+#: src/markdown_vault/app/preview_actions.py
+msgid "Image downloaded"
+msgstr "Bild heruntergeladen"
+
 #: src/markdown_vault/ui/preferences/search_page.py
 msgid "Search"
 msgstr "Suche"

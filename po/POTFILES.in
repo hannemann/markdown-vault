@@ -1,5 +1,9 @@
 # Source files with translatable strings, relative to the project root.
 # Add a file here when it gets its first _() / ngettext() marker.
+src/markdown_vault/app/app_window.py
+src/markdown_vault/app/ask_controller.py
+src/markdown_vault/app/file_manager.py
+src/markdown_vault/app/preview_actions.py
 src/markdown_vault/editor/autosave.py
 src/markdown_vault/editor/content_changes.py
 src/markdown_vault/editor/editor.py

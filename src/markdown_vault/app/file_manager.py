@@ -15,6 +15,7 @@ gi.require_version("Gtk", "4.0")
 
 from gi.repository import GLib, Gtk
 
+from markdown_vault.core.i18n import _
 from markdown_vault.uikit import dialogs
 from markdown_vault.core import validation
 
@@ -85,16 +86,16 @@ class FileManager:
         """
         if vaults is not None and not vaults:
             self._show_error(
-                "No Vault Open",
-                "Add a vault directory first before creating files.",
+                _("No Vault Open"),
+                _("Add a vault directory first before creating files."),
             )
             return
 
         dialogs.prompt_new_item(
             parent=parent,
-            heading="New File",
-            body="File name (.md is added automatically):",
-            placeholder="e.g. My Note",
+            heading=_("New File"),
+            body=_("File name (.md is added automatically):"),
+            placeholder=_("e.g. My Note"),
             on_response=lambda name: self._handle_new_file_response(name, default_dir, parent),
         )
 
@@ -109,7 +110,7 @@ class FileManager:
         err = validation.validate_new_item(name, default_dir)
         if err:
             logger.warning("Invalid file name: %s — %s", name, err)
-            self._show_error("Invalid Name", err)
+            self._show_error(_("Invalid Name"), err)
             return
         file_path = os.path.join(default_dir, name)
         if os.path.exists(file_path):
@@ -119,7 +120,7 @@ class FileManager:
         err = self._file_ops.create_file(default_dir, name)
         if err:
             logger.error("Failed to create file %s: %s", file_path, err)
-            self._show_error("Create Failed", err)
+            self._show_error(_("Create Failed"), err)
             return
         self._vault_tree.refresh()
         self._open_tab(file_path)
@@ -140,9 +141,9 @@ class FileManager:
         """Show the new-folder dialog and handle the full creation workflow."""
         dialogs.prompt_new_item(
             parent=parent,
-            heading="New Folder",
-            body="Folder name:",
-            placeholder="e.g. My Folder",
+            heading=_("New Folder"),
+            body=_("Folder name:"),
+            placeholder=_("e.g. My Folder"),
             on_response=lambda name: self._handle_new_folder_response(name, parent_dir),
         )
 
@@ -153,12 +154,12 @@ class FileManager:
         err = validation.validate_new_item(name, parent_dir)
         if err:
             logger.warning("Invalid folder name: %s — %s", name, err)
-            self._show_error("Invalid Name", err)
+            self._show_error(_("Invalid Name"), err)
             return
         err = self._file_ops.create_folder(parent_dir, name)
         if err:
             logger.error("Failed to create folder %s: %s", name, err)
-            self._show_error("Create Failed", err)
+            self._show_error(_("Create Failed"), err)
             return
         self._vault_tree.refresh()
 
@@ -186,7 +187,7 @@ class FileManager:
         # 1. Attempt filesystem delete FIRST
         err = self._file_ops.delete_path(path)
         if err:
-            self._show_error("Delete Failed", err)
+            self._show_error(_("Delete Failed"), err)
             return
 
         # 2. Only on success: drop the note/folder's downloaded images, then
