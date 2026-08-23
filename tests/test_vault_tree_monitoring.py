@@ -20,7 +20,7 @@ from unittest.mock import MagicMock, patch
 
 import gi
 gi.require_version("Gtk", "4.0")
-from gi.repository import Gtk
+from gi.repository import GLib, Gtk
 
 from markdown_vault.vault.vault_tree import VaultTree, VaultNode
 
@@ -28,6 +28,34 @@ from markdown_vault.vault.vault_tree import VaultTree, VaultNode
 def _file_paths(tree: VaultTree) -> list[str]:
     """All non-directory node paths currently in the tree."""
     return [n.path for n in tree._iter_all_nodes() if not n.is_dir]
+
+
+class TestFolderChooserFailure(unittest.TestCase):
+    """Seam guard (stub tree, internal name): the vault-folder chooser splits a user
+    cancel from a real dialog failure — silent on cancel, log + error dialog on a real
+    failure. It previously logged both at debug (user-invisible)."""
+
+    def _dialog(self):
+        d = MagicMock()
+        d.select_folder_finish.side_effect = GLib.Error.new_literal(
+            GLib.quark_from_string("test"), "x", 0)
+        return d
+
+    @patch("markdown_vault.vault.vault_tree.dialogs")
+    def test_cancel_is_silent(self, mock_dialogs):
+        mock_dialogs.dialog_cancelled.return_value = True
+        me = MagicMock()
+        with self.assertNoLogs("markdown_vault.vault.vault_tree", level="WARNING"):
+            VaultTree._on_folder_chosen(me, self._dialog(), None)
+        mock_dialogs.show_error.assert_not_called()
+
+    @patch("markdown_vault.vault.vault_tree.dialogs")
+    def test_real_failure_logs_and_shows_error(self, mock_dialogs):
+        mock_dialogs.dialog_cancelled.return_value = False
+        me = MagicMock()
+        with self.assertLogs("markdown_vault.vault.vault_tree", level="WARNING"):
+            VaultTree._on_folder_chosen(me, self._dialog(), None)
+        mock_dialogs.show_error.assert_called_once()
 
 
 def _all_paths(tree: VaultTree) -> list[str]:
