@@ -6,6 +6,9 @@ src/markdown_vault/editor/find_bar.py
 src/markdown_vault/editor/mru.py
 src/markdown_vault/editor/tabs.py
 src/markdown_vault/graph/graph_explorer.py
+src/markdown_vault/importers/dialog_import.py
+src/markdown_vault/importers/document_import.py
+src/markdown_vault/importers/web_import.py
 src/markdown_vault/ui/sidebar.py
 src/markdown_vault/uikit/banners.py
 src/markdown_vault/uikit/dialogs.py

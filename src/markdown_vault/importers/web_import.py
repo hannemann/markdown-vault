@@ -33,6 +33,7 @@ from pathlib import Path
 from markdown_vault.vault import note_writer
 # re-exported: layout lives in attachments
 from markdown_vault.core.attachments import attachment_target
+from markdown_vault.core.i18n import _
 from markdown_vault.markdown.md_fences import FenceTracker
 from markdown_vault.markdown.md_text import unwrap_bold_headings
 from urllib.parse import parse_qsl, urlencode, urljoin, urlparse, urlsplit, urlunsplit
@@ -169,7 +170,7 @@ def _assemble(url: str | None, markdown: str, meta: dict,
               fallback_title: str = "") -> ImportResult:
     site = meta.get("sitename", "")
     title = _strip_title_suffix(meta.get("title") or "", url, site)
-    title = title or fallback_title or (url or "Imported page")
+    title = title or fallback_title or (url or _("Imported page"))
     return ImportResult(url=url or "", title=title, markdown=markdown,
                         author=_clean_author(meta.get("author", ""), site),
                         date=meta.get("date", ""), sitename=site)

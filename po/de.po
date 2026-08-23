@@ -297,3 +297,107 @@ msgstr "Nach Tag filtern"
 #: src/markdown_vault/graph/graph_explorer.py
 msgid "Fit graph to view"
 msgstr "Graph einpassen"
+
+#: src/markdown_vault/importers/dialog_import.py
+msgid "Import"
+msgstr "Importieren"
+
+#: src/markdown_vault/importers/dialog_import.py
+msgid "What do you want to import?"
+msgstr "Was möchtest du importieren?"
+
+#: src/markdown_vault/importers/dialog_import.py
+msgid "Web Page"
+msgstr "Webseite"
+
+#: src/markdown_vault/importers/dialog_import.py
+msgid "Fetch a URL as a Markdown note"
+msgstr "Eine URL als Markdown-Notiz holen"
+
+#: src/markdown_vault/importers/dialog_import.py
+msgid "File"
+msgstr "Datei"
+
+#: src/markdown_vault/importers/dialog_import.py
+msgid "Import a document (PDF, Word, PowerPoint, Excel, audio)"
+msgstr "Ein Dokument importieren (PDF, Word, PowerPoint, Excel, Audio)"
+
+#: src/markdown_vault/importers/dialog_import.py
+msgid "URL"
+msgstr "URL"
+
+#: src/markdown_vault/importers/dialog_import.py
+msgid "Name (optional)"
+msgstr "Name (optional)"
+
+#: src/markdown_vault/importers/dialog_import.py
+msgid "Download images"
+msgstr "Bilder herunterladen"
+
+#: src/markdown_vault/importers/dialog_import.py
+msgid "Save images into the vault's attachments folder"
+msgstr "Bilder in den Anhang-Ordner des Vaults speichern"
+
+#: src/markdown_vault/importers/dialog_import.py
+msgid "Enter a valid http(s) URL."
+msgstr "Eine gültige http(s)-URL eingeben."
+
+#: src/markdown_vault/importers/dialog_import.py
+msgid "Nothing extractable on that page."
+msgstr "Auf dieser Seite ist nichts extrahierbar."
+
+#: src/markdown_vault/importers/dialog_import.py
+msgid "No file selected"
+msgstr "Keine Datei ausgewählt"
+
+#: src/markdown_vault/importers/dialog_import.py
+msgid "Browse…"
+msgstr "Durchsuchen…"
+
+#: src/markdown_vault/importers/dialog_import.py
+msgid "Choose a document"
+msgstr "Ein Dokument auswählen"
+
+#: src/markdown_vault/importers/dialog_import.py
+msgid "Supported documents"
+msgstr "Unterstützte Dokumente"
+
+#: src/markdown_vault/importers/dialog_import.py
+msgid "Could not open the file chooser."
+msgstr "Die Dateiauswahl konnte nicht geöffnet werden."
+
+#: src/markdown_vault/importers/dialog_import.py
+#, python-brace-format
+msgid "The '{model}' transcription model isn't downloaded — get it in Preferences → Search before importing audio."
+msgstr "Das Transkriptionsmodell „{model}“ ist nicht heruntergeladen — vor dem Audio-Import unter Einstellungen → Suche holen."
+
+#: src/markdown_vault/importers/dialog_import.py
+#, python-brace-format
+msgid "Audio import needs the '{model}' model, which isn't downloaded yet (Preferences → Search)."
+msgstr "Der Audio-Import braucht das Modell „{model}“, das noch nicht heruntergeladen ist (Einstellungen → Suche)."
+
+#: src/markdown_vault/importers/dialog_import.py
+msgid "No text could be extracted from this file."
+msgstr "Aus dieser Datei konnte kein Text extrahiert werden."
+
+#: src/markdown_vault/importers/document_import.py
+msgid "Document import needs the optional AI stack, which isn't installed. Add it to the app venv:\n  make install-ai"
+msgstr "Der Dokument-Import braucht den optionalen KI-Stack, der nicht installiert ist. Ins App-venv aufnehmen:\n  make install-ai"
+
+#: src/markdown_vault/importers/document_import.py
+#, python-brace-format
+msgid "The transcription model ('{model}') isn't downloaded yet. Download it in Preferences → Search before importing audio."
+msgstr "Das Transkriptionsmodell („{model}“) ist noch nicht heruntergeladen. Vor dem Audio-Import unter Einstellungen → Suche herunterladen."
+
+#: src/markdown_vault/importers/document_import.py
+#, python-brace-format
+msgid "Unsupported file type: {suffix}"
+msgstr "Nicht unterstützter Dateityp: {suffix}"
+
+#: src/markdown_vault/importers/document_import.py
+msgid "(none)"
+msgstr "(keiner)"
+
+#: src/markdown_vault/importers/web_import.py
+msgid "Imported page"
+msgstr "Importierte Seite"
