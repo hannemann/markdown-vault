@@ -5,7 +5,6 @@ Tests wire mocks into the constructor and verify callback flow by
 inspecting mock calls after simulating dialog responses.
 """
 
-import logging
 import os
 import tempfile
 import shutil
@@ -15,7 +14,6 @@ from unittest.mock import patch, MagicMock
 import gi
 
 gi.require_version("Gtk", "4.0")
-from gi.repository import GLib
 
 from markdown_vault.app.file_manager import FileManager
 

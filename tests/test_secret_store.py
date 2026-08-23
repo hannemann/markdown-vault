@@ -1,7 +1,7 @@
 """Tests for markdown_vault.core.secret_store — keyring access with graceful
 degradation (no real Secret Service is touched; the libsecret module is mocked)."""
 import unittest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 from markdown_vault.core import secret_store
 

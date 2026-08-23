@@ -7,7 +7,6 @@ does **not** own any widgets — it operates on the ``TabBar`` and
 """
 
 import logging
-from pathlib import Path
 
 import gi
 

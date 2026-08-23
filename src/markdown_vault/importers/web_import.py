@@ -18,7 +18,6 @@ import argparse
 import datetime
 import ipaddress
 import logging
-import os
 import re
 import socket
 import sys

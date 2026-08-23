@@ -11,8 +11,6 @@ Verifies:
 - R6.2: ``_on_close_request`` dirty-check prevents window close
 """
 
-import tempfile
-import shutil
 import unittest
 import unittest.mock
 
@@ -21,10 +19,8 @@ import gi
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 from gi.repository import Gtk  # type: ignore[attr-defined]
-from gi.repository import Adw  # type: ignore[attr-defined]
 
-from markdown_vault.editor.tabs import Tab, TabBar
-from markdown_vault.editor.editor import Editor
+from markdown_vault.editor.tabs import TabBar
 
 
 # ---------------------------------------------------------------------------

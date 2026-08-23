@@ -17,7 +17,6 @@ from gi.repository import GLib, Gtk
 
 from markdown_vault.uikit import dialogs
 from markdown_vault.core import validation
-from markdown_vault.vault.file_ops import FileOps
 
 logger = logging.getLogger(__name__)
 

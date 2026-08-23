@@ -6,12 +6,10 @@ import shutil
 import unittest
 import unittest.mock
 
-from pathlib import Path
 import gi
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
-from gi.repository import Gtk, Adw
 
 
 class TestDialogIsShown(unittest.TestCase):

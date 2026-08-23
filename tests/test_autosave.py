@@ -1,7 +1,7 @@
 """Tests for the autosave manager (src/autosave.py)."""
 
 import unittest
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, patch
 
 from markdown_vault.editor.autosave import AutosaveManager
 

@@ -9,8 +9,6 @@ Tests:
 - N.4: Callback-Exceptions werden geloggt statt verschluckt
 """
 
-import gi
-import importlib
 import sys
 import unittest
 from unittest.mock import MagicMock, patch

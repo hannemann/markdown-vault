@@ -9,7 +9,6 @@ Tests die Basis-Funktionalität des VaultMonitors:
 - N.1: Subdirectories werden rekursiv überwacht
 """
 
-import os
 import sys
 import time
 import unittest

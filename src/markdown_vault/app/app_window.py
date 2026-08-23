@@ -11,7 +11,6 @@ the hamburger menu.
 
 import logging
 import os
-import re
 from pathlib import Path
 
 import gi
@@ -21,15 +20,11 @@ gi.require_version("Adw", "1")
 
 from gi.repository import Gtk, Adw, Gio, GLib, Gdk
 
-import traceback
-import sys
-import faulthandler
 import threading
 
 from markdown_vault.core import logging_setup
 from markdown_vault.vault.vault_tree import VaultTree
 from markdown_vault.editor.editor import Editor
-from markdown_vault.preview.preview import Preview
 from markdown_vault.editor.tabs import TabBar
 from markdown_vault.ui.sidebar import Sidebar
 from markdown_vault.search.search import SearchBar
@@ -59,12 +54,10 @@ from markdown_vault.app.scroll_memory import ScrollMemory
 from markdown_vault.app.preview_actions import PreviewActions
 from markdown_vault.core import config
 from markdown_vault.uikit import dialogs
-from markdown_vault.uikit import banners as banner_mod
 from markdown_vault.core import session
 from markdown_vault.editor import mru
 from markdown_vault.core import history
 from markdown_vault.core import path_utils
-from markdown_vault.core import validation
 from markdown_vault.vault import vault_monitor
 from markdown_vault.vault.backlink_index import BacklinkIndex, scan_vaults
 from markdown_vault.core.event_router import FileEventDispatcher

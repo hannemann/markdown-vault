@@ -21,14 +21,14 @@ Adw.init()
 # Import the boundary submodules so patch() can resolve them as package attributes —
 # the packages have empty __init__.py, so the submodules are not attributes until
 # imported. These imports are light (the heavy AI deps are function-local).
-import markdown_vault.search.llama_runtime  # noqa: F401,E402
-import markdown_vault.search.ask  # noqa: F401,E402
-import markdown_vault.importers.document_import  # noqa: F401,E402
-from markdown_vault.ui.preferences.dialog import PreferencesDialog  # noqa: E402
-from markdown_vault.core import config  # noqa: E402
-from gi.repository import GLib, Gtk  # noqa: E402
-from markdown_vault.ui.preferences.ask_subpage import AskSubpageMixin  # noqa: E402
-from markdown_vault.ui.preferences.embedding_subpage import EmbeddingSubpageMixin  # noqa: E402
+import markdown_vault.search.llama_runtime
+import markdown_vault.search.ask
+import markdown_vault.importers.document_import  # noqa: F401
+from markdown_vault.ui.preferences.dialog import PreferencesDialog
+from markdown_vault.core import config
+from gi.repository import GLib
+from markdown_vault.ui.preferences.ask_subpage import AskSubpageMixin
+from markdown_vault.ui.preferences.embedding_subpage import EmbeddingSubpageMixin
 
 
 def _dialog_error():

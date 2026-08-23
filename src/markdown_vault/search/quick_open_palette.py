@@ -917,7 +917,7 @@ class QuickOpenPalette(Adw.Dialog):
                 ans = self._ask_answer(question, on_phase=on_phase,
                                        on_token=on_token,
                                        should_cancel=should_cancel)
-            except Exception as exc:  # noqa: BLE001 — surface any failure to the UI
+            except Exception as exc:
                 logger.debug("ask failed", exc_info=True)
                 from markdown_vault.search.ask import Answer
                 ans = Answer(text="", error=str(exc))
@@ -1017,7 +1017,7 @@ class QuickOpenPalette(Adw.Dialog):
         def worker():
             try:
                 cands = self._ask_candidates(question)
-            except Exception:  # noqa: BLE001 — surfaced to the user as an error row
+            except Exception:
                 logger.warning("candidate retrieval failed", exc_info=True)
                 GLib.idle_add(self._show_candidate_error, generation)
                 return
@@ -1123,7 +1123,7 @@ class QuickOpenPalette(Adw.Dialog):
                 ans = self._ask_answer_selected(question, paths, on_phase=on_phase,
                                                 on_token=on_token,
                                                 should_cancel=should_cancel)
-            except Exception as exc:  # noqa: BLE001 — surface failure to the UI
+            except Exception as exc:
                 logger.debug("ask (selected) failed", exc_info=True)
                 from markdown_vault.search.ask import Answer
                 ans = Answer(text="", error=str(exc))

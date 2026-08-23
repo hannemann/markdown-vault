@@ -391,7 +391,6 @@ class AskSubpageMixin:
         """Rescan the models folder into the selector, preselecting the active
         model, then refresh the Model-row status and the folder row. Guarded so
         rebuilding the list doesn't fire a spurious change."""
-        from pathlib import Path
         self._ask_gguf_updating = True
         self._ask_gguf_paths = [str(p) for p in config.list_models(self._settings)]
         self._ask_gguf_list.splice(0, self._ask_gguf_list.get_n_items(),
@@ -426,7 +425,6 @@ class AskSubpageMixin:
     def _after_gguf_download(self, target) -> None:
         """A finished, valid download becomes the selected model. A rejected one
         (not a GGUF) is not selected — just rescan so it doesn't linger."""
-        from pathlib import Path
         if Path(target).exists() and config.is_gguf(target):
             # Store the filename — the download lands in ask_models_dir (see the
             # download target below), where list_models and resolve_model_path look.
@@ -465,7 +463,7 @@ class AskSubpageMixin:
         try:
             if cur.exists():
                 dialog.set_initial_folder(Gio.File.new_for_path(str(cur)))
-        except Exception:  # noqa: BLE001 — cosmetic preset; on failure the dialog just opens at the default
+        except Exception:
             logger.debug("could not preset the models-dir initial folder", exc_info=True)
 
         dialog.select_folder(self.get_root(), None, self._on_models_dir_chosen)
@@ -501,7 +499,6 @@ class AskSubpageMixin:
         """The Model row's subtitle: the chosen model's name + size when it loads,
         an explicit "not found" when a *set* choice is gone (the Quick Open banner
         blocks it too), or a hint when nothing is chosen yet."""
-        from pathlib import Path
         chosen = config.get_setting(self._settings, "ask.gguf.filename") or ""
         resolved = config.resolve_model_path(self._settings)
         if resolved:

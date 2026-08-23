@@ -11,7 +11,6 @@ can react independently without importing one another.
 from __future__ import annotations
 
 import logging
-from collections.abc import Sequence
 from typing import NamedTuple, Protocol
 
 logger = logging.getLogger(__name__)

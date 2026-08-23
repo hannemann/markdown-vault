@@ -14,7 +14,6 @@ import logging
 import os
 import markdown as md
 import re
-import unicodedata
 from collections.abc import MutableSet
 from pathlib import Path
 from markdown.extensions import Extension
@@ -48,10 +47,9 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 gi.require_version("WebKit", "6.0")
 
-from gi.repository import Gtk, Adw, WebKit, GObject, Gdk, GLib, Gio, Pango
+from gi.repository import Gtk, WebKit, GObject, Gdk, GLib, Gio, Pango
 
 
-import unicodedata
 
 logger = logging.getLogger(__name__)
 
@@ -1438,8 +1436,9 @@ class Preview(Gtk.ScrolledWindow):
         try:
             value = web_view.evaluate_javascript_finish(result)
             data = json.loads(value.to_string()) if value is not None else {}
-        except Exception:  # noqa: BLE001 — WebKit JS-result callback: a marshalling
-            # error must not crash find, but must not vanish as a silent "0 matches"
+        except Exception:
+            # a WebKit JS-result marshalling error must not crash find, nor vanish
+            # as a silent "0 matches"
             logger.warning("find-result parse failed; treating as no matches",
                            exc_info=True)
             data = {}

@@ -3,13 +3,11 @@
 import shutil
 import tempfile
 import unittest
-from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 from markdown_vault.core.event_router import (
     FileEvent,
     FileEventDispatcher,
-    SidebarRefresher,
 )
 
 

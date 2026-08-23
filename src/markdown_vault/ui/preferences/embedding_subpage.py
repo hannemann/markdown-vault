@@ -257,7 +257,7 @@ class EmbeddingSubpageMixin:
             probe = start if start.exists() else start.parent
             if probe.exists():
                 dialog.set_initial_folder(Gio.File.new_for_path(str(probe)))
-        except Exception:  # noqa: BLE001 — cosmetic preset; on failure the dialog just opens at the default
+        except Exception:
             logger.debug("could not preset the ONNX-dir initial folder", exc_info=True)
 
         dialog.select_folder(self.get_root(), None, self._on_onnx_dir_chosen)
@@ -289,8 +289,9 @@ class EmbeddingSubpageMixin:
             # genuinely absent (the package itself isn't there) → install it
             return ("onnxruntime not found — install it (openSUSE: "
                     "python313-onnxruntime) or use the Flatpak build")
-        except Exception:  # noqa: BLE001 — a PLAIN ImportError here means present but
-            # unloadable (bad native lib / wrong glibc-CUDA), NOT absent — the common case
+        except Exception:
+            # onnxruntime is present but unloadable (bad native lib / wrong glibc-CUDA),
+            # NOT absent — the common case
             logger.warning("onnxruntime is installed but failed to load", exc_info=True)
             return "onnxruntime is installed but failed to load — see the log."
 
