@@ -131,7 +131,7 @@ def _decode_data_uri(src: str):
     try:
         data = base64.b64decode(payload)
     except Exception as exc:                           # malformed padding: skip this image
-        logger.debug("skipping malformed data: URI: %s", exc)
+        logger.warning("skipping malformed data: URI: %s", exc)  # dropped image = content loss
         return None
     if not data:                                       # b64decode ignores garbage -> 0 bytes; skip
         return None
@@ -433,7 +433,7 @@ def _openpyxl_image_bytes(img) -> tuple:
         try:
             data = img._data()
         except Exception as exc:                       # unreadable image: skip, don't crash
-            logger.debug("xlsx image read failed: %s", exc)
+            logger.warning("xlsx image read failed: %s", exc)  # skipped image = content loss
     return data, ext
 
 

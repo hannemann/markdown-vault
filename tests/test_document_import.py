@@ -320,6 +320,29 @@ class TestImageStorage(unittest.TestCase):
         self.assertIsNotNone(ok)
         self.assertEqual(ok[1], "png")
 
+    def test_decode_data_uri_logs_dropped_image_at_warning(self):
+        # Dropping an embedded image is partial content loss the user never sees;
+        # it must surface at the default log level (warning), not only debug.
+        with self.assertLogs("markdown_vault.importers.document_import",
+                             level="WARNING"):
+            di._decode_data_uri("data:image/png;base64,iVBORw0KGgo")  # bad padding
+
+    def test_openpyxl_image_bytes_logs_unreadable_at_warning(self):
+        # An unreadable worksheet image is skipped, leaving the note missing
+        # content; that loss must be visible at warning, not swallowed at debug.
+        class _BadImage:
+            format = "png"
+            ref = None
+
+            def _data(self):
+                raise ValueError("unreadable")
+
+        with self.assertLogs("markdown_vault.importers.document_import",
+                             level="WARNING"):
+            data, ext = di._openpyxl_image_bytes(_BadImage())
+        self.assertIsNone(data)
+        self.assertEqual(ext, "png")
+
     def test_identical_images_are_stored_once(self):
         # Dedup: two tokens with byte-identical data share one stored file (a logo
         # repeated across pages should not litter the tree).

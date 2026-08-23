@@ -2,6 +2,7 @@
 availability (it must not offer a mode that cannot answer)."""
 
 import unittest
+from unittest import mock
 
 import gi
 
@@ -767,6 +768,64 @@ class TestBannerButtonDispatch(unittest.TestCase):
         p._ask_status = lambda: ask_models.EndpointStatus(state=ask_models.UNREACHABLE)
         p.refresh_endpoint_status()
         self.assertEqual(p._banner.get_button_label(), "Try again")
+
+
+class _RunInline:
+    """A drop-in for threading.Thread that runs the target on ``start()``."""
+
+    def __init__(self, target=None, daemon=None, **_kw):
+        self._target = target
+
+    def start(self):
+        if self._target is not None:
+            self._target()
+
+
+class TestCandidateRetrievalError(unittest.TestCase):
+    """A crash in candidate retrieval must surface as an error, not be masked as
+    'No candidate notes found.' (which reads as a legitimate empty result).
+    Drives the real ``_show_candidates`` worker so the wiring is guarded, not
+    just the display callback."""
+
+    def _palette(self):
+        return QuickOpenPalette(make_engine=lambda: None, semantic_query=lambda q: [])
+
+    def _run(self, palette):
+        with mock.patch(
+            "markdown_vault.search.quick_open_palette.threading.Thread", _RunInline
+        ), mock.patch(
+            "markdown_vault.search.quick_open_palette.GLib.idle_add",
+            lambda fn, *a: fn(*a),
+        ):
+            palette._show_candidates()
+
+    def _spy_messages(self, palette):
+        seen = []
+        orig = palette._message_row
+        palette._message_row = lambda text: seen.append(text) or orig(text)
+        return seen
+
+    def test_retrieval_crash_shows_error_not_empty(self):
+        p = self._palette()
+        p._entry.set_text("question")
+        p._abandon_answer = mock.Mock()
+        p._ask_candidates = mock.Mock(side_effect=RuntimeError("boom"))
+        seen = self._spy_messages(p)
+        self._run(p)
+        self.assertNotIn("No candidate notes found.", seen)
+        self.assertTrue(
+            any("couldn't" in t.lower() or "fail" in t.lower() for t in seen),
+            f"expected an error message, got {seen!r}",
+        )
+
+    def test_empty_result_still_says_no_candidates(self):
+        p = self._palette()
+        p._entry.set_text("question")
+        p._abandon_answer = mock.Mock()
+        p._ask_candidates = mock.Mock(return_value=[])
+        seen = self._spy_messages(p)
+        self._run(p)
+        self.assertIn("No candidate notes found.", seen)
 
 
 if __name__ == "__main__":

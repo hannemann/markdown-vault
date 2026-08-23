@@ -184,6 +184,22 @@ def _compile(query: str, options: SearchOptions) -> "re.Pattern":
     return re.compile(pattern, flags)
 
 
+def pattern_error(query: str, options: SearchOptions) -> "str | None":
+    """A user-facing message if *query* is an invalid pattern under *options*,
+    else ``None``. Only regex mode can fail — a literal query is escaped by
+    :func:`_compile`. The search bar calls this before dispatching so a broken
+    regex surfaces the reason instead of an empty result set the user cannot
+    tell apart from 'no matches' (both content search and the filename match
+    compile through :func:`_compile`, so one check covers both)."""
+    try:
+        _compile(query, options)
+    except re.error as exc:
+        # returned for the caller to surface; a mistyped regex is normal live-search
+        # input, not a fault, and this runs on every keystroke — logging would be noise
+        return f"Invalid search pattern: {exc}"
+    return None
+
+
 # ── Grouped + ranked results (Phase 2) ──────────────────────────────
 
 # Relevance weights: a name/title hit outranks headings, which outrank body

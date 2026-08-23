@@ -281,6 +281,15 @@ class SearchBar(Gtk.Box):
             self._last_results = []   # nothing to show → don't keep the old set around
             return False
 
+        options = self._current_options()
+        pattern_err = search_backend.pattern_error(query, options)
+        if pattern_err is not None:
+            self._stop_spinner()
+            self._busy = False
+            self._last_results = []   # a broken pattern has no result set to keep
+            self._results.append(self._message_row(pattern_err))
+            return False
+
         self._generation += 1
         generation = self._generation
         self._busy = True
@@ -288,7 +297,7 @@ class SearchBar(Gtk.Box):
         self._spinner.start()
         threading.Thread(
             target=self._worker,
-            args=(generation, query, list(vault_paths), self._current_options()),
+            args=(generation, query, list(vault_paths), options),
             daemon=True,
         ).start()
         return False  # one-shot

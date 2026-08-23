@@ -459,7 +459,9 @@ def scan_vaults(
                 try:
                     text = Path(fpath).read_text(encoding="utf-8")
                 except (OSError, UnicodeDecodeError):
-                    logger.debug("Cannot read %s for indexing", fpath, exc_info=True)
+                    # unreadable note drops its backlinks from the index; log at
+                    # warning to match the vault-rename walk's sibling handler
+                    logger.warning("Cannot read %s for indexing", fpath, exc_info=True)
                     continue
                 _index_file_into(target_to_sources, source_to_targets, fpath, text)
     return target_to_sources, source_to_targets

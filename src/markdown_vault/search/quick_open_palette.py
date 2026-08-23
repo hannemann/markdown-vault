@@ -1017,12 +1017,22 @@ class QuickOpenPalette(Adw.Dialog):
         def worker():
             try:
                 cands = self._ask_candidates(question)
-            except Exception:  # noqa: BLE001 — surface an empty list to the UI
-                logger.debug("candidate retrieval failed", exc_info=True)
-                cands = []
+            except Exception:  # noqa: BLE001 — surfaced to the user as an error row
+                logger.warning("candidate retrieval failed", exc_info=True)
+                GLib.idle_add(self._show_candidate_error, generation)
+                return
             GLib.idle_add(self._show_candidate_list, generation, cands)
 
         threading.Thread(target=worker, daemon=True).start()
+
+    def _show_candidate_error(self, generation: int) -> bool:
+        """Retrieval crashed — show it instead of an empty-looking result, which
+        would read as 'the vault has nothing' rather than 'the search broke'."""
+        if generation != self._ask_generation:
+            return False
+        self._clear()
+        self._results.append(self._message_row("Couldn't search notes — see the log."))
+        return False
 
     def _show_candidate_list(self, generation: int, cands) -> bool:
         if generation != self._ask_generation:
