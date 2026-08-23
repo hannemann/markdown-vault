@@ -82,8 +82,8 @@ class SearchBar(Gtk.Box):
         self._entry.set_max_width_chars(40)
         self._entry.set_placeholder_text(_("Search across all vaults…"))
         self._entry.set_tooltip_text(
-            "Terms are AND-combined.  \"quoted phrase\", -exclude, "
-            "tag:foo, path:sub, vault:name"
+            _("Terms are AND-combined.  \"quoted phrase\", -exclude, "
+              "tag:foo, path:sub, vault:name")
         )
         self._entry.connect("search-changed", self._on_search_changed)
         self._entry.connect("activate", self._on_entry_activate)
@@ -94,9 +94,9 @@ class SearchBar(Gtk.Box):
         input_box.append(self._entry)
 
         # Query modifiers.
-        self._case_btn = self._make_toggle("Aa", "Case sensitive")
-        self._word_btn = self._make_toggle("W", "Whole word")
-        self._regex_btn = self._make_toggle(".*", "Regular expression")
+        self._case_btn = self._make_toggle("Aa", _("Case sensitive"))
+        self._word_btn = self._make_toggle("W", _("Whole word"))
+        self._regex_btn = self._make_toggle(".*", _("Regular expression"))
         for btn in (self._case_btn, self._word_btn, self._regex_btn):
             btn.connect("toggled", lambda *_: self._run_search())
             input_box.append(btn)
@@ -471,7 +471,7 @@ class SearchBar(Gtk.Box):
         row = Gtk.ListBoxRow()
         row._mv_open = (fr.path, fr.matches[0].line if fr.matches else 1)
         extra = fr.total_matches - len(fr.matches)
-        label = Gtk.Label(label=f"+{extra} more…")
+        label = Gtk.Label(label=_("+{count} more…").format(count=extra))
         label.set_xalign(0)
         label.set_margin_start(16)
         label.add_css_class("dim-label")

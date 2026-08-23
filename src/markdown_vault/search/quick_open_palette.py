@@ -40,7 +40,7 @@ class QuickOpenPalette(Adw.Dialog):
 
     MAX_RESULTS = 40
     _SEMANTIC_MIN_CHARS = 2
-    _ASK_TOOLTIP = "Ask — answer from your notes (instead of jumping to a file)"
+    _ASK_TOOLTIP = _("Ask — answer from your notes (instead of jumping to a file)")
 
     def __init__(self, make_engine, semantic_query=None, ask_answer=None,
                  scope=None, can_ask=None, ask_hint=None, ask_status=None,
@@ -184,7 +184,7 @@ class QuickOpenPalette(Adw.Dialog):
             self._pick_toggle = Gtk.ToggleButton()
             self._pick_toggle.set_icon_name("view-list-symbolic")
             self._pick_toggle.set_tooltip_text(
-                "Pick sources — choose which notes to answer from")
+                _("Pick sources — choose which notes to answer from"))
             self._pick_toggle.connect("toggled", self._on_pick_toggled)
             self._dep_bar.append(self._pick_toggle)
         self._dep_toggle = Gtk.ToggleButton(icon_name="view-conceal-symbolic")
@@ -218,8 +218,8 @@ class QuickOpenPalette(Adw.Dialog):
         self._copy_btn.add_css_class("osd")
         self._copy_btn.add_css_class("circular")
         self._copy_btn.set_tooltip_text(
-            "Copy the whole answer as Markdown source "
-            "(select text to copy just what you highlighted)")
+            _("Copy the whole answer as Markdown source "
+              "(select text to copy just what you highlighted)"))
         self._copy_btn.set_halign(Gtk.Align.END)
         self._copy_btn.set_valign(Gtk.Align.START)
         self._copy_btn.set_margin_top(6)
@@ -334,7 +334,7 @@ class QuickOpenPalette(Adw.Dialog):
         blocked = bool(self._ask_mode and st is not None and not st.can_ask)
         self._submit.set_sensitive(not blocked)
         self._submit.set_tooltip_text(
-            st.message if blocked else "Run — search or ask (Enter)")
+            st.message if blocked else _("Run — search or ask (Enter)"))
 
     def recheck_if_stale(self) -> None:
         """On opening or entering Ask mode, probe again unless the last verdict was
@@ -1102,7 +1102,8 @@ class QuickOpenPalette(Adw.Dialog):
         self._answer_btn.set_label(_("Answer ({n})").format(n=n))
         self._answer_btn.set_sensitive(n >= 1)
         self._answer_btn.set_visible(True)
-        self._timer_label.set_text(f"{n}/{self._top_k()} selected")
+        self._timer_label.set_text(
+            _("{n}/{total} selected").format(n=n, total=self._top_k()))
 
     def _answer_from_selection(self) -> None:
         if not self._selected or self._ask_answer_selected is None:

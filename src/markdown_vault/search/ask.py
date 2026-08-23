@@ -454,7 +454,7 @@ def answer(question: str, hits, chat: ChatBackend, language: str = "English",
     the note through instead of having it re-computed here.
     """
     if not hits:
-        return Answer(text="I couldn't find anything about that in your notes.")
+        return Answer(text=_("I couldn't find anything about that in your notes."))
     extra = list(extra_warnings or [])
     if char_budget:
         fitted = fit_to_budget(hits, char_budget)

@@ -674,3 +674,115 @@ msgstr "Nur veraltete Notizen passen zu deiner Frage — sie werden vom Filter �
 #: src/markdown_vault/search/ask.py
 msgid "Answers are turned off. Turn the answer engine on in Preferences → Search → Ask."
 msgstr "Antworten sind ausgeschaltet. Die Antwort-Engine unter Einstellungen → Suche → Ask einschalten."
+
+#: src/markdown_vault/search/ask.py
+msgid "I couldn't find anything about that in your notes."
+msgstr "Dazu habe ich in deinen Notizen nichts gefunden."
+
+#: src/markdown_vault/search/ask_models.py
+#, python-brace-format
+msgid "{url} is not reachable — a question cannot be answered. Check the server URL in Preferences → Search → Ask. ({error})"
+msgstr "{url} ist nicht erreichbar — eine Frage kann nicht beantwortet werden. Prüfe die Server-URL unter Einstellungen → Suche → Ask. ({error})"
+
+#: src/markdown_vault/search/ask_models.py
+msgid "The server rejected the API key — a question cannot be answered. Add or fix the key in Preferences → Search → Ask."
+msgstr "Der Server hat den API-Schlüssel abgelehnt — eine Frage kann nicht beantwortet werden. Schlüssel unter Einstellungen → Suche → Ask hinzufügen oder korrigieren."
+
+#: src/markdown_vault/search/ask_models.py
+#, python-brace-format
+msgid "{url} reports no models. Asking may still work if the server serves a fixed model; otherwise install or configure one."
+msgstr "{url} meldet keine Modelle. Fragen kann trotzdem klappen, wenn der Server ein festes Modell bereitstellt; andernfalls eins installieren oder konfigurieren."
+
+#: src/markdown_vault/search/ask_models.py
+#, python-brace-format
+msgid "{url} could not list its models ({error}). Asking may still work."
+msgstr "{url} konnte seine Modelle nicht auflisten ({error}). Fragen kann trotzdem klappen."
+
+#: src/markdown_vault/search/ask_models.py
+#, python-brace-format
+msgid "The server could not answer: {reason}"
+msgstr "Der Server konnte nicht antworten: {reason}"
+
+#: src/markdown_vault/search/llama_runtime.py
+msgid "Local answer generation needs the llama-cpp-python package. Install the optional AI dependencies (make install-ai) and restart, or switch the Ask backend to a server in Preferences."
+msgstr "Lokale Antworterzeugung braucht das Paket llama-cpp-python. Installiere die optionalen KI-Abhängigkeiten (make install-ai) und starte neu, oder stelle das Ask-Backend in den Einstellungen auf einen Server um."
+
+#: src/markdown_vault/search/llama_runtime.py
+#, python-brace-format
+msgid "No local model file at {path}. Download one in Preferences → Search → Ask (Model Download), then ask again."
+msgstr "Keine lokale Modelldatei unter {path}. Lade eine unter Einstellungen → Suche → Ask (Modell-Download) herunter und frage dann erneut."
+
+#: src/markdown_vault/search/llama_runtime.py
+msgid "(unset)"
+msgstr "(nicht gesetzt)"
+
+#: src/markdown_vault/search/llama_runtime.py
+#, python-brace-format
+msgid "Shared-memory GPU ({gb:.1f} GB). Use 999 for the fastest generation (a large model or prompt can freeze the desktop while it runs) or 0 to keep the desktop responsive — a partial offload is slower here (constant CPU↔GPU copying)."
+msgstr "Shared-Memory-GPU ({gb:.1f} GB). 999 für die schnellste Erzeugung (ein großes Modell oder ein großer Prompt kann den Desktop währenddessen einfrieren) oder 0, um den Desktop reaktionsfähig zu halten — ein teilweises Offload ist hier langsamer (ständiges CPU↔GPU-Kopieren)."
+
+#: src/markdown_vault/search/llama_runtime.py
+#, python-brace-format
+msgid "Fits in {gb:.1f} GB VRAM — offload all layers (999)."
+msgstr "Passt in {gb:.1f} GB VRAM — alle Layer auslagern (999)."
+
+#: src/markdown_vault/search/llama_runtime.py
+#, python-brace-format
+msgid "Bigger than the {gb:.1f} GB VRAM — about {layers} layers fit; the rest run on the CPU."
+msgstr "Größer als die {gb:.1f} GB VRAM — etwa {layers} Layer passen; der Rest läuft auf der CPU."
+
+#: src/markdown_vault/search/llama_runtime.py
+#, python-brace-format
+msgid "Detected VRAM: {gb:.1f} GB."
+msgstr "Erkanntes VRAM: {gb:.1f} GB."
+
+#: src/markdown_vault/search/quick_open_palette.py
+msgid "Ask — answer from your notes (instead of jumping to a file)"
+msgstr "Fragen — aus deinen Notizen antworten (statt zu einer Datei zu springen)"
+
+#: src/markdown_vault/search/quick_open_palette.py
+msgid "Pick sources — choose which notes to answer from"
+msgstr "Quellen wählen — festlegen, aus welchen Notizen geantwortet wird"
+
+#: src/markdown_vault/search/quick_open_palette.py
+msgid "Copy the whole answer as Markdown source (select text to copy just what you highlighted)"
+msgstr "Ganze Antwort als Markdown-Quelltext kopieren (Text markieren, um nur das Markierte zu kopieren)"
+
+#: src/markdown_vault/search/quick_open_palette.py
+#, python-brace-format
+msgid "{n}/{total} selected"
+msgstr "{n}/{total} ausgewählt"
+
+#: src/markdown_vault/search/search.py
+msgid "Terms are AND-combined.  \"quoted phrase\", -exclude, tag:foo, path:sub, vault:name"
+msgstr "Begriffe werden UND-verknüpft.  \"Wortgruppe\", -ausschließen, tag:foo, path:sub, vault:name"
+
+#: src/markdown_vault/search/search.py
+#, python-brace-format
+msgid "+{count} more…"
+msgstr "+{count} weitere…"
+
+#: src/markdown_vault/search/search_backend.py
+#, python-brace-format
+msgid "Invalid search pattern: {error}"
+msgstr "Ungültiges Suchmuster: {error}"
+
+#: src/markdown_vault/search/search_logic.py
+msgid "All matches are deprecated — hidden by the “hide deprecated” filter. Turn it off to show them."
+msgstr "Alle Treffer sind veraltet — vom Filter „Veraltete ausblenden“ verborgen. Zum Anzeigen ausschalten."
+
+#: src/markdown_vault/search/search_logic.py
+#, python-brace-format
+msgid "{count} deprecated note hidden by the filter."
+msgid_plural "{count} deprecated notes hidden by the filter."
+msgstr[0] "{count} veraltete Notiz vom Filter verborgen."
+msgstr[1] "{count} veraltete Notizen vom Filter verborgen."
+
+#: src/markdown_vault/search/vault_scope.py
+msgid "Search scope — current vault, all vaults, or a specific vault"
+msgstr "Suchbereich — aktueller Vault, alle Vaults oder ein bestimmter Vault"
+
+#: src/markdown_vault/search/vault_scope.py
+#, python-brace-format
+msgid "{name} (current)"
+msgstr "{name} (aktuell)"

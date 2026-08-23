@@ -17,6 +17,8 @@ import shutil
 import subprocess
 from dataclasses import dataclass
 
+from markdown_vault.core.i18n import _
+
 logger = logging.getLogger(__name__)
 
 
@@ -196,7 +198,7 @@ def pattern_error(query: str, options: SearchOptions) -> "str | None":
     except re.error as exc:
         # returned for the caller to surface; a mistyped regex is normal live-search
         # input, not a fault, and this runs on every keystroke — logging would be noise
-        return f"Invalid search pattern: {exc}"
+        return _("Invalid search pattern: {error}").format(error=exc)
     return None
 
 
