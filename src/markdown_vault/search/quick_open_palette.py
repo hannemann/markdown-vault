@@ -832,6 +832,7 @@ class QuickOpenPalette(Adw.Dialog):
         try:
             return max(1, int(self._get_top_k())) if self._get_top_k else 10
         except (TypeError, ValueError):
+            # unset/invalid top-k setting → default of 10
             return 10
 
     def _activate(self, row) -> None:

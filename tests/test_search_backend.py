@@ -1,5 +1,6 @@
 """Tests for markdown_vault.search.search_backend (ripgrep + Python fallback)."""
 
+import os
 import shutil
 import tempfile
 import unittest
@@ -327,6 +328,20 @@ class TestSearchGroupedOperators(unittest.TestCase):
         self._write("both.md", "alpha here\nand beta there")
         self._write("one.md", "alpha only")
         self.assertEqual(self._names("alpha beta"), ["both.md"])
+
+    @unittest.skipIf(hasattr(os, "geteuid") and os.geteuid() == 0,
+                     "root bypasses file permissions")
+    def test_operator_search_logs_when_a_file_is_unreadable(self):
+        # An unreadable note is dropped from operator-search results; that drop
+        # must log — the ripgrep-fallback twin (_search_python) already logs it.
+        self._write("ok.md", "alpha beta here")
+        bad = self._write("locked.md", "alpha beta there")
+        bad.chmod(0o000)
+        try:
+            with self.assertLogs("markdown_vault.search.search_backend", level="DEBUG"):
+                sb.search_grouped("alpha beta", [str(self._tmp)])
+        finally:
+            bad.chmod(0o644)                         # let tearDown remove it
 
     def test_and_term_may_come_from_filename(self):
         self._write("alpha-notes.md", "beta in body")   # alpha via name, beta via body

@@ -308,6 +308,8 @@ class SemanticIndexManager:
             try:
                 text = Path(path).read_text(encoding="utf-8", errors="replace")
             except OSError:
+                logger.warning("semantic index: could not read %s; skipping",
+                               path, exc_info=True)
                 continue
             h = _hash(text)
             entry = cached.get(path)
@@ -324,6 +326,8 @@ class SemanticIndexManager:
             try:
                 text = Path(path).read_text(encoding="utf-8", errors="replace")
             except OSError:
+                logger.warning("semantic index: could not read %s; skipping",
+                               path, exc_info=True)
                 continue
             try:
                 kept, vecs = self._embed_all(chunk_markdown(text, path))
@@ -470,6 +474,7 @@ class SemanticIndexManager:
         try:
             text = Path(path).read_text(encoding="utf-8", errors="replace")
         except OSError:
+            # unreadable/gone on disk → drop it from the index (return carries the change)
             return self._drop_file(path)
         h = _hash(text)
         with self._lock:
@@ -608,6 +613,7 @@ class SemanticIndexManager:
             try:
                 mtime = os.path.getmtime(chunk.path)
             except OSError:
+                # mtime is only a result sort key; 0.0 sorts the file last, not a failure
                 mtime = 0.0
             results.append(FileResult(
                 path=chunk.path, score=score,
@@ -809,6 +815,8 @@ class SemanticIndexManager:
                 try:
                     text = Path(f).read_text(encoding="utf-8", errors="replace")
                 except OSError:
+                    logger.debug("tag index: could not read %s; skipping",
+                                 f, exc_info=True)
                     continue
                 ap = os.path.abspath(f)
                 tags = _note_tags(text)
@@ -879,7 +887,8 @@ class SemanticIndexManager:
                 try:
                     docs[f] = Path(f).read_text(encoding="utf-8", errors="replace")
                 except OSError:
-                    pass
+                    logger.debug("lexical index: could not read %s; skipping",
+                                 f, exc_info=True)
             index = lexical_search.BM25Index(docs)
             cache[roots] = (sig, index)
             while len(cache) > self._LEX_CACHE_MAX:
@@ -900,6 +909,7 @@ class SemanticIndexManager:
         try:
             txt = Path(path).read_text(encoding="utf-8", errors="replace")
         except OSError:
+            # read failed → fall back to the note's already-indexed chunks
             entry = self._files.get(path)
             txt = ("\n\n".join(c.text for c in entry["chunks"])
                    if entry and entry.get("chunks") else "")
@@ -947,6 +957,7 @@ class SemanticIndexManager:
             try:
                 p.unlink()
             except FileNotFoundError:
+                # already gone — the deletion goal is met (sibling OSError below logs)
                 pass
             except OSError:
                 logger.warning("could not remove cache file %s", p, exc_info=True)
@@ -982,6 +993,8 @@ class SemanticIndexManager:
                 return {}
             return files
         except Exception:
+            logger.debug("semantic cache absent or unreadable; rebuilding from notes",
+                         exc_info=True)
             return {}
 
     def _save_cache(self) -> None:

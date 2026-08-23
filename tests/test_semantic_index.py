@@ -94,6 +94,47 @@ class TestSemanticIndexManager(unittest.TestCase):
         self.assertTrue(res[0].semantic)
         self.assertEqual(res[0].matches[0].line, 1)
 
+    # --- silent-swallow sweep (search/ sub-ticket): the file-read skips log ---
+    _LOGGER = "markdown_vault.search.semantic_index"
+
+    def test_tag_index_logs_when_a_note_cannot_be_read(self):
+        # An unreadable note is dropped from the tag index; that drop must leave a
+        # trace. A scope with a non-existent file drives the OSError skip directly.
+        m = self._manager(_StubEmbedder())
+        scope = (("scope-key",), (("/nonexistent/zzz.md", 0.0),))
+        with self.assertLogs(self._LOGGER, level="DEBUG"):
+            m._tag_index([], scope=scope)
+
+    def test_lexical_logs_when_a_note_cannot_be_read(self):
+        # Same for the BM25 lexical index — an excluded note is a silent search gap.
+        m = self._manager(_StubEmbedder())
+        scope = (("scope-key",), (("/nonexistent/zzz.md", 0.0),))
+        with self.assertLogs(self._LOGGER, level="DEBUG"):
+            m._lexical([], scope=scope)
+
+    def test_load_cache_logs_when_the_cache_is_corrupt(self):
+        # A corrupt cache is silently rebuilt; log it so a persistent rebuild is
+        # diagnosable rather than invisible.
+        m = self._manager(_StubEmbedder())
+        m.build()                                   # writes a valid cache
+        m._json_path.write_text("{ not valid json", encoding="utf-8")
+        with self.assertLogs(self._LOGGER, level="DEBUG"):
+            self.assertEqual(m._load_cache(), {})
+
+    @unittest.skipIf(hasattr(os, "geteuid") and os.geteuid() == 0,
+                     "root bypasses file permissions")
+    def test_build_logs_when_a_note_is_unreadable(self):
+        # First build pass: an unreadable note is skipped from the primary index.
+        bad = self._vault / "locked.md"
+        bad.write_text("secret alpha", encoding="utf-8")
+        bad.chmod(0o000)
+        try:
+            m = self._manager(_StubEmbedder())
+            with self.assertLogs(self._LOGGER, level="WARNING"):
+                m.build()
+        finally:
+            bad.chmod(0o644)                        # let tearDown remove it
+
     def test_query_after_dimension_change_signals_and_does_not_crash(self):
         # Case b (no note changed): the index loads old-dimensioned vectors, the
         # server has swapped its model, and the first query embeds at a new width.

@@ -80,6 +80,7 @@ def _install_llama_logging() -> None:
     try:
         import llama_cpp
     except ImportError:
+        # no optional binding → llama log routing just stays uninstalled
         return
     from markdown_vault.core import logging_setup
     _LOG_INSTALLED = True
@@ -119,6 +120,7 @@ def is_available() -> bool:
         import llama_cpp  # noqa: F401
         return True
     except ImportError:
+        # import success IS the availability answer this returns
         return False
 
 
@@ -140,6 +142,7 @@ def availability(model_path: str) -> str | None:
                         "re-download it (use the file's download link, not its "
                         "web page).")
     except OSError:
+        # unreadable model file: let the real load report it, not this sniff
         pass
     return None
 
@@ -176,6 +179,7 @@ def physical_cores() -> int:
             package = Path(pkg_f).read_text().strip() if os.path.exists(pkg_f) else "0"
             ids.add((package, core))
         except OSError:
+            # skip an unreadable topology entry; the empty-set fallback below covers it
             pass
     if ids:
         return len(ids)
@@ -198,6 +202,7 @@ def vram_bytes() -> int | None:
             with open(f) as fh:
                 return int(fh.read().strip())
         except (OSError, ValueError):
+            # unreadable/garbled sysfs → VRAM unknown (None), callers handle it
             pass
     return None
 
@@ -216,6 +221,7 @@ def is_amd_gpu() -> bool:
                 if fh.read().strip().lower() == "0x1002":
                     return True
         except OSError:
+            # unreadable vendor node → this card just doesn't count as AMD
             pass
     return False
 
@@ -229,6 +235,7 @@ def gtt_bytes() -> int | None:
             with open(f) as fh:
                 return int(fh.read().strip())
         except (OSError, ValueError):
+            # unreadable/garbled sysfs → GTT unknown (None), callers handle it
             pass
     return None
 
