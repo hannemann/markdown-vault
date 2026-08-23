@@ -418,58 +418,6 @@ msgstr "Im Browser öffnen"
 msgid "Download Image"
 msgstr "Bild herunterladen"
 
-#: src/markdown_vault/preview/markdown_help.py
-msgid "Headings"
-msgstr "Überschriften"
-
-#: src/markdown_vault/preview/markdown_help.py
-msgid "Text Formatting"
-msgstr "Textformatierung"
-
-#: src/markdown_vault/preview/markdown_help.py
-msgid "Lists"
-msgstr "Listen"
-
-#: src/markdown_vault/preview/markdown_help.py
-msgid "Links & Images"
-msgstr "Links & Bilder"
-
-#: src/markdown_vault/preview/markdown_help.py
-msgid "Code Blocks"
-msgstr "Codeblöcke"
-
-#: src/markdown_vault/preview/markdown_help.py
-msgid "Blockquotes"
-msgstr "Zitate"
-
-#: src/markdown_vault/preview/markdown_help.py
-msgid "Horizontal Rule"
-msgstr "Trennlinie"
-
-#: src/markdown_vault/preview/markdown_help.py
-msgid "Tables"
-msgstr "Tabellen"
-
-#: src/markdown_vault/preview/markdown_help.py
-msgid "Math (LaTeX)"
-msgstr "Mathematik (LaTeX)"
-
-#: src/markdown_vault/preview/markdown_help.py
-msgid "Footnotes"
-msgstr "Fußnoten"
-
-#: src/markdown_vault/preview/markdown_help.py
-msgid "Emoji Shortcodes"
-msgstr "Emoji-Kürzel"
-
-#: src/markdown_vault/preview/markdown_help.py
-msgid "Keyboard Keys"
-msgstr "Tastaturtasten"
-
-#: src/markdown_vault/preview/markdown_help.py
-msgid "Markdown Syntax Quick Reference"
-msgstr "Markdown-Syntax-Kurzreferenz"
-
 #: src/markdown_vault/vault/vault_tree.py
 msgid "Vaults"
 msgstr "Vaults"

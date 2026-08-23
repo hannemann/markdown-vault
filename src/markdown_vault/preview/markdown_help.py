@@ -12,15 +12,13 @@ gi.require_version("Adw", "1")
 
 from gi.repository import Gtk, Gdk
 
-from markdown_vault.core.i18n import _
-
 # ── Syntax data ──────────────────────────────────────────────────────
 
 _PAGES: list[list[tuple[str, list[tuple[str, str]]]]] = [
     # Page 1 — Basics
     [
         (
-            _("Headings"),
+            "Headings",
             [
                 ("# Heading 1", "# ..."),
                 ("## Heading 2", "## ..."),
@@ -29,7 +27,7 @@ _PAGES: list[list[tuple[str, list[tuple[str, str]]]]] = [
             ],
         ),
         (
-            _("Text Formatting"),
+            "Text Formatting",
             [
                 ("**Bold**", "**text**"),
                 ("*Italic*", "*text*"),
@@ -41,7 +39,7 @@ _PAGES: list[list[tuple[str, list[tuple[str, str]]]]] = [
             ],
         ),
         (
-            _("Lists"),
+            "Lists",
             [
                 ("Unordered", "- item  or  * item"),
                 ("Ordered", "1. item"),
@@ -50,7 +48,7 @@ _PAGES: list[list[tuple[str, list[tuple[str, str]]]]] = [
             ],
         ),
         (
-            _("Links & Images"),
+            "Links & Images",
             [
                 ("Link", "[text](https://url)"),
                 ("Image", "![alt](path/to/img.png)"),
@@ -61,7 +59,7 @@ _PAGES: list[list[tuple[str, list[tuple[str, str]]]]] = [
     # Page 2 — Structure
     [
         (
-            _("Code Blocks"),
+            "Code Blocks",
             [
                 ("Fenced", "``` lang\\ncode\\n```"),
                 ("Indented", "    (4 spaces)"),
@@ -70,7 +68,7 @@ _PAGES: list[list[tuple[str, list[tuple[str, str]]]]] = [
             ],
         ),
         (
-            _("Blockquotes"),
+            "Blockquotes",
             [
                 ("Simple", "> quoted text"),
                 ("Nested", "> > deeper quote"),
@@ -78,13 +76,13 @@ _PAGES: list[list[tuple[str, list[tuple[str, str]]]]] = [
             ],
         ),
         (
-            _("Horizontal Rule"),
+            "Horizontal Rule",
             [
                 ("Any of these", "---  or  ***  or  ___"),
             ],
         ),
         (
-            _("Tables"),
+            "Tables",
             [
                 ("Pipe", "| col1 | col2 |"),
                 ("Separator", "|------|------|"),
@@ -95,7 +93,7 @@ _PAGES: list[list[tuple[str, list[tuple[str, str]]]]] = [
     # Page 3 — Advanced
     [
         (
-            _("Math (LaTeX)"),
+            "Math (LaTeX)",
             [
                 ("Inline", "$E = mc^2$"),
                 ("Block", "$$\\\\int f(x)\\\\,dx$$"),
@@ -104,21 +102,21 @@ _PAGES: list[list[tuple[str, list[tuple[str, str]]]]] = [
             ],
         ),
         (
-            _("Footnotes"),
+            "Footnotes",
             [
                 ("Reference", "Text with footnote[^1]"),
                 ("Definition", "[^1]: Footnote content"),
             ],
         ),
         (
-            _("Emoji Shortcodes"),
+            "Emoji Shortcodes",
             [
                 ("Syntax", ":smile:  :rocket:  :heart:"),
                 ("Thousands", ":thumbsup: :fire: :check_mark:"),
             ],
         ),
         (
-            _("Keyboard Keys"),
+            "Keyboard Keys",
             [
                 ("Key notation", "++ctrl+c++"),
                 ("With shift", "++shift+tab++"),
@@ -263,7 +261,7 @@ class MarkdownHelpOverlay(Gtk.Box):
         )
         title_bar.add_css_class("help-title-bar")
 
-        title = Gtk.Label(label=_("Markdown Syntax Quick Reference"), xalign=0.0)
+        title = Gtk.Label(label="Markdown Syntax Quick Reference", xalign=0.0)
         title.add_css_class("help-title")
         title_bar.append(title)
 
@@ -273,7 +271,7 @@ class MarkdownHelpOverlay(Gtk.Box):
         close_btn = Gtk.Button(icon_name="window-close-symbolic")
         close_btn.add_css_class("flat")
         close_btn.add_css_class("help-close-btn")
-        close_btn.set_tooltip_text(_("Close (Esc)"))
+        close_btn.set_tooltip_text("Close (Esc)")
         close_btn.connect("clicked", lambda *_: self.hide_overlay())
         self._close_btn = close_btn
         title_bar.append(close_btn)

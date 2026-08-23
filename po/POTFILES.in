@@ -14,7 +14,6 @@ src/markdown_vault/graph/graph_explorer.py
 src/markdown_vault/importers/dialog_import.py
 src/markdown_vault/importers/document_import.py
 src/markdown_vault/importers/web_import.py
-src/markdown_vault/preview/markdown_help.py
 src/markdown_vault/preview/preview.py
 src/markdown_vault/search/ask.py
 src/markdown_vault/search/ask_models.py
