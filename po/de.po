@@ -469,3 +469,63 @@ msgstr "Tastaturtasten"
 #: src/markdown_vault/preview/markdown_help.py
 msgid "Markdown Syntax Quick Reference"
 msgstr "Markdown-Syntax-Kurzreferenz"
+
+#: src/markdown_vault/vault/vault_tree.py
+msgid "Vaults"
+msgstr "Vaults"
+
+#: src/markdown_vault/vault/vault_tree.py
+msgid "Hide deprecated notes"
+msgstr "Veraltete Notizen ausblenden"
+
+#: src/markdown_vault/vault/vault_tree.py
+msgid "Focus current file in tree"
+msgstr "Aktuelle Datei im Baum fokussieren"
+
+#: src/markdown_vault/vault/vault_tree.py
+msgid "Add vault directory"
+msgstr "Vault-Verzeichnis hinzufügen"
+
+#: src/markdown_vault/vault/vault_tree.py
+msgid "internal"
+msgstr "intern"
+
+#: src/markdown_vault/vault/vault_tree.py
+msgid "New File"
+msgstr "Neue Datei"
+
+#: src/markdown_vault/vault/vault_tree.py
+msgid "New Folder"
+msgstr "Neuer Ordner"
+
+#: src/markdown_vault/vault/vault_tree.py
+msgid "Import…"
+msgstr "Importieren…"
+
+#: src/markdown_vault/vault/vault_tree.py
+msgid "Close File"
+msgstr "Datei schließen"
+
+#: src/markdown_vault/vault/vault_tree.py
+msgid "Change Icon…"
+msgstr "Symbol ändern…"
+
+#: src/markdown_vault/vault/vault_tree.py
+msgid "Remove Vault"
+msgstr "Vault entfernen"
+
+#: src/markdown_vault/vault/vault_tree.py
+msgid "Select Vault Directory"
+msgstr "Vault-Verzeichnis auswählen"
+
+#: src/markdown_vault/vault/vault_tree.py
+msgid "Folder Selection Failed"
+msgstr "Ordnerauswahl fehlgeschlagen"
+
+#: src/markdown_vault/vault/vault_tree.py
+msgid "Could not open the folder chooser."
+msgstr "Die Ordnerauswahl konnte nicht geöffnet werden."
+
+#: src/markdown_vault/vault/vault_tree.py
+msgid "Save Failed"
+msgstr "Speichern fehlgeschlagen"

@@ -14,3 +14,4 @@ src/markdown_vault/preview/preview.py
 src/markdown_vault/ui/sidebar.py
 src/markdown_vault/uikit/banners.py
 src/markdown_vault/uikit/dialogs.py
+src/markdown_vault/vault/vault_tree.py

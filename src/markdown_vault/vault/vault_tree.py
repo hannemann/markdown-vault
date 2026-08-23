@@ -26,6 +26,7 @@ gi.require_version("Pango", "1.0")
 from gi.repository import Gtk, Adw, GLib, GObject, Pango, Gio, Gdk
 
 from markdown_vault.core import attachments
+from markdown_vault.core.i18n import _
 from markdown_vault.core import validation
 from markdown_vault.uikit import dialogs
 from markdown_vault.core import config
@@ -162,7 +163,7 @@ class VaultTree(Gtk.Box):
         header.set_margin_start(8)
         header.set_margin_end(8)
 
-        title = Gtk.Label(label="Vaults")
+        title = Gtk.Label(label=_("Vaults"))
         title.add_css_class("heading")
         title.set_xalign(0)
         title.set_hexpand(True)
@@ -171,21 +172,21 @@ class VaultTree(Gtk.Box):
         self._hide_dep_btn = Gtk.ToggleButton(icon_name="view-conceal-symbolic")
         self._hide_dep_btn.add_css_class("flat")
         self._hide_dep_btn.add_css_class("circular")
-        self._hide_dep_btn.set_tooltip_text("Hide deprecated notes")
+        self._hide_dep_btn.set_tooltip_text(_("Hide deprecated notes"))
         self._hide_dep_btn.connect("toggled", self._on_hide_deprecated_toggled)
         header.append(self._hide_dep_btn)
 
         focus_btn = Gtk.Button(icon_name="find-location-symbolic")
         focus_btn.add_css_class("flat")
         focus_btn.add_css_class("circular")
-        focus_btn.set_tooltip_text("Focus current file in tree")
+        focus_btn.set_tooltip_text(_("Focus current file in tree"))
         focus_btn.connect("clicked", self._on_focus_clicked)
         header.append(focus_btn)
 
         add_btn = Gtk.Button(icon_name="list-add-symbolic")
         add_btn.add_css_class("flat")
         add_btn.add_css_class("circular")
-        add_btn.set_tooltip_text("Add vault directory")
+        add_btn.set_tooltip_text(_("Add vault directory"))
         add_btn.connect("clicked", self._on_add_vault_clicked)
         header.append(add_btn)
 
@@ -376,7 +377,7 @@ class VaultTree(Gtk.Box):
             box = Gtk.Box(spacing=4)
             box.set_valign(Gtk.Align.CENTER)
             box.add_css_class("tree-badges")
-            pill = Gtk.Label(label="internal")
+            pill = Gtk.Label(label=_("internal"))
             pill.add_css_class("tree-badge")
             pill.add_css_class("tree-badge-internal")
             box.append(pill)
@@ -442,7 +443,7 @@ class VaultTree(Gtk.Box):
         # One guide column per ancestor level; the line sits on the column's
         # right edge so a parent's own column and its children's matching column
         # line up into one continuous vertical rule.
-        for _ in range(row.get_depth()):
+        for _depth in range(row.get_depth()):
             cell = Gtk.Box()
             cell.set_size_request(_INDENT_WIDTH, -1)
             cell.add_css_class("tree-guide-cell")
@@ -825,9 +826,9 @@ class VaultTree(Gtk.Box):
 
         # The attachments tree is app-managed: no manual create/import into it.
         if parent_dir and not attachments.is_internal(parent_dir):
-            menu.append("New File", "ctx.new-file")
-            menu.append("New Folder", "ctx.new-folder")
-            menu.append("Import…", "ctx.import")
+            menu.append(_("New File"), "ctx.new-file")
+            menu.append(_("New Folder"), "ctx.new-folder")
+            menu.append(_("Import…"), "ctx.import")
 
         is_vault_root = (
             self._context_is_dir
@@ -835,14 +836,14 @@ class VaultTree(Gtk.Box):
             and self._context_path in self._vault_paths
         )
         if self._context_path and not is_vault_root:
-            menu.append("Rename", "ctx.rename")
+            menu.append(_("Rename"), "ctx.rename")
 
         if self._context_path and not is_vault_root:
-            menu.append("Delete", "ctx.delete")
+            menu.append(_("Delete"), "ctx.delete")
 
         if (self._context_path and not self._context_is_dir
                 and self._is_open_file(self._context_path)):
-            menu.append("Close File", "ctx.close-file")
+            menu.append(_("Close File"), "ctx.close-file")
 
         # Build action group.
         action_group = Gio.SimpleActionGroup()
@@ -877,9 +878,9 @@ class VaultTree(Gtk.Box):
             action_group.add_action(action)
 
         if is_vault_root and self._context_path:
-            menu.append("Change Icon…", "ctx.vault-icon")
-            menu.append("Rename Vault", "ctx.rename-vault")
-            menu.append("Remove Vault", "ctx.remove-vault")
+            menu.append(_("Change Icon…"), "ctx.vault-icon")
+            menu.append(_("Rename Vault"), "ctx.rename-vault")
+            menu.append(_("Remove Vault"), "ctx.remove-vault")
 
             vault_name = self._context_path
             for v in self._vaults:
@@ -1321,7 +1322,7 @@ class VaultTree(Gtk.Box):
     def _on_add_vault_clicked(self, _btn) -> None:
         """Open a folder chooser dialog."""
         dialog = Gtk.FileDialog()
-        dialog.set_title("Select Vault Directory")
+        dialog.set_title(_("Select Vault Directory"))
         dialog.select_folder(None, None, self._on_folder_chosen)
 
     def _on_folder_chosen(self, dialog, result) -> None:
@@ -1333,8 +1334,8 @@ class VaultTree(Gtk.Box):
             # silent on cancel, surface a genuine failure instead of dropping it.
             if not dialogs.dialog_cancelled(exc):
                 logger.warning("vault-folder chooser failed", exc_info=True)
-                dialogs.show_error(self.get_root(), "Folder Selection Failed",
-                                   "Could not open the folder chooser.")
+                dialogs.show_error(self.get_root(), _("Folder Selection Failed"),
+                                   _("Could not open the folder chooser."))
             return
         if folder:
             path = folder.get_path()
@@ -1359,7 +1360,7 @@ class VaultTree(Gtk.Box):
             updated = config.add_vault(name, path)
         except OSError as e:
             logger.warning("could not save the new vault %s", path, exc_info=True)
-            dialogs.show_error(self.get_root(), "Save Failed", str(e))
+            dialogs.show_error(self.get_root(), _("Save Failed"), str(e))
             return
         self.set_vaults(updated)
         self.emit("vault-added", path)
