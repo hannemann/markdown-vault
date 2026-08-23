@@ -382,5 +382,82 @@ class TestRuffClean(unittest.TestCase):
             "ruff did not flag a 200-char line — the guard's own mechanism is broken")
 
 
+class TestNoFStringInGettext(unittest.TestCase):
+    """`_(f"…")` / `ngettext(f"…")` is an i18n bug: the f-string is interpolated
+    *before* the call, so the msgid is the finished text, not the template — xgettext
+    extracts a one-off string and no catalog entry ever matches. Use
+    `_("… {x} …").format(...)` with named placeholders instead.
+
+    Catches two shapes: the direct `_(f"…")`, and the two-line form the E501 line-length
+    rule nudges toward — a local assigned once from an f-string in a function body and then
+    passed to `_`/`ngettext` (`msg = f"…"; _(msg)`). The two guards would otherwise pull
+    against each other: E501 punishes the long one-liner the direct check alone sees.
+    NOT caught (documented limitation — would need real dataflow analysis): a template
+    reaching `_` across functions or through more than one assignment hop.
+    """
+
+    @staticmethod
+    def _msgid_args(call):
+        """The msgid-position args of a `_`/`ngettext` call, or None if it is neither."""
+        if not (isinstance(call, ast.Call) and isinstance(call.func, ast.Name)):
+            return None
+        if call.func.id == "_":
+            return call.args[:1]                     # _(msgid)
+        if call.func.id == "ngettext":
+            return call.args[:2]                     # ngettext(singular, plural, n)
+        return None
+
+    @classmethod
+    def _scope_nodes(cls, scope):
+        """Nodes in *scope*'s own body, without descending into nested function scopes."""
+        for child in ast.iter_child_nodes(scope):
+            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
+                continue
+            yield child
+            yield from cls._scope_nodes(child)
+
+    @classmethod
+    def _offending_lines(cls, tree):
+        # (a) an f-string passed directly into a gettext call
+        for node in ast.walk(tree):
+            args = cls._msgid_args(node)
+            if args and any(isinstance(a, ast.JoinedStr) for a in args):
+                yield node.lineno
+        # (b) a local assigned once from an f-string, then passed to gettext in the same scope
+        scopes = [tree] + [n for n in ast.walk(tree)
+                           if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]
+        for scope in scopes:
+            fstr = {t.id for node in cls._scope_nodes(scope)
+                    if isinstance(node, ast.Assign) and isinstance(node.value, ast.JoinedStr)
+                    for t in node.targets if isinstance(t, ast.Name)}
+            if not fstr:
+                continue
+            for node in cls._scope_nodes(scope):
+                args = cls._msgid_args(node)
+                if args and any(isinstance(a, ast.Name) and a.id in fstr for a in args):
+                    yield node.lineno
+
+    def test_no_fstring_in_gettext(self):
+        offenders = []
+        for pyfile in _ROOT.rglob("*.py"):
+            tree = ast.parse(pyfile.read_text(encoding="utf-8"), str(pyfile))
+            offenders += [f"{pyfile.relative_to(_ROOT)}:{ln}"
+                          for ln in sorted(set(self._offending_lines(tree)))]
+        self.assertEqual(
+            offenders, [],
+            f'_(f"…") / ngettext(f"…") found — the msgid is interpolated, untranslatable: '
+            f'{offenders}')
+
+    def test_the_check_can_go_red(self):
+        # Effectiveness, both shapes and the false-positive boundary.
+        direct = ast.parse('_(f"hi {n}")\nngettext(f"{n} x", "{n} xs", n)\n')
+        self.assertEqual(len(set(self._offending_lines(direct))), 2)
+        via_var = ast.parse('def f(n):\n    msg = f"hi {n}"\n    return _(msg)\n')
+        self.assertEqual(len(set(self._offending_lines(via_var))), 1)
+        # a non-f-string local passed to _ must NOT be flagged (no false red)
+        ok = ast.parse('def f():\n    msg = "plain"\n    return _(msg)\n')
+        self.assertEqual(list(self._offending_lines(ok)), [])
+
+
 if __name__ == "__main__":
     unittest.main()
