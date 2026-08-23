@@ -60,6 +60,7 @@ def _parse_frontmatter(text: str) -> dict:
     try:
         data = yaml.safe_load(m.group(1))
     except yaml.YAMLError:
+        # invalid frontmatter → no metadata, render nothing
         return {}
     return data if isinstance(data, dict) else {}
 

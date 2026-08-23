@@ -1,5 +1,6 @@
 """Preferences — Embedding subpage: the vector backend, its model files, downloads and the reachability self-tests."""
 
+import importlib
 import logging
 import threading
 from pathlib import Path
@@ -14,6 +15,7 @@ gi.require_version("Adw", "1")
 from gi.repository import Gtk, Adw, GLib, Gio
 
 from markdown_vault.core import config
+from markdown_vault.uikit import dialogs
 
 from markdown_vault.ui.preferences.constants import _HttpsOnlyRedirect
 
@@ -255,29 +257,42 @@ class EmbeddingSubpageMixin:
             probe = start if start.exists() else start.parent
             if probe.exists():
                 dialog.set_initial_folder(Gio.File.new_for_path(str(probe)))
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception:  # noqa: BLE001 — cosmetic preset; on failure the dialog just opens at the default
+            logger.debug("could not preset the ONNX-dir initial folder", exc_info=True)
 
-        def done(dlg, result):
-            try:
-                gfile = dlg.select_folder_finish(result)
-            except GLib.Error:
-                return  # cancelled or failed
-            if gfile is not None and gfile.get_path():
-                self._on_onnx_dir_selected(gfile.get_path())
+        dialog.select_folder(self.get_root(), None, self._on_onnx_dir_chosen)
 
-        dialog.select_folder(self.get_root(), None, done)
+    def _on_onnx_dir_chosen(self, dlg, result) -> None:
+        try:
+            gfile = dlg.select_folder_finish(result)
+        except GLib.Error as exc:
+            # A cancel and a real portal/backend failure raise the same type; stay
+            # silent on cancel, surface a genuine failure instead of dropping it.
+            if not dialogs.dialog_cancelled(exc):
+                logger.warning("ONNX-folder chooser failed", exc_info=True)
+                dialogs.show_error(self.get_root(), "Folder Selection Failed",
+                                   "Could not open the folder chooser.")
+            return
+        if gfile is not None and gfile.get_path():
+            self._on_onnx_dir_selected(gfile.get_path())
 
     def _probe_onnx_runtime(self) -> None:
+        GLib.idle_add(self._sem_onnx_runtime_row.set_subtitle,
+                      self._onnxruntime_status())
+
+    def _onnxruntime_status(self) -> str:
         try:
-            import onnxruntime
-            ver = onnxruntime.__version__
-            line = (f"onnxruntime {ver} detected — recommended "
+            onnxruntime = importlib.import_module("onnxruntime")
+            return (f"onnxruntime {onnxruntime.__version__} detected — recommended "
                     f"≥ {self._ONNX_RUNTIME_RECOMMENDED} for current models")
-        except Exception:
-            line = ("onnxruntime not found — install it (openSUSE: "
+        except ModuleNotFoundError:
+            # genuinely absent (the package itself isn't there) → install it
+            return ("onnxruntime not found — install it (openSUSE: "
                     "python313-onnxruntime) or use the Flatpak build")
-        GLib.idle_add(self._sem_onnx_runtime_row.set_subtitle, line)
+        except Exception:  # noqa: BLE001 — a PLAIN ImportError here means present but
+            # unloadable (bad native lib / wrong glibc-CUDA), NOT absent — the common case
+            logger.warning("onnxruntime is installed but failed to load", exc_info=True)
+            return "onnxruntime is installed but failed to load — see the log."
 
     def _onnx_dir(self) -> Path:
         """The folder the backend loads model.onnx + tokenizer.json from (and the

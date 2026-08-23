@@ -14,6 +14,7 @@ gi.require_version("Adw", "1")
 from gi.repository import Gtk, Adw, GLib, Gio
 
 from markdown_vault.core import config
+from markdown_vault.uikit import dialogs
 
 
 class AskSubpageMixin:
@@ -464,18 +465,24 @@ class AskSubpageMixin:
         try:
             if cur.exists():
                 dialog.set_initial_folder(Gio.File.new_for_path(str(cur)))
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception:  # noqa: BLE001 — cosmetic preset; on failure the dialog just opens at the default
+            logger.debug("could not preset the models-dir initial folder", exc_info=True)
 
-        def done(dlg, result):
-            try:
-                gfile = dlg.select_folder_finish(result)
-            except GLib.Error:
-                return  # cancelled or failed
-            if gfile is not None and gfile.get_path():
-                self._on_models_dir_selected(gfile.get_path())
+        dialog.select_folder(self.get_root(), None, self._on_models_dir_chosen)
 
-        dialog.select_folder(self.get_root(), None, done)
+    def _on_models_dir_chosen(self, dlg, result) -> None:
+        try:
+            gfile = dlg.select_folder_finish(result)
+        except GLib.Error as exc:
+            # A cancel and a real portal/backend failure raise the same type; stay
+            # silent on cancel, surface a genuine failure instead of dropping it.
+            if not dialogs.dialog_cancelled(exc):
+                logger.warning("models-folder chooser failed", exc_info=True)
+                dialogs.show_error(self.get_root(), "Folder Selection Failed",
+                                   "Could not open the folder chooser.")
+            return
+        if gfile is not None and gfile.get_path():
+            self._on_models_dir_selected(gfile.get_path())
 
     def _on_models_dir_selected(self, path: str) -> None:
         """Set the models folder (empty → the shared default), then rescan — the
