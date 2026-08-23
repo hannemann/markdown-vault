@@ -190,11 +190,6 @@ For anything finer-grained, query the graph rather than reading top-to-bottom.
 
 ## Module Dependencies
 
-<!-- DEPENDENCY_MAP_START -->
-
-
-<!-- DEPENDENCY_MAP_END -->
-
 **Installation paths** (Meson install prefix):
 
 - **Binaries:** `~/.local/bin/` (user) or `/usr/bin/` (system) — the short command
