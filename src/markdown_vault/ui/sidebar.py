@@ -27,6 +27,7 @@ from gi.repository import Gtk, GLib, GObject, Gdk
 from markdown_vault.vault import git_integration
 from markdown_vault.vault.backlink_index import BacklinkIndex
 from markdown_vault.core.event_router import FileEvent
+from markdown_vault.core.i18n import _
 from markdown_vault.markdown.md_fences import FenceTracker
 from markdown_vault.markdown.md_text import strip_markdown
 from markdown_vault.core.path_utils import HEADING_RE
@@ -119,24 +120,24 @@ class Sidebar(Gtk.Box):
 
         self._outline_list = self._make_scrollable_list()
         self._outline_list["list"].set_spacing(0)  # continuous indent guides
-        self._stack.add_titled(self._outline_list["parent"], "outline", "Outline")
+        self._stack.add_titled(self._outline_list["parent"], "outline", _("Outline"))
 
         self._backlinks_list = self._make_scrollable_list()
-        self._stack.add_titled(self._backlinks_list["parent"], "backlinks", "Backlinks")
+        self._stack.add_titled(self._backlinks_list["parent"], "backlinks", _("Backlinks"))
 
         # Graph panel — an empty host; the GraphView fills it on first switch.
         self._graph_panel = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         self._graph_panel.set_vexpand(True)
-        self._stack.add_titled(self._graph_panel, "graph", "Graph")
+        self._stack.add_titled(self._graph_panel, "graph", _("Graph"))
 
         self._metadata_list = self._make_scrollable_list()
-        self._stack.add_titled(self._metadata_list["parent"], "metadata", "Metadaten")
+        self._stack.add_titled(self._metadata_list["parent"], "metadata", _("Metadata"))
 
         self._git_page = self._build_git_page()
-        self._stack.add_titled(self._git_page, "git", "Git")
+        self._stack.add_titled(self._git_page, "git", _("Git"))
 
         self._details_page = self._build_details_page()
-        self._stack.add_titled(self._details_page, "details", "Details")
+        self._stack.add_titled(self._details_page, "details", _("Details"))
 
         self._stack.set_hexpand(True)
         self.append(self._stack)

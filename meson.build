@@ -53,6 +53,7 @@ venvpython = pkgdatadir / 'venv' / 'bin' / 'python3'
 subdir('src/bin')
 subdir('src/markdown_vault')
 subdir('src/share/markdown-vault')
+subdir('po')
 
 # Ship the full licence text in the installed tree / Flatpak (the About dialog also
 # renders it from GTK's own strings, but carry the file for completeness).

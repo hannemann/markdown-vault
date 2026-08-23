@@ -19,8 +19,11 @@ VENV := $(HOME)/.local/share/$(APP_ID)/venv
 # isolation is a property of the run instead of per-test discipline. Free: the suite
 # stays green, and ./tmp is gitignored.
 TEST_HOME := $(CURDIR)/tmp/test-home
+# LC_ALL=C LANGUAGE= pins the locale: once gettext (core/i18n.py) translates, tests that
+# assert on English UI strings would break on a non-English machine. Pin here, not per test.
 TEST_ENV := MDV_CONFIG_DIR=$(TEST_HOME)/config XDG_STATE_HOME=$(TEST_HOME)/state \
-            XDG_CACHE_HOME=$(TEST_HOME)/cache XDG_DATA_HOME=$(TEST_HOME)/data
+            XDG_CACHE_HOME=$(TEST_HOME)/cache XDG_DATA_HOME=$(TEST_HOME)/data \
+            LC_ALL=C LANGUAGE=
 
 # A suite that ends silent is what makes a NEW warning noticeable — habituation to
 # noise is how the settings reset stayed unexplained for an afternoon. CPython ignores
