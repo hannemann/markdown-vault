@@ -109,14 +109,24 @@ class TestLayering(unittest.TestCase):
 
 
 class TestAskIsImportLight(unittest.TestCase):
-    """`search/ask.py` must have no module-level markdown_vault import.
+    """`search/ask.py` must have no module-level markdown_vault import, save for the
+    dependency-free i18n binding.
 
     That is what keeps it safe as an import target for `semantic_search` (which
     imports `openai_base` from it) and for `ask_models` — deferred imports inside
     functions are fine and are how the existing `ask <-> ask_models` cycle is
     defused. The package-level guard above cannot see this: all three modules
     share the `search` package, so an import between them is not a package edge.
+
+    `markdown_vault.core.i18n` is exempt: it has no `_CORE_ALLOW` entry, so
+    `TestCoreLayerImportWeight` already holds it to stdlib-only — it imports no
+    markdown_vault code and so cannot form the cycle this guard prevents. If that
+    ever changes, the core guard turns red first, not this one.
     """
+
+    #: Dependency-free bindings ask.py may import at module scope. A module only
+    #: belongs here while it stays stdlib-only (enforced for core/ by _CORE_ALLOW).
+    _EXEMPT = {"markdown_vault.core.i18n"}
 
     def test_ask_has_no_module_level_package_import(self):
         tree = ast.parse((_ROOT / "search" / "ask.py").read_text())
@@ -124,11 +134,14 @@ class TestAskIsImportLight(unittest.TestCase):
         for node in tree.body:                       # module level only
             if isinstance(node, ast.ImportFrom) and (node.module or "").startswith(
                     "markdown_vault"):
+                if node.module in self._EXEMPT:
+                    continue
                 offenders.append(f"line {node.lineno}: from {node.module} import …")
             elif isinstance(node, ast.Import):
                 offenders += [f"line {node.lineno}: import {a.name}"
                               for a in node.names
-                              if a.name.startswith("markdown_vault")]
+                              if a.name.startswith("markdown_vault")
+                              and a.name not in self._EXEMPT]
         self.assertEqual(offenders, [], "ask.py must stay import-light")
 
 

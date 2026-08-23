@@ -607,3 +607,70 @@ msgstr "Auf einen Vault beschränken"
 #: src/markdown_vault/search/search.py
 msgid "<tt>Aa</tt> case · <tt>W</tt> whole word · <tt>.*</tt> regex · folder = current vault only.\nIn regex mode the query is one raw pattern (operators off)."
 msgstr "<tt>Aa</tt> Groß/klein · <tt>W</tt> ganzes Wort · <tt>.*</tt> Regex · Ordner = nur aktueller Vault.\nIm Regex-Modus ist die Eingabe ein einziges rohes Muster (Operatoren aus)."
+
+#: src/markdown_vault/search/ask.py
+#, python-brace-format
+msgid "{n} excerpt"
+msgid_plural "{n} excerpts"
+msgstr[0] "{n} Auszug"
+msgstr[1] "{n} Auszüge"
+
+#: src/markdown_vault/search/ask.py
+#, python-brace-format
+msgid "Removed invented citation {marks} — the answer had only {excerpts} to cite."
+msgstr "Erfundene Quellenangabe {marks} entfernt — die Antwort hatte nur {excerpts} zum Zitieren."
+
+#: src/markdown_vault/search/ask.py
+#, python-brace-format
+msgid "Value {val} is attributed to {marks} but isn't in that excerpt — verify."
+msgstr "Wert {val} wird {marks} zugeschrieben, steht aber nicht in diesem Auszug — bitte prüfen."
+
+#: src/markdown_vault/search/ask.py
+#, python-brace-format
+msgid "To fit more, raise the context window ({path})."
+msgstr "Für mehr das Kontextfenster erhöhen ({path})."
+
+#: src/markdown_vault/search/ask.py
+#, python-brace-format
+msgid "None of the {retrieved} matching note fits the model's context window — it is larger than it allows. {tail}"
+msgid_plural "None of the {retrieved} matching notes fit the model's context window — they are larger than it allows. {tail}"
+msgstr[0] "Die {retrieved} passende Notiz passt nicht ins Kontextfenster des Modells — sie ist größer als erlaubt. {tail}"
+msgstr[1] "Keine der {retrieved} passenden Notizen passt ins Kontextfenster des Modells — sie sind größer als erlaubt. {tail}"
+
+#: src/markdown_vault/search/ask.py
+#, python-brace-format
+msgid "{kept} of {retrieved} matching notes fit the model's context window; the {dropped} least-relevant did not. {tail}"
+msgstr "{kept} von {retrieved} passenden Notizen passen ins Kontextfenster des Modells; die {dropped} am wenigsten relevanten nicht. {tail}"
+
+#: src/markdown_vault/search/ask.py
+#, python-brace-format
+msgid "{n} deprecated note matched but was excluded by the “hide deprecated” filter. Turn it off to include it."
+msgid_plural "{n} deprecated notes matched but were excluded by the “hide deprecated” filter. Turn it off to include them."
+msgstr[0] "{n} veraltete Notiz passte, wurde aber vom Filter „Veraltete ausblenden“ ausgeschlossen. Zum Einbeziehen ausschalten."
+msgstr[1] "{n} veraltete Notizen passten, wurden aber vom Filter „Veraltete ausblenden“ ausgeschlossen. Zum Einbeziehen ausschalten."
+
+#: src/markdown_vault/search/ask.py
+#, python-brace-format
+msgid "I found matching notes, but none fit the model's context window, so there's nothing I can ground an answer on. Raise the context window in {path}."
+msgstr "Es gibt passende Notizen, aber keine passt ins Kontextfenster des Modells — es gibt also nichts, worauf ich eine Antwort stützen kann. Das Kontextfenster in {path} erhöhen."
+
+#: src/markdown_vault/search/ask.py
+#, python-brace-format
+msgid "The model could not answer: {error}"
+msgstr "Das Modell konnte nicht antworten: {error}"
+
+#: src/markdown_vault/search/ask.py
+msgid "The model used its entire answer budget thinking and never produced an answer. Raise “Max answer length”, or turn Reasoning off."
+msgstr "Das Modell hat sein gesamtes Antwortbudget mit Nachdenken verbraucht und nie eine Antwort erzeugt. „Max. Antwortlänge“ erhöhen oder Reasoning abschalten."
+
+#: src/markdown_vault/search/ask.py
+msgid "Semantic search is not active — without an index I can't search your notes."
+msgstr "Die semantische Suche ist nicht aktiv — ohne Index kann ich deine Notizen nicht durchsuchen."
+
+#: src/markdown_vault/search/ask.py
+msgid "Only deprecated notes match your question — they're excluded by the “hide deprecated” filter. Turn it off to use them."
+msgstr "Nur veraltete Notizen passen zu deiner Frage — sie werden vom Filter „Veraltete ausblenden“ ausgeschlossen. Zum Verwenden ausschalten."
+
+#: src/markdown_vault/search/ask.py
+msgid "Answers are turned off. Turn the answer engine on in Preferences → Search → Ask."
+msgstr "Antworten sind ausgeschaltet. Die Antwort-Engine unter Einstellungen → Suche → Ask einschalten."
