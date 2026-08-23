@@ -20,6 +20,22 @@ if not py.found()
   py = python.find_installation('/usr/bin/python3', modules: ['gi'])
 endif
 
+# GTK version floor. The app targets GTK 4.14+ (AGENTS.md) and uses APIs from that
+# series. Check it through the GObject-Introspection runtime the app itself loads (the
+# Gtk-4.0 typelib), NOT via gtk4.pc — the build needs no GUI -devel headers (see the
+# README) and this reads the exact version the app will run against. A too-old GTK then
+# fails at configure time instead of crashing at runtime.
+gtk_min = '4.14'
+gtk_version = run_command(
+  py, '-c',
+  'import gi; gi.require_version("Gtk", "4.0"); from gi.repository import Gtk; print(f"{Gtk.get_major_version()}.{Gtk.get_minor_version()}")',
+  check: true,
+).stdout().strip()
+if gtk_version.version_compare('< ' + gtk_min)
+  error('GTK >= @0@ is required (AGENTS.md), found @1@'.format(gtk_min, gtk_version))
+endif
+message('GTK version floor satisfied: @0@ (>= @1@)'.format(gtk_version, gtk_min))
+
 # Modules are installed into a private directory instead of the interpreter's
 # site-packages, which may live outside the install prefix.
 # One definition for the installed tree's name; must match core/paths.py's _APP,
