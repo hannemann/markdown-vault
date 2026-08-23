@@ -18,6 +18,23 @@ from gi.repository import Gtk, Adw, GLib
 logger = logging.getLogger(__name__)
 
 
+# ── File-dialog result helpers ──────────────────────────────────────
+
+
+def dialog_cancelled(error: GLib.Error) -> bool:
+    """Whether a file/folder-dialog ``*_finish`` ``GLib.Error`` is a user
+    cancel/dismiss rather than a real failure.
+
+    ``Gtk.FileDialog`` finishers raise the same error type for a user cancel and
+    for a genuine portal/backend failure, so a caller must split the two: stay
+    silent on a cancel, but log and surface a real failure instead of dropping
+    the user's action without a trace.
+    """
+    quark = Gtk.DialogError.quark()
+    return (error.matches(quark, Gtk.DialogError.DISMISSED)
+            or error.matches(quark, Gtk.DialogError.CANCELLED))
+
+
 # ── Simple informational dialogs ────────────────────────────────────
 
 

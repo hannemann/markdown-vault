@@ -129,6 +129,7 @@ def _app_version() -> str:
         from ._version import __version__
         return __version__
     except ImportError:
+        # no generated _version.py in a source tree (tests, un-built checkout) → "dev"
         return "dev"
 
 
@@ -1472,7 +1473,7 @@ class MainWindow(Adw.ApplicationWindow):
                 if tags:
                     file_tags[path] = tags
             except OSError:
-                pass
+                logger.debug("frontmatter tag read failed for %s", path, exc_info=True)
         return file_tags
 
     def _on_sidebar_file_requested(self, _sidebar, file_path: str) -> None:
@@ -1883,8 +1884,13 @@ class MainWindow(Adw.ApplicationWindow):
     def _on_insert_image_chosen(self, dialog, result) -> None:
         try:
             gfile = dialog.open_finish(result)
-        except GLib.Error:
-            return                          # cancelled or failed
+        except GLib.Error as exc:
+            # A cancel and a real portal/backend failure raise the same type; stay
+            # silent on cancel, surface a genuine failure instead of dropping it.
+            if not dialogs.dialog_cancelled(exc):
+                logger.warning("insert image: file dialog failed", exc_info=True)
+                self._toast("Could not open the image.", timeout=0)
+            return
         tab = self._tab_bar.get_current_tab()
         path = gfile.get_path() if gfile else None
         if not path or tab is None:

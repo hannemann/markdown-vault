@@ -26,6 +26,17 @@ from markdown_vault.vault.vault_monitor import _is_valid_md_file
 logger = logging.getLogger(__name__)
 
 
+def _read_text_or_empty(file_path: str) -> str:
+    """Read *file_path* as UTF-8, or ``""`` if it can't be read. The empty
+    fallback silently empties the file's backlinks, so a read failure is logged
+    here rather than swallowed."""
+    try:
+        return Path(file_path).read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        logger.warning("backlink update: cannot read %s", file_path, exc_info=True)
+        return ""
+
+
 class MonitorHandler:
     """Orchestrates file-system events from VaultMonitor.
 
@@ -75,10 +86,7 @@ class MonitorHandler:
 
         # Update backlink index on idle (file I/O — don't block signal chain)
         def _update_backlink():
-            try:
-                text = Path(file_path).read_text(encoding="utf-8")
-            except (OSError, UnicodeDecodeError):
-                text = ""
+            text = _read_text_or_empty(file_path)
             self._backlink_index.update_file(file_path, text)
             # Refresh the sidebar so backlinks appear without a tab switch.
             # "created" refreshes the backlinks view (unlike "content_changed").
@@ -193,10 +201,7 @@ class MonitorHandler:
     def on_content_changed(self, vault_path: str, file_path: str) -> None:
         """Handle content-changed event from VaultMonitor."""
         def _update():
-            try:
-                text = Path(file_path).read_text(encoding="utf-8")
-            except (OSError, UnicodeDecodeError):
-                text = ""
+            text = _read_text_or_empty(file_path)
             self._backlink_index.update_file(file_path, text)
             self._debug_fn(["backlink_index", "preview_html", "sidebar"])
             self._dispatcher.on_content_changed(vault_path, file_path)
@@ -274,10 +279,7 @@ class MonitorHandler:
             self._notify_banner_cb(vault_path, file_path)
 
         def _update():
-            try:
-                text = Path(file_path).read_text(encoding="utf-8")
-            except (OSError, UnicodeDecodeError):
-                text = ""
+            text = _read_text_or_empty(file_path)
             self._backlink_index.update_file(file_path, text)
             self._debug_fn(["backlink_index", "preview_html", "sidebar"])
             self._dispatcher.on_content_changed(vault_path, file_path)
@@ -309,10 +311,7 @@ class MonitorHandler:
             self._debug_fn(["file_index", "vault_tree"])
 
             def _update_backlink():
-                try:
-                    text = Path(file_path).read_text(encoding="utf-8")
-                except (OSError, UnicodeDecodeError):
-                    text = ""
+                text = _read_text_or_empty(file_path)
                 self._backlink_index.update_file(file_path, text)
                 # Refresh the sidebar so backlinks appear without a tab switch.
                 # "created" refreshes the backlinks view (unlike "content_changed").

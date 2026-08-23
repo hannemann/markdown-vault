@@ -15,7 +15,31 @@ import gi
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 
+from gi.repository import GLib, Gtk
+
 from markdown_vault.uikit import dialogs
+
+
+class TestDialogCancelled(unittest.TestCase):
+    """dialog_cancelled splits a user cancel from a real dialog failure."""
+
+    def _err(self, code):
+        return GLib.Error.new_literal(Gtk.DialogError.quark(), "x", code)
+
+    def test_true_for_dismiss_and_cancel(self):
+        self.assertTrue(dialogs.dialog_cancelled(self._err(Gtk.DialogError.DISMISSED)))
+        self.assertTrue(dialogs.dialog_cancelled(self._err(Gtk.DialogError.CANCELLED)))
+
+    def test_false_for_a_real_failure(self):
+        # A genuine portal/backend failure must NOT read as a cancel.
+        self.assertFalse(dialogs.dialog_cancelled(self._err(Gtk.DialogError.FAILED)))
+
+    def test_false_for_a_foreign_domain_with_a_colliding_code(self):
+        # The quark is checked, not just the numeric code: an unrelated error whose
+        # code happens to equal CANCELLED must not read as a cancel.
+        foreign = GLib.Error.new_literal(
+            GLib.quark_from_string("g-io-error-quark"), "x", Gtk.DialogError.CANCELLED)
+        self.assertFalse(dialogs.dialog_cancelled(foreign))
 
 
 # ---------------------------------------------------------------------------

@@ -18,8 +18,42 @@ Keep them apart and say which kind a new test is.
 import unittest
 import unittest.mock
 
+import gi
+
+gi.require_version("Gtk", "4.0")
+gi.require_version("Adw", "1")
+
+from gi.repository import GLib, Gtk
+
+from markdown_vault.app.app_window import MainWindow
 from markdown_vault.core import config
 from test_app_window_construction import AppWindowTest
+
+
+class TestInsertImageDialogResult(unittest.TestCase):
+    """Seam guard (stub window, internal name): the image file-dialog callback
+    splits a user cancel from a real dialog failure — silent on cancel, log +
+    toast on a real failure. It previously swallowed both."""
+
+    def _dialog(self, code):
+        err = GLib.Error.new_literal(Gtk.DialogError.quark(), "x", code)
+        d = unittest.mock.Mock()
+        d.open_finish.side_effect = err
+        return d
+
+    def test_cancel_is_silent(self):
+        win = unittest.mock.Mock()
+        with self.assertNoLogs("markdown_vault.app.app_window", level="WARNING"):
+            MainWindow._on_insert_image_chosen(
+                win, self._dialog(Gtk.DialogError.CANCELLED), None)
+        win._toast.assert_not_called()
+
+    def test_real_failure_logs_and_toasts(self):
+        win = unittest.mock.Mock()
+        with self.assertLogs("markdown_vault.app.app_window", level="WARNING"):
+            MainWindow._on_insert_image_chosen(
+                win, self._dialog(Gtk.DialogError.FAILED), None)
+        win._toast.assert_called_once()
 
 
 class TestActions(AppWindowTest):
