@@ -89,6 +89,21 @@ def analyse(path: Path) -> dict:
     return out
 
 
+def _rank(res: dict) -> list:
+    """Methods handed to other objects, most-handed first, ties broken by name.
+
+    Sorting by count alone left ties in the set's iteration order, which is
+    per-process hash-randomised (``PYTHONHASHSEED``) — three runs, three lists,
+    while the header counts stay identical. The ``, m`` second sort key makes the
+    order deterministic and reproducible across runs, which is what the
+    ``AGENTS.md`` before/after comparison of a split relies on. ``.get(m, [])``
+    keeps it independent of whether *res* uses ``defaultdict`` (as ``analyse``
+    does) or a plain dict (as a unit test may)."""
+    handed = set(res["direct"]) | set(res["wrapped"])
+    return sorted(handed, key=lambda m: (
+        -(len(res["direct"].get(m, [])) + len(res["wrapped"].get(m, []))), m))
+
+
 def main(argv) -> int:
     if len(argv) < 2:
         print(__doc__.strip().splitlines()[-3].strip(), file=sys.stderr)
@@ -108,8 +123,7 @@ def main(argv) -> int:
               f" wrapped {sum(len(v) for v in res['wrapped'].values())})")
         print(f"  self-wiring (not counted above) : "
               f"{sum(len(v) for v in res['internal'].values())}")
-        top = sorted(handed, key=lambda m: -(len(res['direct'][m]) + len(res['wrapped'][m])))
-        print("  most handed around              : " + ", ".join(top[:8]))
+        print("  most handed around              : " + ", ".join(_rank(res)[:8]))
     return 0
 
 
