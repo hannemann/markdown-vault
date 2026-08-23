@@ -909,3 +909,40 @@ msgstr "Keine Kandidaten-Notizen gefunden."
 #: src/markdown_vault/search/search.py
 msgid "No results found"
 msgstr "Keine Ergebnisse gefunden"
+
+#: src/markdown_vault/ui/sidebar.py
+msgid "Open a file to see backlinks"
+msgstr "Datei öffnen, um Rückverweise zu sehen"
+
+#: src/markdown_vault/ui/sidebar.py
+msgid "No backlinks found"
+msgstr "Keine Rückverweise gefunden"
+
+#: src/markdown_vault/ui/sidebar.py
+msgid "No git repo"
+msgstr "Kein Git-Repository"
+
+#: src/markdown_vault/ui/sidebar.py
+msgid "No file open"
+msgstr "Keine Datei geöffnet"
+
+#: src/markdown_vault/ui/sidebar.py
+msgid "Not a git repository"
+msgstr "Kein Git-Repository"
+
+#: src/markdown_vault/ui/sidebar.py
+msgid "Working tree clean"
+msgstr "Arbeitsverzeichnis sauber"
+
+#: src/markdown_vault/ui/sidebar.py
+msgid "Cannot read file info"
+msgstr "Dateiinfo nicht lesbar"
+
+#: src/markdown_vault/ui/sidebar.py
+#, python-brace-format
+msgid "File:  {name}\nPath:  {parent}\nWords: {words}\nLines: {lines}\nSize:  {size} bytes\nModified: {modified}"
+msgstr "Datei:  {name}\nPfad:  {parent}\nWörter: {words}\nZeilen: {lines}\nGröße:  {size} Bytes\nGeändert: {modified}"
+
+#: src/markdown_vault/ui/sidebar.py
+msgid "No frontmatter"
+msgstr "Kein Frontmatter"
