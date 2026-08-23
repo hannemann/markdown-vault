@@ -104,6 +104,7 @@ def _search_ripgrep(
         try:
             obj = json.loads(raw)
         except ValueError:
+            # a non-JSON line in rg's --json stream is not a match; skip it
             continue
         if obj.get("type") != "match":
             continue
@@ -128,6 +129,7 @@ def _submatch_spans(text: str, submatches: list) -> list[tuple[int, int]]:
             cs = len(b[: sm["start"]].decode("utf-8", "ignore"))
             ce = len(b[: sm["end"]].decode("utf-8", "ignore"))
         except (KeyError, TypeError):
+            # a submatch missing its byte offsets can't be span-mapped; skip it
             continue
         if ce > cs:
             spans.append((cs, ce))
@@ -363,6 +365,7 @@ def _search_operators(parsed, vaults, options, max_files, max_lines):
                     with open(fpath, "r", encoding="utf-8", errors="replace") as fh:
                         text = fh.read()
                 except OSError:
+                    logger.debug("Cannot read %s during search", fpath, exc_info=True)
                     continue
                 if exc and any(p.search(text) for p in exc):
                     continue
@@ -415,6 +418,7 @@ def _build_file_result(path, ms, name_hit, max_lines) -> FileResult:
     try:
         mtime = os.path.getmtime(path)
     except OSError:
+        # file vanished between walk and stat → mtime 0 ranks it last
         mtime = 0.0
     return FileResult(
         path=path, score=score, matches=ms[:max_lines], total_matches=len(ms),
@@ -462,6 +466,7 @@ def _frontmatter_tags(text: str) -> list[str]:
         if isinstance(data, dict):
             raw = data.get("tags")
     except Exception:
+        # malformed frontmatter → fall through to the regex extractor below
         raw = None
     if raw is None:
         m = re.search(r"(?m)^tags:\s*(.+)$", front)
@@ -486,6 +491,7 @@ def _name_hit(filename: str, query: str, options: SearchOptions) -> bool:
     try:
         return _compile(query, options).search(stem) is not None
     except re.error:
+        # an invalid user regex simply doesn't match this file name
         return False
 
 
