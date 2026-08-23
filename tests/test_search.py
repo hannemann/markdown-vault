@@ -9,8 +9,10 @@ import shutil
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
-from markdown_vault.search import search_logic
+from markdown_vault.search import search_backend, search_logic
+from markdown_vault.search.search import SearchBar
 
 
 class TestSearchVaults(unittest.TestCase):
@@ -78,6 +80,44 @@ class TestSearchVaults(unittest.TestCase):
             (self._vault_a / f"f{i}.md").write_text("needle", encoding="utf-8")
         results = self._search("needle", max_results=5)
         self.assertEqual(len(results), 5)
+
+
+class TestInvalidPatternSurfacing(unittest.TestCase):
+    """The search bar pre-checks the pattern and surfaces an invalid regex as a
+    message row instead of dispatching a search that returns a bare 'No results
+    found'. Guards the wiring (caller side), not just backend.pattern_error:
+    a dropped or inverted check fails here."""
+
+    def _make_bar(self, query, options):
+        bar = SearchBar.__new__(SearchBar)
+        bar._debounce_id = None
+        bar._entry = mock.Mock()
+        bar._entry.get_text.return_value = query
+        bar._clear_results = mock.Mock()
+        bar._scope_vaults = mock.Mock(return_value=["/vault"])
+        bar._stop_spinner = mock.Mock()
+        bar._busy = False
+        bar._last_results = None
+        bar._current_options = mock.Mock(return_value=options)
+        bar._generation = 0
+        bar._spinner = mock.Mock()
+        bar._results = mock.Mock()
+        bar._message_row = mock.Mock(return_value="MSG_ROW")
+        return bar
+
+    def test_invalid_regex_shows_message_and_skips_dispatch(self):
+        bar = self._make_bar("(unclosed", search_backend.SearchOptions(regex=True))
+        with mock.patch("markdown_vault.search.search.threading.Thread") as thread:
+            bar._run_search()
+        thread.assert_not_called()
+        bar._results.append.assert_called_once_with("MSG_ROW")
+
+    def test_valid_regex_dispatches_search(self):
+        bar = self._make_bar("foo.*", search_backend.SearchOptions(regex=True))
+        with mock.patch("markdown_vault.search.search.threading.Thread") as thread:
+            bar._run_search()
+        thread.assert_called_once()
+        bar._message_row.assert_not_called()
 
 
 if __name__ == "__main__":

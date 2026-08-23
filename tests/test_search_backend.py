@@ -420,5 +420,24 @@ class TestVaultFilter(unittest.TestCase):
             shutil.rmtree(base, ignore_errors=True)
 
 
+class TestPatternError(unittest.TestCase):
+    """pattern_error: the user-facing pre-check the search bar runs before a
+    search, so an invalid regex surfaces a message instead of an empty result
+    set indistinguishable from 'no matches'."""
+
+    def test_invalid_regex_returns_message(self):
+        msg = sb.pattern_error("(unclosed", sb.SearchOptions(regex=True))
+        self.assertIsNotNone(msg)
+        self.assertIn("pattern", msg.lower())
+
+    def test_valid_regex_returns_none(self):
+        self.assertIsNone(sb.pattern_error("foo.*bar", sb.SearchOptions(regex=True)))
+
+    def test_regex_special_chars_are_fine_as_literal(self):
+        # Non-regex mode escapes the query, so a would-be broken pattern is a
+        # valid literal search — no error to surface.
+        self.assertIsNone(sb.pattern_error("(unclosed", sb.SearchOptions()))
+
+
 if __name__ == "__main__":
     unittest.main()
