@@ -154,6 +154,7 @@ def _installed(module: str) -> bool:
     try:
         return importlib.util.find_spec(module) is not None
     except (ImportError, ValueError):
+        # find_spec probe: an unresolvable/broken module counts as not installed
         return False
 
 
