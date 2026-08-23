@@ -587,6 +587,7 @@ class Editor(Gtk.ScrolledWindow):
         try:
             replaced = self._search_context.replace(start, end, replacement, -1)
         except GLib.Error:
+            # invalid regex / no valid match range → nothing replaced; caller handles False
             return False
         if replaced:
             self.search_next()
@@ -598,6 +599,7 @@ class Editor(Gtk.ScrolledWindow):
         try:
             count = self._search_context.replace_all(replacement, -1)
         except GLib.Error:
+            # invalid regex → zero replacements; caller handles the 0 count
             return 0
         self._refresh_match_highlights()
         return count

@@ -213,10 +213,7 @@ class TabBar(Gtk.Box):
         """Set the minimum width for tab widgets in pixels."""
         self._min_width = min_width
         css = f".tab {{ min-width: {min_width}px; }}"
-        try:
-            self._css_provider.load_from_string(css)
-        except TypeError:
-            self._css_provider.load_from_data(css.encode("utf-8"))
+        self._css_provider.load_from_string(css)
         Gtk.StyleContext.add_provider_for_display(
             Gdk.Display.get_default(),
             self._css_provider,
