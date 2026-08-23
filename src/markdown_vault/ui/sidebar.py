@@ -41,12 +41,12 @@ _FRONTMATTER_RE = re.compile(r"^---[ \t]*\n(.*?)\n---[ \t]*(?:\n|$)", re.DOTALL)
 # (name, symbolic icon, tooltip) for the vertical section rail — icons are
 # placeholders and can be swapped later.
 _SIDEBAR_SECTIONS = [
-    ("outline", "view-list-symbolic", "Outline"),
-    ("backlinks", "insert-link-symbolic", "Backlinks"),
-    ("graph", "network-wired-symbolic", "Graph"),
-    ("metadata", "document-properties-symbolic", "Metadaten"),
-    ("git", "media-flash-symbolic", "Git"),
-    ("details", "dialog-information-symbolic", "Details"),
+    ("outline", "view-list-symbolic", _("Outline")),
+    ("backlinks", "insert-link-symbolic", _("Backlinks")),
+    ("graph", "network-wired-symbolic", _("Graph")),
+    ("metadata", "document-properties-symbolic", _("Metadata")),
+    ("git", "media-flash-symbolic", _("Git")),
+    ("details", "dialog-information-symbolic", _("Details")),
 ]
 
 
