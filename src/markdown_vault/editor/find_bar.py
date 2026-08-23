@@ -13,6 +13,8 @@ gi.require_version("Gtk", "4.0")
 
 from gi.repository import Gtk, Gdk, GObject
 
+from markdown_vault.core.i18n import _
+
 
 class FindBar(Gtk.Box):
     """Inline find/replace bar. Backend-agnostic — driven via signals.
@@ -49,7 +51,7 @@ class FindBar(Gtk.Box):
         self._entry.set_hexpand(False)
         self._entry.set_width_chars(40)
         self._entry.set_max_width_chars(40)
-        self._entry.set_placeholder_text("Find in view…")
+        self._entry.set_placeholder_text(_("Find in view…"))
         self._entry.connect(
             "search-changed",
             lambda e: self.emit("search-changed", e.get_text()),
@@ -68,22 +70,22 @@ class FindBar(Gtk.Box):
         self._counter.add_css_class("dim-label")
 
         # Query modifiers (editor-only).
-        self._case_btn = self._make_toggle("Aa", "Case sensitive")
-        self._word_btn = self._make_toggle("W", "Whole word")
-        self._regex_btn = self._make_toggle(".*", "Regular expression")
+        self._case_btn = self._make_toggle("Aa", _("Case sensitive"))
+        self._word_btn = self._make_toggle("W", _("Whole word"))
+        self._regex_btn = self._make_toggle(".*", _("Regular expression"))
         for btn in (self._case_btn, self._word_btn, self._regex_btn):
             btn.connect("toggled", lambda *_: self.emit("options-changed"))
             find_row.append(btn)
 
         prev_btn = Gtk.Button(icon_name="go-up-symbolic")
         prev_btn.add_css_class("flat")
-        prev_btn.set_tooltip_text("Previous match (Shift+Enter)")
+        prev_btn.set_tooltip_text(_("Previous match (Shift+Enter)"))
         prev_btn.connect("clicked", lambda *_: self.emit("search-prev"))
         find_row.append(prev_btn)
 
         next_btn = Gtk.Button(icon_name="go-down-symbolic")
         next_btn.add_css_class("flat")
-        next_btn.set_tooltip_text("Next match (Enter)")
+        next_btn.set_tooltip_text(_("Next match (Enter)"))
         next_btn.connect("clicked", lambda *_: self.emit("search-next"))
         find_row.append(next_btn)
 
@@ -94,7 +96,7 @@ class FindBar(Gtk.Box):
 
         close_btn = Gtk.Button(icon_name="window-close-symbolic")
         close_btn.add_css_class("flat")
-        close_btn.set_tooltip_text("Close (Esc)")
+        close_btn.set_tooltip_text(_("Close (Esc)"))
         close_btn.connect("clicked", lambda *_: self.close())
         find_row.append(close_btn)
 
@@ -106,7 +108,7 @@ class FindBar(Gtk.Box):
         self._replace_entry.set_hexpand(False)
         self._replace_entry.set_width_chars(40)
         self._replace_entry.set_max_width_chars(40)
-        self._replace_entry.set_placeholder_text("Replace with…")
+        self._replace_entry.set_placeholder_text(_("Replace with…"))
         # Match the search entry's leading icon so both fields are the same size.
         self._replace_entry.set_icon_from_icon_name(
             Gtk.EntryIconPosition.PRIMARY, "document-edit-symbolic",
@@ -122,12 +124,12 @@ class FindBar(Gtk.Box):
         size_group.add_widget(self._replace_entry)
         self._replace_row.append(self._replace_entry)
 
-        replace_btn = Gtk.Button(label="Replace")
+        replace_btn = Gtk.Button(label=_("Replace"))
         replace_btn.add_css_class("flat")
         replace_btn.connect("clicked", lambda *_: self.emit("replace-one"))
         self._replace_row.append(replace_btn)
 
-        replace_all_btn = Gtk.Button(label="Replace All")
+        replace_all_btn = Gtk.Button(label=_("Replace All"))
         replace_all_btn.add_css_class("flat")
         replace_all_btn.connect("clicked", lambda *_: self.emit("replace-all"))
         self._replace_row.append(replace_all_btn)

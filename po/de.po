@@ -31,3 +31,43 @@ msgstr "Git"
 #: src/markdown_vault/ui/sidebar.py
 msgid "Details"
 msgstr "Details"
+
+#: src/markdown_vault/editor/find_bar.py
+msgid "Find in view…"
+msgstr "In der Ansicht suchen…"
+
+#: src/markdown_vault/editor/find_bar.py
+msgid "Case sensitive"
+msgstr "Groß-/Kleinschreibung beachten"
+
+#: src/markdown_vault/editor/find_bar.py
+msgid "Whole word"
+msgstr "Ganzes Wort"
+
+#: src/markdown_vault/editor/find_bar.py
+msgid "Regular expression"
+msgstr "Regulärer Ausdruck"
+
+#: src/markdown_vault/editor/find_bar.py
+msgid "Previous match (Shift+Enter)"
+msgstr "Vorheriger Treffer (Umschalt+Eingabe)"
+
+#: src/markdown_vault/editor/find_bar.py
+msgid "Next match (Enter)"
+msgstr "Nächster Treffer (Eingabe)"
+
+#: src/markdown_vault/editor/find_bar.py
+msgid "Close (Esc)"
+msgstr "Schließen (Esc)"
+
+#: src/markdown_vault/editor/find_bar.py
+msgid "Replace with…"
+msgstr "Ersetzen durch…"
+
+#: src/markdown_vault/editor/find_bar.py
+msgid "Replace"
+msgstr "Ersetzen"
+
+#: src/markdown_vault/editor/find_bar.py
+msgid "Replace All"
+msgstr "Alle ersetzen"
