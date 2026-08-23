@@ -9,7 +9,9 @@ files move into subpackages, and stays green at every intermediate state.
 """
 
 import ast
+import io
 import sys
+import tokenize
 import unittest
 from collections import defaultdict
 from pathlib import Path
@@ -210,6 +212,105 @@ class TestCoreLayerImportWeight(unittest.TestCase):
         self.assertEqual(strict,
                          ["numpy", "gi.repository", f"{mv}.search", f"{mv}.core"])
         self.assertEqual(granted, ["numpy", "gi.repository", f"{mv}.search"])
+
+
+_LOG_METHODS = {"debug", "info", "warning", "error", "exception", "critical", "log"}
+# print() to stdout/stderr is legitimate only in the CLI driver (web_import's main()).
+_PRINT_ALLOWED = {"importers/web_import.py"}
+
+
+def _is_log_call(node) -> bool:
+    return (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+            and node.func.attr in _LOG_METHODS)
+
+
+def _comment_linenos(src: str) -> set:
+    """Line numbers carrying a real comment token (not a ``#`` inside a string)."""
+    out = set()
+    try:
+        for tok in tokenize.generate_tokens(io.StringIO(src).readline):
+            if tok.type == tokenize.COMMENT:
+                out.add(tok.start[0])
+    except (tokenize.TokenError, IndentationError):
+        pass
+    return out
+
+
+def _handler_is_justified(handler: ast.ExceptHandler, comment_linenos: set) -> bool:
+    """A handler is fine if it logs, re-raises, or carries a justification comment.
+
+    The three legitimate outcomes of catching an exception (the AGENTS.md rule): make it
+    visible (log), let it propagate (raise), or state why swallowing is correct — a comment,
+    **including an inline one on a body statement**. Surfacing to the user is covered too:
+    those handlers carry a comment saying so, rather than the guard learning every surface
+    function (a guard that goes red for the wrong reason gets switched off). The guard checks
+    a comment *exists* anywhere in the handler; its quality is a human slop-test."""
+    for n in ast.walk(handler):
+        if _is_log_call(n) or isinstance(n, ast.Raise):
+            return True
+    start = handler.lineno
+    end = max((n.end_lineno for n in ast.walk(handler)
+               if getattr(n, "end_lineno", None) is not None), default=start)
+    return any(start <= ln <= end for ln in comment_linenos)
+
+
+def _swallow_offenders() -> dict:
+    offenders = {}
+    for py in sorted(_ROOT.rglob("*.py")):
+        rel = py.relative_to(_ROOT).as_posix()
+        src = py.read_text(encoding="utf-8")
+        comments = _comment_linenos(src)
+        tree = ast.parse(src, str(py))
+        bad = []
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ExceptHandler) and not _handler_is_justified(node, comments):
+                bad.append(f"line {node.lineno}: except swallows without log/justification")
+        if rel not in _PRINT_ALLOWED:
+            bad += [f"line {n.lineno}: stray print()" for n in ast.walk(tree)
+                    if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
+                    and n.func.id == "print"]
+        if bad:
+            offenders[rel] = bad
+    return offenders
+
+
+class TestNoSilentSwallows(unittest.TestCase):
+    """No exception is swallowed without a trace, and no stray print().
+
+    Every ``except`` handler must log, re-raise, or carry a one-line justification
+    (surfacing handlers say so in a comment); ``print()`` is allowed only in the CLI
+    driver. This is the tooth for the silent-swallow sweep: a new blind ``except`` or a
+    debug ``print`` left in code turns it red instead of shipping unnoticed.
+    """
+
+    def test_no_handler_swallows_without_log_or_justification(self):
+        offenders = _swallow_offenders()
+        self.assertEqual(
+            offenders, {},
+            "silent swallow(s) / stray print() — add a log, a re-raise, or a one-line "
+            "justification (or, for print, keep it in the CLI driver):\n"
+            + "\n".join(f"  {f}: {b}" for f, b in sorted(offenders.items())))
+
+    def test_the_check_flags_a_smuggled_silent_except_and_passes_a_justified_one(self):
+        # Effectiveness, both directions: a bare swallow is caught; a logged one, a
+        # re-raise and a commented one are not. Built inline so the guard is pinned
+        # independent of the swept tree.
+        def handlers(src):
+            tree = ast.parse(src)
+            return [n for n in ast.walk(tree) if isinstance(n, ast.ExceptHandler)]
+
+        silent = "try:\n    x()\nexcept OSError:\n    pass\n"
+        logged = "try:\n    x()\nexcept OSError:\n    logger.warning('x', exc_info=True)\n"
+        reraise = "try:\n    x()\nexcept OSError:\n    raise\n"
+        commented = "try:\n    x()\nexcept OSError:\n    # expected: caller handles None\n    return None\n"
+        noqa = "try:\n    x()\nexcept Exception:  # noqa: BLE001 - why\n    pass\n"
+        inline = "try:\n    x()\nexcept OSError:\n    n = 0  # inline reason on a body line\n"
+        self.assertFalse(_handler_is_justified(handlers(silent)[0], _comment_linenos(silent)))
+        self.assertTrue(_handler_is_justified(handlers(logged)[0], _comment_linenos(logged)))
+        self.assertTrue(_handler_is_justified(handlers(reraise)[0], _comment_linenos(reraise)))
+        self.assertTrue(_handler_is_justified(handlers(commented)[0], _comment_linenos(commented)))
+        self.assertTrue(_handler_is_justified(handlers(noqa)[0], _comment_linenos(noqa)))
+        self.assertTrue(_handler_is_justified(handlers(inline)[0], _comment_linenos(inline)))
 
 
 if __name__ == "__main__":

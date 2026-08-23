@@ -2666,6 +2666,7 @@ class MainWindow(Adw.ApplicationWindow):
         try:
             config.check_config_access()
         except OSError as e:
+            logger.warning("cannot open Preferences: config access failed", exc_info=True)
             self._show_error("Cannot Open Preferences", str(e))
             return None
         # Reuse an already-open dialog instead of stacking a second one; a repeated

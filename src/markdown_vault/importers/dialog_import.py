@@ -162,6 +162,7 @@ class ImportDialog(Adw.Dialog):
         try:
             url = web_import.validate_url(self._url_row.get_text())
         except ValueError:
+            # user input error, not a fault → the banner suffices; a log would be noise
             self._show_error("Enter a valid http(s) URL.")
             return
         hint = web_import.availability()

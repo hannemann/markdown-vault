@@ -56,6 +56,20 @@ class TestInsertImageDialogResult(unittest.TestCase):
         win._toast.assert_called_once()
 
 
+class TestOpenPreferencesConfigError(unittest.TestCase):
+    """A config-access failure opening Preferences must log (the dialog is gone once
+    dismissed, so the trace would otherwise vanish) as well as surface the error."""
+
+    @unittest.mock.patch("markdown_vault.app.app_window.config")
+    def test_logs_and_surfaces(self, mock_config):
+        mock_config.check_config_access.side_effect = OSError("no access")
+        win = unittest.mock.Mock()
+        with self.assertLogs("markdown_vault.app.app_window", level="WARNING"):
+            result = MainWindow._open_preferences(win)
+        self.assertIsNone(result)
+        win._show_error.assert_called_once()
+
+
 class TestActions(AppWindowTest):
     """The action surface: what the menus, shortcuts and the app shell can call.
 
