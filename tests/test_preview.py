@@ -326,6 +326,29 @@ class TestAnchorNavigation(unittest.TestCase):
         self.assertIn("section", p._jump_to_anchor.call_args[0][0].lower())
 
 
+class TestCspUsesConfiguredSetting(unittest.TestCase):
+    """The *caller* side of _build_csp. TestBuildCsp proves _build_csp is correct;
+    it does not prove update_from_text feeds it the value actually stored. The
+    setting lives under the nested key ``preview.allow_remote_images`` — reading a
+    flat ``preview_allow_remote_images`` off the raw dict silently misses and
+    always yields the default, so the opt-in never reaches the policy. This is the
+    'test the caller, not the receiver' blind spot AGENTS.md names."""
+
+    def _csp_after_render(self, settings):
+        preview = Preview()
+        with unittest.mock.patch.object(_pv.config, "settings", return_value=settings):
+            preview.update_from_text("# Hi", "")
+        return preview._csp
+
+    def test_opt_in_setting_reaches_the_csp(self):
+        csp = self._csp_after_render({"preview": {"allow_remote_images": True}})
+        self.assertIn("https:", csp)
+
+    def test_disabled_setting_keeps_remote_images_blocked(self):
+        csp = self._csp_after_render({"preview": {"allow_remote_images": False}})
+        self.assertNotIn("https:", csp)
+
+
 class TestBuildCsp(unittest.TestCase):
     """Content-Security-Policy assembly (5.1)."""
 

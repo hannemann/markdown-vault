@@ -1382,7 +1382,7 @@ class Preview(Gtk.ScrolledWindow):
             # only here, on full load. Toggling the setting calls reset() so
             # the next full load rebuilds with the new policy.
             self._csp = _build_csp(
-                config.settings().get("preview_allow_remote_images", False)
+                config.get_setting(config.settings(), "preview.allow_remote_images", False)
             )
             css_content = self._load_css_content()
             colors = self._get_theme_colors()
