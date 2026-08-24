@@ -127,14 +127,16 @@ class TestFetchGuards(unittest.TestCase):
     def _redirect(self, newurl):
         import email.message
         import urllib.request
-        guard = wi._HttpRedirectGuard()
-        req = urllib.request.Request("https://x.io/a")
+        guard = wi._HttpRedirectGuard(enforce_public=False)
+        req = urllib.request.Request("https://8.8.8.8/a")
         return guard.redirect_request(req, None, 302, "Found",
                                       email.message.Message(), newurl)
 
     def test_allows_http_and_https(self):
-        self.assertIsNotNone(self._redirect("http://x.io/b"))
-        self.assertIsNotNone(self._redirect("https://x.io/b"))
+        # Numeric hosts keep the guard's now-unconditional target resolution
+        # network-free (ZE1); enforce_public=False, so nothing is refused anyway.
+        self.assertIsNotNone(self._redirect("http://8.8.8.8/b"))
+        self.assertIsNotNone(self._redirect("https://8.8.8.8/b"))
 
     def test_refuses_ftp_and_file(self):
         import urllib.error
@@ -172,6 +174,17 @@ class _FakeResp:
 
 class TestFetchBodyGuards(unittest.TestCase):
     """R72.1: the Content-Type check and the body cap (both branches) have tests."""
+
+    def setUp(self):
+        # fetch_html now resolves the initial host to decide redirect enforcement.
+        # These tests mock build_opener, but _host_is_public sits in that call's
+        # argument and runs regardless — and x.io is a live domain. Patch it here
+        # (in setUp, with addCleanup) so any method calling fetch_html stays off the
+        # network; the body-cap assertions are unchanged.
+        import unittest.mock as mock
+        p = mock.patch.object(wi, "_host_is_public", return_value=True)
+        p.start()
+        self.addCleanup(p.stop)
 
     def _fetch(self, resp):
         import unittest.mock as mock
@@ -983,6 +996,98 @@ class TestSsrfGuard(unittest.TestCase):
         self.assertIsNotNone(self._img_redirect("http://8.8.8.8/x.png"))
 
 
+class TestPageFetchHostEnforcement(unittest.TestCase):
+    """F2: the page fetch refuses a redirect to a non-public host when the initial
+    (user-typed) host was public — a server-chosen redirect target is not the
+    user's intranet URL. Enforcement is *sticky*: once the chain has reached a
+    public host, the remote server picks the later hops, so it latches on and a
+    later private target is a pivot inwards.
+
+    Numeric IPs keep ``_host_is_public`` deterministic and network-free:
+    127.0.0.1 / 10.x / 192.168.x / 169.254.x are private, 8.8.8.8 is public.
+    """
+
+    def _redirect(self, guard, newurl):
+        import email.message
+        req = urllib.request.Request("https://origin.example/a")
+        return guard.redirect_request(req, None, 302, "Found",
+                                      email.message.Message(), newurl)
+
+    def test_enforce_refuses_redirect_to_private_host(self):
+        guard = wi._HttpRedirectGuard(enforce_public=True)
+        with self.assertRaises(wi.BlockedRedirectError):
+            self._redirect(guard, "http://10.0.0.1/x")
+
+    def test_enforce_allows_redirect_to_public_host(self):
+        guard = wi._HttpRedirectGuard(enforce_public=True)
+        self.assertIsNotNone(self._redirect(guard, "http://8.8.8.8/x"))
+
+    def test_no_enforce_allows_redirect_to_private_host(self):
+        # intranet: the user typed a private host, redirects inside it still work.
+        guard = wi._HttpRedirectGuard(enforce_public=False)
+        self.assertIsNotNone(self._redirect(guard, "http://10.0.0.1/x"))
+
+    def test_intranet_multi_hop_stays_allowed(self):
+        guard = wi._HttpRedirectGuard(enforce_public=False)
+        self.assertIsNotNone(self._redirect(guard, "http://10.0.0.1/a"))
+        self.assertIsNotNone(self._redirect(guard, "http://192.168.1.1/b"))
+
+    def test_sticky_latches_on_a_public_intermediate_hop(self):
+        # ZD1: private origin -> public hop -> private target must be refused. The
+        # public hop latches enforcement on for the rest of the chain.
+        guard = wi._HttpRedirectGuard(enforce_public=False)
+        self.assertIsNotNone(self._redirect(guard, "http://8.8.8.8/x"))   # latches
+        with self.assertRaises(wi.BlockedRedirectError):
+            self._redirect(guard, "http://169.254.169.254/latest/")
+
+    def test_fetch_html_public_origin_refuses_pivot_to_private(self):
+        # The caller wiring: fetch_html derives enforce_public from the initial
+        # host. Treat the loopback test server as a public origin (patch), so a
+        # 302 to a private host is refused. Fails if the wiring is dropped.
+        import unittest.mock as mock
+
+        class Pivot(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                self.send_response(302)
+                self.send_header("Location", "http://10.0.0.1/secret")
+                self.end_headers()
+
+            def log_message(self, *a):
+                pass
+        srv = _serve(Pivot)
+        try:
+            with mock.patch.object(wi, "_host_is_public",
+                                   side_effect=lambda h: h == "127.0.0.1"):
+                with self.assertRaises(wi.BlockedRedirectError):
+                    wi.fetch_html(f"http://127.0.0.1:{srv.server_address[1]}/start")
+        finally:
+            srv.shutdown()
+
+    def test_fetch_html_intranet_origin_follows_redirect(self):
+        # No patch: 127.0.0.1 is genuinely private, so enforcement stays off and
+        # the intranet redirect is followed. Fails if the flag is inverted.
+        class Bounce(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                if self.path == "/start":
+                    self.send_response(302)
+                    self.send_header("Location", "/target")
+                    self.end_headers()
+                else:
+                    self.send_response(200)
+                    self.send_header("Content-Type", "text/html")
+                    self.end_headers()
+                    self.wfile.write(b"<html>intranet</html>")
+
+            def log_message(self, *a):
+                pass
+        srv = _serve(Bounce)
+        try:
+            html = wi.fetch_html(f"http://127.0.0.1:{srv.server_address[1]}/start")
+            self.assertIn("intranet", html)
+        finally:
+            srv.shutdown()
+
+
 @unittest.skipUnless(_has_table_deps() and wi.availability() is None,
                      "web-import extraction deps not installed")
 class TestExtractImagesInTables(unittest.TestCase):
@@ -1182,7 +1287,7 @@ class TestRedirectGuardType(unittest.TestCase):
         srv = _serve(ToFtp)
         try:
             with self.assertRaises(wi.BlockedRedirectError):
-                self._get(wi._HttpRedirectGuard(), srv.server_address[1])
+                self._get(wi._HttpRedirectGuard(enforce_public=False), srv.server_address[1])
         finally:
             srv.shutdown()
 
@@ -1213,7 +1318,7 @@ class TestRedirectGuardType(unittest.TestCase):
         srv = _serve(NoLoc)
         try:
             with self.assertRaises(urllib.error.HTTPError) as cm:
-                self._get(wi._HttpRedirectGuard(), srv.server_address[1])
+                self._get(wi._HttpRedirectGuard(enforce_public=False), srv.server_address[1])
             self.assertNotIsInstance(cm.exception, wi.BlockedRedirectError)
             msg = wi.describe_error(cm.exception)
             self.assertIn("server returned an error", msg)
@@ -1233,7 +1338,7 @@ class TestRedirectGuardType(unittest.TestCase):
         srv = _serve(Loop)
         try:
             with self.assertRaises(urllib.error.HTTPError) as cm:
-                self._get(wi._HttpRedirectGuard(), srv.server_address[1])
+                self._get(wi._HttpRedirectGuard(enforce_public=False), srv.server_address[1])
             self.assertNotIsInstance(cm.exception, wi.BlockedRedirectError)
             msg = wi.describe_error(cm.exception)
             self.assertIn("server returned an error", msg)

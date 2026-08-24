@@ -119,22 +119,47 @@ _HTML_TYPES = ("text/html", "application/xhtml+xml", "application/xml", "text/xm
 
 class _HttpRedirectGuard(urllib.request.HTTPRedirectHandler):
     """Keep validate_url's http(s) allowlist across redirects — urllib otherwise
-    follows to ftp too, which would let a redirect leave the allowed schemes."""
+    follows to ftp too, which would let a redirect leave the allowed schemes.
+
+    When ``enforce_public`` is set, also refuse a redirect whose target resolves to
+    a non-public address (loopback/LAN/metadata). The flag is *sticky*: once the
+    chain has reached a public host, the remote server — not the user — picks every
+    later hop, so enforcement latches on and never turns back off. It has no default
+    on purpose: a security switch that defaults to "don't check" is fail-open, so
+    every call site must state its intent (``fetch_html`` from the initial host, the
+    image guard unconditionally)."""
+
+    def __init__(self, enforce_public: bool):
+        super().__init__()
+        self._enforce_public = enforce_public
 
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         if urlparse(newurl).scheme not in ("http", "https"):
             raise BlockedRedirectError(
                 newurl, code, "refusing a non-http(s) redirect", headers, fp)
-        return super().redirect_request(req, fp, code, msg, headers, newurl)
+        new = super().redirect_request(req, fp, code, msg, headers, newurl)
+        if new is None:
+            return new
+        target_public = _host_is_public(urlparse(new.full_url).hostname or "")
+        if self._enforce_public and not target_public:
+            raise BlockedRedirectError(
+                newurl, code, "refusing a redirect to a non-public host", headers, fp)
+        self._enforce_public = self._enforce_public or target_public
+        return new
 
 
 def fetch_html(url: str, timeout: int = 20) -> str:
     """Fetch *url* and return its decoded HTML. ``http``/``https`` only, rejects a
     redirect that leaves those schemes, refuses non-HTML content types, and caps
-    the body at 20 MB so a large or hostile URL can't exhaust memory."""
+    the body at 20 MB so a large or hostile URL can't exhaust memory. When the
+    initial (user-typed) host is public, a redirect to a non-public host is refused
+    too — a server-chosen redirect must not pivot the fetch to loopback/LAN/metadata
+    (SSRF). A user-typed intranet URL (private initial host) keeps following its
+    redirects, until the chain reaches a public host and enforcement latches on."""
     url = validate_url(url)
     req = urllib.request.Request(url, headers={"User-Agent": "markdown-vault"})
-    opener = urllib.request.build_opener(_HttpRedirectGuard())
+    opener = urllib.request.build_opener(_HttpRedirectGuard(
+        enforce_public=_host_is_public(urlparse(url).hostname or "")))
     with opener.open(req, timeout=timeout) as resp:
         if resp.headers.get_content_type() not in _HTML_TYPES:
             raise WebImportError(
@@ -895,19 +920,13 @@ def _host_is_public(host: str) -> bool:
 
 
 class _ImageRedirectGuard(_HttpRedirectGuard):
-    """Redirect guard for image fetches: the inherited scheme check plus a
-    public-address check on the redirect target. Image URLs come from the page,
-    so a 302 to ``127.0.0.1`` or the metadata endpoint must be refused too. The
-    page fetch keeps the plain guard so a user-typed intranet URL still works.
-    (DNS rebinding between resolve and connect remains an accepted residual.)"""
+    """Redirect guard for image fetches: always enforces the public-address check on
+    redirect targets. Image URLs come from the page, not the user, so a 302 to
+    ``127.0.0.1`` or the metadata endpoint must be refused. (DNS rebinding between
+    resolve and connect remains an accepted residual.)"""
 
-    def redirect_request(self, req, fp, code, msg, headers, newurl):
-        new = super().redirect_request(req, fp, code, msg, headers, newurl)
-        if new is not None and not _host_is_public(urlparse(new.full_url).hostname or ""):
-            raise BlockedRedirectError(newurl, code,
-                                       "refusing a redirect to a non-public host",
-                                       headers, fp)
-        return new
+    def __init__(self):
+        super().__init__(enforce_public=True)
 
 
 def _fetch_image(url: str, timeout: int = 20, sleep=time.sleep):
