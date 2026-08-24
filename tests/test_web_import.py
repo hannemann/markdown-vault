@@ -3,9 +3,20 @@ The Trafilatura extraction itself needs the optional dependency and a page, so i
 isn't unit-tested here."""
 
 import datetime
+import http.server
+import threading
 import unittest
+import urllib.error
+import urllib.request
 
 from markdown_vault.importers import web_import as wi
+
+
+def _serve(handler_cls):
+    """Ephemeral localhost HTTP server on a background thread; call .shutdown()."""
+    srv = http.server.HTTPServer(("127.0.0.1", 0), handler_cls)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    return srv
 
 
 class TestValidateUrl(unittest.TestCase):
@@ -1111,6 +1122,124 @@ class TestFetchImageRetry(unittest.TestCase):
         got, slept = self._run(openf)
         self.assertIsNone(got)
         self.assertEqual(slept, [])                     # 404 is not retried
+
+
+class TestDescribeError(unittest.TestCase):
+    """describe_error maps an exception to ONE translated sentence — no raw
+    str(exc), no untranslatable 'HTTP Error NNN:' prefix. The test env pins the C
+    locale, so _() returns the English msgid."""
+
+    def test_blocked_redirect_error(self):
+        exc = wi.BlockedRedirectError("http://x/", 302, "r", None, None)
+        msg = wi.describe_error(exc)
+        self.assertEqual(msg, "The page redirected to a blocked or non-public target.")
+        self.assertNotIn("HTTP Error", msg)
+
+    def test_foreign_httperror_is_server_message(self):
+        exc = urllib.error.HTTPError("http://x/", 404, "Not Found", None, None)
+        self.assertEqual(wi.describe_error(exc),
+                         "The server returned an error (HTTP 404).")
+
+    def test_httperror_checked_before_urlerror(self):
+        # HTTPError IS a URLError subclass; the wrong check order sends every HTTP
+        # error into the network branch and drops the code. Pins the order.
+        exc = urllib.error.HTTPError("http://x/", 500, "Err", None, None)
+        self.assertEqual(wi.describe_error(exc),
+                         "The server returned an error (HTTP 500).")
+
+    def test_urlerror_is_network_message(self):
+        self.assertEqual(wi.describe_error(urllib.error.URLError("dns")),
+                         "Could not reach the page.")
+
+    def test_webimporterror_passes_its_text(self):
+        exc = wi.WebImportError("Not an HTML page: text/plain")
+        self.assertEqual(wi.describe_error(exc), "Not an HTML page: text/plain")
+
+    def test_unknown_is_default(self):
+        self.assertEqual(wi.describe_error(RuntimeError("boom")),
+                         "The import failed. See the log for details.")
+
+
+class TestRedirectGuardType(unittest.TestCase):
+    """The guards raise BlockedRedirectError (a HTTPError subclass, so urllib's
+    redirect machinery still accepts it) and it reaches the caller unchanged. A
+    foreign 302 (no Location, or a self-loop) stays a plain HTTPError, so
+    describe_error tells our block from a broken server."""
+
+    def _get(self, guard, port, path="/"):
+        opener = urllib.request.build_opener(guard)
+        return opener.open(f"http://127.0.0.1:{port}{path}", timeout=5)
+
+    def test_http_guard_raises_blocked_on_non_http_redirect(self):
+        class ToFtp(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                self.send_response(302)
+                self.send_header("Location", "ftp://127.0.0.1/")
+                self.end_headers()
+
+            def log_message(self, *a):
+                pass
+        srv = _serve(ToFtp)
+        try:
+            with self.assertRaises(wi.BlockedRedirectError):
+                self._get(wi._HttpRedirectGuard(), srv.server_address[1])
+        finally:
+            srv.shutdown()
+
+    def test_image_guard_raises_blocked_on_non_public_redirect(self):
+        class ToLocal(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                self.send_response(302)
+                self.send_header("Location", "http://127.0.0.1:1/x")
+                self.end_headers()
+
+            def log_message(self, *a):
+                pass
+        srv = _serve(ToLocal)
+        try:
+            with self.assertRaises(wi.BlockedRedirectError):
+                self._get(wi._ImageRedirectGuard(), srv.server_address[1])
+        finally:
+            srv.shutdown()
+
+    def test_302_without_location_stays_foreign(self):
+        class NoLoc(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                self.send_response(302)
+                self.end_headers()          # no Location — a broken server
+
+            def log_message(self, *a):
+                pass
+        srv = _serve(NoLoc)
+        try:
+            with self.assertRaises(urllib.error.HTTPError) as cm:
+                self._get(wi._HttpRedirectGuard(), srv.server_address[1])
+            self.assertNotIsInstance(cm.exception, wi.BlockedRedirectError)
+            msg = wi.describe_error(cm.exception)
+            self.assertIn("server returned an error", msg)
+            self.assertNotIn("blocked", msg)
+        finally:
+            srv.shutdown()
+
+    def test_redirect_loop_stays_foreign(self):
+        class Loop(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                self.send_response(302)
+                self.send_header("Location", self.path)   # to itself
+                self.end_headers()
+
+            def log_message(self, *a):
+                pass
+        srv = _serve(Loop)
+        try:
+            with self.assertRaises(urllib.error.HTTPError) as cm:
+                self._get(wi._HttpRedirectGuard(), srv.server_address[1])
+            self.assertNotIsInstance(cm.exception, wi.BlockedRedirectError)
+            msg = wi.describe_error(cm.exception)
+            self.assertIn("server returned an error", msg)
+            self.assertNotIn("blocked", msg)
+        finally:
+            srv.shutdown()
 
 
 if __name__ == "__main__":

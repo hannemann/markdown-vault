@@ -182,7 +182,7 @@ class ImportDialog(Adw.Dialog):
         try:
             result = web_import.import_url(url)
             if not result.markdown.strip():
-                raise ValueError(_("Nothing extractable on that page."))
+                raise web_import.WebImportError(_("Nothing extractable on that page."))
             # Attachments go under the vault root (…/attachments/<note-path>/),
             # even when importing into a subfolder.
             vault_root = path_utils.find_vault_for_dir(self._target_dir)
@@ -191,7 +191,7 @@ class ImportDialog(Adw.Dialog):
                                             name=name or None, vault_root=vault_root)
         except Exception as exc:  # surface any failure to the user, never crash
             logger.warning("Web import failed for %s: %s", url, exc, exc_info=True)
-            GLib.idle_add(self._on_error, str(exc))
+            GLib.idle_add(self._on_error, web_import.describe_error(exc))
             return
         GLib.idle_add(self._on_success, str(path))
 

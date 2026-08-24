@@ -40,6 +40,41 @@ from urllib.parse import parse_qsl, urlencode, urljoin, urlparse, urlsplit, urlu
 
 logger = logging.getLogger(__name__)
 
+
+class WebImportError(ValueError):
+    """A web-import failure whose message is user-facing and already translated
+    (fetch_html's content-type/size errors, the empty-extraction case). Subclasses
+    ``ValueError`` so the CLI driver's ``except (ValueError, OSError)`` keeps
+    catching it, and so the dialog boundary can tell our own message apart from a
+    foreign error."""
+
+
+class BlockedRedirectError(urllib.error.HTTPError):
+    """A redirect our guards refused (non-http(s) scheme, or a non-public host).
+    Subclasses ``HTTPError`` because urllib's redirect machinery requires that
+    type — a subclass reaches the caller unchanged, and it lets ``describe_error``
+    separate our own block from a foreign 3xx (a broken server, urllib's own
+    redirect-loop break)."""
+
+
+def describe_error(exc: BaseException) -> str:
+    """One translated, user-facing sentence for a web-import / image-fetch failure.
+
+    For the GUI boundaries only — do NOT call from the CLI driver ``main()``, which
+    stays English by decision. Maps by exception TYPE, most-specific first:
+    ``HTTPError`` is a ``URLError`` subclass, so the check order is the whole
+    statement (a wrong order sends every HTTP error into the network branch)."""
+    if isinstance(exc, BlockedRedirectError):
+        return _("The page redirected to a blocked or non-public target.")
+    if isinstance(exc, urllib.error.HTTPError):
+        return _("The server returned an error (HTTP {code}).").format(code=exc.code)
+    if isinstance(exc, urllib.error.URLError):
+        return _("Could not reach the page.")
+    if isinstance(exc, WebImportError):
+        return str(exc)
+    return _("The import failed. See the log for details.")
+
+
 _INSTALL_HINT = _("Web import needs Trafilatura, which isn't installed. Install it "
                   "into the app venv:\n"
                  "  ~/.local/share/de.hannemann.markdown-vault/venv/bin/pip install "
@@ -88,7 +123,7 @@ class _HttpRedirectGuard(urllib.request.HTTPRedirectHandler):
 
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         if urlparse(newurl).scheme not in ("http", "https"):
-            raise urllib.error.HTTPError(
+            raise BlockedRedirectError(
                 newurl, code, "refusing a non-http(s) redirect", headers, fp)
         return super().redirect_request(req, fp, code, msg, headers, newurl)
 
@@ -102,14 +137,14 @@ def fetch_html(url: str, timeout: int = 20) -> str:
     opener = urllib.request.build_opener(_HttpRedirectGuard())
     with opener.open(req, timeout=timeout) as resp:
         if resp.headers.get_content_type() not in _HTML_TYPES:
-            raise ValueError(
+            raise WebImportError(
                 _("Not an HTML page: {kind}").format(kind=resp.headers.get_content_type()))
         length = resp.headers.get("Content-Length")
         if length and length.isdigit() and int(length) > _MAX_BYTES:
-            raise ValueError(_("Page too large: {length} bytes").format(length=length))
+            raise WebImportError(_("Page too large: {length} bytes").format(length=length))
         raw = resp.read(_MAX_BYTES + 1)
         if len(raw) > _MAX_BYTES:
-            raise ValueError(
+            raise WebImportError(
                 _("Page exceeds the {limit}-byte limit").format(limit=_MAX_BYTES))
         charset = resp.headers.get_content_charset() or "utf-8"
     return raw.decode(charset, errors="replace")
@@ -869,9 +904,9 @@ class _ImageRedirectGuard(_HttpRedirectGuard):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         new = super().redirect_request(req, fp, code, msg, headers, newurl)
         if new is not None and not _host_is_public(urlparse(new.full_url).hostname or ""):
-            raise urllib.error.HTTPError(newurl, code,
-                                         "refusing a redirect to a non-public host",
-                                         headers, fp)
+            raise BlockedRedirectError(newurl, code,
+                                       "refusing a redirect to a non-public host",
+                                       headers, fp)
         return new
 
 

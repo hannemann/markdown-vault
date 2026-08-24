@@ -781,6 +781,23 @@ msgstr "Seite zu groß: {length} Bytes"
 msgid "Page exceeds the {limit}-byte limit"
 msgstr "Seite überschreitet das {limit}-Byte-Limit"
 
+#: src/markdown_vault/importers/web_import.py
+msgid "The page redirected to a blocked or non-public target."
+msgstr "Die Seite hat auf ein blockiertes oder nicht-öffentliches Ziel umgeleitet."
+
+#: src/markdown_vault/importers/web_import.py
+#, python-brace-format
+msgid "The server returned an error (HTTP {code})."
+msgstr "Der Server hat einen Fehler geliefert (HTTP {code})."
+
+#: src/markdown_vault/importers/web_import.py
+msgid "Could not reach the page."
+msgstr "Die Seite konnte nicht erreicht werden."
+
+#: src/markdown_vault/importers/web_import.py
+msgid "The import failed. See the log for details."
+msgstr "Der Import ist fehlgeschlagen (Details im Log)."
+
 #: src/markdown_vault/search/ask.py
 msgid "Preferences → Search → Ask → Context window"
 msgstr "Einstellungen → Suche → Ask → Kontextfenster"
@@ -1923,8 +1940,8 @@ msgid "Downloading image…"
 msgstr "Bild wird heruntergeladen…"
 
 #: src/markdown_vault/app/preview_actions.py
-msgid "Image download failed"
-msgstr "Bild-Download fehlgeschlagen"
+msgid "Image download failed — see the log."
+msgstr "Bild-Download fehlgeschlagen — siehe Log."
 
 #: src/markdown_vault/app/preview_actions.py
 msgid "Image downloaded"

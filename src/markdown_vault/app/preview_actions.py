@@ -100,18 +100,17 @@ class PreviewActions:
             except Exception as exc:    # never let a worker crash the app
                 logger.warning("Image download failed for %s: %s", uri, exc,
                                exc_info=True)
-                GLib.idle_add(self._image_downloaded, tab, uri, None, str(exc))
+                GLib.idle_add(self._image_downloaded, tab, uri, None)
                 return
-            GLib.idle_add(self._image_downloaded, tab, uri, rel, None)
+            GLib.idle_add(self._image_downloaded, tab, uri, rel)
 
         threading.Thread(target=worker, daemon=True).start()
 
-    def _image_downloaded(self, tab, uri: str, rel, error) -> bool:
+    def _image_downloaded(self, tab, uri: str, rel) -> bool:
         """Back on the main thread: rewrite the source (if the tab still exists)
         and report via a toast. Error toasts stay until dismissed."""
         if rel is None:
-            self._toast(_("Image download failed") + (": " + error if error else ""),
-                        timeout=0)
+            self._toast(_("Image download failed — see the log."), timeout=0)
             return False
         if tab not in self._tab_bar.all_tabs():
             return False                # tab closed mid-download; file is on disk
