@@ -21,6 +21,7 @@ from gi.repository import Adw, GObject, GLib, Gtk  # type: ignore[attr-defined]
 Adw.init()
 
 from markdown_vault.importers.dialog_import import ImportDialog
+from markdown_vault.importers import web_import as wi
 
 
 class TestFileChooserFailure(unittest.TestCase):
@@ -49,6 +50,27 @@ class TestFileChooserFailure(unittest.TestCase):
 
 def _make_dialog(**kwargs):
     return ImportDialog("/vault/notes", **kwargs)
+
+
+class TestWorkerErrorMapping(unittest.TestCase):
+    """The web worker forwards a TRANSLATED, mapped message to _on_error — never
+    the raw str(exc) with its untranslatable 'HTTP Error NNN:' prefix. Called
+    unbound with a mock self, like the file-chooser seam test. C locale in the test
+    env, so _() returns the English msgid."""
+
+    @patch("markdown_vault.importers.dialog_import.GLib")
+    @patch("markdown_vault.importers.dialog_import.web_import")
+    def test_worker_maps_blocked_redirect_not_str(self, mock_web, mock_glib):
+        mock_web.import_url.side_effect = wi.BlockedRedirectError(
+            "http://x/", 302, "r", None, None)
+        mock_web.describe_error = wi.describe_error   # keep the real mapper
+        win = MagicMock()
+        ImportDialog._worker(win, "http://x/", "", False)
+        mock_glib.idle_add.assert_called_once()
+        fn, msg = mock_glib.idle_add.call_args.args
+        self.assertIs(fn, win._on_error)
+        self.assertEqual(msg, "The page redirected to a blocked or non-public target.")
+        self.assertNotIn("HTTP Error", msg)
 
 
 class TestModuleStructure(unittest.TestCase):
@@ -335,9 +357,14 @@ class TestWebWorker(unittest.TestCase):
     @patch("markdown_vault.importers.dialog_import.web_import")
     def test_exception_schedules_error(self, mock_web, mock_idle):
         mock_web.import_url.side_effect = RuntimeError("network down")
+        mock_web.describe_error = wi.describe_error   # keep the real mapper
         self.dlg._worker("https://e.com", "", False)
         self.assertEqual(mock_idle.call_args.args[0], self.dlg._on_error)
-        self.assertIn("network down", mock_idle.call_args.args[1])
+        # a foreign exception maps to the translated default — never the raw
+        # str(exc), which would leak untranslated technical text into the banner
+        self.assertEqual(mock_idle.call_args.args[1],
+                         "The import failed. See the log for details.")
+        self.assertNotIn("network down", mock_idle.call_args.args[1])
 
 
 class TestDownloadFlag(unittest.TestCase):

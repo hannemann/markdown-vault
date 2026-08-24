@@ -57,7 +57,7 @@ class TestImageDownloadedTabGone(unittest.TestCase):
         bar = FakeTabBar(tab)
         actions = _actions(bar)
         bar.close(tab)
-        actions._image_downloaded(tab, "https://x/i.png", "attachments/i.png", None)
+        actions._image_downloaded(tab, "https://x/i.png", "attachments/i.png")
         tab.editor.get_text.assert_not_called()
 
     def test_an_open_tab_is_rewritten(self):
@@ -67,10 +67,53 @@ class TestImageDownloadedTabGone(unittest.TestCase):
         with unittest.mock.patch(
                 "markdown_vault.importers.web_import.rewrite_image_url",
                 return_value="![i](attachments/i.png)") as rewrite:
-            actions._image_downloaded(tab, "https://x/i.png", "attachments/i.png",
-                                      None)
+            actions._image_downloaded(tab, "https://x/i.png", "attachments/i.png")
         rewrite.assert_called_once()
         tab.editor._buffer.set_text.assert_called_once_with("![i](attachments/i.png)")
+
+
+class _Immediate:
+    """A Thread stand-in that runs its target synchronously on .start()."""
+
+    def __init__(self, target):
+        self._target = target
+
+    def start(self):
+        self._target()
+
+
+class TestImageDownloadFailure(unittest.TestCase):
+    """A failed download shows ONE fixed, translated toast — never a raw str(exc)
+    (an English errno in a German toast) and never a concatenation. The test env
+    pins the C locale, so _() returns the English msgid."""
+
+    def test_failure_shows_translated_generic(self):
+        tab = FakeTab("/n/a.md")
+        actions = _actions(FakeTabBar(tab))
+        actions._image_downloaded(tab, "https://x/i.png", None)
+        actions._toast.assert_called_once()
+        self.assertEqual(actions._toast.call_args.args[0],
+                         "Image download failed — see the log.")
+        self.assertEqual(actions._toast.call_args.kwargs.get("timeout"), 0)
+
+    def test_worker_oserror_maps_to_generic_not_errno(self):
+        tab = FakeTab("/n/a.md")
+        actions = _actions(FakeTabBar(tab))
+        p = unittest.mock.patch
+        with p("markdown_vault.app.preview_actions.threading.Thread",
+               side_effect=lambda target, daemon: _Immediate(target)), \
+             p("markdown_vault.app.preview_actions.GLib.idle_add",
+               side_effect=lambda fn, *a: fn(*a)), \
+             p("markdown_vault.core.path_utils.find_vault_for_dir", return_value="/n"), \
+             p("markdown_vault.importers.web_import.attachment_target",
+               return_value=("/n/att", "att")), \
+             p("markdown_vault.importers.web_import.save_one_image",
+               side_effect=OSError("[Errno 28] No space left on device")):
+            actions.on_image_download(tab.preview, "https://x/i.png")
+        # last toast is the failure one (the first is "Downloading image…")
+        msg = actions._toast.call_args.args[0]
+        self.assertEqual(msg, "Image download failed — see the log.")
+        self.assertNotIn("Errno", msg)
 
 
 if __name__ == "__main__":
