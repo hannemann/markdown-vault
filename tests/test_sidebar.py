@@ -238,5 +238,59 @@ class TestSidebarRefreshExternalEvent(unittest.TestCase):
         sidebar._refresh_details.assert_not_called()
 
 
+class _SyncThread:
+    """threading.Thread stand-in that runs its target on .start()."""
+
+    def __init__(self, target):
+        self._target = target
+
+    def start(self):
+        self._target()
+
+
+class TestSidebarGitBatching(unittest.TestCase):
+    """F21: _refresh_git must open one batch_reads block, so the three hardened reads
+    (is_git_repo, get_status, get_diff) enumerate the repo config once, not three times.
+    Guards the wiring — the memoisation mechanism itself is covered in
+    test_git_integration. Remove the `with batch_reads()` from _refresh_git and this
+    reddens while the mechanism test stays green."""
+
+    def setUp(self):
+        import os
+        self.sidebar = Sidebar()
+        self._tmp = Path(tempfile.mkdtemp())
+        os.system(f"git init {self._tmp} >/dev/null 2>&1")
+        os.system(f"git -C {self._tmp} config user.email 't@t.c'")
+        os.system(f"git -C {self._tmp} config user.name 'T'")
+        (self._tmp / "note.md").write_text("one\n")
+        os.system(f"git -C {self._tmp} add note.md >/dev/null 2>&1")
+        os.system(f"git -C {self._tmp} commit -m x >/dev/null 2>&1")
+        (self._tmp / "note.md").write_text("one\ntwo\n")
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self._tmp, ignore_errors=True)
+
+    def test_one_refresh_enumerates_config_once(self):
+        import unittest.mock as mock
+        import markdown_vault.ui.sidebar as sb
+        from markdown_vault.vault import git_integration as gi
+        real_run = gi._run_git
+        enumerations = []
+
+        def counting(args, cwd, harden=True):
+            if args[:3] == ["config", "--list", "--show-scope"]:
+                enumerations.append(1)
+            return real_run(args, cwd, harden=harden)
+
+        with mock.patch.object(sb.threading, "Thread",
+                               side_effect=lambda target, daemon: _SyncThread(target)), \
+             mock.patch.object(sb.GLib, "idle_add", lambda *a, **k: None), \
+             mock.patch.object(gi, "_run_git", side_effect=counting):
+            self.sidebar._refresh_git(str(self._tmp / "note.md"))
+        self.assertEqual(len(enumerations), 1,
+                         "one refresh must enumerate the config once (batch_reads wiring)")
+
+
 if __name__ == "__main__":
     unittest.main()
