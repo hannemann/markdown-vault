@@ -418,11 +418,14 @@ class Sidebar(Gtk.Box):
         diff_label = self._git_diff_label
 
         def _work():
-            if not git_integration.is_git_repo(repo_dir):
-                return gen, False, "", ""
-            status = git_integration.get_status(repo_dir)
-            diff = git_integration.get_diff(repo_dir)
-            return gen, True, status, diff
+            # One batch: the three hardened reads enumerate the repo config once, not
+            # three times (git_integration.batch_reads).
+            with git_integration.batch_reads():
+                if not git_integration.is_git_repo(repo_dir):
+                    return gen, False, "", ""
+                status = git_integration.get_status(repo_dir)
+                diff = git_integration.get_diff(repo_dir)
+                return gen, True, status, diff
 
         def _apply(res):
             g, is_repo, status, diff = res

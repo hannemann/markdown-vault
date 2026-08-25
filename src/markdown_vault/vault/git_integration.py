@@ -5,11 +5,37 @@ to fail silently — when a directory is not a git repository or when
 git is not installed, callers receive empty results rather than exceptions.
 """
 
+import contextlib
 import logging
 import subprocess
+import threading
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
+
+_batch = threading.local()
+
+
+@contextlib.contextmanager
+def batch_reads():
+    """Memoise :func:`_read_harden_flags` per repo for the duration of the block.
+
+    The sidebar's git panel makes three hardened reads (``is_git_repo``, ``get_status``,
+    ``get_diff``) on the same repo per refresh; without this each re-enumerates the repo
+    config, so a refresh spawns six git processes where four would do. Scoped to the block
+    with a fresh cache, so there is no stale-config risk — the config cannot change within
+    one synchronous refresh (a *persistent* cache would have to invalidate on every
+    included file; see :func:`_read_harden_flags`). Thread-local, so concurrent refreshes
+    on different worker threads do not share a cache. Nestable: an inner block reuses the
+    outer cache.
+    """
+    prev = getattr(_batch, "cache", None)
+    if prev is None:
+        _batch.cache = {}
+    try:
+        yield
+    finally:
+        _batch.cache = prev
 
 
 def _read_harden_flags(cwd: str | Path) -> list[str]:
@@ -46,13 +72,13 @@ def _read_harden_flags(cwd: str | Path) -> list[str]:
     vectors and must be neutralised here too. ``core.pager`` and aliases are absent on
     purpose (no TTY; aliases cannot shadow built-ins).
 
-    **No memoisation (F16):** ``_read_harden_flags`` spawns one ``git config`` per hardened
-    read op, so the note-open path pays a second git process per op. Deliberately not
-    cached: a correct cache must invalidate on every *included* config file too — and their
-    paths are only known after parsing — so a naive ``.git/config`` mtime cache would serve
-    stale hardening after an ``include.path`` change, a security regression rather than a
-    perf bug. Revisit as its own perf ticket with include-aware invalidation if the cost
-    ever bites.
+    **Memoisation (F16):** within a :func:`batch_reads` block (the sidebar wraps its
+    refresh in one) the result is cached per repo, so the three hardened reads of one
+    refresh enumerate once, not three times. NOT cached across refreshes: a persistent
+    cache would have to invalidate on every *included* config file — paths known only after
+    parsing — so a naive ``.git/config`` mtime cache would serve stale hardening after an
+    ``include.path`` change, a security regression. The within-refresh cache sidesteps
+    that: the config cannot change within one synchronous refresh.
 
     Read-only by design (see :func:`_run_git`). ``diff.external`` and the
     ``diff.<driver>`` command/textconv keys are handled by ``--no-ext-diff``/
@@ -60,6 +86,10 @@ def _read_harden_flags(cwd: str | Path) -> list[str]:
     key makes git exec ``""`` and silently empties the diff. Listing config does not
     execute command values, so the enumeration runs unhardened and cannot recurse.
     """
+    cache = getattr(_batch, "cache", None)
+    cache_key = str(cwd)   # NOT `key`: the loops below rebind `key` to config keys
+    if cache is not None and cache_key in cache:
+        return cache[cache_key]
     flags = [
         "-c", "core.fsmonitor=",
         "-c", "core.hooksPath=/dev/null",
@@ -91,6 +121,8 @@ def _read_harden_flags(cwd: str | Path) -> list[str]:
         flags += ["-c", f"{key}="]
     for name in sorted(names):
         flags += ["-c", f"filter.{name}.required=false"]
+    if cache is not None:
+        cache[cache_key] = flags
     return flags
 
 

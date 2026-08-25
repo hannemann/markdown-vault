@@ -388,6 +388,17 @@ class TestUntrustedConfigHardening(unittest.TestCase):
         self.assertTrue(any("show-scope failed" in m for m in cm.output),
                         "the failure must be surfaced, not swallowed")
 
+    # ---- F16: batch_reads memoises the enumeration within one refresh
+
+    def test_batch_reads_memoises_per_repo(self):
+        with _gi.batch_reads():
+            a = _gi._read_harden_flags(self._tmp)
+            b = _gi._read_harden_flags(self._tmp)
+        self.assertIs(a, b)          # cached within the batch -> one enumeration
+        c = _gi._read_harden_flags(self._tmp)
+        d = _gi._read_harden_flags(self._tmp)
+        self.assertIsNot(c, d)       # no batch -> recomputed each call
+
     # ---- regression: hardening must not change normal results -------
 
     def test_normal_repo_unaffected(self):
