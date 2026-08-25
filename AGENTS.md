@@ -477,10 +477,11 @@ opening files in editor, toggling sidebar etc.) ask the user.
 
 ## Tickets
 
-Tickets are stored under `./tmp/Tickets/`, grouped by module:
+Tickets are stored under `~/Nextcloud/Notes/Markdown-Vault/Tickets/`, grouped by module
+(a Nextcloud-versioned directory outside the repo — no longer `./tmp/Tickets/`):
 
 ```
-tmp/Tickets/
+~/Nextcloud/Notes/Markdown-Vault/Tickets/
   App_Window/
     Draft/      ← feature drafts (ignore)
     Pending/    ← not yet started
@@ -497,6 +498,6 @@ tmp/Tickets/
 ```
 
 Status folders: `Draft`, `Pending`, `Progress`, `Review`, `Done`.
-When a ticket-related keyword is mentioned (e.g. "ticket", "bug", "feature"), search under `./tmp/Tickets/` for relevant files first.
+When a ticket-related keyword is mentioned (e.g. "ticket", "bug", "feature"), search under `~/Nextcloud/Notes/Markdown-Vault/Tickets/` for relevant files first.
 When a ticket changes it's status move it to the appropriate folder.
 If a ticket can be broken down into subtasks, create a folder with the same name. Create tickets for subtasks in that folder.
