@@ -368,6 +368,20 @@ opening files in editor, toggling sidebar etc.) ask the user.
   *change* must be that way — not how to silence the objection. Weakening the guard,
   relaxing the test, or editing the doc is the *second* question, reached only once the
   change has been confirmed necessary as written.
+- **Harden the write path, not only the read path.** When a change defends against a
+  hostile input (a crafted repo, a malicious page, untrusted config), ask what the
+  *countermeasure itself* does on the write path — not only whether it protects the read
+  path. The git-config hardening's worst finding was not a bypass but **data loss**: the
+  read-path filter-blanking, applied to the write path, would have committed unfiltered
+  content and corrupted a git-lfs tree. A countermeasure can be the defect.
+- **When a security check stands in for the property it means, find where the proxy
+  diverges — and check whether the tool answers the real question directly before
+  re-implementing it.** "Does this config belong to the repo (untrusted) or the user
+  (trusted)?" was approximated three times — config *level*, then origin *file*, then a
+  raw `includeIf` path *value* — and each proxy had its own gap (worktree config,
+  `include.path`, a non-matching `includeIf`). `git config --show-scope` answers the real
+  question directly — it resolves includes and evaluates conditions itself — which closed
+  all three at once and made the code smaller than the first attempt.
 - **Build generalists, never one-case special-cases** (applies everywhere, not just
   the importer). A solution must handle the general class of a problem, not target
   exactly one input / site / page. Special-casing a single case is how an app rots
