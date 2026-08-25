@@ -394,11 +394,11 @@ class Sidebar(Gtk.Box):
         self._git_status_label.set_wrap(True)
         box.append(self._git_status_label)
 
-        self._git_diff_label = Gtk.Label(label="")
-        self._git_diff_label.set_xalign(0)
-        self._git_diff_label.set_wrap(True)
-        self._git_diff_label.add_css_class("mono")
-        box.append(self._git_diff_label)
+        self._git_stat_label = Gtk.Label(label="")
+        self._git_stat_label.set_xalign(0)
+        self._git_stat_label.set_wrap(True)
+        self._git_stat_label.add_css_class("mono")
+        box.append(self._git_stat_label)
 
         scrolled = Gtk.ScrolledWindow()
         scrolled.set_child(box)
@@ -409,13 +409,13 @@ class Sidebar(Gtk.Box):
         """Update the git sub-view for the file's repository (async)."""
         if not file_path:
             self._git_status_label.set_text(_("No file open"))
-            self._git_diff_label.set_text("")
+            self._git_stat_label.set_text("")
             return
         repo_dir = Path(file_path).parent
         self._git_generation += 1
         gen = self._git_generation
         status_label = self._git_status_label
-        diff_label = self._git_diff_label
+        stat_label = self._git_stat_label
 
         def _work():
             # One batch: the three hardened reads enumerate the repo config once, not
@@ -424,23 +424,23 @@ class Sidebar(Gtk.Box):
                 if not git_integration.is_git_repo(repo_dir):
                     return gen, False, "", ""
                 status = git_integration.get_status(repo_dir)
-                diff = git_integration.get_diff(repo_dir)
-                return gen, True, status, diff
+                stat = git_integration.get_diff_stat(repo_dir)
+                return gen, True, status, stat
 
         def _apply(res):
-            g, is_repo, status, diff = res
+            g, is_repo, status, stat = res
             if g != self._git_generation:
                 return False
             if not is_repo:
                 status_label.set_text(_("Not a git repository"))
-                diff_label.set_text("")
+                stat_label.set_text("")
             elif status:
                 lines = [f"{e['status']}  {e['path']}" for e in status]
                 status_label.set_text("\n".join(lines))
-                diff_label.set_text(diff[:2000] if diff else "")
+                stat_label.set_text(stat[:2000] if stat else "")
             else:
                 status_label.set_text(_("Working tree clean"))
-                diff_label.set_text(diff[:2000] if diff else "")
+                stat_label.set_text(stat[:2000] if stat else "")
             return False
 
         def _run():

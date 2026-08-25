@@ -250,7 +250,7 @@ class _SyncThread:
 
 class TestSidebarGitBatching(unittest.TestCase):
     """F21: _refresh_git must open one batch_reads block, so the three hardened reads
-    (is_git_repo, get_status, get_diff) enumerate the repo config once, not three times.
+    (is_git_repo, get_status, get_diff_stat) enumerate the repo config once, not three times.
     Guards the wiring — the memoisation mechanism itself is covered in
     test_git_integration. Remove the `with batch_reads()` from _refresh_git and this
     reddens while the mechanism test stays green."""

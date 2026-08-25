@@ -12,7 +12,7 @@ from markdown_vault.vault import git_integration as _gi
 from markdown_vault.vault.git_integration import (
     is_git_repo,
     get_status,
-    get_diff,
+    get_diff_stat,
     get_log,
     commit,
     stage_and_commit,
@@ -80,7 +80,7 @@ class TestGetStatus(_GitRepoMixin, unittest.TestCase):
 
 class TestGetDiff(_GitRepoMixin, unittest.TestCase):
     def test_no_diff_on_clean_tree(self):
-        self.assertEqual(get_diff(self._tmpdir), "")
+        self.assertEqual(get_diff_stat(self._tmpdir), "")
 
     def test_shows_modification(self):
         fp = Path(self._tmpdir) / "test.md"
@@ -88,7 +88,7 @@ class TestGetDiff(_GitRepoMixin, unittest.TestCase):
         os.system(f"git -C {self._tmpdir} add test.md >/dev/null 2>&1")
         os.system(f"git -C {self._tmpdir} commit -m 'init' >/dev/null 2>&1")
         fp.write_text("modified")
-        diff = get_diff(self._tmpdir)
+        diff = get_diff_stat(self._tmpdir)
         self.assertIn("test.md", diff)   # --stat names the changed file, not its content
 
     def test_diff_specific_file(self):
@@ -100,7 +100,7 @@ class TestGetDiff(_GitRepoMixin, unittest.TestCase):
         os.system(f"git -C {self._tmpdir} commit -m 'init' >/dev/null 2>&1")
         fp1.write_text("a2")
         fp2.write_text("b2")
-        diff = get_diff(self._tmpdir, filepath="a.md")
+        diff = get_diff_stat(self._tmpdir, filepath="a.md")
         self.assertIn("a.md", diff)      # --stat for a.md only
         self.assertNotIn("b.md", diff)
 
@@ -144,7 +144,7 @@ class TestStageAndCommit(_GitRepoMixin, unittest.TestCase):
     def test_commits_file_with_leading_dash_name(self):
         # A path starting with "-" must not be parsed as a git option: `git add
         # -x.md` fails with "unknown switch". The "--" separator forces it to be
-        # read as a pathspec. get_diff already does this; stage_and_commit must too.
+        # read as a pathspec. get_diff_stat already does this; stage_and_commit must too.
         (Path(self._tmpdir) / "-x.md").write_text("content")
         ok, output = stage_and_commit(self._tmpdir, ["-x.md"], "Add dash file")
         self.assertTrue(ok, output)
@@ -231,10 +231,10 @@ class TestUntrustedConfigHardening(unittest.TestCase):
         self._tracked_modified()
         self._git("config", "diff.external", str(self._sentinel))
         self._arm()
-        # get_diff runs --stat (F19), which never invokes an external diff program — so it
+        # get_diff_stat runs --stat (F19), which never invokes an external diff program — so it
         # cannot reach diff.external/command/textconv. Drive the MECHANISM (--no-ext-diff/
         # --no-textconv) against a FULL diff instead, or this test checks nothing (ZK1);
-        # test_get_diff_passes_the_neutralising_flags pins that get_diff carries the flags.
+        # test_get_diff_stat_passes_the_neutralising_flags pins that the call site keeps them.
         code, out, _ = _gi._run_git(["diff", "--no-ext-diff", "--no-textconv"], cwd=self._tmp)
         self.assertFalse(self._fired(), "diff.external executed")
         self.assertEqual(code, 0)
@@ -260,8 +260,8 @@ class TestUntrustedConfigHardening(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertIn("note.md", out)
 
-    def test_get_diff_passes_the_neutralising_flags(self):
-        # get_diff runs --stat today (F19), where the diff.* vectors are moot; a future
+    def test_get_diff_stat_passes_the_neutralising_flags(self):
+        # get_diff_stat runs --stat today (F19), where the diff.* vectors are moot; a future
         # full-diff viewer makes --no-ext-diff/--no-textconv load-bearing again, so pin
         # that the call site carries them (the mechanism tests above prove they work).
         seen = {}
@@ -270,7 +270,7 @@ class TestUntrustedConfigHardening(unittest.TestCase):
             seen["args"] = args
             return (0, "", "")
         with unittest.mock.patch.object(_gi, "_run_git", side_effect=spy):
-            _gi.get_diff(self._tmp)
+            _gi.get_diff_stat(self._tmp)
         self.assertIn("--no-ext-diff", seen["args"])
         self.assertIn("--no-textconv", seen["args"])
 
@@ -279,7 +279,7 @@ class TestUntrustedConfigHardening(unittest.TestCase):
         self._attr(f"{name} filter=evil")
         self._git("config", "filter.evil.clean", str(self._sentinel))
         self._arm()
-        diff = get_diff(self._tmp)
+        diff = get_diff_stat(self._tmp)
         self.assertFalse(self._fired(), "filter.<name>.clean executed on git diff")
         self.assertIn("note.md", diff)
 
@@ -291,7 +291,7 @@ class TestUntrustedConfigHardening(unittest.TestCase):
         self._git("config", "extensions.worktreeConfig", "true")
         self._git("config", "--worktree", "filter.evil.clean", str(self._sentinel))
         self._arm()
-        diff = get_diff(self._tmp)
+        diff = get_diff_stat(self._tmp)
         self.assertFalse(self._fired(), "worktree-level filter executed")
         self.assertIn("note.md", diff)
 
@@ -304,7 +304,7 @@ class TestUntrustedConfigHardening(unittest.TestCase):
         inc.write_text('[filter "evil"]\n\tclean = %s\n' % self._sentinel)
         self._git("config", "include.path", "./evil.cfg")
         self._arm()
-        diff = get_diff(self._tmp)
+        diff = get_diff_stat(self._tmp)
         self.assertFalse(self._fired(), "included-file filter executed on git diff")
         self.assertIn("note.md", diff)
 
@@ -316,7 +316,7 @@ class TestUntrustedConfigHardening(unittest.TestCase):
         self._git("config", "filter.corp.clean", str(self._sentinel))
         self._git("config", "filter.corp.required", "true")
         self._arm()
-        diff = get_diff(self._tmp)
+        diff = get_diff_stat(self._tmp)
         self.assertFalse(self._fired(), "required filter executed")
         self.assertIn("note.md", diff, "required filter must be disabled, not failed-to-empty")
 
@@ -390,7 +390,7 @@ class TestUntrustedConfigHardening(unittest.TestCase):
         self._arm()
         with unittest.mock.patch.dict(os.environ, {
                 "GIT_CONFIG_GLOBAL": str(gcfg), "GIT_CONFIG_SYSTEM": os.devnull}):
-            diff = get_diff(self._tmp)
+            diff = get_diff_stat(self._tmp)
         self.assertFalse(self._fired(),
                          "a conditionally-referenced file the repo includes was over-trusted")
         self.assertIn("note.md", diff)
@@ -424,7 +424,7 @@ class TestUntrustedConfigHardening(unittest.TestCase):
 
     def test_normal_repo_unaffected(self):
         name = self._tracked_modified()
-        self.assertIn("note.md", get_diff(self._tmp))
+        self.assertIn("note.md", get_diff_stat(self._tmp))
         self.assertTrue(any(e["path"] == name for e in get_status(self._tmp)))
         self._git("add", "--", name)
         self._git("commit", "-m", "second")

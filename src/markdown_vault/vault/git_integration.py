@@ -5,7 +5,7 @@ to fail silently — when a directory is not a git repository or when
 git is not installed, callers receive empty results rather than exceptions.
 
 Only the READ surface is wired up today: the sidebar's git panel uses
-``is_git_repo``, ``get_status`` and ``get_diff``. The write surface
+``is_git_repo``, ``get_status`` and ``get_diff_stat``. The write surface
 (``commit``, ``stage_and_commit``) and ``get_log`` have no caller yet — they
 are kept for a planned commit/history UI, already hardening-aware (their
 ``harden=False`` and the write-path notes in :func:`_run_git` take effect once
@@ -28,7 +28,7 @@ def batch_reads():
     """Memoise :func:`_read_harden_flags` per repo for the duration of the block.
 
     The sidebar's git panel makes three hardened reads (``is_git_repo``, ``get_status``,
-    ``get_diff``) on the same repo per refresh; without this each re-enumerates the repo
+    ``get_diff_stat``) on the same repo per refresh; without this each re-enumerates the repo
     config, so a refresh spawns six git processes where four would do. Scoped to the block
     with a fresh cache, so there is no stale-config risk — the config cannot change within
     one synchronous refresh (a *persistent* cache would have to invalidate on every
@@ -211,7 +211,7 @@ def get_status(path: str | Path) -> list[dict[str, str]]:
     return entries
 
 
-def get_diff(path: str | Path, filepath: str | None = None) -> str:
+def get_diff_stat(path: str | Path, filepath: str | None = None) -> str:
     """Return a diffstat summary of the working tree — one line per changed file with
     its insertion/deletion counts, plus a totals line — NOT the full unified diff.
 
