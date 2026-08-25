@@ -12,15 +12,85 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 
-def _run_git(args: list[str], cwd: str | Path) -> tuple[int, str, str]:
+def _read_harden_flags(cwd: str | Path) -> list[str]:
+    """``-c`` flags that disable every command-valued git config a READ command would
+    otherwise execute in a repo whose contents the user has not vetted.
+
+    A vault is a directory the user opened; the sidebar's git panel refreshes on every
+    note-open, so a crafted ``.git/config`` / ``.gitattributes`` runs code on the
+    drive-by. Static keys: ``core.fsmonitor`` (fires on status), the ``post-index-change``
+    hook via ``core.hooksPath`` (also on status), and ``gpg.program`` via
+    ``log.showSignature`` (on log). Freely-named ``filter.<name>.{clean,smudge,process}``
+    fire on ``git diff`` (selected by a shipped ``.gitattributes``) and are enumerated by
+    SCOPE: ``git config --list --show-scope`` attributes every key in the merged listing —
+    includes already resolved, ``includeIf`` conditions already evaluated — to the scope
+    that pulled it in (``local``/``worktree`` for the repo, ``global``/``system`` for the
+    user). Neutralise every filter key whose scope is NOT ``global``/``system``; the user's
+    own filters (git-lfs, even via an ``include.path`` in their global config) keep
+    working, and any file the repo pulls in — directly, via ``--worktree`` or via
+    ``include.path`` — is ``local`` and gets blanked, with no path resolution or trust list
+    to get wrong. Keys reported as ``command`` scope (from ``-c`` or ``GIT_CONFIG_KEY_*``)
+    are neutralised too, deliberately: an env var is not the user's config file and can come
+    from anywhere. The enumeration itself runs ``harden=False``, so it injects no ``-c`` into
+    the listing it then evaluates. Each neutralised filter also gets ``required=false``: to
+    git a blanked *required* filter is a FAILED filter and it aborts the operation (git-lfs sets
+    ``required``). Needs git >= 2.26 for ``--show-scope``; on an older git the enumeration
+    fails and the filter family is left unprotected — logged, not silent (see below).
+
+    Read-only by design (see :func:`_run_git`). ``diff.external`` and the
+    ``diff.<driver>`` command/textconv keys are handled by ``--no-ext-diff``/
+    ``--no-textconv`` at the diff call site, not here: an empty ``-c`` for a program-path
+    key makes git exec ``""`` and silently empties the diff. Listing config does not
+    execute command values, so the enumeration runs unhardened and cannot recurse.
+    """
+    flags = [
+        "-c", "core.fsmonitor=",
+        "-c", "core.hooksPath=/dev/null",
+        "-c", "log.showSignature=false",
+    ]
+    blank_keys: list[str] = []
+    names: set[str] = set()
+    code, out, _ = _run_git(
+        ["config", "--list", "--show-scope", "--name-only"], cwd=cwd, harden=False)
+    if code != 0:
+        # git < 2.26 has no --show-scope, so the filter family stays unprotected. Not
+        # attacker-triggerable (an environment property; a broken repo config makes git
+        # refuse the diff too), but security-relevant — surface it instead of swallowing.
+        # The read op still runs, unhardened for filters only.
+        logger.warning(
+            "git config --show-scope failed (rc=%s); filter hardening inactive "
+            "(needs git >= 2.26)", code)
+    else:
+        for line in out.splitlines():
+            scope, _sep, key = line.partition("\t")
+            if not key or scope in ("global", "system"):
+                continue          # the user's own config — trusted
+            parts = key.strip().split(".")
+            if (parts[0] == "filter" and len(parts) >= 3
+                    and parts[-1] in ("clean", "smudge", "process")):
+                blank_keys.append(key.strip())
+                names.add(".".join(parts[1:-1]))
+    for key in blank_keys:
+        flags += ["-c", f"{key}="]
+    for name in sorted(names):
+        flags += ["-c", f"filter.{name}.required=false"]
+    return flags
+
+
+def _run_git(args: list[str], cwd: str | Path, harden: bool = True) -> tuple[int, str, str]:
     """Run a git command and return ``(returncode, stdout, stderr)``.
 
-    Returns ``(-1, "", "<error>")`` when git is not installed or the
-    command times out.
+    Returns ``(-1, "", "<error>")`` when git is not installed or the command times out.
+    With *harden* (the default, for READ commands), command-valued config the repository
+    could weaponise is neutralised first (see :func:`_read_harden_flags`). Pass
+    ``harden=False`` on the WRITE path (commit/add — the user asked for the commit, and
+    blanking a filter there would write unfiltered content into history) and for the
+    enumeration call, which must not recurse.
     """
     # core.quotepath=false: one config home so no call site forgets it (all path output
-    # stays UTF-8, not octal-escaped).
-    prefix = ["-c", "core.quotepath=false"]
+    # stays UTF-8, not octal-escaped). Cosmetic, not security, so it applies on every call
+    # including the write path; the security hardening below is read-only.
+    prefix = ["-c", "core.quotepath=false", *(_read_harden_flags(cwd) if harden else [])]
     try:
         result = subprocess.run(
             ["git", *prefix, *args],
@@ -84,7 +154,11 @@ def get_diff(path: str | Path, filepath: str | None = None) -> str:
 
     When *filepath* is given, only that file's diff is returned.
     """
-    args = ["diff"]
+    # --no-ext-diff/--no-textconv disable diff.external and the diff.<driver>
+    # command/textconv keys (a crafted repo would otherwise run those as commands, see
+    # _read_harden_flags). The flags are the correct mechanism: an empty
+    # `-c diff.external=` makes git exec an empty program and silently empties the diff.
+    args = ["diff", "--no-ext-diff", "--no-textconv"]
     if filepath:
         args.extend(["--", filepath])
     code, stdout, _ = _run_git(args, cwd=path)
@@ -117,7 +191,9 @@ def get_log(path: str | Path, max_count: int = 20) -> list[dict[str, str]]:
 
 def commit(path: str | Path, message: str) -> tuple[bool, str]:
     """Commit all staged changes.  Returns ``(success, output)``."""
-    code, stdout, stderr = _run_git(["commit", "-m", message], cwd=path)
+    # harden=False: the write path is user-triggered, and read-hardening here would blank
+    # the user's own filters and write unfiltered content into history (git-lfs corruption).
+    code, stdout, stderr = _run_git(["commit", "-m", message], cwd=path, harden=False)
     if code != 0:
         logger.warning("git commit failed in %s: %s", path, stderr or stdout)
     return code == 0, stderr or stdout
@@ -130,7 +206,8 @@ def stage_and_commit(
 ) -> tuple[bool, str]:
     """Stage the given *files* and commit.  Returns ``(success, output)``."""
     for fpath in files:
-        code, _, err = _run_git(["add", "--", fpath], cwd=path)
+        # harden=False: see commit() — the write path keeps the user's filters intact.
+        code, _, err = _run_git(["add", "--", fpath], cwd=path, harden=False)
         if code != 0:
             return False, err
     return commit(path, message)
