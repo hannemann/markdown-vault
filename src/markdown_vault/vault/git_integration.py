@@ -175,15 +175,20 @@ def get_status(path: str | Path) -> list[dict[str, str]]:
 
 
 def get_diff(path: str | Path, filepath: str | None = None) -> str:
-    """Return the unified diff for the working tree.
+    """Return a diffstat summary of the working tree — one line per changed file with
+    its insertion/deletion counts, plus a totals line — NOT the full unified diff.
 
-    When *filepath* is given, only that file's diff is returned.
+    The sidebar panel shows this summary; a truncated raw diff (``diff[:2000]``) was
+    neither bounded nor readable. Bounding it at the source (F19) keeps a working tree
+    with large uncommitted changes from building a multi-megabyte string to display a few
+    lines — ``--stat`` output is one line per file, not per diff line. When *filepath* is
+    given, only that file's stat is returned. A real line-level diff viewer is future work.
     """
     # --no-ext-diff/--no-textconv disable diff.external and the diff.<driver>
     # command/textconv keys (a crafted repo would otherwise run those as commands, see
     # _read_harden_flags). The flags are the correct mechanism: an empty
     # `-c diff.external=` makes git exec an empty program and silently empties the diff.
-    args = ["diff", "--no-ext-diff", "--no-textconv"]
+    args = ["diff", "--stat", "--no-ext-diff", "--no-textconv"]
     if filepath:
         args.extend(["--", filepath])
     code, stdout, _ = _run_git(args, cwd=path)

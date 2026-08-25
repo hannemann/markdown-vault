@@ -89,7 +89,7 @@ class TestGetDiff(_GitRepoMixin, unittest.TestCase):
         os.system(f"git -C {self._tmpdir} commit -m 'init' >/dev/null 2>&1")
         fp.write_text("modified")
         diff = get_diff(self._tmpdir)
-        self.assertIn("modified", diff)
+        self.assertIn("test.md", diff)   # --stat names the changed file, not its content
 
     def test_diff_specific_file(self):
         fp1 = Path(self._tmpdir) / "a.md"
@@ -101,8 +101,8 @@ class TestGetDiff(_GitRepoMixin, unittest.TestCase):
         fp1.write_text("a2")
         fp2.write_text("b2")
         diff = get_diff(self._tmpdir, filepath="a.md")
-        self.assertIn("a2", diff)
-        self.assertNotIn("b2", diff)
+        self.assertIn("a.md", diff)      # --stat for a.md only
+        self.assertNotIn("b.md", diff)
 
 
 class TestGetLog(_GitRepoMixin, unittest.TestCase):
@@ -233,7 +233,7 @@ class TestUntrustedConfigHardening(unittest.TestCase):
         self._arm()
         diff = get_diff(self._tmp)
         self.assertFalse(self._fired(), "diff.external executed on git diff")
-        self.assertIn("two", diff, "diff must still show the change")
+        self.assertIn("note.md", diff, "diff must still show the change")
 
     def test_diff_driver_command_not_run(self):
         name = self._tracked_modified()
@@ -242,7 +242,7 @@ class TestUntrustedConfigHardening(unittest.TestCase):
         self._arm()
         diff = get_diff(self._tmp)
         self.assertFalse(self._fired(), "diff.<drv>.command executed")
-        self.assertIn("two", diff)
+        self.assertIn("note.md", diff)
 
     def test_diff_textconv_not_run(self):
         name = self._tracked_modified()
@@ -251,7 +251,7 @@ class TestUntrustedConfigHardening(unittest.TestCase):
         self._arm()
         diff = get_diff(self._tmp)
         self.assertFalse(self._fired(), "diff.<drv>.textconv executed")
-        self.assertIn("two", diff)
+        self.assertIn("note.md", diff)
 
     def test_filter_clean_not_run(self):
         name = self._tracked_modified()
@@ -260,7 +260,7 @@ class TestUntrustedConfigHardening(unittest.TestCase):
         self._arm()
         diff = get_diff(self._tmp)
         self.assertFalse(self._fired(), "filter.<name>.clean executed on git diff")
-        self.assertIn("two", diff)
+        self.assertIn("note.md", diff)
 
     # ---- ZG2: worktree-level config bypasses a --local-only enumeration
 
@@ -272,7 +272,7 @@ class TestUntrustedConfigHardening(unittest.TestCase):
         self._arm()
         diff = get_diff(self._tmp)
         self.assertFalse(self._fired(), "worktree-level filter executed")
-        self.assertIn("two", diff)
+        self.assertIn("note.md", diff)
 
     # ---- ZH1: a filter defined in an INCLUDED config file belongs to no level
 
@@ -285,7 +285,7 @@ class TestUntrustedConfigHardening(unittest.TestCase):
         self._arm()
         diff = get_diff(self._tmp)
         self.assertFalse(self._fired(), "included-file filter executed on git diff")
-        self.assertIn("two", diff)
+        self.assertIn("note.md", diff)
 
     # ---- ZG3: a required filter blanked to "" is a FAILED filter -> empty diff
 
@@ -297,7 +297,7 @@ class TestUntrustedConfigHardening(unittest.TestCase):
         self._arm()
         diff = get_diff(self._tmp)
         self.assertFalse(self._fired(), "required filter executed")
-        self.assertIn("two", diff, "required filter must be disabled, not failed-to-empty")
+        self.assertIn("note.md", diff, "required filter must be disabled, not failed-to-empty")
 
     # ---- ZG5: gpg.program via log.showSignature on git log ----------
 
@@ -372,7 +372,7 @@ class TestUntrustedConfigHardening(unittest.TestCase):
             diff = get_diff(self._tmp)
         self.assertFalse(self._fired(),
                          "a conditionally-referenced file the repo includes was over-trusted")
-        self.assertIn("two", diff)
+        self.assertIn("note.md", diff)
 
     # ---- ZJ2: an old git (no --show-scope) fails the enumeration -> log, not silent
 
@@ -392,7 +392,7 @@ class TestUntrustedConfigHardening(unittest.TestCase):
 
     def test_normal_repo_unaffected(self):
         name = self._tracked_modified()
-        self.assertIn("two", get_diff(self._tmp))
+        self.assertIn("note.md", get_diff(self._tmp))
         self.assertTrue(any(e["path"] == name for e in get_status(self._tmp)))
         self._git("add", "--", name)
         self._git("commit", "-m", "second")
