@@ -3,6 +3,13 @@
 Thin wrapper around ``git`` CLI commands.  All functions are designed
 to fail silently — when a directory is not a git repository or when
 git is not installed, callers receive empty results rather than exceptions.
+
+Only the READ surface is wired up today: the sidebar's git panel uses
+``is_git_repo``, ``get_status`` and ``get_diff``. The write surface
+(``commit``, ``stage_and_commit``) and ``get_log`` have no caller yet — they
+are kept for a planned commit/history UI, already hardening-aware (their
+``harden=False`` and the write-path notes in :func:`_run_git` take effect once
+that UI is wired up).
 """
 
 import contextlib
@@ -65,12 +72,9 @@ def _read_harden_flags(cwd: str | Path) -> list[str]:
     ``required``). Needs git >= 2.26 for ``--show-scope``; on an older git the enumeration
     fails and the filter family is left unprotected — logged, not silent (see below).
 
-    **Boundary (F18):** this covers only the READ commands the wrapper runs today —
-    ``status``, ``diff``, ``log``, ``rev-parse`` — none of which touch the network or a
-    TTY. The moment a ``fetch``/``pull``/``push`` is added, keys like ``credential.helper``,
-    ``core.sshCommand``, ``url.*.insteadOf`` and ``protocol.*`` become live command
-    vectors and must be neutralised here too. ``core.pager`` and aliases are absent on
-    purpose (no TTY; aliases cannot shadow built-ins).
+    Boundary: this covers the read commands the wrapper runs today; if a network command
+    (``fetch``/``pull``/``push``) is ever added, ``credential.helper``, ``core.sshCommand``
+    and friends become live and must be neutralised here too.
 
     **Memoisation (F16):** within a :func:`batch_reads` block (the sidebar wraps its
     refresh in one) the result is cached per repo, so the three hardened reads of one
@@ -136,13 +140,14 @@ def _run_git(args: list[str], cwd: str | Path, harden: bool = True) -> tuple[int
     blanking a filter there would write unfiltered content into history) and for the
     enumeration call, which must not recurse.
 
-    Accepted residual (F17): the write path is therefore fully unhardened, so a crafted
-    repo's hooks (``pre-commit``/``commit-msg``/``post-index-change``) and ``core.fsmonitor``
-    run the first time the user commits in that vault. That is a different, milder risk
-    class than the read path — it needs a deliberate commit, not merely opening a note — and
-    disabling *hooks* here (unlike blanking *filters*) would silently drop the user's own
-    legitimate hooks. Left live by decision; split ``harden`` into filter/hook concerns only
-    if that trade-off is ever revisited.
+    The write path is not reached today (``commit``/``stage_and_commit`` have no caller —
+    see the module docstring), so this is foresight, not a live residual. When a commit UI
+    is wired up: the write path stays unhardened so a filter is not blanked into history
+    (git-lfs corruption), but that also leaves a crafted repo's hooks
+    (``pre-commit``/``commit-msg``/``post-index-change``) and ``core.fsmonitor`` running on
+    the user's own commit — a milder risk class (a deliberate action, not a drive-by read).
+    Disabling *hooks* there (unlike blanking *filters*) would drop the user's own legitimate
+    hooks, so split ``harden`` into filter/hook concerns and decide that trade-off then.
     """
     # core.quotepath=false: one config home so no call site forgets it (all path output
     # stays UTF-8, not octal-escaped). Cosmetic, not security, so it applies on every call

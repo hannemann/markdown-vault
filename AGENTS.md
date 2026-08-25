@@ -373,7 +373,9 @@ opening files in editor, toggling sidebar etc.) ask the user.
   *countermeasure itself* does on the write path — not only whether it protects the read
   path. The git-config hardening's worst finding was not a bypass but **data loss**: the
   read-path filter-blanking, applied to the write path, would have committed unfiltered
-  content and corrupted a git-lfs tree. A countermeasure can be the defect.
+  content and corrupted a git-lfs tree. A countermeasure can be the defect. (That write
+  path isn't wired up yet — the guard is foresight for a planned commit UI — which is the
+  point: harden it before it ships, not after it corrupts something.)
 - **When a security check stands in for the property it means, find where the proxy
   diverges — and check whether the tool answers the real question directly before
   re-implementing it.** "Does this config belong to the repo (untrusted) or the user
