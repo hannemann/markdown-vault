@@ -31,11 +31,28 @@ def _read_harden_flags(cwd: str | Path) -> list[str]:
     ``include.path`` — is ``local`` and gets blanked, with no path resolution or trust list
     to get wrong. Keys reported as ``command`` scope (from ``-c`` or ``GIT_CONFIG_KEY_*``)
     are neutralised too, deliberately: an env var is not the user's config file and can come
-    from anywhere. The enumeration itself runs ``harden=False``, so it injects no ``-c`` into
-    the listing it then evaluates. Each neutralised filter also gets ``required=false``: to
-    git a blanked *required* filter is a FAILED filter and it aborts the operation (git-lfs sets
+    from anywhere. The enumeration runs ``harden=False``, so it carries no *hardening*
+    ``-c`` — only the standing ``core.quotepath=false`` from :func:`_run_git`, which appears
+    as ``command`` scope in its own listing but is a ``core.*`` key, not a filter, so the
+    loop below skips it. Each neutralised filter also gets ``required=false``: to git a
+    blanked *required* filter is a FAILED filter and it aborts the operation (git-lfs sets
     ``required``). Needs git >= 2.26 for ``--show-scope``; on an older git the enumeration
     fails and the filter family is left unprotected — logged, not silent (see below).
+
+    **Boundary (F18):** this covers only the READ commands the wrapper runs today —
+    ``status``, ``diff``, ``log``, ``rev-parse`` — none of which touch the network or a
+    TTY. The moment a ``fetch``/``pull``/``push`` is added, keys like ``credential.helper``,
+    ``core.sshCommand``, ``url.*.insteadOf`` and ``protocol.*`` become live command
+    vectors and must be neutralised here too. ``core.pager`` and aliases are absent on
+    purpose (no TTY; aliases cannot shadow built-ins).
+
+    **No memoisation (F16):** ``_read_harden_flags`` spawns one ``git config`` per hardened
+    read op, so the note-open path pays a second git process per op. Deliberately not
+    cached: a correct cache must invalidate on every *included* config file too — and their
+    paths are only known after parsing — so a naive ``.git/config`` mtime cache would serve
+    stale hardening after an ``include.path`` change, a security regression rather than a
+    perf bug. Revisit as its own perf ticket with include-aware invalidation if the cost
+    ever bites.
 
     Read-only by design (see :func:`_run_git`). ``diff.external`` and the
     ``diff.<driver>`` command/textconv keys are handled by ``--no-ext-diff``/
@@ -86,6 +103,14 @@ def _run_git(args: list[str], cwd: str | Path, harden: bool = True) -> tuple[int
     ``harden=False`` on the WRITE path (commit/add — the user asked for the commit, and
     blanking a filter there would write unfiltered content into history) and for the
     enumeration call, which must not recurse.
+
+    Accepted residual (F17): the write path is therefore fully unhardened, so a crafted
+    repo's hooks (``pre-commit``/``commit-msg``/``post-index-change``) and ``core.fsmonitor``
+    run the first time the user commits in that vault. That is a different, milder risk
+    class than the read path — it needs a deliberate commit, not merely opening a note — and
+    disabling *hooks* here (unlike blanking *filters*) would silently drop the user's own
+    legitimate hooks. Left live by decision; split ``harden`` into filter/hook concerns only
+    if that trade-off is ever revisited.
     """
     # core.quotepath=false: one config home so no call site forgets it (all path output
     # stays UTF-8, not octal-escaped). Cosmetic, not security, so it applies on every call
