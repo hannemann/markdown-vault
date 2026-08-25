@@ -231,27 +231,48 @@ class TestUntrustedConfigHardening(unittest.TestCase):
         self._tracked_modified()
         self._git("config", "diff.external", str(self._sentinel))
         self._arm()
-        diff = get_diff(self._tmp)
-        self.assertFalse(self._fired(), "diff.external executed on git diff")
-        self.assertIn("note.md", diff, "diff must still show the change")
+        # get_diff runs --stat (F19), which never invokes an external diff program — so it
+        # cannot reach diff.external/command/textconv. Drive the MECHANISM (--no-ext-diff/
+        # --no-textconv) against a FULL diff instead, or this test checks nothing (ZK1);
+        # test_get_diff_passes_the_neutralising_flags pins that get_diff carries the flags.
+        code, out, _ = _gi._run_git(["diff", "--no-ext-diff", "--no-textconv"], cwd=self._tmp)
+        self.assertFalse(self._fired(), "diff.external executed")
+        self.assertEqual(code, 0)
+        self.assertIn("note.md", out)
 
     def test_diff_driver_command_not_run(self):
         name = self._tracked_modified()
         self._attr(f"{name} diff=evil")
         self._git("config", "diff.evil.command", str(self._sentinel))
         self._arm()
-        diff = get_diff(self._tmp)
+        code, out, _ = _gi._run_git(["diff", "--no-ext-diff", "--no-textconv"], cwd=self._tmp)
         self.assertFalse(self._fired(), "diff.<drv>.command executed")
-        self.assertIn("note.md", diff)
+        self.assertEqual(code, 0)
+        self.assertIn("note.md", out)
 
     def test_diff_textconv_not_run(self):
         name = self._tracked_modified()
         self._attr(f"{name} diff=evil")
         self._git("config", "diff.evil.textconv", str(self._sentinel))
         self._arm()
-        diff = get_diff(self._tmp)
+        code, out, _ = _gi._run_git(["diff", "--no-ext-diff", "--no-textconv"], cwd=self._tmp)
         self.assertFalse(self._fired(), "diff.<drv>.textconv executed")
-        self.assertIn("note.md", diff)
+        self.assertEqual(code, 0)
+        self.assertIn("note.md", out)
+
+    def test_get_diff_passes_the_neutralising_flags(self):
+        # get_diff runs --stat today (F19), where the diff.* vectors are moot; a future
+        # full-diff viewer makes --no-ext-diff/--no-textconv load-bearing again, so pin
+        # that the call site carries them (the mechanism tests above prove they work).
+        seen = {}
+
+        def spy(args, cwd, **kw):
+            seen["args"] = args
+            return (0, "", "")
+        with unittest.mock.patch.object(_gi, "_run_git", side_effect=spy):
+            _gi.get_diff(self._tmp)
+        self.assertIn("--no-ext-diff", seen["args"])
+        self.assertIn("--no-textconv", seen["args"])
 
     def test_filter_clean_not_run(self):
         name = self._tracked_modified()
