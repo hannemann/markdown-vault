@@ -127,7 +127,7 @@ def stage_and_commit(
 ) -> tuple[bool, str]:
     """Stage the given *files* and commit.  Returns ``(success, output)``."""
     for fpath in files:
-        code, _, err = _run_git(["add", fpath], cwd=path)
+        code, _, err = _run_git(["add", "--", fpath], cwd=path)
         if code != 0:
             return False, err
     return commit(path, message)

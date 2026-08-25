@@ -138,6 +138,15 @@ class TestStageAndCommit(_GitRepoMixin, unittest.TestCase):
         ok, _ = commit(self._tmpdir, "Nothing staged")
         self.assertFalse(ok)
 
+    def test_commits_file_with_leading_dash_name(self):
+        # A path starting with "-" must not be parsed as a git option: `git add
+        # -x.md` fails with "unknown switch". The "--" separator forces it to be
+        # read as a pathspec. get_diff already does this; stage_and_commit must too.
+        (Path(self._tmpdir) / "-x.md").write_text("content")
+        ok, output = stage_and_commit(self._tmpdir, ["-x.md"], "Add dash file")
+        self.assertTrue(ok, output)
+        self.assertEqual(get_status(self._tmpdir), [])
+
 
 if __name__ == "__main__":
     unittest.main()
