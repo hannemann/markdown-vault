@@ -37,7 +37,11 @@ class TestIsGitRepo(_GitRepoMixin, unittest.TestCase):
         self.assertTrue(is_git_repo(self._tmpdir))
 
     def test_rejects_non_repo(self):
-        self.assertFalse(is_git_repo("/tmp"))
+        # Under `make` this lands in the pinned ./tmp INSIDE this repo; the ceiling
+        # (GIT_CEILING_DIRECTORIES in TEST_ENV) stops git's upward search so it is
+        # still seen as non-repo. Drop that ceiling and this reddens — by design.
+        with tempfile.TemporaryDirectory() as d:
+            self.assertFalse(is_git_repo(d))
 
 
 class TestGetStatus(_GitRepoMixin, unittest.TestCase):
@@ -75,7 +79,15 @@ class TestGetStatus(_GitRepoMixin, unittest.TestCase):
         self.assertNotIn("\\", status[0]["path"])
 
     def test_non_repo_returns_empty(self):
-        self.assertEqual(get_status("/tmp"), [])
+        # get_status() returns [] for BOTH a non-repo and a clean repo, so return value
+        # alone cannot tell them apart. Without the TEST_ENV ceiling this temp dir
+        # resolves into THIS repo and the result would track the project tree's state
+        # (empty when clean, non-empty on any modified tracked file); the ceiling makes
+        # it deterministic. assertFalse(is_git_repo(d)) pins down what get_status cannot:
+        # that d really is treated as a non-repo, not just a clean one.
+        with tempfile.TemporaryDirectory() as d:
+            self.assertFalse(is_git_repo(d))
+            self.assertEqual(get_status(d), [])
 
 
 class TestGetDiff(_GitRepoMixin, unittest.TestCase):

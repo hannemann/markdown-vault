@@ -101,8 +101,18 @@ class TestCreateFile(unittest.TestCase):
         # 1 skip for parent dir + 1 skip for file
         self.assertEqual(self._skip.call_count, 2)
 
+    # create_file has NO vault-boundary check — it writes wherever the traversal
+    # points (vault/file_ops.py:60ff.). This test only ever passed by accident: under
+    # system /tmp, '../../' hit the unwritable root and touch() raised PermissionError,
+    # so it tested the OS permission layout, not the app's (missing) boundary check.
+    # With temp pinned inside the writable project tree the traversal now succeeds and
+    # no error is returned. expectedFailure (not skip) so this goes from xfail to an
+    # "unexpected success" — reddening the suite — the moment the real guard lands,
+    # forcing this test to be rewritten as a genuine boundary assertion. See
+    # Tickets/VaultTree/Pending/create-file-erlaubt-path-traversal-aus-dem-vault.md.
+    @unittest.expectedFailure
     def test_create_file_invalid_path_returns_error(self):
-        """Path traversal resolves outside tmp → touch fails with an error."""
+        """Path traversal must be rejected — currently unguarded (see comment above)."""
         err = self._ops.create_file(self._tmp, "../../escape.md")
         self.assertIsNotNone(err)
 

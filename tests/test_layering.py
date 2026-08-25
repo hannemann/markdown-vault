@@ -10,6 +10,7 @@ files move into subpackages, and stays green at every intermediate state.
 
 import ast
 import io
+import os
 import shutil
 import subprocess
 import sys
@@ -470,6 +471,28 @@ class TestNoFStringInGettext(unittest.TestCase):
         # a non-f-string local passed to _ must NOT be flagged (no false red)
         ok = ast.parse('def f():\n    msg = "plain"\n    return _(msg)\n')
         self.assertEqual(list(self._offending_lines(ok)), [])
+
+
+class TestTempdirPinned(unittest.TestCase):
+    """The Makefile pins TMPDIR into the repo's ./tmp (TEST_ENV), so the ~44 test
+    files using tempfile do not scatter into the system /tmp — the "never use /tmp"
+    convention held as a property of the run, not per-test discipline. This guards BOTH
+    failure modes: TMPDIR dropped from a pinned run (→ files back in /tmp), and TMPDIR
+    set but inert (tempfile silently falls back to /tmp when the pinned directory does
+    not exist). Keying the skip on TMPDIR alone would only catch the second and SKIP the
+    first — so key "is this a pinned run?" on a different TEST_ENV var, then assert
+    TMPDIR is both present and effective."""
+
+    def test_tempfile_resolves_inside_the_repo(self):
+        pinned_run = os.environ.get("MDV_CONFIG_DIR")   # any TEST_ENV var: the run is pinned
+        tmpdir = os.environ.get("TMPDIR")
+        if not pinned_run and not tmpdir:
+            self.skipTest("not a pinned run (bare `python -m unittest`)")
+        self.assertTrue(
+            tmpdir, "TEST_ENV pins this run but TMPDIR is missing — temp files go to /tmp")
+        self.assertEqual(
+            tempfile.gettempdir(), tmpdir,
+            "TMPDIR is set but tempfile fell back — the pinned directory is missing")
 
 
 if __name__ == "__main__":

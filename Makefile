@@ -21,9 +21,24 @@ VENV := $(HOME)/.local/share/$(APP_ID)/venv
 TEST_HOME := $(CURDIR)/tmp/test-home
 # LC_ALL=C LANGUAGE= pins the locale: once gettext (core/i18n.py) translates, tests that
 # assert on English UI strings would break on a non-English machine. Pin here, not per test.
+# GIT_CEILING_DIRECTORIES stops git's upward repo search at TEST_HOME. Without it,
+# pinning TMPDIR into ./tmp (inside THIS git work tree) makes a temp dir look like it
+# lives in the markdown-vault repo: is_git_repo(tempdir) walks up, finds our .git,
+# returns True — and the "not a repo" tests go red. Value is TEST_HOME (NOT CURDIR: a
+# ceiling on the project root would cut off git discovery from every project subdir).
+# A test that git-inits its own repo under TMPDIR still works — git finds that repo's
+# .git before reaching the ceiling. Test-only: _run_git inherits os.environ, the shipped
+# app never sees this. Fails safe: if the ceiling stops being set, those tests go red.
 TEST_ENV := MDV_CONFIG_DIR=$(TEST_HOME)/config XDG_STATE_HOME=$(TEST_HOME)/state \
             XDG_CACHE_HOME=$(TEST_HOME)/cache XDG_DATA_HOME=$(TEST_HOME)/data \
+            TMPDIR=$(TEST_HOME)/tmp GIT_CEILING_DIRECTORIES=$(TEST_HOME) \
             LC_ALL=C LANGUAGE=
+
+# tempfile (mkdtemp etc.) honours TMPDIR only if the directory EXISTS — Python's
+# gettempdir() silently falls back to the system /tmp otherwise. Create it as an
+# order-only prerequisite of every test recipe so the pin above actually takes effect.
+$(TEST_HOME)/tmp:
+	@mkdir -p $@
 
 # A suite that ends silent is what makes a NEW warning noticeable — habituation to
 # noise is how the settings reset stayed unexplained for an afternoon. CPython ignores
@@ -165,7 +180,7 @@ import yaml; print('yaml:', yaml.__version__); \
 import markdown; print('markdown:', markdown.__version__); \
 import pymdownx; print('pymdownx: OK')"
 
-test:
+test: | $(TEST_HOME)/tmp
 	@echo "=> Running tests..."
 	@PY=$$([ -x "$(VENV)/bin/python" ] && echo "$(VENV)/bin/python" || echo "$(PYTHON)"); \
 	$(TEST_ENV) PYTHONPATH=$(PYTHONPATH_DIR) "$$PY" $(TEST_WARN) -m unittest discover -s tests -v
@@ -176,7 +191,7 @@ test:
 #   make test-one T=test_preview.TestBlankLineBeforeList
 #   make test-one T=test_preview.TestBlankLineBeforeList.test_thematic_break_is_not_treated_as_a_list
 #   make test-one K=blank_line          # every test whose name matches
-test-one:
+test-one: | $(TEST_HOME)/tmp
 	@test -n "$(T)$(K)" || { echo "usage: make test-one T=<module[.Class[.method]]> | K=<name-substring>"; exit 2; }
 	@PY=$$([ -x "$(VENV)/bin/python" ] && echo "$(VENV)/bin/python" || echo "$(PYTHON)"); \
 	if [ -n "$(T)" ]; then \
@@ -187,7 +202,7 @@ test-one:
 	  $(TEST_ENV) PYTHONPATH=$(PYTHONPATH_DIR) "$$PY" $(TEST_WARN) -m unittest discover -s tests -v -k "$(K)"; \
 	fi
 
-coverage:
+coverage: | $(TEST_HOME)/tmp
 	@test -n "$(FILE)" || { echo "usage: make coverage FILE=<src-file> [T=<test_module ...>]"; exit 2; }
 	@PY=$$([ -x "$(VENV)/bin/python" ] && echo "$(VENV)/bin/python" || echo "$(PYTHON)"); \
 	$(TEST_ENV) "$$PY" $(TEST_WARN) scripts/coverage.py "$(FILE)" $(T)
