@@ -18,9 +18,12 @@ def _run_git(args: list[str], cwd: str | Path) -> tuple[int, str, str]:
     Returns ``(-1, "", "<error>")`` when git is not installed or the
     command times out.
     """
+    # core.quotepath=false: one config home so no call site forgets it (all path output
+    # stays UTF-8, not octal-escaped).
+    prefix = ["-c", "core.quotepath=false"]
     try:
         result = subprocess.run(
-            ["git", *args],
+            ["git", *prefix, *args],
             cwd=cwd,
             capture_output=True,
             text=True,
@@ -49,7 +52,7 @@ def get_status(path: str | Path) -> list[dict[str, str]]:
     ``"??"``, ``"R "``).  For renames, only the new path is returned.
     """
     code, stdout, _ = _run_git(
-        ["-c", "core.quotepath=false", "status", "--porcelain", "-z"],
+        ["status", "--porcelain", "-z"],
         cwd=path,
     )
     if code != 0:
