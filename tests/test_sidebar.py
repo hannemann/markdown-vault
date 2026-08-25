@@ -238,16 +238,6 @@ class TestSidebarRefreshExternalEvent(unittest.TestCase):
         sidebar._refresh_details.assert_not_called()
 
 
-class _SyncThread:
-    """threading.Thread stand-in that runs its target on .start()."""
-
-    def __init__(self, target):
-        self._target = target
-
-    def start(self):
-        self._target()
-
-
 class TestSidebarGitBatching(unittest.TestCase):
     """F21: _refresh_git must open one batch_reads block, so the three hardened reads
     (is_git_repo, get_status, get_diff_stat) enumerate the repo config once, not three times.
@@ -272,24 +262,41 @@ class TestSidebarGitBatching(unittest.TestCase):
         shutil.rmtree(self._tmp, ignore_errors=True)
 
     def test_one_refresh_enumerates_config_once(self):
+        import threading
         import unittest.mock as mock
         import markdown_vault.ui.sidebar as sb
         from markdown_vault.vault import git_integration as gi
         real_run = gi._run_git
         enumerations = []
+        threads = []
 
         def counting(args, cwd, harden=True):
             if args[:3] == ["config", "--list", "--show-scope"]:
                 enumerations.append(1)
             return real_run(args, cwd, harden=harden)
 
-        with mock.patch.object(sb.threading, "Thread",
-                               side_effect=lambda target, daemon: _SyncThread(target)), \
+        class _CapturingThread(threading.Thread):
+            def __init__(self, target, daemon=None):
+                super().__init__(target=target, daemon=daemon)
+                threads.append(self)
+
+        # A REAL worker thread, joined — not a synchronous stub. batch_reads caches
+        # thread-locally, so a block opened on the CALLER thread would leave the worker
+        # uncached; a same-thread stub cannot see that (ZL1). idle_add is a no-op: every
+        # counted git call is inside _work(), _apply (which it schedules) touches no git.
+        with mock.patch.object(sb.threading, "Thread", _CapturingThread), \
              mock.patch.object(sb.GLib, "idle_add", lambda *a, **k: None), \
              mock.patch.object(gi, "_run_git", side_effect=counting):
             self.sidebar._refresh_git(str(self._tmp / "note.md"))
+            # join is load-bearing, not tidiness: the enumeration is the FIRST git call in
+            # the worker, so the counter reads 1 mid-flight even when batching is broken —
+            # measured. Without the join a real regression (3 enumerations) passes green.
+            for t in threads:
+                t.join(timeout=10)
         self.assertEqual(len(enumerations), 1,
-                         "one refresh must enumerate the config once (batch_reads wiring)")
+                         "one refresh must enumerate once — and the batch block must sit on "
+                         "the worker thread; batch_reads is thread-local, so a block opened "
+                         "on the caller thread would leave the worker uncached")
 
 
 if __name__ == "__main__":
