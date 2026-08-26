@@ -59,6 +59,13 @@ class TestGraphLensPersistence(unittest.TestCase):
             {"fisheye": False, "labels": False, "radius": 90.0, "strength": 4.0,
              "label_radius": 220.0})
 
+    def test_clamps_garbage_from_disk(self):
+        me = mock.Mock()
+        me._settings = {"graph": {"lens_strength": -5, "lens_radius": "abc"}}
+        cfg = MainWindow._graph_lens_config(me)
+        self.assertEqual(cfg["strength"], 0.6)     # clamped to the range floor
+        self.assertEqual(cfg["radius"], 140.0)     # bad type -> default
+
     def test_persist_writes_all_keys_and_saves(self):
         me = mock.Mock()
         me._settings = {}

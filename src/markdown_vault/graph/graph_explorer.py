@@ -16,11 +16,7 @@ gi.require_version("Gtk", "4.0")
 from gi.repository import Gtk, GObject
 
 from markdown_vault.core.i18n import _
-from markdown_vault.graph.graph_view import GraphView
-
-
-_LENS_DEFAULTS = {"fisheye": True, "labels": True, "radius": 140.0,
-                  "strength": 2.6, "label_radius": 160.0}
+from markdown_vault.graph.graph_view import GraphView, LENS_DEFAULTS, LENS_RANGES
 
 
 class GraphExplorer(Gtk.Box):
@@ -35,7 +31,7 @@ class GraphExplorer(Gtk.Box):
         super().__init__(orientation=Gtk.Orientation.VERTICAL)
         self._get_payload = get_payload
         self._active_tags: set = set()
-        self._lens = dict(_LENS_DEFAULTS, **(lens_config or {}))
+        self._lens = dict(LENS_DEFAULTS, **(lens_config or {}))
         self._on_lens_config_changed = on_lens_config_changed
 
         # ── toolbar ──
@@ -112,21 +108,18 @@ class GraphExplorer(Gtk.Box):
         self._labels_chk.connect("toggled", self._on_lens_changed)
         box.append(self._labels_chk)
 
-        # Ranges are symmetric around the defaults, so the slider centre (marked with a
-        # tick) is the recommended value.
+        # LENS_RANGES are symmetric around the defaults, so the slider centre (marked with
+        # a tick) is the recommended value.
         box.append(Gtk.Label(label=_("Lens size"), xalign=0, margin_top=4))
-        self._radius_scale = self._slider(
-            40, 240, 10, self._lens["radius"], _LENS_DEFAULTS["radius"])
+        self._radius_scale = self._slider("radius")
         box.append(self._radius_scale)
 
         box.append(Gtk.Label(label=_("Strength"), xalign=0, margin_top=4))
-        self._strength_scale = self._slider(
-            0.6, 4.6, 0.1, self._lens["strength"], _LENS_DEFAULTS["strength"])
+        self._strength_scale = self._slider("strength")
         box.append(self._strength_scale)
 
         box.append(Gtk.Label(label=_("Label radius"), xalign=0, margin_top=4))
-        self._label_radius_scale = self._slider(
-            20, 300, 10, self._lens["label_radius"], _LENS_DEFAULTS["label_radius"])
+        self._label_radius_scale = self._slider("label_radius")
         box.append(self._label_radius_scale)
 
         pop = Gtk.Popover()
@@ -136,11 +129,13 @@ class GraphExplorer(Gtk.Box):
         btn.set_tooltip_text(_("Cursor lens options"))
         return btn
 
-    def _slider(self, lo, hi, step, value, mark) -> Gtk.Scale:
-        # set_value before connecting, so restoring the saved value doesn't fire a change.
+    def _slider(self, key) -> Gtk.Scale:
+        # Range, step, default tick and the seed value all come from `key`, so a slider
+        # cannot be built for one option but seeded from another (LENS_* is the one source).
+        lo, hi, step = LENS_RANGES[key]
         scale = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, lo, hi, step)
-        scale.add_mark(mark, Gtk.PositionType.BOTTOM, None)   # tick at the default (centre)
-        scale.set_value(value)
+        scale.add_mark(LENS_DEFAULTS[key], Gtk.PositionType.BOTTOM, None)   # tick = default
+        scale.set_value(self._lens[key])   # set before connecting, so it fires no change
         scale.set_size_request(180, -1)
         scale.set_draw_value(False)
         scale.connect("value-changed", self._on_lens_changed)

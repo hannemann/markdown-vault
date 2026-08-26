@@ -174,18 +174,20 @@ function computeLens(){
     const r=d/Rw, g=((D+1)*r)/(D*r+1), s=g*Rw/d;   // radial expansion ratio, >1 near focus
     n._lx=fx+dx*s; n._ly=fy+dy*s; n._ls=Math.min(LENS_SZMAX,s);}
 }
-// The lens only engages once the layout has SETTLED (physics loop stopped, raf===0);
-// distorting a still-exploding graph paints labels all over a moving cloud.
-function settled(){return raf===0;}
+// The lens only engages once the picture has SETTLED — no force layout (raf) AND no zoom
+// flight (zraf) in progress; distorting a still-moving graph paints labels over a moving
+// cloud (the settling explosion, or a fit/zoom animation).
+function settled(){return raf===0&&zraf===0;}
 function distorting(){return cursorOn&&lensEnabled&&settled();}
 function px(n){return distorting()?n._lx:n.x;}
 function py(n){return distorting()?n._ly:n.y;}
 function pr(n){return radius(n)*(distorting()?n._ls:1);}
-// Coalesce cursor-driven redraws to one per frame; skip if the physics loop already draws.
-function requestLensDraw(){ if(lensRaf||raf)return;
+// Coalesce cursor-driven redraws to one per frame; skip while any animation loop already
+// draws (physics raf or zoom zraf) — it would paint a mid-animation frame.
+function requestLensDraw(){ if(lensRaf||raf||zraf)return;
   lensRaf=requestAnimationFrame(()=>{lensRaf=0; draw();}); }
-function setLensConfig(lens,labels,radius,strength,labelRadius){
-  lensEnabled=!!lens; labelsEnabled=!!labels; lensR=radius; lensD=strength;
+function setLensConfig(lens,labels,radiusPx,strength,labelRadius){  // radiusPx: not radius(n)
+  lensEnabled=!!lens; labelsEnabled=!!labels; lensR=radiusPx; lensD=strength;
   labelR=labelRadius; draw();}
 
 function strokeEdges(pred,style,w){  // one path, one stroke = one draw call for all matches
@@ -446,7 +448,11 @@ function kick(){ if(raf)return; const loop=()=>{
   for(let k=0;k<iters;k++)step();
   draw();
   if(alpha>0.02){raf=requestAnimationFrame(loop);}
-  else {raf=0; if(fitPending){fitPending=false; zoomTo(nodes);}} };
+  else {raf=0;
+    // The last frame above was drawn while raf was still set, so settled() was false for
+    // it. Now that it is true, draw once more so a lens/labels appear on a resting cursor
+    // without needing a jiggle — unless a fit/zoom is about to animate and redraw anyway.
+    if(fitPending){fitPending=false; zoomTo(nodes);} else requestLensDraw();} };
   raf=requestAnimationFrame(loop);}
 
 // Messages are "verb\tpath[\tcolour]"; the host (parse_graph_message) routes by verb.
@@ -533,7 +539,8 @@ function animateTo(s,x,y){
   const ease=t=>t<0.5?2*t*t:1-Math.pow(-2*t+2,2)/2;  // ease-in-out
   const loop=now=>{ if(start===null)start=now; const k=Math.min(1,(now-start)/dur),e=ease(k);
     scale=s0+ds*e; tx=x0+dx*e; ty=y0+dy*e; draw();
-    zraf = k<1 ? requestAnimationFrame(loop) : 0; };
+    if(k<1){zraf=requestAnimationFrame(loop);}
+    else {zraf=0; requestLensDraw();} };   // one settled frame after the flight (AE1)
   zraf=requestAnimationFrame(loop);
 }
 function frameOf(list,factor){  // [scale,tx,ty] to frame `list` at factor×fit, or null
@@ -642,6 +649,38 @@ def parse_graph_message(raw: str):
     return ("", "", "")
 
 
+# Single source of the cursor-lens defaults and the numeric (lo, hi, step) ranges — used
+# for the GraphView seed, the explorer's sliders, and clamping values read off disk.
+LENS_DEFAULTS = {"fisheye": True, "labels": True, "radius": 140.0,
+                 "strength": 2.6, "label_radius": 160.0}
+LENS_RANGES = {"radius": (40.0, 240.0, 10.0), "strength": (0.6, 4.6, 0.1),
+               "label_radius": (20.0, 300.0, 10.0)}
+_LENS_KEYS = ("fisheye", "labels", "radius", "strength", "label_radius")
+
+
+def clamp_lens_config(cfg: dict) -> dict:
+    """Coerce and clamp a lens config to safe values. settings.yaml is meant to be
+    hand-edited, so a typo (``strength: abc``, a negative radius) must not reach the
+    canvas as a negative/NaN arc radius — bad types fall back to the default, numbers
+    clamp to their slider range."""
+    out = {"fisheye": bool(cfg.get("fisheye", LENS_DEFAULTS["fisheye"])),
+           "labels": bool(cfg.get("labels", LENS_DEFAULTS["labels"]))}
+    for key, (lo, hi, _step) in LENS_RANGES.items():
+        try:
+            value = float(cfg.get(key, LENS_DEFAULTS[key]))
+        except (TypeError, ValueError):
+            # a non-numeric hand-edited value falls back to the default; the offending
+            # input is already visible in the user's settings.yaml, so no log is warranted
+            value = LENS_DEFAULTS[key]
+        out[key] = min(hi, max(lo, value))
+    return out
+
+
+def _lens_tuple(cfg: dict) -> tuple:
+    """The five lens values in the fixed positional order set_lens_config expects."""
+    return tuple(cfg[k] for k in _LENS_KEYS)
+
+
 class GraphView(Gtk.Box):
     __gsignals__ = {
         # node-activated(file_path): open the file — a double click in collect mode,
@@ -666,7 +705,7 @@ class GraphView(Gtk.Box):
         self._bottom_panel = bottom_panel
         # Cursor fisheye lens config (fisheye, labels, radius px, strength, label radius
         # px); pushed to the page on load and whenever the View controls change.
-        self._lens_cfg = (True, True, 140.0, 2.6, 160.0)
+        self._lens_cfg = _lens_tuple(LENS_DEFAULTS)
         self._web = WebKit.WebView()
         self._web.set_vexpand(True)
         self._web.set_hexpand(True)

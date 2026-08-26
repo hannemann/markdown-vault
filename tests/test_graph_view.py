@@ -18,7 +18,8 @@ from unittest import mock
 from gi.repository import WebKit
 
 from markdown_vault.graph import graph_view
-from markdown_vault.graph.graph_view import parse_graph_message
+from markdown_vault.graph.graph_view import (
+    LENS_DEFAULTS, clamp_lens_config, parse_graph_message)
 
 _LOGGER = "markdown_vault.graph.graph_view"
 
@@ -174,6 +175,29 @@ class TestLensConfig(unittest.TestCase):
         graph_view.GraphView.set_lens_config(me, False, False, 90, 4.0, 80)
         self.assertEqual(me._lens_cfg, (False, False, 90.0, 4.0, 80.0))
         me._apply_lens_config.assert_not_called()
+
+
+class TestClampLensConfig(unittest.TestCase):
+    """A hand-edited settings.yaml must not reach the canvas as a bad arc radius."""
+
+    def test_empty_gives_the_defaults(self):
+        self.assertEqual(clamp_lens_config({}), LENS_DEFAULTS)
+
+    def test_out_of_range_numbers_clamp_to_the_slider_range(self):
+        c = clamp_lens_config({"radius": -5, "strength": 99, "label_radius": 1000})
+        self.assertEqual(c["radius"], 40.0)        # lo
+        self.assertEqual(c["strength"], 4.6)       # hi
+        self.assertEqual(c["label_radius"], 300.0)  # hi
+
+    def test_bad_types_fall_back_to_defaults(self):
+        c = clamp_lens_config({"strength": "abc", "radius": None})
+        self.assertEqual(c["strength"], 2.6)
+        self.assertEqual(c["radius"], 140.0)
+
+    def test_bools_are_coerced(self):
+        c = clamp_lens_config({"fisheye": 0, "labels": 1})
+        self.assertIs(c["fisheye"], False)
+        self.assertIs(c["labels"], True)
 
 
 class TestTipRouting(unittest.TestCase):

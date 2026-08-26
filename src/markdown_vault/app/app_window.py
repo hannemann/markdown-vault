@@ -2260,15 +2260,17 @@ class MainWindow(Adw.ApplicationWindow):
             self._sidebar_toggle.set_active(True)  # triggers the show path + state save
 
     def _graph_lens_config(self) -> dict:
-        """Persisted cursor-lens options (fisheye/labels/radius/strength) for the graph."""
-        return {
+        """Persisted cursor-lens options, coerced and clamped — settings.yaml is
+        hand-editable, so a typo must not reach the canvas as a bad arc radius."""
+        from markdown_vault.graph.graph_view import clamp_lens_config
+        return clamp_lens_config({
             "fisheye": config.get_setting(self._settings, "graph.fisheye", True),
             "labels": config.get_setting(self._settings, "graph.cursor_labels", True),
             "radius": config.get_setting(self._settings, "graph.lens_radius", 140.0),
             "strength": config.get_setting(self._settings, "graph.lens_strength", 2.6),
             "label_radius": config.get_setting(
                 self._settings, "graph.label_radius", 160.0),
-        }
+        })
 
     def _persist_graph_lens_config(self, cfg: dict) -> None:
         config.set_setting(self._settings, "graph.fisheye", bool(cfg["fisheye"]))

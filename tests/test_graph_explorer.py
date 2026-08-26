@@ -8,7 +8,8 @@ a stand-in self carrying only the widgets it reads.
 import unittest
 from unittest import mock
 
-from markdown_vault.graph.graph_explorer import GraphExplorer, _LENS_DEFAULTS
+from markdown_vault.graph.graph_explorer import GraphExplorer
+from markdown_vault.graph.graph_view import LENS_DEFAULTS, LENS_RANGES
 
 
 def _me(fisheye=True, labels=True, radius=140.0, strength=2.6, label_radius=160.0):
@@ -23,9 +24,27 @@ def _me(fisheye=True, labels=True, radius=140.0, strength=2.6, label_radius=160.
 
 class TestLensControls(unittest.TestCase):
     def test_defaults_are_on_with_the_seed_values(self):
-        self.assertEqual(_LENS_DEFAULTS, {"fisheye": True, "labels": True,
-                                          "radius": 140.0, "strength": 2.6,
-                                          "label_radius": 160.0})
+        self.assertEqual(LENS_DEFAULTS, {"fisheye": True, "labels": True,
+                                         "radius": 140.0, "strength": 2.6,
+                                         "label_radius": 160.0})
+
+    def test_sliders_get_the_range_and_seed_of_their_own_key(self):
+        # Builds the real Gtk widgets (no WebView): a slider built for one option but
+        # seeded from another would faithfully be read back and written to disk (AD3).
+        me = mock.Mock()
+        me._lens = dict(LENS_DEFAULTS, fisheye=True, labels=False,
+                        radius=111.0, strength=2.2, label_radius=222.0)
+        me._slider = lambda key: GraphExplorer._slider(me, key)
+        GraphExplorer._build_view_menu(me)
+        for key, scale in (("radius", me._radius_scale),
+                           ("strength", me._strength_scale),
+                           ("label_radius", me._label_radius_scale)):
+            adj = scale.get_adjustment()
+            lo, hi, _step = LENS_RANGES[key]
+            self.assertEqual((adj.get_lower(), adj.get_upper()), (lo, hi))
+            self.assertEqual(scale.get_value(), me._lens[key])
+        self.assertTrue(me._fisheye_chk.get_active())
+        self.assertFalse(me._labels_chk.get_active())
 
     def test_on_lens_changed_builds_the_dict_from_the_widgets(self):
         me = _me(fisheye=True, labels=False, radius=200.0, strength=3.5, label_radius=100.0)
