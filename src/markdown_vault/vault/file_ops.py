@@ -82,7 +82,7 @@ class FileOps:
             try:
                 os.makedirs(parent, exist_ok=True)
                 self._skip_fn(parent)
-            except OSError as e:
+            except (OSError, ValueError) as e:  # ValueError: embedded NUL byte in the name
                 logger.warning("create_file: makedirs failed for %s: %s", parent, e)
                 return str(e)
             # _emit_existing_entries fires 1 CREATED for the file when the
@@ -95,7 +95,7 @@ class FileOps:
 
         try:
             Path(file_path).touch()
-        except OSError as e:
+        except (OSError, ValueError) as e:  # ValueError: embedded NUL byte in the name
             logger.warning("create_file: touch failed for %s: %s", file_path, e)
             return str(e)
 
@@ -115,7 +115,7 @@ class FileOps:
             return _("Invalid folder name: path escapes the vault")
         try:
             os.mkdir(folder_path)
-        except OSError as e:
+        except (OSError, ValueError) as e:  # ValueError: embedded NUL byte in the name
             logger.warning("create_folder: mkdir failed for %s: %s", folder_path, e)
             return str(e)
 

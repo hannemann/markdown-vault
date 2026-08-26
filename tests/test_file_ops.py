@@ -133,6 +133,13 @@ class TestCreateFile(unittest.TestCase):
         self.assertIsNone(err)
         self.assertTrue(Path(self._tmp, "ok.md").exists())
 
+    def test_create_file_nul_byte_returns_error(self):
+        """A NUL byte is not a traversal (the guard lets it through), but touch() raises
+        ValueError, not OSError. The function must catch it and return an error, not let
+        it propagate uncaught into the UI."""
+        err = self._ops.create_file(self._tmp, "a\x00b.md")
+        self.assertIsNotNone(err)
+
     def test_create_file_existing_dir_no_error(self):
         """Creating a file in an existing dir works."""
         os.makedirs(os.path.join(self._tmp, "sub"), exist_ok=True)
@@ -177,6 +184,11 @@ class TestCreateFolder(unittest.TestCase):
         err = self._ops.create_folder(self._tmp, "sub/../ok")
         self.assertIsNone(err)
         self.assertTrue(Path(self._tmp, "ok").is_dir())
+
+    def test_create_folder_nul_byte_returns_error(self):
+        """os.mkdir raises ValueError on a NUL byte, not OSError — must be caught."""
+        err = self._ops.create_folder(self._tmp, "a\x00b")
+        self.assertIsNotNone(err)
 
 
 class TestDeletePath(unittest.TestCase):
