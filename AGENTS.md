@@ -363,6 +363,16 @@ opening files in editor, toggling sidebar etc.) ask the user.
   ignores) — cost: **one `grep` each**. Prefer a docstring beside the code over a
   prose copy in a doc (which drifts); when a doc must state behaviour, cite the
   symbol and keep it thin.
+- **Recompute what follows from a measurement — the figure you *report* is not the figure
+  you *measured*.** A correct measurement does not make the number derived from it correct:
+  evaluate a formula in its *target* case, not just at its threshold; check "all N removed"
+  against what *remains*; re-total after correcting an input; and **reconcile a fresh count
+  against any existing one** — the delta is the finding, not the new number. This bit four
+  times in one session (a `calc(100% - 264px)` bound right at its 524px threshold but 36px
+  at a 300px viewport; "all 30 false alarms gone" with one surviving; a 28-vs-26 site count
+  carrying a false positive corrected three rounds earlier). Distinct from the rule above:
+  there nothing was measured — here the measurement was right and the conclusion drawn from
+  it stale.
 - **Question the change before adjusting what it broke.** When a change makes a test
   red, trips a guard, or flips a doc/README claim, the first question is whether the
   *change* must be that way — not how to silence the objection. Weakening the guard,
@@ -376,6 +386,14 @@ opening files in editor, toggling sidebar etc.) ask the user.
   content and corrupted a git-lfs tree. A countermeasure can be the defect. (That write
   path isn't wired up yet — the guard is foresight for a planned commit UI — which is the
   point: harden it before it ships, not after it corrupts something.)
+- **A hand-edited settings value is untrusted input — clamp it at the read boundary, not
+  at the widget.** `settings.yaml` is YAML *so it can be edited by hand*; a typo must not
+  crash a page or reach a rendering primitive as a negative/NaN argument. Coerce and clamp
+  where the value is **read**, in one place — a `Gtk.Scale` clamps its own `set_value`, but
+  the dict the code pushes does not, so the UI can show a legal value while the code runs an
+  illegal one (`graph.lens_strength: -5` → a negative arc radius; `: abc` → a `TypeError`
+  that broke opening the graph explorer). Registering the key in the settings schema is the
+  companion move.
 - **When a security check stands in for the property it means, find where the proxy
   diverges — and check whether the tool answers the real question directly before
   re-implementing it.** "Does this config belong to the repo (untrusted) or the user
