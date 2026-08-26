@@ -69,12 +69,10 @@ _PAGE = r"""<!doctype html>
     box-shadow:0 0 0 1px var(--swatch-ring,rgba(127,127,127,.55))}
   #empty{position:absolute;inset:0;display:none;align-items:center;
     justify-content:center;color:var(--dim,#999);font-style:italic}
-  /* A 0x0 anchor placed at the pointer; the tooltip is positioned against it
-     with CSS anchor positioning, so the browser handles viewport-edge flipping. */
-  #tipanchor{position:absolute;width:0;height:0;anchor-name:--tip}
-  #tip{position:absolute;display:none;pointer-events:none;max-width:280px;
-    position-anchor:--tip;top:anchor(bottom);left:anchor(right);
-    margin:6px 0 0 6px;position-try-fallbacks:flip-block,flip-inline;
+  /* Node info: a fixed panel in the top-right corner (mirror of the legend), so it
+     never occludes the hovered node the way a pointer-anchored tooltip did. */
+  #tip{position:absolute;display:none;right:8px;top:8px;pointer-events:none;
+    max-width:260px;max-height:42vh;overflow-y:auto;
     background:var(--tip-bg,Canvas);color:var(--tip-fg,CanvasText);
     border:1px solid var(--tip-border,rgba(127,127,127,.45));
     border-radius:6px;padding:6px 9px;line-height:1.35;z-index:10;
@@ -91,7 +89,6 @@ _PAGE = r"""<!doctype html>
 <canvas id="cv"></canvas>
 <div id="legend"><div id="legendhd">Legend</div><div id="legenditems"></div></div>
 <div id="empty">no connections</div>
-<div id="tipanchor"></div>
 <div id="tip"></div>
 <script>
 const cv=document.getElementById("cv"), ctx=cv.getContext("2d");
@@ -99,14 +96,14 @@ const legend=document.getElementById("legend"), empty=document.getElementById("e
 const legendItems=document.getElementById("legenditems");
 const legendHd=document.getElementById("legendhd");
 legendHd.addEventListener("click",()=>legend.classList.toggle("collapsed"));
-const tip=document.getElementById("tip"), tipAnchor=document.getElementById("tipanchor");
+const tip=document.getElementById("tip");
 let W=innerWidth,H=innerHeight,cx=W/2,cy=H/2,dpr=window.devicePixelRatio||1;
 let nodes=[],links=[],byId={},centerId=null,adj={};
 let tx=0,ty=0,scale=1,alpha=0,raf=0,fitPending=false,zraf=0;
 let tagFilter=[],searchQ="",hoverId=null,hoverTarget=null,hoverTimer=0;
 let focusColor=null,focusRep=null,topColor=null;
 // Hover tooltip: 500ms-debounced, lazily resolved by the host and cached per id.
-let tipTimer=0,tipFor=null,tipX=0,tipY=0;
+let tipTimer=0,tipFor=null;
 const tipCache={};
 // Theme colours the canvas draws with — kept in JS (setTheme mirrors them from the
 // host's CSS variables), since a canvas can't read CSS custom properties.
@@ -433,7 +430,6 @@ cv.addEventListener("pointermove",ev=>{
     else if(pan){tx+=dx;ty+=dy;draw();}
     return;
   }
-  tipX=ev.clientX;tipY=ev.clientY;
   const h=nodeAt(ev.clientX,ev.clientY), id=h?h.id:null;
   if(id!==hoverTarget){hoverTarget=id; scheduleHover(id);}
 });
@@ -488,10 +484,10 @@ function setTagFilter(tags){tagFilter=tags||[];draw();}
 function search(q){searchQ=(q||"").toLowerCase();draw();
   if(searchQ){const hits=nodes.filter(n=>passTag(n)&&matchSearch(n));zoomTo(hits);}}
 
-// --- Hover tooltip -------------------------------------------------------
+// --- Hover node-info panel (fixed top-right corner) ----------------------
 function tipEnter(id){
   tipHide();                       // cancel any pending/shown tip first
-  tipFor=id;                       // tipX/tipY are kept current by pointermove
+  tipFor=id;
   tipTimer=setTimeout(()=>{tipTimer=0; tipRequest(id);}, 500);
 }
 function tipHide(){
@@ -518,10 +514,7 @@ function tipShow(id){
     const dot=document.createElement("i"); dot.style.background=node.color||"#888";
     v.appendChild(dot); v.appendChild(document.createTextNode(base(node.vault)));
     tip.appendChild(v);}
-  // Park the anchor at the pointer; CSS anchor positioning places the tooltip
-  // and flips it at the viewport edges (position-try-fallbacks).
-  tipAnchor.style.left=tipX+"px"; tipAnchor.style.top=tipY+"px";
-  tip.style.display="block";
+  tip.style.display="block";   // fixed top-right corner — no pointer anchoring
 }
 // Host resolves (title, description) lazily and calls this back.
 window.showTip=function(id,title,desc){tipCache[id]={title:title,desc:desc};
