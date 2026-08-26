@@ -66,6 +66,18 @@ class TestParseGraphMessage(unittest.TestCase):
         self.assertEqual(parse_graph_message(""), ("", "", ""))
         self.assertEqual(parse_graph_message("bogus\t/v/a.md"), ("", "", ""))
 
+    def test_path_containing_a_tab_is_preserved(self):
+        # POSIX filenames may contain a tab (any byte but "/" and NUL). The colour is
+        # always the LAST field and never contains a tab, so the path must survive.
+        self.assertEqual(parse_graph_message("click\t/v/no\tte.md\t#ff0000"),
+                         ("click", "/v/no\tte.md", "#ff0000"))
+        self.assertEqual(parse_graph_message("clicknt\t/v/no\tte.md\t"),
+                         ("clicknt", "/v/no\tte.md", ""))   # empty colour, trailing tab
+        self.assertEqual(parse_graph_message("tip\t/v/no\tte.md"),
+                         ("tip", "/v/no\tte.md", ""))
+        self.assertEqual(parse_graph_message("dblclick\t/v/no\tte.md"),
+                         ("dblclick", "/v/no\tte.md", ""))
+
 
 class TestOnMessageFailurePath(unittest.TestCase):
     def test_logs_and_drops_the_click_when_the_js_value_is_unreadable(self):

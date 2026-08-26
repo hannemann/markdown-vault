@@ -553,17 +553,15 @@ def parse_graph_message(raw):
     ``"clicknt"``, ``"dblclick"``, or ``""`` for an empty or unrecognised message.
     ``arg`` carries the node colour for the click verbs and ``""`` otherwise.
     """
-    if not raw:
-        return ("", "", "")
-    parts = raw.split("\t")
-    verb = parts[0]
-    path = parts[1] if len(parts) > 1 else ""
-    if verb == "tip":
-        return ("tip", path, "")
+    verb, _, rest = raw.partition("\t")
+    if verb in ("tip", "dblclick"):
+        return (verb, rest, "")
     if verb in ("click", "clicknt"):
-        return (verb, path, parts[2] if len(parts) > 2 else "")
-    if verb == "dblclick":
-        return ("dblclick", path, "")
+        # The colour is always the LAST field and never contains a tab, so split from
+        # the RIGHT — a note filename may legally contain a tab (POSIX allows any byte
+        # but "/" and NUL), and a left split would truncate the path.
+        path, sep, arg = rest.rpartition("\t")
+        return (verb, path, arg) if sep else (verb, rest, "")
     return ("", "", "")
 
 

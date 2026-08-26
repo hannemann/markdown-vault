@@ -116,6 +116,7 @@ class Sidebar(Gtk.Box):
         # process only spawns if the user actually opens the Graph tab.
         self._get_graph_payload = get_graph_payload
         self._graph_view = None
+        self._pulse_id = 0   # pending card-pulse timeout, cancelled on the next pulse
 
         # --- Sub-view stack ---
         self._stack = Gtk.Stack()
@@ -225,14 +226,18 @@ class Sidebar(Gtk.Box):
 
     def _pulse_cards_icon(self) -> None:
         """Briefly flash the Cards rail icon as feedback that a card was collected
-        without switching to it."""
+        without switching to it. Cancels a still-pending pulse first, so a rapid
+        second collect extends the flash rather than cutting it short."""
         btn = self._rail_buttons["cards"]
+        if self._pulse_id:
+            GLib.source_remove(self._pulse_id)
+        btn.remove_css_class("card-pulse")   # re-add restarts the CSS animation
         btn.add_css_class("card-pulse")
-        GLib.timeout_add(700, self._clear_cards_pulse, btn)
+        self._pulse_id = GLib.timeout_add(700, self._clear_cards_pulse, btn)
 
-    @staticmethod
-    def _clear_cards_pulse(btn: Gtk.Widget) -> bool:
+    def _clear_cards_pulse(self, btn: Gtk.Widget) -> bool:
         btn.remove_css_class("card-pulse")
+        self._pulse_id = 0
         return False   # one-shot timeout
 
     def update_for_file(self, file_path: str | None, text: str = "") -> None:
