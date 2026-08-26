@@ -98,7 +98,7 @@ let W=innerWidth,H=innerHeight,cx=W/2,cy=H/2,dpr=window.devicePixelRatio||1;
 let nodes=[],links=[],byId={},centerId=null,adj={};
 let tx=0,ty=0,scale=1,alpha=0,raf=0,fitPending=false,zraf=0;
 let tagFilter=[],searchQ="",hoverId=null,hoverTarget=null,hoverTimer=0;
-let focusColor=null,focusRep=null;
+let focusColor=null,focusRep=null,topColor=null;
 // Hover tooltip: 500ms-debounced, lazily resolved by the host and cached per id.
 let tipTimer=0,tipFor=null,tipX=0,tipY=0;
 const tipCache={};
@@ -198,15 +198,36 @@ function setGraph(payload){
   tipHide(); for(const k in tipCache)delete tipCache[k];   // drop stale tooltips
   const prev={}; nodes.forEach(n=>prev[n.id]=n);
   const arr=payload.nodes||[];
-  // Scale the seed circle with sqrt(N) so it spans many grid cells (cell=340):
-  // a fixed radius bunches every node into one cell, and the first frames of a
-  // big graph run full O(N^2) before repulsion scatters them. Also a calmer opening.
-  const seedR=80*Math.sqrt(Math.max(1,arr.length));
-  nodes=arr.map((n,i)=>{
-    const p=prev[n.id]||{}, a=2*Math.PI*i/Math.max(1,arr.length);
+  // Community-clustered, deterministic seed. Sort by id so the layout is reproducible
+  // regardless of the host's file-walk order; give each colour its own centre via
+  // sunflower (phyllotaxis) packing so communities start well-separated; seed each node
+  // in a small local cluster around its centre. The layout then STARTS grouped and gravity
+  // only has to tighten it -- reliable grouping instead of seed-luck.
+  const GOLDEN=Math.PI*(3-Math.sqrt(5));
+  const sorted=arr.slice().sort((a,b)=>a.id<b.id?-1:a.id>b.id?1:0);
+  // order communities by their hub's degree, descending, so the most important one
+  // (MainWindow's) seeds at the sunflower's centre; tie-break by colour for determinism.
+  const colDeg={};
+  sorted.forEach(n=>{if(!(n.color in colDeg)||n.degree>colDeg[n.color])colDeg[n.color]=n.degree;});
+  const colours=[...new Set(sorted.map(n=>n.color))].sort((a,b)=>colDeg[b]-colDeg[a]||(a<b?-1:1));
+  topColor=colours[0]||null;   // the most important community -> anchored to centre in step()
+  const nc=Math.max(1,colours.length), seedR=80*Math.sqrt(Math.max(1,sorted.length));
+  const cc={};
+  colours.forEach((c,i)=>{const rr=seedR*1.2*Math.sqrt((i+0.5)/nc), aa=i*GOLDEN;
+    cc[c]=[cx+Math.cos(aa)*rr, cy+Math.sin(aa)*rr];});
+  const size={}; sorted.forEach(n=>size[n.color]=(size[n.color]||0)+1);
+  const seen={};
+  nodes=sorted.map(n=>{
+    const p=prev[n.id]||{}, c=cc[n.color], k=(seen[n.color]=(seen[n.color]||0)+1);
+    // Local radius from the community's SHARE of the layout, not its absolute size:
+    // seedR*0.10*sqrt(k) grew with N while the centre spacing shrinks with sqrt(1/nc), so a
+    // big community's seed spilled across its neighbours -- reproducible mixing, not grouping
+    // (ZT1). Scaling by share keeps each cluster inside its centre's territory.
+    const Rc=seedR*1.2*0.55*Math.sqrt(size[n.color]/sorted.length);
+    const aa=k*GOLDEN, rr=Rc*Math.sqrt(k/size[n.color]);
     return Object.assign({},n,{
-      x:p.x!==undefined?p.x:cx+Math.cos(a)*seedR,
-      y:p.y!==undefined?p.y:cy+Math.sin(a)*seedR, vx:0,vy:0});
+      x:p.x!==undefined?p.x:c[0]+Math.cos(aa)*rr,
+      y:p.y!==undefined?p.y:c[1]+Math.sin(aa)*rr, vx:0,vy:0});
   });
   byId={}; nodes.forEach(n=>byId[n.id]=n);
   centerId=null; nodes.forEach(n=>{if(n.center)centerId=n.id;});
@@ -318,11 +339,14 @@ function step(){
   for(const key in cen){const c=cen[key]; c.x/=c.k; c.y/=c.k;}
   // Centering is only a WEAK anchor: Barnes-Hut repulsion does the spreading, so the
   // strong centering that crushed the structure into a disc is gone.
-  const G=0.003, CG=0.06;
+  const G=0.004, CG=0.06, ANCHOR=0.02, top=topColor?cen[topColor]:null;
   for(let i=0;i<N;i++){const n=nodes[i];
     if(n.id===centerId){n.x=cx;n.y=cy;n.vx=0;n.vy=0;continue;}
     n.vx+=(cx-n.x)*G; n.vy+=(cy-n.y)*G;
     const cg=cen[n.color]; if(cg){n.vx+=(cg.x-n.x)*CG; n.vy+=(cg.y-n.y)*CG;}
+    // Anchor the most important community's whole blob toward the centre: a uniform pull
+    // by its centroid's offset moves it there without distorting the blob's shape.
+    if(top&&n.color===topColor){n.vx+=(cx-top.x)*ANCHOR; n.vy+=(cy-top.y)*ANCHOR;}
     if(n.fixed)continue;
     n.vx*=0.85; n.vy*=0.85;
     // Clamp speed so no node teleports and the fit can't be blown up by a fling.
