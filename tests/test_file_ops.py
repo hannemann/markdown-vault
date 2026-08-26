@@ -109,6 +109,18 @@ class TestCreateFile(unittest.TestCase):
         self.assertIsNotNone(err)
         self.assertFalse(escaped.exists())
 
+    def test_create_file_rejects_traversal_before_creating_directories(self):
+        """The guard must run BEFORE makedirs. A traversal into a NEW intermediate
+        directory must not create it. test_create_file_rejects_parent_traversal cannot
+        catch this: its target's parent already exists, so makedirs is a no-op and a
+        guard placed after it still returns the error while leaking the directory."""
+        outside_dir = Path(self._tmp).parent / "escape_dir"
+        self.addCleanup(lambda: shutil.rmtree(outside_dir, ignore_errors=True))
+        err = self._ops.create_file(self._tmp, "../escape_dir/x.md")
+        self.assertIsNotNone(err)
+        self.assertFalse(outside_dir.exists(),
+                         "guard ran after makedirs — a directory leaked outside the vault")
+
     def test_create_file_rejects_absolute_path_outside_vault(self):
         """An absolute name makes os.path.join discard the vault → target outside → rejected.
         Uses a writable location, so the test is red before the guard — not green by a denied
