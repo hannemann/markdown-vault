@@ -1,11 +1,15 @@
 """Knowledge-graph render component — a WebKit WebView with an inline,
-self-contained force-directed layout (no CDN, no external assets).
+self-contained, canvas-rendered force-directed layout (no CDN, no external assets).
 
 This is a *separate* WebView from the Markdown preview: it runs its own page
 scripts under a permissive-but-local CSP (``script-src 'unsafe-inline'``, no
-network), whereas the preview stays ``script-src 'none'``.  Node labels come
-from user filenames and are rendered as SVG text (``textContent``), never HTML,
-so there is no injection surface.
+network), whereas the preview stays ``script-src 'none'``.
+
+Nodes and edges are drawn to a single ``<canvas>`` (one element, not thousands of
+SVG nodes), which scales to a few thousand nodes without the per-element
+rasterisation that makes SVG crawl. Node labels are drawn with ``fillText``
+(pixels, never HTML); the hover tooltip is HTML but sets the untrusted
+title/description via ``textContent``, so there is no injection surface.
 
 Usage:
     view = GraphView()
@@ -34,21 +38,12 @@ _PAGE = r"""<!doctype html>
 <meta http-equiv="Content-Security-Policy"
       content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline';">
 <style>
-  /* Colours are theme variables injected from the GTK style context (see
-     _apply_theme); the literals here are only fallbacks before that runs. */
   html,body{margin:0;height:100%;overflow:hidden;background:transparent;
     font:12px system-ui,sans-serif;color:var(--fg,#888)}
-  #svg{width:100%;height:100%;display:block;cursor:grab}
-  #svg.grabbing{cursor:grabbing}
-  #arrow path{fill:var(--edge-out,#5b9bd5cc)}
-  .edge{stroke:var(--edge,#8888);stroke-width:1.3;fill:none}
-  .edge.out{stroke:var(--edge-out,#5b9bd5cc);stroke-width:1.6;marker-end:url(#arrow)}
-  .node circle{stroke:var(--node-ring,rgba(0,0,0,.35));stroke-width:1;cursor:pointer}
-  .node.center circle{stroke:var(--accent,#e66100);stroke-width:3}
-  .node text{fill:currentColor;pointer-events:none;paint-order:stroke;
-    stroke:var(--halo,rgba(127,127,127,.35));stroke-width:3px}
-  .faded{opacity:.12;transition:opacity .1s}
-  #legend{position:absolute;left:8px;bottom:6px;font-size:11px;opacity:.85}
+  #cv{display:block;width:100%;height:100%;cursor:grab;touch-action:none}
+  #cv.grabbing{cursor:grabbing}
+  #legend{position:absolute;left:8px;bottom:6px;font-size:11px;opacity:.85;
+    pointer-events:none}
   #legend span{margin-right:10px;white-space:nowrap}
   #legend i{display:inline-block;width:9px;height:9px;border-radius:50%;
     margin-right:4px;vertical-align:-1px}
@@ -72,30 +67,96 @@ _PAGE = r"""<!doctype html>
   #tip .tip-vault i{width:8px;height:8px;border-radius:50%;flex:none}
 </style></head>
 <body>
-<svg id="svg"><defs>
-  <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6"
-    markerHeight="6" orient="auto-start-reverse">
-    <path d="M0 0L10 5L0 10z" fill="#5b9bd5cc"/></marker>
-</defs><g id="view"><g id="edges"></g><g id="nodes"></g></g></svg>
+<canvas id="cv"></canvas>
 <div id="legend"></div>
 <div id="empty">no connections</div>
 <div id="tipanchor"></div>
 <div id="tip"></div>
 <script>
-const SVGNS="http://www.w3.org/2000/svg";
-const svg=document.getElementById("svg"), view=document.getElementById("view");
-const gEdges=document.getElementById("edges"), gNodes=document.getElementById("nodes");
+const cv=document.getElementById("cv"), ctx=cv.getContext("2d");
 const legend=document.getElementById("legend"), empty=document.getElementById("empty");
 const tip=document.getElementById("tip"), tipAnchor=document.getElementById("tipanchor");
-let W=innerWidth,H=innerHeight,cx=W/2,cy=H/2;
+let W=innerWidth,H=innerHeight,cx=W/2,cy=H/2,dpr=window.devicePixelRatio||1;
 let nodes=[],links=[],byId={},centerId=null,adj={};
 let tx=0,ty=0,scale=1,alpha=0,raf=0,fitPending=false,zraf=0;
 let tagFilter=[],searchQ="",hoverId=null;
 // Hover tooltip: 500ms-debounced, lazily resolved by the host and cached per id.
 let tipTimer=0,tipFor=null,tipX=0,tipY=0;
 const tipCache={};
+// Theme colours the canvas draws with — kept in JS (setTheme mirrors them from the
+// host's CSS variables), since a canvas can't read CSS custom properties.
+let theme={edge:"rgba(136,136,136,.5)",edgeOut:"rgba(91,155,213,.85)",
+  nodeRing:"rgba(0,0,0,.35)",accent:"#e66100",fg:"#888",halo:"rgba(127,127,127,.35)"};
 
 function radius(n){return 5+Math.min(9,Math.sqrt(n.degree||0)*2)+(n.center?3:0);}
+function base(p){const q=p.replace(/\/+$/,"").split("/");return q[q.length-1]||p;}
+function label(n){return n.label||base(n.id);}
+function passTag(n){return tagFilter.length===0||(n.tags||[]).some(t=>tagFilter.indexOf(t)>=0);}
+function vis(n){return n&&passTag(n);}
+function matchSearch(n){return !searchQ||label(n).toLowerCase().indexOf(searchQ)>=0
+  ||(n.id||"").toLowerCase().indexOf(searchQ)>=0;}
+function nearHover(id){return hoverId===id||(adj[hoverId]&&adj[hoverId].has(id));}
+// A node is dimmed if the search excludes it OR a hover excludes it — both
+// contribute so leaving a hover restores (not clears) the search dim.
+function faded(n){return (searchQ&&!matchSearch(n))||(hoverId&&!nearHover(n.id));}
+
+// --- Canvas sizing & drawing --------------------------------------------
+function resize(){
+  dpr=window.devicePixelRatio||1; W=innerWidth;H=innerHeight;cx=W/2;cy=H/2;
+  cv.width=Math.round(W*dpr); cv.height=Math.round(H*dpr);
+  cv.style.width=W+"px"; cv.style.height=H+"px";
+  draw();
+}
+addEventListener("resize",()=>{resize();alpha=Math.max(alpha,0.3);fitPending=true;kick();});
+
+function strokeEdges(pred,style,w){  // one path, one stroke = one draw call for all matches
+  ctx.lineWidth=w; ctx.strokeStyle=style; ctx.beginPath();
+  for(let i=0;i<links.length;i++){const e=links[i];
+    const a=byId[e.source],b=byId[e.target];
+    if(!vis(a)||!vis(b))continue;
+    if(pred&&!pred(e,a,b))continue;
+    ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y);}
+  ctx.stroke();
+}
+function draw(){
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  ctx.clearRect(0,0,W,H);
+  ctx.translate(tx,ty); ctx.scale(scale,scale);
+  // Edges. Normal edges batch into one path; when a hover/search is active they
+  // split into a dim pass (all) + a bright pass (both endpoints in focus). Out-edges
+  // (from the centre node, sidebar's local graph) are always drawn bright.
+  if(hoverId||searchQ){
+    ctx.globalAlpha=0.12; strokeEdges(e=>e.source!==centerId, theme.edge, 1.3);
+    ctx.globalAlpha=1;
+    strokeEdges((e,a,b)=>e.source!==centerId&&!faded(a)&&!faded(b), theme.edge, 1.3);
+  } else {
+    strokeEdges(e=>e.source!==centerId, theme.edge, 1.3);
+  }
+  if(centerId) strokeEdges(e=>e.source===centerId, theme.edgeOut, 1.6);
+  ctx.globalAlpha=1;
+  // Nodes.
+  for(let i=0;i<nodes.length;i++){const n=nodes[i]; if(!passTag(n))continue;
+    const r=radius(n);
+    ctx.globalAlpha=faded(n)?0.12:1;
+    ctx.beginPath(); ctx.arc(n.x,n.y,r,0,6.283185307);
+    ctx.fillStyle=n.color||"#888"; ctx.fill();
+    ctx.lineWidth=n.center?3:1;
+    ctx.strokeStyle=n.center?theme.accent:theme.nodeRing; ctx.stroke();
+  }
+  ctx.globalAlpha=1;
+  // Labels only for the centre and the hovered node — never 3500 texts. Drawn in
+  // screen space (transform reset) so they stay readable at any zoom.
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  drawLabel(centerId); if(hoverId&&hoverId!==centerId)drawLabel(hoverId);
+}
+function drawLabel(id){ if(!id)return; const n=byId[id]; if(!n||!passTag(n))return;
+  const sx=n.x*scale+tx, sy=n.y*scale+ty, r=radius(n)*scale;
+  ctx.font="12px system-ui,sans-serif"; ctx.textBaseline="middle";
+  ctx.lineWidth=3; ctx.lineJoin="round";
+  const t=label(n), x=sx+r+3, y=sy;
+  ctx.strokeStyle=theme.halo; ctx.strokeText(t,x,y);   // halo for legibility
+  ctx.fillStyle=theme.fg; ctx.fillText(t,x,y);
+}
 
 function setGraph(payload){
   tagFilter=[]; searchQ=""; hoverId=null;
@@ -104,8 +165,7 @@ function setGraph(payload){
   const arr=payload.nodes||[];
   // Scale the seed circle with sqrt(N) so it spans many grid cells (cell=340):
   // a fixed radius bunches every node into one cell, and the first frames of a
-  // big graph run full O(N^2) before repulsion scatters them (R30.1). This also
-  // gives a calmer opening — nodes no longer start on top of each other.
+  // big graph run full O(N^2) before repulsion scatters them. Also a calmer opening.
   const seedR=80*Math.sqrt(Math.max(1,arr.length));
   nodes=arr.map((n,i)=>{
     const p=prev[n.id]||{}, a=2*Math.PI*i/Math.max(1,arr.length);
@@ -120,10 +180,8 @@ function setGraph(payload){
   links.forEach(e=>{adj[e.source].add(e.target);adj[e.target].add(e.source);});
   buildLegend(nodes);
   empty.style.display=(nodes.length<=1&&links.length===0)?"flex":"none";
-  render();
-  // Start small & centered, then zoom *in* to the framing once the layout
-  // settles (fitPending, consumed in kick()) — a reveal rather than a snap-out.
-  setView(frameOf(nodes,0.45));
+  // Start small & centered, then zoom *in* to the framing once the layout settles.
+  setView(frameOf(nodes,0.45)); draw();
   alpha=1; fitPending=true; kick();
 }
 
@@ -137,85 +195,80 @@ function buildLegend(ns){
     legend.appendChild(s);
   });
 }
-function base(p){const q=p.replace(/\/+$/,"").split("/");return q[q.length-1]||p;}
-function label(n){return n.label||base(n.id);}
 
-let elNodes={},elEdges=[];
-function render(){
-  gEdges.textContent=""; gNodes.textContent=""; elNodes={}; elEdges=[];
-  links.forEach(e=>{
-    const l=document.createElementNS(SVGNS,"line");
-    l.setAttribute("class","edge "+(e.source===centerId?"out":""));
-    gEdges.appendChild(l); elEdges.push({l,e});
-  });
-  nodes.forEach(n=>{
-    const g=document.createElementNS(SVGNS,"g");
-    g.setAttribute("class","node"+(n.center?" center":""));
-    const c=document.createElementNS(SVGNS,"circle");
-    c.setAttribute("r",radius(n)); c.setAttribute("fill",n.color||"#888");
-    const tx=document.createElementNS(SVGNS,"text");
-    tx.setAttribute("x",radius(n)+3); tx.setAttribute("y",4);
-    tx.textContent=n.center?label(n):"";
-    g.appendChild(c); g.appendChild(tx); gNodes.appendChild(g);
-    elNodes[n.id]={g,c,tx};
-    c.addEventListener("pointerenter",ev=>{highlight(n.id);tipEnter(n.id,ev);});
-    c.addEventListener("pointermove",ev=>{tipX=ev.clientX;tipY=ev.clientY;});
-    c.addEventListener("pointerleave",()=>{highlight(null);tipHide();});
-    makeDraggable(g,n);
-  });
-  positions();
-}
-function positions(){
-  elEdges.forEach(({l,e})=>{const a=byId[e.source],b=byId[e.target];
-    l.setAttribute("x1",a.x);l.setAttribute("y1",a.y);
-    l.setAttribute("x2",b.x);l.setAttribute("y2",b.y);});
-  nodes.forEach(n=>{const el=elNodes[n.id];
-    if(el)el.g.setAttribute("transform","translate("+n.x+","+n.y+")");});
-  view.setAttribute("transform","translate("+tx+","+ty+") scale("+scale+")");
-}
-function highlight(id){hoverId=id;applyFilters();}  // hover is one input to fade
-
-function step(){
-  const K=6000, L=70, C=340, C2=C*C, INV=1/C;
-  // Repulsion is O(N^2) naively. Bucket nodes into a uniform grid of cell size
-  // C and only compute repulsion within the 3x3 cell neighbourhood — forces
-  // past C are negligible (K/C^2 is <2% of a link's pull). Near O(N) for spread
-  // layouts, so the explorer's "All vaults" scope stays responsive on big vaults.
-  const grid=new Map();
-  for(let i=0;i<nodes.length;i++){const n=nodes[i];
-    const key=Math.floor(n.x*INV)+","+Math.floor(n.y*INV);
-    let cell=grid.get(key); if(!cell){cell=[];grid.set(key,cell);} cell.push(i);}
-  for(let i=0;i<nodes.length;i++){const a=nodes[i];
-    const gx=Math.floor(a.x*INV),gy=Math.floor(a.y*INV);
-    for(let ox=-1;ox<=1;ox++)for(let oy=-1;oy<=1;oy++){
-      const cell=grid.get((gx+ox)+","+(gy+oy)); if(!cell)continue;
-      for(let c=0;c<cell.length;c++){const j=cell[c]; if(j<=i)continue;  // each pair once
-        const b=nodes[j];let dx=a.x-b.x,dy=a.y-b.y,d2=dx*dx+dy*dy;
-        if(d2>C2)continue; if(d2<0.01)d2=0.01;
-        // Cap the force: coincident nodes would otherwise get K/0.01=6e5 and be
-        // flung off-screen for a frame, blowing up the bounding box (and fit).
-        let f=K/d2; if(f>100)f=100; let d=Math.sqrt(d2); dx/=d;dy/=d;
-        a.vx+=dx*f;a.vy+=dy*f;b.vx-=dx*f;b.vy-=dy*f;}
-    }
+// --- Barnes-Hut n-body repulsion ---------------------------------------
+// A uniform-grid cutoff only repels within one cell, so detached clusters can
+// never push far apart and the layout collapses to a uniform disc. Barnes-Hut
+// approximates ALL-pairs repulsion in O(N log N) with a quadtree: near nodes sum
+// exactly, a far-enough cell is treated as one mass at its centre. That long-range
+// push is what lets hubs splay out and loose clusters drift into their own
+// satellites — the readable, structured layout.
+function qcell(bx,by,bw){return {mass:0,cmx:0,cmy:0,bx:bx,by:by,bw:bw,body:null,kids:null};}
+function qinsert(q,n){
+  const m=q.mass;
+  q.cmx=(q.cmx*m+n.x)/(m+1); q.cmy=(q.cmy*m+n.y)/(m+1); q.mass=m+1;
+  if(m===0){q.body=n;return;}                 // was empty -> becomes a leaf
+  if(q.kids===null){                          // was a leaf -> subdivide (unless tiny)
+    if(q.bw<1)return;                          // coincident pile: keep as an aggregate leaf
+    q.kids=[null,null,null,null];
+    const b=q.body; q.body=null; qchild(q,b);
   }
-  links.forEach(e=>{const a=byId[e.source],b=byId[e.target];
+  qchild(q,n);
+}
+function qchild(q,n){
+  const h=q.bw/2, e=n.x>=q.bx+h?1:0, s=n.y>=q.by+h?1:0, i=s*2+e;
+  if(!q.kids[i])q.kids[i]=qcell(q.bx+e*h,q.by+s*h,h);
+  qinsert(q.kids[i],n);
+}
+function qrepel(q,n,REP,THETA2,EPS){
+  if(q.mass===0)return;
+  let dx=q.cmx-n.x, dy=q.cmy-n.y, d2=dx*dx+dy*dy;
+  if(q.kids===null){                          // leaf: a single body or a tiny aggregate
+    if(q.body===n)return;                      // never repel self
+    if(d2<EPS)d2=EPS;
+    const d=Math.sqrt(d2), f=REP*q.mass/d2; n.vx-=dx/d*f; n.vy-=dy/d*f; return;
+  }
+  if(q.bw*q.bw < THETA2*d2){                   // cell far enough -> one point mass
+    if(d2<EPS)d2=EPS;
+    const d=Math.sqrt(d2), f=REP*q.mass/d2; n.vx-=dx/d*f; n.vy-=dy/d*f; return;
+  }
+  for(let k=0;k<4;k++)if(q.kids[k])qrepel(q.kids[k],n,REP,THETA2,EPS);
+}
+function step(){
+  const L=110, VMAX=300, REP=11000, THETA2=0.81, EPS=9;
+  const N=nodes.length; if(N<2){alpha*=0.98;return;}
+  let x0=Infinity,y0=Infinity,x1=-Infinity,y1=-Infinity;
+  for(let i=0;i<N;i++){const n=nodes[i];
+    if(n.x<x0)x0=n.x; if(n.y<y0)y0=n.y; if(n.x>x1)x1=n.x; if(n.y>y1)y1=n.y;}
+  const root=qcell(x0,y0,Math.max(x1-x0,y1-y0,1)*1.02);
+  for(let i=0;i<N;i++)qinsert(root,nodes[i]);
+  for(let i=0;i<N;i++)qrepel(root,nodes[i],REP,THETA2,EPS);
+  // springs pull linked nodes toward rest length L
+  for(let i=0;i<links.length;i++){const e=links[i],a=byId[e.source],b=byId[e.target];
     let dx=b.x-a.x,dy=b.y-a.y,d=Math.sqrt(dx*dx+dy*dy)||0.01,f=(d-L)*0.02;
-    dx/=d;dy/=d; a.vx+=dx*f;a.vy+=dy*f; b.vx-=dx*f;b.vy-=dy*f;});
-  // Centering scales with sqrt(N) so the settled extent stays bounded without
-  // compressing into a hairball: it still curbs runaway equilibrium (R31.1),
-  // but lets the extent grow gently with N so node density stays roughly
-  // constant (the fit then zooms out instead). Unchanged for small graphs
-  // (N<=120, e.g. the sidebar's local graph).
-  const G=0.006*Math.max(1,Math.sqrt(nodes.length/120));
-  nodes.forEach(n=>{
-    if(n.id===centerId){n.x=cx;n.y=cy;n.vx=0;n.vy=0;return;}
+    dx/=d;dy/=d; a.vx+=dx*f;a.vy+=dy*f; b.vx-=dx*f;b.vy-=dy*f;}
+  // Centering is now only a WEAK anchor: Barnes-Hut repulsion does the spreading,
+  // so the strong centering that crushed the structure into a disc is gone — just
+  // enough pull to stop the whole layout drifting off.
+  const G=0.003;
+  for(let i=0;i<N;i++){const n=nodes[i];
+    if(n.id===centerId){n.x=cx;n.y=cy;n.vx=0;n.vy=0;continue;}
     n.vx+=(cx-n.x)*G; n.vy+=(cy-n.y)*G;
-    if(n.fixed)return;
-    n.vx*=0.85; n.vy*=0.85; n.x+=n.vx*alpha; n.y+=n.vy*alpha;
-  });
+    if(n.fixed)continue;
+    n.vx*=0.85; n.vy*=0.85;
+    // Clamp speed so no node teleports and the fit can't be blown up by a fling.
+    const sp=Math.sqrt(n.vx*n.vx+n.vy*n.vy);
+    if(sp>VMAX){const k=VMAX/sp; n.vx*=k; n.vy*=k;}
+    n.x+=n.vx*alpha; n.y+=n.vy*alpha;}
   alpha*=0.98;
 }
-function kick(){ if(raf)return; const loop=()=>{ step(); positions();
+function kick(){ if(raf)return; const loop=()=>{
+  // Several physics steps per drawn frame while the layout is hot: rendering is
+  // cheap now (canvas), so the settle is physics-bound — burning 3 steps per frame
+  // converges in roughly a third of the wall-clock, with no visible cost.
+  const iters=alpha>0.3?3:1;
+  for(let k=0;k<iters;k++)step();
+  draw();
   if(alpha>0.02){raf=requestAnimationFrame(loop);}
   else {raf=0; if(fitPending){fitPending=false; zoomTo(nodes);}} };
   raf=requestAnimationFrame(loop);}
@@ -223,83 +276,87 @@ function kick(){ if(raf)return; const loop=()=>{ step(); positions();
 // newTab flag is prefixed ("1\t" / "0\t") so the host can route it.
 function post(id,newTab){ if(window.webkit&&webkit.messageHandlers&&webkit.messageHandlers.graph)
   webkit.messageHandlers.graph.postMessage((newTab?"1":"0")+"\t"+id); }
-function makeDraggable(g,n){
-  // Detect click vs. drag here: pointer capture (needed for dragging) swallows
-  // the synthetic click event, so a no-move pointerup IS the click.
-  let down=false,moved=false,sx=0,sy=0,btn=0;
-  g.addEventListener("pointerdown",ev=>{down=true;moved=false;btn=ev.button;zStop();tipHide();
-    if(ev.button===1)ev.preventDefault();  // no middle-click autoscroll
-    sx=ev.clientX;sy=ev.clientY;n.fixed=true;
-    try{g.setPointerCapture(ev.pointerId);}catch(e){} ev.stopPropagation();});
-  g.addEventListener("pointermove",ev=>{if(!down)return;
-    if(Math.abs(ev.clientX-sx)+Math.abs(ev.clientY-sy)>3)moved=true;
-    n.x+=ev.movementX/scale;n.y+=ev.movementY/scale;positions();});
-  g.addEventListener("pointerup",ev=>{if(!down)return;down=false;n.fixed=false;
-    try{g.releasePointerCapture(ev.pointerId);}catch(e){}
-    if(moved){alpha=Math.max(alpha,0.4);kick();}
-    else {post(n.id, btn===1 || ev.ctrlKey);}});  // middle / Ctrl → new tab
+
+// --- Interaction: one set of handlers on the canvas, manual hit-testing --
+function nodeAt(sx,sy){  // screen px -> topmost node under the pointer, or null
+  const wx=(sx-tx)/scale, wy=(sy-ty)/scale;
+  let hit=null,best=Infinity;
+  for(let i=nodes.length-1;i>=0;i--){const n=nodes[i]; if(!passTag(n))continue;
+    const r=radius(n)+2, dx=n.x-wx, dy=n.y-wy, d2=dx*dx+dy*dy;
+    if(d2<=r*r && d2<best){best=d2;hit=n;}}
+  return hit;
 }
-// pan + zoom on the background
-let pan=false,px=0,py=0;
-svg.addEventListener("pointerdown",ev=>{pan=true;px=ev.clientX;py=ev.clientY;
-  zStop();tipHide();svg.classList.add("grabbing");});
-svg.addEventListener("pointermove",ev=>{if(!pan)return;
-  tx+=ev.clientX-px;ty+=ev.clientY-py;px=ev.clientX;py=ev.clientY;positions();});
-window.addEventListener("pointerup",()=>{pan=false;svg.classList.remove("grabbing");});
-svg.addEventListener("wheel",ev=>{ev.preventDefault();zStop();tipHide();
+let down=false,moved=false,sx0=0,sy0=0,btn=0,dragNode=null,pan=false;
+cv.addEventListener("pointerdown",ev=>{
+  down=true;moved=false;btn=ev.button;sx0=ev.clientX;sy0=ev.clientY;
+  zStop();tipHide();
+  if(ev.button===1)ev.preventDefault();  // no middle-click autoscroll
+  dragNode=nodeAt(ev.clientX,ev.clientY);
+  if(dragNode){dragNode.fixed=true;}
+  else{pan=true;cv.classList.add("grabbing");}
+  try{cv.setPointerCapture(ev.pointerId);}catch(e){}
+});
+cv.addEventListener("pointermove",ev=>{
+  if(down){
+    if(Math.abs(ev.clientX-sx0)+Math.abs(ev.clientY-sy0)>3)moved=true;
+    if(dragNode){dragNode.x+=ev.movementX/scale;dragNode.y+=ev.movementY/scale;draw();}
+    else if(pan){tx+=ev.movementX;ty+=ev.movementY;draw();}
+    return;
+  }
+  tipX=ev.clientX;tipY=ev.clientY;
+  const h=nodeAt(ev.clientX,ev.clientY), id=h?h.id:null;
+  if(id!==hoverId){hoverId=id; draw(); if(id)tipEnter(id,ev); else tipHide();}
+});
+cv.addEventListener("pointerup",ev=>{
+  if(!down)return; down=false;
+  try{cv.releasePointerCapture(ev.pointerId);}catch(e){}
+  if(dragNode){dragNode.fixed=false;
+    // Detect click vs. drag: a no-move release IS the click (middle / Ctrl -> new tab).
+    if(!moved)post(dragNode.id, btn===1||ev.ctrlKey);
+    else{alpha=Math.max(alpha,0.4);kick();}
+    dragNode=null;}
+  else if(pan){pan=false;cv.classList.remove("grabbing");}
+});
+cv.addEventListener("pointerleave",()=>{
+  if(!down&&hoverId!==null){hoverId=null;draw();tipHide();} });
+cv.addEventListener("wheel",ev=>{ev.preventDefault();zStop();tipHide();
   const f=ev.deltaY<0?1.1:0.9,mx=ev.clientX,my=ev.clientY;
-  tx=mx-(mx-tx)*f;ty=my-(my-ty)*f;scale*=f;positions();},{passive:false});
-addEventListener("resize",()=>{W=innerWidth;H=innerHeight;cx=W/2;cy=H/2;
-  alpha=Math.max(alpha,0.3);fitPending=true;kick();});  // reframe after the relayout
-// Tag filter = hard hide (show only nodes carrying a selected tag; empty = all).
-// Search = soft dim of non-matching nodes + zoom-to-fit the matches.
-function passTag(n){return tagFilter.length===0||(n.tags||[]).some(t=>tagFilter.indexOf(t)>=0);}
-function matchSearch(n){return !searchQ||label(n).toLowerCase().indexOf(searchQ)>=0
-  ||(n.id||"").toLowerCase().indexOf(searchQ)>=0;}
-function nearHover(id){return hoverId===id||(adj[hoverId]&&adj[hoverId].has(id));}
-// A node is dimmed if the search excludes it OR a hover excludes it — both
-// contribute so leaving a hover restores (not clears) the search dim.
-function faded(n){return (searchQ&&!matchSearch(n))||(hoverId&&!nearHover(n.id));}
-function applyFilters(){
-  const shown=new Set();
-  nodes.forEach(n=>{const el=elNodes[n.id];if(!el)return;
-    const vis=passTag(n); el.g.style.display=vis?"":"none";
-    el.g.classList.toggle("faded", vis&&!!faded(n));
-    if(vis)shown.add(n.id);});
-  elEdges.forEach(({l,e})=>{const both=shown.has(e.source)&&shown.has(e.target);
-    l.style.display=both?"":"none";
-    l.classList.toggle("faded", both&&(faded(byId[e.source])||faded(byId[e.target])));});
-  empty.style.display=(shown.size===0)?"flex":"none";
-}
+  tx=mx-(mx-tx)*f;ty=my-(my-ty)*f;scale*=f;draw();},{passive:false});
+
 function zStop(){ if(zraf){cancelAnimationFrame(zraf);zraf=0;} }  // cancel on user interaction
 function animateTo(s,x,y){
   zStop();
   const s0=scale,x0=tx,y0=ty, ds=s-s0,dx=x-x0,dy=y-y0, dur=380;
-  if(Math.abs(ds)<1e-4&&Math.abs(dx)<0.5&&Math.abs(dy)<0.5){scale=s;tx=x;ty=y;positions();return;}
+  if(Math.abs(ds)<1e-4&&Math.abs(dx)<0.5&&Math.abs(dy)<0.5){scale=s;tx=x;ty=y;draw();return;}
   let start=null;
   const ease=t=>t<0.5?2*t*t:1-Math.pow(-2*t+2,2)/2;  // ease-in-out
   const loop=now=>{ if(start===null)start=now; const k=Math.min(1,(now-start)/dur),e=ease(k);
-    scale=s0+ds*e; tx=x0+dx*e; ty=y0+dy*e; positions();
+    scale=s0+ds*e; tx=x0+dx*e; ty=y0+dy*e; draw();
     zraf = k<1 ? requestAnimationFrame(loop) : 0; };
   zraf=requestAnimationFrame(loop);
 }
 function frameOf(list,factor){  // [scale,tx,ty] to frame `list` at factor×fit, or null
   if(!list.length)return null;
-  let a=1e9,b=1e9,c=-1e9,d=-1e9;
-  list.forEach(n=>{a=Math.min(a,n.x);b=Math.min(b,n.y);c=Math.max(c,n.x);d=Math.max(d,n.y);});
-  if(!(isFinite(a)&&isFinite(b)&&isFinite(c)&&isFinite(d)))return null;  // never blank the view
+  // Robust extent: frame the 2nd–98th percentile of x/y, so a handful of flung-out
+  // nodes don't blow up the bounding box and zoom the bulk into an invisible speck.
+  const xs=list.map(n=>n.x).filter(isFinite).sort((p,q)=>p-q);
+  const ys=list.map(n=>n.y).filter(isFinite).sort((p,q)=>p-q);
+  if(!xs.length||!ys.length)return null;  // never blank the view
+  const pick=(arr,t)=>arr[Math.min(arr.length-1,Math.max(0,Math.round(t*(arr.length-1))))];
+  const a=pick(xs,0.02),c=pick(xs,0.98),b=pick(ys,0.02),d=pick(ys,0.98);
   const pad=60,bw=(c-a)+pad*2,bh=(d-b)+pad*2;
   // Floor low enough to frame a wide layout whole; bounded centering keeps the
   // usual fit well above it, so 0.05 is a safety net, not the common case.
   const s=Math.min(2.5,Math.max(0.05,Math.min(W/bw,H/bh)))*(factor||1);
   return [s, W/2-((a+c)/2)*s, H/2-((b+d)/2)*s];
 }
-function setView(v){ if(v){zStop();scale=v[0];tx=v[1];ty=v[2];positions();} }  // instant
+function setView(v){ if(v){zStop();scale=v[0];tx=v[1];ty=v[2];draw();} }  // instant
 function zoomTo(list){ const v=frameOf(list,1); if(v)animateTo(v[0],v[1],v[2]); }
 function fit(){zoomTo(nodes);}
-function setTagFilter(tags){tagFilter=tags||[];applyFilters();}
-function search(q){searchQ=(q||"").toLowerCase();applyFilters();
+function setTagFilter(tags){tagFilter=tags||[];draw();}
+function search(q){searchQ=(q||"").toLowerCase();draw();
   if(searchQ){const hits=nodes.filter(n=>passTag(n)&&matchSearch(n));zoomTo(hits);}}
+
 // --- Hover tooltip -------------------------------------------------------
 function tipEnter(id,ev){
   tipHide();                       // cancel any pending/shown tip first
@@ -339,11 +396,21 @@ function tipShow(id){
 window.showTip=function(id,title,desc){tipCache[id]={title:title,desc:desc};
   if(tipFor===id)tipShow(id);};
 
-// Apply theme colours pushed from the host (GTK style context) as CSS variables.
+// Apply theme colours pushed from the host (GTK style context): mirror them into
+// CSS variables (for the HTML tooltip/legend) AND the `theme` object (for the canvas).
 window.setTheme=function(vars){const s=document.documentElement.style;
-  for(const k in vars)s.setProperty(k,vars[k]);};
+  for(const k in vars)s.setProperty(k,vars[k]);
+  if(vars["--edge"])theme.edge=vars["--edge"];
+  if(vars["--edge-out"])theme.edgeOut=vars["--edge-out"];
+  if(vars["--node-ring"])theme.nodeRing=vars["--node-ring"];
+  if(vars["--accent"])theme.accent=vars["--accent"];
+  if(vars["--fg"])theme.fg=vars["--fg"];
+  if(vars["--halo"])theme.halo=vars["--halo"];
+  draw();
+};
 
 window.setGraph=setGraph; window.setTagFilter=setTagFilter; window.search=search; window.fit=fit;
+resize();
 </script></body></html>
 """
 
@@ -426,9 +493,10 @@ class GraphView(Gtk.Box):
         GLib.idle_add(self._apply_theme)
 
     def _apply_theme(self) -> None:
-        """Pull the relevant colours from the GTK style context and hand them to
-        the page as CSS variables, so the graph follows the Adwaita theme (light/
-        dark, accent) instead of hardcoding its own palette."""
+        """Pull the relevant colours from the GTK style context and hand them to the
+        page (as CSS variables for the HTML overlays, mirrored into the canvas theme),
+        so the graph follows the Adwaita theme (light/dark, accent) instead of
+        hardcoding its own palette."""
         if not self._ready:
             return
         ctx = self._web.get_style_context()
