@@ -160,7 +160,8 @@ function draw(){
   ctx.translate(tx,ty); ctx.scale(scale,scale);
   // Edges. Normal edges batch into one path; when a hover/search is active they
   // split into a dim pass (all) + a bright pass (both endpoints in focus). Out-edges
-  // (from the centre node, sidebar's local graph) are always drawn bright.
+  // (from the centre node) glow bright, but only to endpoints still in focus — a
+  // hover or search dims the centre's edges to unrelated/non-matching nodes too.
   if(hoverId){
     // An active hover wins over the permanent centre emphasis: dim every edge,
     // then light only the hovered node's incident edges. Otherwise the centre's
@@ -177,7 +178,11 @@ function draw(){
     } else {
       strokeEdges(e=>e.source!==centerId, theme.edge, 1.3);
     }
-    if(centerId) strokeEdges(e=>e.source===centerId, theme.edgeOut, 1.6);
+    // Centre out-edges: faded-aware so a search dims the centre's edges to
+    // non-matching nodes too (without a search/focus, faded() is false for all,
+    // so the full fan glows as before). Matches the hover rule above (ZX2).
+    if(centerId) strokeEdges((e,a,b)=>e.source===centerId&&!faded(a)&&!faded(b),
+      theme.edgeOut, 1.6);
   }
   ctx.globalAlpha=1;
   // Nodes as shaded spheres (radial gradient: highlight top-left -> base -> dark rim),
