@@ -282,6 +282,7 @@ class MainWindow(Adw.ApplicationWindow):
             backlink_index=self._backlink_index,
             get_active_tab_info=self._get_active_tab_info,
             get_graph_payload=self._graph_payload,
+            get_mini_graph_lens=self._mini_graph_lens_config,
         )
         self._sidebar.connect("file-open-requested", self._on_sidebar_file_requested)
         self._sidebar.connect("file-open-new-tab", self._on_sidebar_file_new_tab)
@@ -2270,7 +2271,17 @@ class MainWindow(Adw.ApplicationWindow):
             "strength": config.get_setting(self._settings, "graph.lens_strength", 2.6),
             "label_radius": config.get_setting(
                 self._settings, "graph.label_radius", 160.0),
+            "lens_in_sidebar": config.get_setting(
+                self._settings, "graph.lens_in_sidebar", True),
         })
+
+    def _mini_graph_lens_config(self) -> tuple:
+        """The five lens values for the sidebar mini-graph: the same as the explorer's,
+        but with fisheye and labels forced off unless 'lens_in_sidebar' is set."""
+        cfg = self._graph_lens_config()
+        on = cfg["lens_in_sidebar"]
+        return (on and cfg["fisheye"], on and cfg["labels"],
+                cfg["radius"], cfg["strength"], cfg["label_radius"])
 
     def _persist_graph_lens_config(self, cfg: dict) -> None:
         config.set_setting(self._settings, "graph.fisheye", bool(cfg["fisheye"]))
@@ -2279,7 +2290,10 @@ class MainWindow(Adw.ApplicationWindow):
         config.set_setting(self._settings, "graph.lens_strength", float(cfg["strength"]))
         config.set_setting(self._settings, "graph.label_radius",
                            float(cfg["label_radius"]))
+        config.set_setting(self._settings, "graph.lens_in_sidebar",
+                           bool(cfg["lens_in_sidebar"]))
         config.save_settings()
+        self._sidebar.refresh_mini_graph_lens()   # live-apply to the mini-graph if built
 
     def _apply_view_mode(self) -> None:
         self._view_mode_manager.apply_view_mode()

@@ -366,6 +366,18 @@ class TestSidebarMiniGraph(unittest.TestCase):
             sidebar._refresh_graph()
         self.assertTrue(gv.call_args.kwargs.get("bottom_panel"))
 
+    def test_refresh_mini_graph_lens_pushes_the_config_when_built(self):
+        me = mock.Mock()
+        me._get_mini_graph_lens.return_value = (True, False, 90.0, 4.0, 220.0)
+        Sidebar.refresh_mini_graph_lens(me)
+        me._graph_view.set_lens_config.assert_called_once_with(True, False, 90.0, 4.0, 220.0)
+
+    def test_refresh_mini_graph_lens_is_a_noop_before_the_graph_is_built(self):
+        me = mock.Mock()
+        me._graph_view = None
+        Sidebar.refresh_mini_graph_lens(me)   # must not raise
+        me._get_mini_graph_lens.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

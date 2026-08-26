@@ -47,17 +47,38 @@ class TestGraphLensPersistence(unittest.TestCase):
         self.assertEqual(
             MainWindow._graph_lens_config(me),
             {"fisheye": True, "labels": True, "radius": 140.0, "strength": 2.6,
-             "label_radius": 160.0})
+             "label_radius": 160.0, "lens_in_sidebar": True})
 
     def test_reads_stored_values(self):
         me = mock.Mock()
         me._settings = {"graph": {"fisheye": False, "cursor_labels": False,
                                   "lens_radius": 90.0, "lens_strength": 4.0,
-                                  "label_radius": 220.0}}
+                                  "label_radius": 220.0, "lens_in_sidebar": False}}
         self.assertEqual(
             MainWindow._graph_lens_config(me),
             {"fisheye": False, "labels": False, "radius": 90.0, "strength": 4.0,
-             "label_radius": 220.0})
+             "label_radius": 220.0, "lens_in_sidebar": False})
+
+    def test_mini_graph_gates_fisheye_and_labels_on_the_opt_in(self):
+        me = mock.Mock()
+        me._graph_lens_config.return_value = {
+            "fisheye": True, "labels": True, "radius": 90.0, "strength": 4.0,
+            "label_radius": 220.0, "lens_in_sidebar": False}
+        # Opt-out: fisheye/labels forced off, the numbers pass through unchanged.
+        self.assertEqual(MainWindow._mini_graph_lens_config(me),
+                         (False, False, 90.0, 4.0, 220.0))
+        me._graph_lens_config.return_value["lens_in_sidebar"] = True
+        self.assertEqual(MainWindow._mini_graph_lens_config(me),
+                         (True, True, 90.0, 4.0, 220.0))
+
+    def test_schema_defaults_match_the_code_defaults(self):
+        # The config schema (survives a load) and graph_view.LENS_DEFAULTS (the code
+        # default) must not drift; read the schema's graph branch through the real path.
+        from markdown_vault.core.config import _DEFAULT_SETTINGS
+        from markdown_vault.graph.graph_view import LENS_DEFAULTS
+        me = mock.Mock()
+        me._settings = {"graph": dict(_DEFAULT_SETTINGS["graph"])}
+        self.assertEqual(MainWindow._graph_lens_config(me), LENS_DEFAULTS)
 
     def test_clamps_garbage_from_disk(self):
         me = mock.Mock()
@@ -70,13 +91,14 @@ class TestGraphLensPersistence(unittest.TestCase):
         me = mock.Mock()
         me._settings = {}
         cfg = {"fisheye": False, "labels": True, "radius": 90.0, "strength": 3.0,
-               "label_radius": 220.0}
+               "label_radius": 220.0, "lens_in_sidebar": False}
         with mock.patch("markdown_vault.app.app_window.config.save_settings") as save:
             MainWindow._persist_graph_lens_config(me, cfg)
         self.assertEqual(me._settings["graph"], {
             "fisheye": False, "cursor_labels": True, "lens_radius": 90.0,
-            "lens_strength": 3.0, "label_radius": 220.0})
+            "lens_strength": 3.0, "label_radius": 220.0, "lens_in_sidebar": False})
         save.assert_called_once_with()
+        me._sidebar.refresh_mini_graph_lens.assert_called_once_with()
 
 
 if __name__ == "__main__":

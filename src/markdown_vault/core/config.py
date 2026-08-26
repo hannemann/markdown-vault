@@ -267,6 +267,16 @@ def set_vault_icon(path: str, icon: str | None, mono: bool = False) -> list[dict
 _DEFAULT_SETTINGS = {
     "autosave": {"interval": 30},
     "view": {"default_mode": "edit"},
+    # Graph view — cursor fisheye lens (mirrors graph_view.LENS_DEFAULTS; kept here so
+    # the keys are known settings and survive a load rather than being dropped).
+    "graph": {
+        "fisheye": True,
+        "cursor_labels": True,
+        "lens_radius": 140.0,
+        "lens_strength": 2.6,
+        "label_radius": 160.0,
+        "lens_in_sidebar": True,
+    },
     # OKF lifecycle: hide deprecated notes from the vault tree AND the search
     # surfaces (with a visible "N hidden" notice). One shared, persisted toggle.
     # Top-level: it spans pages (tree + every search surface).

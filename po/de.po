@@ -2022,3 +2022,11 @@ msgstr "Stärke"
 #: src/markdown_vault/graph/graph_explorer.py
 msgid "Label radius"
 msgstr "Namen-Radius"
+
+#: src/markdown_vault/graph/graph_explorer.py
+msgid "Also in the sidebar graph"
+msgstr "Auch im Sidebar-Graph"
+
+#: src/markdown_vault/graph/graph_explorer.py
+msgid "Apply the cursor lens to the small graph in the sidebar too"
+msgstr "Die Cursor-Linse auch auf den kleinen Graphen in der Seitenleiste anwenden"

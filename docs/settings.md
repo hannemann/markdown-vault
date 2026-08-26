@@ -14,6 +14,17 @@ Generated from `src/markdown_vault/core/settings.schema.json` — **do not edit 
 | --- | --- | --- | --- |
 | `view.default_mode` | string | `"edit"` | Which view a note opens in: edit, render or split. Values: `edit`, `render`, `split`. |
 
+## graph
+
+| Setting | Type | Default | Description |
+| --- | --- | --- | --- |
+| `graph.fisheye` | boolean | `true` | Distort the graph with a fisheye lens around the mouse cursor. |
+| `graph.cursor_labels` | boolean | `true` | Show filenames of the nodes near the mouse cursor in the graph. |
+| `graph.lens_radius` | number | `140.0` | Radius in screen pixels of the cursor fisheye lens. |
+| `graph.lens_strength` | number | `2.6` | Distortion strength of the cursor fisheye lens (focus magnification is about strength + 1). |
+| `graph.label_radius` | number | `160.0` | Radius in screen pixels within which cursor labels appear. |
+| `graph.lens_in_sidebar` | boolean | `true` | Apply the cursor lens to the small graph in the sidebar too, not only the full-graph explorer. |
+
 ## hide_deprecated
 
 | Setting | Type | Default | Description |

@@ -122,6 +122,14 @@ class GraphExplorer(Gtk.Box):
         self._label_radius_scale = self._slider("label_radius")
         box.append(self._label_radius_scale)
 
+        box.append(Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL, margin_top=6))
+        self._sidebar_chk = Gtk.CheckButton(label=_("Also in the sidebar graph"))
+        self._sidebar_chk.set_active(self._lens["lens_in_sidebar"])
+        self._sidebar_chk.set_tooltip_text(
+            _("Apply the cursor lens to the small graph in the sidebar too"))
+        self._sidebar_chk.connect("toggled", self._on_lens_changed)
+        box.append(self._sidebar_chk)
+
         pop = Gtk.Popover()
         pop.set_child(box)
         btn = Gtk.MenuButton(label=_("View"), popover=pop)
@@ -148,6 +156,7 @@ class GraphExplorer(Gtk.Box):
             "radius": self._radius_scale.get_value(),
             "strength": self._strength_scale.get_value(),
             "label_radius": self._label_radius_scale.get_value(),
+            "lens_in_sidebar": self._sidebar_chk.get_active(),
         }
         self._apply_lens()
         if self._on_lens_config_changed is not None:

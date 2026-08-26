@@ -17,6 +17,17 @@
         "default_mode": {"type": "string", "enum": ["edit", "render", "split"], "default": "edit", "description": "Which view a note opens in: edit, render or split."}
       }
     },
+    "graph": {
+      "type": "object",
+      "properties": {
+        "fisheye": {"type": "boolean", "default": true, "description": "Distort the graph with a fisheye lens around the mouse cursor."},
+        "cursor_labels": {"type": "boolean", "default": true, "description": "Show filenames of the nodes near the mouse cursor in the graph."},
+        "lens_radius": {"type": "number", "default": 140.0, "description": "Radius in screen pixels of the cursor fisheye lens."},
+        "lens_strength": {"type": "number", "default": 2.6, "description": "Distortion strength of the cursor fisheye lens (focus magnification is about strength + 1)."},
+        "label_radius": {"type": "number", "default": 160.0, "description": "Radius in screen pixels within which cursor labels appear."},
+        "lens_in_sidebar": {"type": "boolean", "default": true, "description": "Apply the cursor lens to the small graph in the sidebar too, not only the full-graph explorer."}
+      }
+    },
     "hide_deprecated": {"type": "boolean", "default": false, "description": "Hide notes marked deprecated from the vault tree AND every search surface (a visible 'N hidden' notice remains). Spans pages, so it lives at the top level."},
     "editor": {
       "type": "object",

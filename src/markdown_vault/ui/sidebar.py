@@ -100,6 +100,7 @@ class Sidebar(Gtk.Box):
         backlink_index: BacklinkIndex | None = None,
         get_active_tab_info=None,
         get_graph_payload=None,
+        get_mini_graph_lens=None,
     ) -> None:
         super().__init__(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
         self.set_size_request(280, -1)
@@ -115,6 +116,9 @@ class Sidebar(Gtk.Box):
         # GraphView (a WebKit WebView) is created lazily on first use so the web
         # process only spawns if the user actually opens the Graph tab.
         self._get_graph_payload = get_graph_payload
+        # Returns the 5-tuple cursor-lens config for the mini-graph (fisheye/labels off
+        # unless the user opted the sidebar in via the explorer's View popover).
+        self._get_mini_graph_lens = get_mini_graph_lens
         self._graph_view = None
         self._pulse_id = 0   # pending card-pulse timeout, cancelled on the next pulse
 
@@ -327,7 +331,14 @@ class Sidebar(Gtk.Box):
                 "node-carded",
                 lambda _v, path, color: self.add_card_for_node(path, color, switch=False))
             self._graph_panel.append(self._graph_view)
+            self.refresh_mini_graph_lens()   # apply the opt-in lens state to the new view
         self._graph_view.set_graph(self._get_graph_payload(self._current_file))
+
+    def refresh_mini_graph_lens(self) -> None:
+        """Push the current cursor-lens config to the mini-graph, if it has been built.
+        Called on creation and whenever the explorer's View popover changes it."""
+        if self._graph_view is not None and self._get_mini_graph_lens is not None:
+            self._graph_view.set_lens_config(*self._get_mini_graph_lens())
 
     def teardown(self) -> None:
         """Release the graph WebView (clean WebKit shutdown)."""

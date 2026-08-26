@@ -652,9 +652,11 @@ def parse_graph_message(raw: str):
 # Single source of the cursor-lens defaults and the numeric (lo, hi, step) ranges — used
 # for the GraphView seed, the explorer's sliders, and clamping values read off disk.
 LENS_DEFAULTS = {"fisheye": True, "labels": True, "radius": 140.0,
-                 "strength": 2.6, "label_radius": 160.0}
+                 "strength": 2.6, "label_radius": 160.0, "lens_in_sidebar": True}
 LENS_RANGES = {"radius": (40.0, 240.0, 10.0), "strength": (0.6, 4.6, 0.1),
                "label_radius": (20.0, 300.0, 10.0)}
+# The five values GraphView.set_lens_config takes, in order. lens_in_sidebar is an
+# app-level flag (whether the sidebar mini-graph gets the lens at all), not a page value.
 _LENS_KEYS = ("fisheye", "labels", "radius", "strength", "label_radius")
 
 
@@ -664,7 +666,9 @@ def clamp_lens_config(cfg: dict) -> dict:
     canvas as a negative/NaN arc radius — bad types fall back to the default, numbers
     clamp to their slider range."""
     out = {"fisheye": bool(cfg.get("fisheye", LENS_DEFAULTS["fisheye"])),
-           "labels": bool(cfg.get("labels", LENS_DEFAULTS["labels"]))}
+           "labels": bool(cfg.get("labels", LENS_DEFAULTS["labels"])),
+           "lens_in_sidebar": bool(cfg.get("lens_in_sidebar",
+                                           LENS_DEFAULTS["lens_in_sidebar"]))}
     for key, (lo, hi, _step) in LENS_RANGES.items():
         try:
             value = float(cfg.get(key, LENS_DEFAULTS[key]))
