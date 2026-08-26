@@ -290,6 +290,14 @@ msgstr "Graph-Umfang"
 msgid "Tags"
 msgstr "Tags"
 
+#: src/markdown_vault/graph/graph_view.py
+msgid "Legend"
+msgstr "Legende"
+
+#: src/markdown_vault/graph/graph_view.py
+msgid "no connections"
+msgstr "Keine Verbindungen"
+
 #: src/markdown_vault/graph/graph_explorer.py
 msgid "Filter by tag"
 msgstr "Nach Tag filtern"

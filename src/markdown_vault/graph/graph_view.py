@@ -28,6 +28,7 @@ gi.require_version("Adw", "1")
 
 from gi.repository import Gtk, WebKit, GObject, GLib, Adw
 
+from markdown_vault.core.i18n import _
 from markdown_vault.markdown import frontmatter
 
 logger = logging.getLogger(__name__)
@@ -38,7 +39,7 @@ _PAGE = r"""<!doctype html>
 <meta http-equiv="Content-Security-Policy"
       content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline';">
 <style>
-  html,body{margin:0;height:100%;overflow:hidden;background:transparent;
+  html,body{margin:0;height:100%;overflow:hidden;background:#000;
     font:12px system-ui,sans-serif;color:var(--fg,#888)}
   #cv{display:block;width:100%;height:100%;cursor:grab;touch-action:none}
   #cv.grabbing{cursor:grabbing}
@@ -106,6 +107,9 @@ const tipCache={};
 // host's CSS variables), since a canvas can't read CSS custom properties.
 let theme={edge:"rgba(136,136,136,.5)",edgeOut:"rgba(91,155,213,.85)",
   nodeRing:"rgba(0,0,0,.35)",accent:"#e66100",fg:"#888",halo:"rgba(127,127,127,.35)"};
+// Chrome strings — English fallbacks; the host replaces them with gettext translations
+// via setStrings (the WebView can't call gettext itself).
+let strings={legend:"Legend",noConnections:"no connections"};
 
 function radius(n){return 3.5+Math.min(20,Math.sqrt(n.degree||0)*2.4)+(n.center?4:0);}
 // Sphere shading: cached light/dark shades of the node colour for the radial gradient.
@@ -245,7 +249,7 @@ function setGraph(payload){
 // and handed over as [{label,color}] -- render it as-is, textContent for the label.
 function buildLegend(items){
   items=items||[];
-  legendHd.textContent="Legend ("+items.length+")";   // ::before arrow is a pseudo-element
+  legendHd.textContent=strings.legend+" ("+items.length+")";   // ::before is a pseudo-element
   legendItems.textContent=""; focusColor=null;
   items.forEach(it=>{
     const row=document.createElement("div"); row.className="row";
@@ -516,6 +520,9 @@ window.setTheme=function(vars){const s=document.documentElement.style;
   draw();
 };
 
+// Host-injected, gettext-translated chrome strings (the WebView can't call gettext).
+window.setStrings=function(s){Object.assign(strings,s); empty.textContent=strings.noConnections;};
+
 window.setGraph=setGraph; window.setTagFilter=setTagFilter; window.search=search; window.fit=fit;
 resize();
 </script></body></html>
@@ -592,6 +599,7 @@ class GraphView(Gtk.Box):
         if event == WebKit.LoadEvent.FINISHED:
             self._ready = True
             self._apply_theme()          # theme the first paint, before any graph
+            self._apply_strings()        # translated chrome strings, before any legend
             if self._pending is not None:
                 self._push(self._pending)
 
@@ -600,50 +608,47 @@ class GraphView(Gtk.Box):
         GLib.idle_add(self._apply_theme)
 
     def _apply_theme(self) -> None:
-        """Pull the relevant colours from the GTK style context and hand them to the
-        page (as CSS variables for the HTML overlays, mirrored into the canvas theme),
-        so the graph follows the Adwaita theme (light/dark, accent) instead of
-        hardcoding its own palette."""
+        """The graph is a fixed dark canvas (the page background is black), so its
+        colours deliberately do NOT follow the light/dark GTK theme — a themed light
+        foreground on black would be unreadable. Push a fixed dark-canvas palette;
+        only the accent (centre/focus ring, out-edges) follows the user's accent."""
         if not self._ready:
             return
         ctx = self._web.get_style_context()
-
-        def look(*names):
-            for n in names:
-                ok, c = ctx.lookup_color(n)
-                if ok:
-                    return c
-            return None
 
         def css(c, alpha=None):
             return "rgba(%d,%d,%d,%g)" % (
                 round(c.red * 255), round(c.green * 255), round(c.blue * 255),
                 c.alpha if alpha is None else alpha)
 
-        fg = look("window_fg_color", "view_fg_color")
-        bg = look("window_bg_color", "view_bg_color")
-        accent = look("accent_color", "accent_bg_color")
-        pop_bg = look("popover_bg_color", "window_bg_color")
-        pop_fg = look("popover_fg_color", "window_fg_color")
+        accent = None
+        for name in ("accent_color", "accent_bg_color"):
+            ok, c = ctx.lookup_color(name)
+            if ok:
+                accent = c
+                break
 
-        v = {}
-        if fg is not None:
-            v["--fg"] = css(fg)
-            v["--dim"] = css(fg, 0.55)
-            v["--edge"] = css(fg, 0.28)
-            v["--node-ring"] = css(fg, 0.35)
-            v["--tip-border"] = css(fg, 0.20)
-        if bg is not None:
-            v["--halo"] = css(bg, 0.55)          # text outline = background, for legibility
-        if accent is not None:
-            v["--accent"] = css(accent)
-            v["--edge-out"] = css(accent, 0.85)
-        if pop_bg is not None:
-            v["--tip-bg"] = css(pop_bg)
-        if pop_fg is not None:
-            v["--tip-fg"] = css(pop_fg)
-        if v:
-            self._eval("window.setTheme(%s);" % json.dumps(v))
+        v = {
+            "--fg": "rgba(232,234,240,0.92)",       # labels
+            "--dim": "rgba(232,234,240,0.5)",       # empty-state text
+            "--edge": "rgba(200,206,220,0.34)",     # links, a touch brighter to read on black
+            "--node-ring": "rgba(0,0,0,0.35)",
+            "--halo": "rgba(0,0,0,0.7)",            # text outline: dark, so light labels pop
+            "--tip-bg": "rgba(22,22,26,0.94)",
+            "--tip-fg": "rgba(236,238,244,0.96)",
+            "--tip-border": "rgba(255,255,255,0.16)",
+            "--accent": css(accent) if accent else "#e66100",
+            "--edge-out": css(accent, 0.85) if accent else "rgba(230,97,0,0.85)",
+        }
+        self._eval("window.setTheme(%s);" % json.dumps(v))
+
+    def _apply_strings(self) -> None:
+        """Hand the gettext-translated chrome strings to the page — the WebView cannot
+        call gettext itself, so the (few) UI labels are injected from the host."""
+        self._eval("window.setStrings(%s);" % json.dumps({
+            "legend": _("Legend"),
+            "noConnections": _("no connections"),
+        }))
 
     def _on_message(self, _ucm, js_value) -> None:
         try:
