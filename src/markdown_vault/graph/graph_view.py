@@ -79,7 +79,7 @@ const tip=document.getElementById("tip"), tipAnchor=document.getElementById("tip
 let W=innerWidth,H=innerHeight,cx=W/2,cy=H/2,dpr=window.devicePixelRatio||1;
 let nodes=[],links=[],byId={},centerId=null,adj={};
 let tx=0,ty=0,scale=1,alpha=0,raf=0,fitPending=false,zraf=0;
-let tagFilter=[],searchQ="",hoverId=null;
+let tagFilter=[],searchQ="",hoverId=null,hoverTarget=null,hoverTimer=0;
 // Hover tooltip: 500ms-debounced, lazily resolved by the host and cached per id.
 let tipTimer=0,tipFor=null,tipX=0,tipY=0;
 const tipCache={};
@@ -88,7 +88,12 @@ const tipCache={};
 let theme={edge:"rgba(136,136,136,.5)",edgeOut:"rgba(91,155,213,.85)",
   nodeRing:"rgba(0,0,0,.35)",accent:"#e66100",fg:"#888",halo:"rgba(127,127,127,.35)"};
 
-function radius(n){return 5+Math.min(9,Math.sqrt(n.degree||0)*2)+(n.center?3:0);}
+function radius(n){return 3.5+Math.min(20,Math.sqrt(n.degree||0)*2.4)+(n.center?4:0);}
+// Sphere shading: cached light/dark shades of the node colour for the radial gradient.
+function litOf(hex){const v=parseInt(hex.slice(1),16),r=(v>>16)&255,g=(v>>8)&255,b=v&255;
+  const m=x=>Math.round(x+(255-x)*0.55); return "rgb("+m(r)+","+m(g)+","+m(b)+")";}
+function drkOf(hex){const v=parseInt(hex.slice(1),16),r=(v>>16)&255,g=(v>>8)&255,b=v&255;
+  const m=x=>Math.round(x*0.62); return "rgb("+m(r)+","+m(g)+","+m(b)+")";}
 function base(p){const q=p.replace(/\/+$/,"").split("/");return q[q.length-1]||p;}
 function label(n){return n.label||base(n.id);}
 function passTag(n){return tagFilter.length===0||(n.tags||[]).some(t=>tagFilter.indexOf(t)>=0);}
@@ -134,14 +139,20 @@ function draw(){
   }
   if(centerId) strokeEdges(e=>e.source===centerId, theme.edgeOut, 1.6);
   ctx.globalAlpha=1;
-  // Nodes.
+  // Nodes as shaded spheres (radial gradient: highlight top-left -> base -> dark rim),
+  // so importance reads at a glance and the graph has some depth. The gradient's dark
+  // edge is the rim, so only the centre node still gets an explicit accent ring.
   for(let i=0;i<nodes.length;i++){const n=nodes[i]; if(!passTag(n))continue;
-    const r=radius(n);
+    const r=radius(n), col=n.color||"#888";
     ctx.globalAlpha=faded(n)?0.12:1;
-    ctx.beginPath(); ctx.arc(n.x,n.y,r,0,6.283185307);
-    ctx.fillStyle=n.color||"#888"; ctx.fill();
-    ctx.lineWidth=n.center?3:1;
-    ctx.strokeStyle=n.center?theme.accent:theme.nodeRing; ctx.stroke();
+    if(col.length===7){
+      if(n._c0===undefined){n._c0=litOf(col); n._c1=drkOf(col);}
+      const gr=ctx.createRadialGradient(n.x-r*0.35,n.y-r*0.38,r*0.12, n.x,n.y,r);
+      gr.addColorStop(0,n._c0); gr.addColorStop(0.5,col); gr.addColorStop(1,n._c1);
+      ctx.fillStyle=gr;
+    } else { ctx.fillStyle=col; }
+    ctx.beginPath(); ctx.arc(n.x,n.y,r,0,6.283185307); ctx.fill();
+    if(n.center){ctx.lineWidth=3; ctx.strokeStyle=theme.accent; ctx.stroke();}
   }
   ctx.globalAlpha=1;
   // Labels only for the centre and the hovered node — never 3500 texts. Drawn in
@@ -286,10 +297,20 @@ function nodeAt(sx,sy){  // screen px -> topmost node under the pointer, or null
     if(d2<=r*r && d2<best){best=d2;hit=n;}}
   return hit;
 }
+// Highlight is debounced off the raw pointer: slow to commit on enter (300ms), slower
+// to release on leave (1s), so moving off a node doesn't instantly wipe what you were
+// studying and a quick glide across the graph doesn't strobe every node it crosses.
+function scheduleHover(id){
+  if(hoverTimer){clearTimeout(hoverTimer);hoverTimer=0;}
+  if(id===hoverId)return;                 // back on the same node -> keep it, cancel any release
+
+  hoverTimer=setTimeout(()=>{ hoverTimer=0; hoverId=id; draw();
+    if(id)tipEnter(id); else tipHide(); }, id?300:1000);
+}
 let down=false,moved=false,sx0=0,sy0=0,btn=0,dragNode=null,pan=false;
 cv.addEventListener("pointerdown",ev=>{
   down=true;moved=false;btn=ev.button;sx0=ev.clientX;sy0=ev.clientY;
-  zStop();tipHide();
+  zStop();tipHide(); if(hoverTimer){clearTimeout(hoverTimer);hoverTimer=0;}
   if(ev.button===1)ev.preventDefault();  // no middle-click autoscroll
   dragNode=nodeAt(ev.clientX,ev.clientY);
   if(dragNode){dragNode.fixed=true;}
@@ -305,7 +326,7 @@ cv.addEventListener("pointermove",ev=>{
   }
   tipX=ev.clientX;tipY=ev.clientY;
   const h=nodeAt(ev.clientX,ev.clientY), id=h?h.id:null;
-  if(id!==hoverId){hoverId=id; draw(); if(id)tipEnter(id,ev); else tipHide();}
+  if(id!==hoverTarget){hoverTarget=id; scheduleHover(id);}
 });
 cv.addEventListener("pointerup",ev=>{
   if(!down)return; down=false;
@@ -318,7 +339,7 @@ cv.addEventListener("pointerup",ev=>{
   else if(pan){pan=false;cv.classList.remove("grabbing");}
 });
 cv.addEventListener("pointerleave",()=>{
-  if(!down&&hoverId!==null){hoverId=null;draw();tipHide();} });
+  if(!down){hoverTarget=null;scheduleHover(null);} });
 cv.addEventListener("wheel",ev=>{ev.preventDefault();zStop();tipHide();
   const f=ev.deltaY<0?1.1:0.9,mx=ev.clientX,my=ev.clientY;
   tx=mx-(mx-tx)*f;ty=my-(my-ty)*f;scale*=f;draw();},{passive:false});
@@ -358,9 +379,9 @@ function search(q){searchQ=(q||"").toLowerCase();draw();
   if(searchQ){const hits=nodes.filter(n=>passTag(n)&&matchSearch(n));zoomTo(hits);}}
 
 // --- Hover tooltip -------------------------------------------------------
-function tipEnter(id,ev){
+function tipEnter(id){
   tipHide();                       // cancel any pending/shown tip first
-  tipFor=id; tipX=ev.clientX; tipY=ev.clientY;
+  tipFor=id;                       // tipX/tipY are kept current by pointermove
   tipTimer=setTimeout(()=>{tipTimer=0; tipRequest(id);}, 500);
 }
 function tipHide(){
