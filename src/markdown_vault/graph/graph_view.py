@@ -60,9 +60,11 @@ _PAGE = r"""<!doctype html>
     padding:1px 4px;line-height:1.5;cursor:pointer;border-radius:3px}
   #legenditems .row:hover{background:rgba(127,127,127,.16)}
   #legenditems .row.active{background:rgba(127,127,127,.30)}
-  #legenditems i{width:9px;height:9px;border-radius:50%;flex:none}
-  #legend i{display:inline-block;width:9px;height:9px;border-radius:50%;
-    margin-right:4px;vertical-align:-1px}
+  /* box-shadow, not border, keeps the 9x9 geometry — the swatch keeps its exact
+     colour (so it still matches the node in the graph) but always has an edge, even
+     a pale one on a light legend in a light GTK theme (ZW1). */
+  #legenditems i{width:9px;height:9px;border-radius:50%;flex:none;
+    box-shadow:0 0 0 1px var(--legend-border,rgba(127,127,127,.3))}
   #empty{position:absolute;inset:0;display:none;align-items:center;
     justify-content:center;color:var(--dim,#999);font-style:italic}
   /* A 0x0 anchor placed at the pointer; the tooltip is positioned against it
@@ -80,7 +82,8 @@ _PAGE = r"""<!doctype html>
     overflow-wrap:anywhere}
   #tip .tip-vault{display:flex;align-items:center;gap:5px;opacity:.7;
     font-size:.9em;margin-top:5px}
-  #tip .tip-vault i{width:8px;height:8px;border-radius:50%;flex:none}
+  #tip .tip-vault i{width:8px;height:8px;border-radius:50%;flex:none;
+    box-shadow:0 0 0 1px var(--tip-border,rgba(127,127,127,.45))}
 </style></head>
 <body>
 <canvas id="cv"></canvas>
@@ -639,17 +642,17 @@ class GraphView(Gtk.Box):
             "--edge": "rgba(200,206,220,0.34)",     # links, a touch brighter to read on black
             "--node-ring": "rgba(0,0,0,0.35)",
             "--halo": "rgba(0,0,0,0.7)",            # text outline: dark, so light labels pop
-            "--tip-bg": "rgba(22,22,26,0.94)",
-            "--tip-fg": "rgba(236,238,244,0.96)",
-            "--tip-border": "rgba(255,255,255,0.16)",
             "--accent": css(accent) if accent else "#e66100",
             "--edge-out": css(accent, 0.85) if accent else "rgba(230,97,0,0.85)",
         }
+        # The legend box AND the hover tooltip are chrome, not part of the dark canvas,
+        # so both follow the system popover colours (falling back to Canvas/CanvasText
+        # in CSS when no theme colour resolves).
         if leg_bg is not None:
-            v["--legend-bg"] = css(leg_bg, 0.96)
+            v["--legend-bg"] = v["--tip-bg"] = css(leg_bg, 0.96)
         if leg_fg is not None:
-            v["--legend-fg"] = css(leg_fg)
-            v["--legend-border"] = css(leg_fg, 0.22)
+            v["--legend-fg"] = v["--tip-fg"] = css(leg_fg)
+            v["--legend-border"] = v["--tip-border"] = css(leg_fg, 0.22)
         self._eval("window.setTheme(%s);" % json.dumps(v))
 
     def _apply_strings(self) -> None:
