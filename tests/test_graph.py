@@ -110,13 +110,97 @@ class TestPaletteAndPayload(unittest.TestCase):
         gr = g.build_graph({"/v/a.md": "/v", "/v/b.md": "/v"},
                            [("/v/a.md", "/v/b.md")],
                            file_tags={"/v/a.md": ["work"]})
-        payload = g.to_payload(gr, g.vault_palette(["/v"]), center="/v/a.md")
+        colors = {"/v/a.md": "#123456", "/v/b.md": "#123456"}   # keyed by node id now
+        payload = g.to_payload(gr, colors, center="/v/a.md",
+                               legend=[{"label": "a", "color": "#123456"}])
         centre = [n for n in payload["nodes"] if n["center"]]
         self.assertEqual(len(centre), 1)
         self.assertEqual(centre[0]["id"], "/v/a.md")
-        self.assertEqual(centre[0]["color"], g.color_for_vault("/v"))
+        self.assertEqual(centre[0]["color"], "#123456")
         self.assertEqual(centre[0]["tags"], ["work"])
         self.assertEqual(payload["edges"], [{"source": "/v/a.md", "target": "/v/b.md"}])
+        self.assertEqual(payload["legend"], [{"label": "a", "color": "#123456"}])
+
+
+class TestCommunityColoring(unittest.TestCase):
+    def _clique(self, prefix, names):
+        edges = []
+        for i in range(len(names)):
+            for j in range(i + 1, len(names)):
+                edges.append((f"/v/{prefix}{names[i]}.md", f"/v/{prefix}{names[j]}.md"))
+        return edges
+
+    def _two_cliques(self):
+        # Two disconnected K4 cliques {x1..x4}, {y1..y4} — two clean communities.
+        fv = {f"/v/{p}{i}.md": "/v" for p in "xy" for i in "1234"}
+        return g.build_graph(fv, self._clique("x", "1234") + self._clique("y", "1234"))
+
+    def test_two_cliques_two_communities(self):
+        labels = g.community_labels(self._two_cliques())
+        xs = {labels[f"/v/x{i}.md"] for i in "1234"}
+        ys = {labels[f"/v/y{i}.md"] for i in "1234"}
+        self.assertEqual(len(xs), 1)           # each clique shares one label
+        self.assertEqual(len(ys), 1)
+        self.assertNotEqual(xs, ys)            # and the two cliques differ
+
+    def test_deterministic(self):
+        gr = self._two_cliques()
+        self.assertEqual(g.community_labels(gr), g.community_labels(gr))
+
+    def test_partition_independent_of_edge_order(self):
+        gr1 = self._two_cliques()
+        fv = {n.id: n.vault for n in gr1.nodes}
+        gr2 = g.build_graph(fv, [(e.target, e.source) for e in reversed(gr1.edges)])
+
+        def partition(gr):
+            groups = {}
+            for nid, lab in g.community_labels(gr).items():
+                groups.setdefault(lab, set()).add(nid)
+            return {frozenset(s) for s in groups.values()}
+
+        self.assertEqual(partition(gr1), partition(gr2))
+
+    def test_dense_graph_falls_back_to_vault(self):
+        # One complete graph -> LPA collapses to a single community (degenerate) ->
+        # colour by vault, not one useless single-colour "community".
+        names = [str(i) for i in range(6)]
+        gr = g.build_graph({f"/v/n{i}.md": "/v" for i in range(6)},
+                           self._clique("n", names))
+        vault_colors = g.vault_palette(["/v"])
+        colors, legend = g.color_and_legend(gr, vault_colors)
+        self.assertTrue(all(c == vault_colors["/v"] for c in colors.values()))
+        self.assertEqual(legend, [{"label": "v", "color": vault_colors["/v"],
+                                   "id": "/v/n0.md"}])
+
+    def test_community_mode_distinct_colors(self):
+        colors, _ = g.color_and_legend(self._two_cliques(), g.vault_palette(["/v"]))
+        xcol = {colors[f"/v/x{i}.md"] for i in "1234"}
+        ycol = {colors[f"/v/y{i}.md"] for i in "1234"}
+        self.assertEqual(len(xcol), 1)         # one colour per community
+        self.assertEqual(len(ycol), 1)
+        self.assertNotEqual(xcol, ycol)
+
+    def test_legend_names_communities_by_highest_degree_node(self):
+        _, legend = g.color_and_legend(self._two_cliques(), g.vault_palette(["/v"]))
+        self.assertEqual({e["label"] for e in legend}, {"x1", "y1"})
+        self.assertEqual({e["id"] for e in legend}, {"/v/x1.md", "/v/y1.md"})
+
+    def test_membership_stable_when_a_note_is_added(self):
+        before = g.community_labels(self._two_cliques())
+        gr2 = self._two_cliques()
+        fv = {n.id: n.vault for n in gr2.nodes}
+        fv["/v/z.md"] = "/v"
+        edges = [(e.source, e.target) for e in gr2.edges] + [("/v/z.md", "/v/x2.md")]
+        after = g.community_labels(g.build_graph(fv, edges))
+        for grp in ("x", "y"):
+            self.assertEqual(len({before[f"/v/{grp}{i}.md"] for i in "1234"}), 1)
+            self.assertEqual(len({after[f"/v/{grp}{i}.md"] for i in "1234"}), 1)
+        self.assertNotEqual(after["/v/x1.md"], after["/v/y1.md"])
+
+    def test_single_node_falls_back(self):
+        gr = g.build_graph({"/v/a.md": "/v"}, [])
+        colors, _ = g.color_and_legend(gr, g.vault_palette(["/v"]))
+        self.assertEqual(colors, {"/v/a.md": g.color_for_vault("/v")})
 
 
 if __name__ == "__main__":

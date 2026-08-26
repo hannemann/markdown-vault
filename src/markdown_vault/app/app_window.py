@@ -1435,8 +1435,9 @@ class MainWindow(Adw.ApplicationWindow):
             local = graph.local_graph(self._graph_full, center, depth=1)
         else:
             local = graph.Graph([], [])
-        colors = graph.vault_palette(self._vault_tree.get_vault_paths())
-        return graph.to_payload(local, colors, center=center)
+        vault_colors = graph.vault_palette(self._vault_tree.get_vault_paths())
+        node_colors, legend = graph.color_and_legend(local, vault_colors)
+        return graph.to_payload(local, node_colors, center=center, legend=legend)
 
     def _build_full_graph(self, *, include_tags: bool = False):
         """Assemble the whole wikilink graph: files (walked, incl. subdirs) as
@@ -2234,8 +2235,9 @@ class MainWindow(Adw.ApplicationWindow):
                 [e for e in full.edges if e.source in keep and e.target in keep])
         tab = self._tab_bar.get_current_tab()
         center = tab.file_path if tab else None
-        colors = graph.vault_palette(self._vault_tree.get_vault_paths())
-        return graph.to_payload(full, colors, center=center)
+        vault_colors = graph.vault_palette(self._vault_tree.get_vault_paths())
+        node_colors, legend = graph.color_and_legend(full, vault_colors)
+        return graph.to_payload(full, node_colors, center=center, legend=legend)
 
     def _on_graph_node_activated(self, _explorer, path: str) -> None:
         """A node was clicked → open the file in the tab, leaving graph mode."""

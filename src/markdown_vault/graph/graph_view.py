@@ -42,9 +42,24 @@ _PAGE = r"""<!doctype html>
     font:12px system-ui,sans-serif;color:var(--fg,#888)}
   #cv{display:block;width:100%;height:100%;cursor:grab;touch-action:none}
   #cv.grabbing{cursor:grabbing}
-  #legend{position:absolute;left:8px;bottom:6px;font-size:11px;opacity:.85;
-    pointer-events:none}
-  #legend span{margin-right:10px;white-space:nowrap}
+  /* Collapsible, scrollable legend box, top-left. Many communities would otherwise
+     paper over the graph, so the list scrolls inside a bounded box and the header
+     folds it away. */
+  #legend{position:absolute;left:8px;top:8px;font-size:11px;max-width:240px;
+    background:var(--tip-bg,rgba(28,28,30,.86));color:var(--fg,#ccc);
+    border:1px solid var(--tip-border,rgba(127,127,127,.3));border-radius:6px;
+    pointer-events:auto;overflow:hidden;box-shadow:0 2px 10px rgba(0,0,0,.4)}
+  #legendhd{padding:4px 9px;cursor:pointer;font-weight:600;user-select:none;
+    display:flex;align-items:center;gap:6px;opacity:.9}
+  #legendhd::before{content:"▾";font-size:9px;opacity:.7}
+  #legend.collapsed #legendhd::before{content:"▸"}
+  #legenditems{max-height:42vh;overflow-y:auto;padding:1px 9px 6px}
+  #legend.collapsed #legenditems{display:none}
+  #legenditems .row{display:flex;align-items:center;gap:5px;white-space:nowrap;
+    padding:1px 4px;line-height:1.5;cursor:pointer;border-radius:3px}
+  #legenditems .row:hover{background:rgba(127,127,127,.16)}
+  #legenditems .row.active{background:rgba(127,127,127,.30)}
+  #legenditems i{width:9px;height:9px;border-radius:50%;flex:none}
   #legend i{display:inline-block;width:9px;height:9px;border-radius:50%;
     margin-right:4px;vertical-align:-1px}
   #empty{position:absolute;inset:0;display:none;align-items:center;
@@ -68,18 +83,22 @@ _PAGE = r"""<!doctype html>
 </style></head>
 <body>
 <canvas id="cv"></canvas>
-<div id="legend"></div>
+<div id="legend"><div id="legendhd">Legend</div><div id="legenditems"></div></div>
 <div id="empty">no connections</div>
 <div id="tipanchor"></div>
 <div id="tip"></div>
 <script>
 const cv=document.getElementById("cv"), ctx=cv.getContext("2d");
 const legend=document.getElementById("legend"), empty=document.getElementById("empty");
+const legendItems=document.getElementById("legenditems");
+const legendHd=document.getElementById("legendhd");
+legendHd.addEventListener("click",()=>legend.classList.toggle("collapsed"));
 const tip=document.getElementById("tip"), tipAnchor=document.getElementById("tipanchor");
 let W=innerWidth,H=innerHeight,cx=W/2,cy=H/2,dpr=window.devicePixelRatio||1;
 let nodes=[],links=[],byId={},centerId=null,adj={};
 let tx=0,ty=0,scale=1,alpha=0,raf=0,fitPending=false,zraf=0;
 let tagFilter=[],searchQ="",hoverId=null,hoverTarget=null,hoverTimer=0;
+let focusColor=null,focusRep=null;
 // Hover tooltip: 500ms-debounced, lazily resolved by the host and cached per id.
 let tipTimer=0,tipFor=null,tipX=0,tipY=0;
 const tipCache={};
@@ -103,7 +122,10 @@ function matchSearch(n){return !searchQ||label(n).toLowerCase().indexOf(searchQ)
 function nearHover(id){return hoverId===id||(adj[hoverId]&&adj[hoverId].has(id));}
 // A node is dimmed if the search excludes it OR a hover excludes it — both
 // contribute so leaving a hover restores (not clears) the search dim.
-function faded(n){return (searchQ&&!matchSearch(n))||(hoverId&&!nearHover(n.id));}
+function faded(n){
+  return (searchQ&&!matchSearch(n))||(hoverId&&!nearHover(n.id))
+    ||(focusColor&&n.color!==focusColor);   // legend focus dims other communities
+}
 
 // --- Canvas sizing & drawing --------------------------------------------
 function resize(){
@@ -130,7 +152,7 @@ function draw(){
   // Edges. Normal edges batch into one path; when a hover/search is active they
   // split into a dim pass (all) + a bright pass (both endpoints in focus). Out-edges
   // (from the centre node, sidebar's local graph) are always drawn bright.
-  if(hoverId||searchQ){
+  if(hoverId||searchQ||focusColor){
     ctx.globalAlpha=0.12; strokeEdges(e=>e.source!==centerId, theme.edge, 1.3);
     ctx.globalAlpha=1;
     strokeEdges((e,a,b)=>e.source!==centerId&&!faded(a)&&!faded(b), theme.edge, 1.3);
@@ -152,13 +174,15 @@ function draw(){
       ctx.fillStyle=gr;
     } else { ctx.fillStyle=col; }
     ctx.beginPath(); ctx.arc(n.x,n.y,r,0,6.283185307); ctx.fill();
-    if(n.center){ctx.lineWidth=3; ctx.strokeStyle=theme.accent; ctx.stroke();}
+    if(n.center||n.id===focusRep){ctx.lineWidth=3; ctx.strokeStyle=theme.accent; ctx.stroke();}
   }
   ctx.globalAlpha=1;
   // Labels only for the centre and the hovered node — never 3500 texts. Drawn in
   // screen space (transform reset) so they stay readable at any zoom.
   ctx.setTransform(dpr,0,0,dpr,0,0);
-  drawLabel(centerId); if(hoverId&&hoverId!==centerId)drawLabel(hoverId);
+  drawLabel(centerId);
+  if(hoverId&&hoverId!==centerId)drawLabel(hoverId);
+  if(focusRep&&focusRep!==centerId&&focusRep!==hoverId)drawLabel(focusRep);
 }
 function drawLabel(id){ if(!id)return; const n=byId[id]; if(!n||!passTag(n))return;
   const sx=n.x*scale+tx, sy=n.y*scale+ty, r=radius(n)*scale;
@@ -189,22 +213,40 @@ function setGraph(payload){
   links=(payload.edges||[]).filter(e=>byId[e.source]&&byId[e.target]);
   adj={}; nodes.forEach(n=>adj[n.id]=new Set());
   links.forEach(e=>{adj[e.source].add(e.target);adj[e.target].add(e.source);});
-  buildLegend(nodes);
+  buildLegend(payload.legend);
   empty.style.display=(nodes.length<=1&&links.length===0)?"flex":"none";
   // Start small & centered, then zoom *in* to the framing once the layout settles.
   setView(frameOf(nodes,0.45)); draw();
   alpha=1; fitPending=true; kick();
 }
 
-function buildLegend(ns){
-  const seen={}; ns.forEach(n=>{seen[n.vault]=n.color;});
-  legend.textContent="";
-  Object.keys(seen).forEach(v=>{
-    const s=document.createElement("span"), i=document.createElement("i");
-    i.style.background=seen[v];
-    s.appendChild(i); s.appendChild(document.createTextNode(base(v)));
-    legend.appendChild(s);
+// The legend is decided host-side (community names, or vault names on the fallback)
+// and handed over as [{label,color}] -- render it as-is, textContent for the label.
+function buildLegend(items){
+  items=items||[];
+  legendHd.textContent="Legend ("+items.length+")";   // ::before arrow is a pseudo-element
+  legendItems.textContent=""; focusColor=null;
+  items.forEach(it=>{
+    const row=document.createElement("div"); row.className="row";
+    const i=document.createElement("i"); i.style.background=it.color;
+    row.appendChild(i); row.appendChild(document.createTextNode(it.label));
+    row.addEventListener("click",()=>focusCommunity(it.color,it.id,row));
+    legendItems.appendChild(row);
   });
+  legend.style.display = items.length ? "" : "none";   // nothing to show -> hide the box
+}
+// Click a legend entry -> focus that community: dim every other colour and zoom to it.
+// Click the same entry again (or a different one) -> release / switch.
+// The community's representative (highest-degree node) is decided host-side and shipped
+// in the legend entry's id, so that rule lives ONCE (Python) instead of a JS copy whose
+// string ordering would diverge from Python's on non-BMP characters (e.g. emoji in a name).
+function focusCommunity(color,repId,row){
+  const on = focusColor!==color;
+  focusColor = on ? color : null;
+  focusRep = on ? (repId||null) : null;
+  for(const r of legendItems.children) r.classList.remove("active");
+  if(on){ row.classList.add("active"); draw(); zoomTo(nodes.filter(n=>n.color===color)); }
+  else { draw(); }
 }
 
 // --- Barnes-Hut n-body repulsion ---------------------------------------
@@ -266,13 +308,21 @@ function step(){
   for(let i=0;i<links.length;i++){const e=links[i],a=byId[e.source],b=byId[e.target];
     let dx=b.x-a.x,dy=b.y-a.y,d=Math.sqrt(dx*dx+dy*dy)||0.01,f=(d-L)*0.02;
     dx/=d;dy/=d; a.vx+=dx*f;a.vy+=dy*f; b.vx-=dx*f;b.vy-=dy*f;}
-  // Centering is now only a WEAK anchor: Barnes-Hut repulsion does the spreading,
-  // so the strong centering that crushed the structure into a disc is gone — just
-  // enough pull to stop the whole layout drifting off.
-  const G=0.003;
+  // Community gravity: pull each node toward the centroid of its colour group, so
+  // same-community (same-colour) nodes cluster spatially instead of scattering — the
+  // general repulsion still keeps the groups apart. The node's colour IS the group key
+  // (in vault-fallback mode this groups by vault, still sane).
+  const cen={};
+  for(let i=0;i<N;i++){const n=nodes[i]; let c=cen[n.color];
+    if(!c){c={x:0,y:0,k:0}; cen[n.color]=c;} c.x+=n.x; c.y+=n.y; c.k++;}
+  for(const key in cen){const c=cen[key]; c.x/=c.k; c.y/=c.k;}
+  // Centering is only a WEAK anchor: Barnes-Hut repulsion does the spreading, so the
+  // strong centering that crushed the structure into a disc is gone.
+  const G=0.003, CG=0.06;
   for(let i=0;i<N;i++){const n=nodes[i];
     if(n.id===centerId){n.x=cx;n.y=cy;n.vx=0;n.vy=0;continue;}
     n.vx+=(cx-n.x)*G; n.vy+=(cy-n.y)*G;
+    const cg=cen[n.color]; if(cg){n.vx+=(cg.x-n.x)*CG; n.vy+=(cg.y-n.y)*CG;}
     if(n.fixed)continue;
     n.vx*=0.85; n.vy*=0.85;
     // Clamp speed so no node teleports and the fit can't be blown up by a fling.
