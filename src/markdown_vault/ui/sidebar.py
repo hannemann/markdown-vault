@@ -313,8 +313,10 @@ class Sidebar(Gtk.Box):
             # Collect mode like the main explorer: a single click collects a card, a
             # double click opens. Unlike the explorer it must NOT switch to the Cards
             # tab — that would hide the graph the user is clicking — so it pulses the
-            # Cards rail icon for feedback instead.
-            self._graph_view = GraphView(collect_on_click=True)
+            # Cards rail icon for feedback instead. bottom_panel keeps the hover
+            # node-info panel in the bottom-right corner, clear of the top-left legend
+            # in the narrow sidebar.
+            self._graph_view = GraphView(collect_on_click=True, bottom_panel=True)
             self._graph_view.connect(
                 "node-activated",
                 lambda _v, path: self.emit("file-open-requested", path))

@@ -74,14 +74,16 @@ _PAGE = r"""<!doctype html>
   /* pointer-events:none so the panel never swallows a click; therefore NO scroll
      (a wheel would fall through to the canvas and zoom) — overflow:hidden clips, and
      the description is length-bounded host-side (frontmatter.tip_of) so it rarely
-     reaches the clip. max-width shrinks in a narrow view (the sidebar mini-graph) so
-     it does not cover the top-left legend: 8+240(legend)+8+8 = 264px reserved. */
+     reaches the clip. Default corner: top-right (the full-graph explorer). In the
+     narrow sidebar mini-graph the host adds .panel-br to move it bottom-right — the
+     opposite corner from the top-left legend, so the two never collide at any width. */
   #tip{position:absolute;display:none;right:8px;top:8px;pointer-events:none;
-    max-width:min(260px,calc(100% - 264px));max-height:42vh;overflow:hidden;
+    max-width:260px;max-height:42vh;overflow:hidden;
     background:var(--tip-bg,Canvas);color:var(--tip-fg,CanvasText);
     border:1px solid var(--tip-border,rgba(127,127,127,.45));
     border-radius:6px;padding:6px 9px;line-height:1.35;z-index:10;
     box-shadow:0 2px 12px rgba(0,0,0,.45)}
+  html.panel-br #tip{top:auto;bottom:8px}
   #tip .tip-title{font-weight:600}
   #tip .tip-desc{opacity:.8;margin-top:2px;white-space:normal;
     overflow-wrap:anywhere}
@@ -589,12 +591,16 @@ class GraphView(Gtk.Box):
         "node-carded": (GObject.SignalFlags.RUN_LAST, None, (str, str)),
     }
 
-    def __init__(self, collect_on_click: bool = False) -> None:
+    def __init__(self, collect_on_click: bool = False,
+                 bottom_panel: bool = False) -> None:
         super().__init__(orientation=Gtk.Orientation.VERTICAL)
         # collect_on_click flips a single click from "open the file" (default, the
         # sidebar mini-graph) to "collect a card" (the main explorer). A double click
         # opens in either mode.
         self._collect_on_click = collect_on_click
+        # bottom_panel moves the hover node-info panel to the bottom-right corner
+        # (the narrow sidebar mini-graph), clear of the top-left legend.
+        self._bottom_panel = bottom_panel
         self._web = WebKit.WebView()
         self._web.set_vexpand(True)
         self._web.set_hexpand(True)
@@ -656,6 +662,8 @@ class GraphView(Gtk.Box):
             self._ready = True
             self._apply_theme()          # theme the first paint, before any graph
             self._apply_strings()        # translated chrome strings, before any legend
+            if self._bottom_panel:
+                self._eval("document.documentElement.classList.add('panel-br');")
             if self._pending is not None:
                 self._push(self._pending)
 
