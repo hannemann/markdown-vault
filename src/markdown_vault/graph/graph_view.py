@@ -174,7 +174,10 @@ function computeLens(){
     const r=d/Rw, g=((D+1)*r)/(D*r+1), s=g*Rw/d;   // radial expansion ratio, >1 near focus
     n._lx=fx+dx*s; n._ly=fy+dy*s; n._ls=Math.min(LENS_SZMAX,s);}
 }
-function distorting(){return cursorOn&&lensEnabled;}
+// The lens only engages once the layout has SETTLED (physics loop stopped, raf===0);
+// distorting a still-exploding graph paints labels all over a moving cloud.
+function settled(){return raf===0;}
+function distorting(){return cursorOn&&lensEnabled&&settled();}
 function px(n){return distorting()?n._lx:n.x;}
 function py(n){return distorting()?n._ly:n.y;}
 function pr(n){return radius(n)*(distorting()?n._ls:1);}
@@ -247,7 +250,7 @@ function draw(){
   ctx.setTransform(dpr,0,0,dpr,0,0);
   // Fisheye lens: name the most-magnified nodes under the cursor (capped, so the dense
   // centre does not become a wall of text), on top of the always-labelled centre/hover.
-  if(cursorOn&&labelsEnabled){
+  if(cursorOn&&labelsEnabled&&settled()){
     // Name the nodes whose SCREEN position is within labelR of the cursor (independent of
     // the distortion), nearest first, capped so the dense centre is not a wall of text.
     const near=[], R2=labelR*labelR;
@@ -494,7 +497,7 @@ cv.addEventListener("pointermove",ev=>{
     return;
   }
   cursorOn=true; lensX=ev.clientX; lensY=ev.clientY;
-  if(lensEnabled)computeLens();                     // distortion needs fresh coords (also hit-test)
+  if(lensEnabled&&settled())computeLens();          // distortion needs fresh coords (also hit-test)
   if(lensEnabled||labelsEnabled)requestLensDraw();
   const h=nodeAt(ev.clientX,ev.clientY), id=h?h.id:null;
   if(id!==hoverTarget){hoverTarget=id; scheduleHover(id);}
