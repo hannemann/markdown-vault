@@ -151,6 +151,31 @@ class TestBottomPanelCorner(unittest.TestCase):
         self.assertNotIn(mock.call(self._ADD), me._eval.call_args_list)
 
 
+class TestLensConfig(unittest.TestCase):
+    """The cursor fisheye lens config is pushed to the page as window.setLensConfig."""
+
+    def test_apply_evals_setter_with_stored_values(self):
+        me = mock.Mock()
+        me._lens_cfg = (True, False, 120.0, 3.0, 100.0)
+        graph_view.GraphView._apply_lens_config(me)
+        js = me._eval.call_args.args[0]
+        self.assertIn("window.setLensConfig(true, false, 120.0, 3.0, 100.0)", js)
+
+    def test_set_stores_and_applies_when_ready(self):
+        me = mock.Mock()
+        me._ready = True
+        graph_view.GraphView.set_lens_config(me, True, True, 200, 1.5, 220)
+        self.assertEqual(me._lens_cfg, (True, True, 200.0, 1.5, 220.0))
+        me._apply_lens_config.assert_called_once_with()
+
+    def test_set_defers_when_not_ready(self):
+        me = mock.Mock()
+        me._ready = False
+        graph_view.GraphView.set_lens_config(me, False, False, 90, 4.0, 80)
+        self.assertEqual(me._lens_cfg, (False, False, 90.0, 4.0, 80.0))
+        me._apply_lens_config.assert_not_called()
+
+
 class TestTipRouting(unittest.TestCase):
     def test_tip_calls_send_tip_in_either_mode(self):
         for collect in (False, True):

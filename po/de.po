@@ -1994,3 +1994,31 @@ msgstr "Datei öffnen"
 #: src/markdown_vault/ui/graph_cards.py
 msgid "Remove card"
 msgstr "Karte entfernen"
+
+#: src/markdown_vault/graph/graph_explorer.py
+msgid "View"
+msgstr "Ansicht"
+
+#: src/markdown_vault/graph/graph_explorer.py
+msgid "Cursor lens options"
+msgstr "Cursor-Linsen-Optionen"
+
+#: src/markdown_vault/graph/graph_explorer.py
+msgid "Fisheye lens"
+msgstr "Fischauge-Linse"
+
+#: src/markdown_vault/graph/graph_explorer.py
+msgid "Cursor labels"
+msgstr "Namen am Cursor"
+
+#: src/markdown_vault/graph/graph_explorer.py
+msgid "Lens size"
+msgstr "Linsengröße"
+
+#: src/markdown_vault/graph/graph_explorer.py
+msgid "Strength"
+msgstr "Stärke"
+
+#: src/markdown_vault/graph/graph_explorer.py
+msgid "Label radius"
+msgstr "Namen-Radius"

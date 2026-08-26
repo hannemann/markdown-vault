@@ -19,6 +19,10 @@ from markdown_vault.core.i18n import _
 from markdown_vault.graph.graph_view import GraphView
 
 
+_LENS_DEFAULTS = {"fisheye": True, "labels": True, "radius": 140.0,
+                  "strength": 2.6, "label_radius": 160.0}
+
+
 class GraphExplorer(Gtk.Box):
     __gsignals__ = {
         "node-activated": (GObject.SignalFlags.RUN_LAST, None, (str,)),
@@ -26,10 +30,13 @@ class GraphExplorer(Gtk.Box):
         "node-carded": (GObject.SignalFlags.RUN_LAST, None, (str, str)),
     }
 
-    def __init__(self, get_payload=None) -> None:
+    def __init__(self, get_payload=None, lens_config=None,
+                 on_lens_config_changed=None) -> None:
         super().__init__(orientation=Gtk.Orientation.VERTICAL)
         self._get_payload = get_payload
         self._active_tags: set = set()
+        self._lens = dict(_LENS_DEFAULTS, **(lens_config or {}))
+        self._on_lens_config_changed = on_lens_config_changed
 
         # ── toolbar ──
         bar = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
@@ -63,10 +70,12 @@ class GraphExplorer(Gtk.Box):
         self._fit = Gtk.Button.new_from_icon_name("zoom-fit-best-symbolic")
         self._fit.set_tooltip_text(_("Fit graph to view"))
         self._fit.connect("clicked", lambda *_: self._graph.fit())
+        self._view_btn = self._build_view_menu()
         bar.append(self._search)
         bar.append(self._scope)
         bar.append(self._tags_btn)
         bar.append(self._fit)
+        bar.append(self._view_btn)
         self.append(bar)
 
         # Collect mode: in the full explorer a single click collects a card and a
@@ -82,6 +91,77 @@ class GraphExplorer(Gtk.Box):
         self._graph.connect(
             "node-carded", lambda _v, path, color: self.emit("node-carded", path, color))
         self.append(self._graph)
+        self._apply_lens()   # push the initial config; the view applies it on load
+
+    # ── cursor fisheye lens controls ──
+
+    def _build_view_menu(self) -> Gtk.MenuButton:
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        box.set_margin_start(10)
+        box.set_margin_end(10)
+        box.set_margin_top(10)
+        box.set_margin_bottom(10)
+
+        self._fisheye_chk = Gtk.CheckButton(label=_("Fisheye lens"))
+        self._fisheye_chk.set_active(self._lens["fisheye"])
+        self._fisheye_chk.connect("toggled", self._on_lens_changed)
+        box.append(self._fisheye_chk)
+
+        self._labels_chk = Gtk.CheckButton(label=_("Cursor labels"))
+        self._labels_chk.set_active(self._lens["labels"])
+        self._labels_chk.connect("toggled", self._on_lens_changed)
+        box.append(self._labels_chk)
+
+        # Ranges are symmetric around the defaults, so the slider centre (marked with a
+        # tick) is the recommended value.
+        box.append(Gtk.Label(label=_("Lens size"), xalign=0, margin_top=4))
+        self._radius_scale = self._slider(
+            40, 240, 10, self._lens["radius"], _LENS_DEFAULTS["radius"])
+        box.append(self._radius_scale)
+
+        box.append(Gtk.Label(label=_("Strength"), xalign=0, margin_top=4))
+        self._strength_scale = self._slider(
+            0.6, 4.6, 0.1, self._lens["strength"], _LENS_DEFAULTS["strength"])
+        box.append(self._strength_scale)
+
+        box.append(Gtk.Label(label=_("Label radius"), xalign=0, margin_top=4))
+        self._label_radius_scale = self._slider(
+            20, 300, 10, self._lens["label_radius"], _LENS_DEFAULTS["label_radius"])
+        box.append(self._label_radius_scale)
+
+        pop = Gtk.Popover()
+        pop.set_child(box)
+        btn = Gtk.MenuButton(label=_("View"), popover=pop)
+        btn.set_always_show_arrow(True)
+        btn.set_tooltip_text(_("Cursor lens options"))
+        return btn
+
+    def _slider(self, lo, hi, step, value, mark) -> Gtk.Scale:
+        # set_value before connecting, so restoring the saved value doesn't fire a change.
+        scale = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, lo, hi, step)
+        scale.add_mark(mark, Gtk.PositionType.BOTTOM, None)   # tick at the default (centre)
+        scale.set_value(value)
+        scale.set_size_request(180, -1)
+        scale.set_draw_value(False)
+        scale.connect("value-changed", self._on_lens_changed)
+        return scale
+
+    def _on_lens_changed(self, *_a) -> None:
+        self._lens = {
+            "fisheye": self._fisheye_chk.get_active(),
+            "labels": self._labels_chk.get_active(),
+            "radius": self._radius_scale.get_value(),
+            "strength": self._strength_scale.get_value(),
+            "label_radius": self._label_radius_scale.get_value(),
+        }
+        self._apply_lens()
+        if self._on_lens_config_changed is not None:
+            self._on_lens_config_changed(dict(self._lens))
+
+    def _apply_lens(self) -> None:
+        self._graph.set_lens_config(
+            self._lens["fisheye"], self._lens["labels"], self._lens["radius"],
+            self._lens["strength"], self._lens["label_radius"])
 
     def scope(self) -> str:
         return "all" if self._scope.get_selected() == 1 else "current"

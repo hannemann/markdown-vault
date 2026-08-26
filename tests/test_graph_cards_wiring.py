@@ -38,5 +38,39 @@ class TestNodeCardedForwarding(unittest.TestCase):
         me._sidebar_toggle.set_active.assert_not_called()
 
 
+class TestGraphLensPersistence(unittest.TestCase):
+    """MainWindow reads/writes the cursor-lens options under settings 'graph.*'."""
+
+    def test_reads_defaults_from_empty_settings(self):
+        me = mock.Mock()
+        me._settings = {}
+        self.assertEqual(
+            MainWindow._graph_lens_config(me),
+            {"fisheye": True, "labels": True, "radius": 140.0, "strength": 2.6,
+             "label_radius": 160.0})
+
+    def test_reads_stored_values(self):
+        me = mock.Mock()
+        me._settings = {"graph": {"fisheye": False, "cursor_labels": False,
+                                  "lens_radius": 90.0, "lens_strength": 4.0,
+                                  "label_radius": 220.0}}
+        self.assertEqual(
+            MainWindow._graph_lens_config(me),
+            {"fisheye": False, "labels": False, "radius": 90.0, "strength": 4.0,
+             "label_radius": 220.0})
+
+    def test_persist_writes_all_keys_and_saves(self):
+        me = mock.Mock()
+        me._settings = {}
+        cfg = {"fisheye": False, "labels": True, "radius": 90.0, "strength": 3.0,
+               "label_radius": 220.0}
+        with mock.patch("markdown_vault.app.app_window.config.save_settings") as save:
+            MainWindow._persist_graph_lens_config(me, cfg)
+        self.assertEqual(me._settings["graph"], {
+            "fisheye": False, "cursor_labels": True, "lens_radius": 90.0,
+            "lens_strength": 3.0, "label_radius": 220.0})
+        save.assert_called_once_with()
+
+
 if __name__ == "__main__":
     unittest.main()

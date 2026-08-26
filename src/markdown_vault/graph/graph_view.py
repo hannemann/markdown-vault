@@ -152,16 +152,50 @@ function resize(){
 }
 addEventListener("resize",()=>{resize();alpha=Math.max(alpha,0.3);fitPending=true;kick();});
 
+// --- Fisheye lens: a render-time radial distortion around the cursor (Sarkar-Brown).
+// Purely visual — the layout keeps its real n.x/n.y; only drawing and hit-testing read
+// the distorted position through px()/py()/pr(). LENS_R is the lens radius in screen px,
+// LENS_D the distortion strength (magnification at the focus is ~LENS_D+1). Distortion
+// is computed in WORLD space so the existing world-space drawing (under the ctx scale)
+// works unchanged; per node it fills _lx/_ly (position) and _ls (size factor).
+const LENS_SZMAX=2.4, LABEL_CAP=30;
+// cursorOn = the cursor is hovering the canvas (idle). lensEnabled/labelsEnabled are the
+// two user toggles (distortion and cursor labels, each switchable). lensR (screen px) and
+// lensD (strength; focus magnification ~lensD+1) size the distortion; labelR (screen px)
+// is the SEPARATE radius within which cursor labels appear. All user-adjustable (View).
+let cursorOn=false, lensX=0, lensY=0, lensRaf=0;
+let lensEnabled=true, labelsEnabled=true, lensR=140, lensD=2.6, labelR=160;
+function computeLens(){
+  const fx=(lensX-tx)/scale, fy=(lensY-ty)/scale, Rw=lensR/scale, D=lensD;
+  for(let i=0;i<nodes.length;i++){const n=nodes[i];
+    const dx=n.x-fx, dy=n.y-fy, d=Math.sqrt(dx*dx+dy*dy);
+    if(d>=Rw){n._lx=n.x;n._ly=n.y;n._ls=1;continue;}
+    if(d<1e-6){n._lx=n.x;n._ly=n.y;n._ls=LENS_SZMAX;continue;}
+    const r=d/Rw, g=((D+1)*r)/(D*r+1), s=g*Rw/d;   // radial expansion ratio, >1 near focus
+    n._lx=fx+dx*s; n._ly=fy+dy*s; n._ls=Math.min(LENS_SZMAX,s);}
+}
+function distorting(){return cursorOn&&lensEnabled;}
+function px(n){return distorting()?n._lx:n.x;}
+function py(n){return distorting()?n._ly:n.y;}
+function pr(n){return radius(n)*(distorting()?n._ls:1);}
+// Coalesce cursor-driven redraws to one per frame; skip if the physics loop already draws.
+function requestLensDraw(){ if(lensRaf||raf)return;
+  lensRaf=requestAnimationFrame(()=>{lensRaf=0; draw();}); }
+function setLensConfig(lens,labels,radius,strength,labelRadius){
+  lensEnabled=!!lens; labelsEnabled=!!labels; lensR=radius; lensD=strength;
+  labelR=labelRadius; draw();}
+
 function strokeEdges(pred,style,w){  // one path, one stroke = one draw call for all matches
   ctx.lineWidth=w; ctx.strokeStyle=style; ctx.beginPath();
   for(let i=0;i<links.length;i++){const e=links[i];
     const a=byId[e.source],b=byId[e.target];
     if(!vis(a)||!vis(b))continue;
     if(pred&&!pred(e,a,b))continue;
-    ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y);}
+    ctx.moveTo(px(a),py(a)); ctx.lineTo(px(b),py(b));}
   ctx.stroke();
 }
 function draw(){
+  if(distorting())computeLens();   // labels use screen distance, so only distortion needs it
   ctx.setTransform(dpr,0,0,dpr,0,0);
   ctx.clearRect(0,0,W,H);
   ctx.translate(tx,ty); ctx.scale(scale,scale);
@@ -196,27 +230,42 @@ function draw(){
   // so importance reads at a glance and the graph has some depth. The gradient's dark
   // edge is the rim, so only the centre node still gets an explicit accent ring.
   for(let i=0;i<nodes.length;i++){const n=nodes[i]; if(!passTag(n))continue;
-    const r=radius(n), col=n.color||"#888";
+    const r=pr(n), X=px(n), Y=py(n), col=n.color||"#888";
     ctx.globalAlpha=faded(n)?0.12:1;
     if(col.length===7){
       if(n._c0===undefined){n._c0=litOf(col); n._c1=drkOf(col);}
-      const gr=ctx.createRadialGradient(n.x-r*0.35,n.y-r*0.38,r*0.12, n.x,n.y,r);
+      const gr=ctx.createRadialGradient(X-r*0.35,Y-r*0.38,r*0.12, X,Y,r);
       gr.addColorStop(0,n._c0); gr.addColorStop(0.5,col); gr.addColorStop(1,n._c1);
       ctx.fillStyle=gr;
     } else { ctx.fillStyle=col; }
-    ctx.beginPath(); ctx.arc(n.x,n.y,r,0,6.283185307); ctx.fill();
+    ctx.beginPath(); ctx.arc(X,Y,r,0,6.283185307); ctx.fill();
     if(n.center||n.id===focusRep){ctx.lineWidth=3; ctx.strokeStyle=theme.accent; ctx.stroke();}
   }
   ctx.globalAlpha=1;
   // Labels only for the centre and the hovered node — never 3500 texts. Drawn in
   // screen space (transform reset) so they stay readable at any zoom.
   ctx.setTransform(dpr,0,0,dpr,0,0);
+  // Fisheye lens: name the most-magnified nodes under the cursor (capped, so the dense
+  // centre does not become a wall of text), on top of the always-labelled centre/hover.
+  if(cursorOn&&labelsEnabled){
+    // Name the nodes whose SCREEN position is within labelR of the cursor (independent of
+    // the distortion), nearest first, capped so the dense centre is not a wall of text.
+    const near=[], R2=labelR*labelR;
+    for(let i=0;i<nodes.length;i++){const n=nodes[i];
+      if(!passTag(n)||faded(n)||n.id===centerId||n.id===hoverId||n.id===focusRep)continue;
+      // Select by the node's REAL screen distance, so labelR is a stable circle around the
+      // cursor regardless of the fisheye (the label is still drawn on the node's sphere).
+      const dx=n.x*scale+tx-lensX, dy=n.y*scale+ty-lensY, d2=dx*dx+dy*dy;
+      if(d2<=R2)near.push([d2,n]);}
+    near.sort((a,b)=>a[0]-b[0]);
+    for(let i=0;i<near.length&&i<LABEL_CAP;i++)drawLabel(near[i][1].id);
+  }
   drawLabel(centerId);
   if(hoverId&&hoverId!==centerId)drawLabel(hoverId);
   if(focusRep&&focusRep!==centerId&&focusRep!==hoverId)drawLabel(focusRep);
 }
 function drawLabel(id){ if(!id)return; const n=byId[id]; if(!n||!passTag(n))return;
-  const sx=n.x*scale+tx, sy=n.y*scale+ty, r=radius(n)*scale;
+  const sx=px(n)*scale+tx, sy=py(n)*scale+ty, r=pr(n)*scale;
   ctx.font="12px system-ui,sans-serif"; ctx.textBaseline="middle";
   ctx.lineWidth=3; ctx.lineJoin="round";
   const t=label(n), x=sx+r+3, y=sy;
@@ -225,7 +274,7 @@ function drawLabel(id){ if(!id)return; const n=byId[id]; if(!n||!passTag(n))retu
 }
 
 function setGraph(payload){
-  tagFilter=[]; searchQ=""; hoverId=null;
+  tagFilter=[]; searchQ=""; hoverId=null; cursorOn=false;
   tipHide(); for(const k in tipCache)delete tipCache[k];   // drop stale tooltips
   const prev={}; nodes.forEach(n=>prev[n.id]=n);
   const arr=payload.nodes||[];
@@ -406,8 +455,10 @@ function clickMsg(n,newTab){ return (newTab?"clicknt":"click")+"\t"+n.id+"\t"+(n
 function nodeAt(sx,sy){  // screen px -> topmost node under the pointer, or null
   const wx=(sx-tx)/scale, wy=(sy-ty)/scale;
   let hit=null,best=Infinity;
+  // Test against the DISTORTED position/size when the lens is on, so a click lands on
+  // the node the user sees under the cursor, not where it really sits.
   for(let i=nodes.length-1;i>=0;i--){const n=nodes[i]; if(!passTag(n))continue;
-    const r=radius(n)+2, dx=n.x-wx, dy=n.y-wy, d2=dx*dx+dy*dy;
+    const r=pr(n)+2, dx=px(n)-wx, dy=py(n)-wy, d2=dx*dx+dy*dy;
     if(d2<=r*r && d2<best){best=d2;hit=n;}}
   return hit;
 }
@@ -426,9 +477,10 @@ cv.addEventListener("pointerdown",ev=>{
   down=true;moved=false;btn=ev.button;sx0=ev.clientX;sy0=ev.clientY;lx=ev.clientX;ly=ev.clientY;
   zStop();tipHide(); if(hoverTimer){clearTimeout(hoverTimer);hoverTimer=0;}
   if(ev.button===1)ev.preventDefault();  // no middle-click autoscroll
-  dragNode=nodeAt(ev.clientX,ev.clientY);
+  dragNode=nodeAt(ev.clientX,ev.clientY);   // lens still on -> picks the node under the cursor
   if(dragNode){dragNode.fixed=true;}
   else{pan=true;cv.classList.add("grabbing");}
+  if(cursorOn){cursorOn=false;draw();}       // snap back to the undistorted layout to interact
   try{cv.setPointerCapture(ev.pointerId);}catch(e){}
 });
 cv.addEventListener("pointermove",ev=>{
@@ -441,6 +493,9 @@ cv.addEventListener("pointermove",ev=>{
     else if(pan){tx+=dx;ty+=dy;draw();}
     return;
   }
+  cursorOn=true; lensX=ev.clientX; lensY=ev.clientY;
+  if(lensEnabled)computeLens();                     // distortion needs fresh coords (also hit-test)
+  if(lensEnabled||labelsEnabled)requestLensDraw();
   const h=nodeAt(ev.clientX,ev.clientY), id=h?h.id:null;
   if(id!==hoverTarget){hoverTarget=id; scheduleHover(id);}
 });
@@ -459,10 +514,11 @@ cv.addEventListener("pointerup",ev=>{
 cv.addEventListener("dblclick",ev=>{const h=nodeAt(ev.clientX,ev.clientY);
   if(h)send("dblclick\t"+h.id);});
 cv.addEventListener("pointerleave",()=>{
-  if(!down){hoverTarget=null;scheduleHover(null);} });
+  if(!down){hoverTarget=null;scheduleHover(null); cursorOn=false; requestLensDraw();} });
 cv.addEventListener("wheel",ev=>{ev.preventDefault();zStop();tipHide();
   if(hoverTimer){clearTimeout(hoverTimer);hoverTimer=0;}
   const f=ev.deltaY<0?1.1:0.9,mx=ev.clientX,my=ev.clientY;
+  lensX=mx;lensY=my;                       // re-centre the lens on the zoom point
   tx=mx-(mx-tx)*f;ty=my-(my-ty)*f;scale*=f;draw();},{passive:false});
 
 function zStop(){ if(zraf){cancelAnimationFrame(zraf);zraf=0;} }  // cancel on user interaction
@@ -551,6 +607,7 @@ window.setTheme=function(vars){const s=document.documentElement.style;
 window.setStrings=function(s){Object.assign(strings,s); empty.textContent=strings.noConnections;};
 
 window.setGraph=setGraph; window.setTagFilter=setTagFilter; window.search=search; window.fit=fit;
+window.setLensConfig=setLensConfig;
 resize();
 </script></body></html>
 """
@@ -604,6 +661,9 @@ class GraphView(Gtk.Box):
         # bottom_panel moves the hover node-info panel to the bottom-right corner
         # (the narrow sidebar mini-graph), clear of the top-left legend.
         self._bottom_panel = bottom_panel
+        # Cursor fisheye lens config (fisheye, labels, radius px, strength, label radius
+        # px); pushed to the page on load and whenever the View controls change.
+        self._lens_cfg = (True, True, 140.0, 2.6, 160.0)
         self._web = WebKit.WebView()
         self._web.set_vexpand(True)
         self._web.set_hexpand(True)
@@ -667,8 +727,23 @@ class GraphView(Gtk.Box):
             self._apply_strings()        # translated chrome strings, before any legend
             if self._bottom_panel:
                 self._eval("document.documentElement.classList.add('panel-br');")
+            self._apply_lens_config()    # push the stored fisheye/label/slider state
             if self._pending is not None:
                 self._push(self._pending)
+
+    def set_lens_config(self, fisheye: bool, labels: bool, radius: float,
+                        strength: float, label_radius: float) -> None:
+        """Set the cursor fisheye lens options; applied at once if the page is ready."""
+        self._lens_cfg = (bool(fisheye), bool(labels), float(radius),
+                          float(strength), float(label_radius))
+        if self._ready:
+            self._apply_lens_config()
+
+    def _apply_lens_config(self) -> None:
+        fisheye, labels, radius, strength, label_radius = self._lens_cfg
+        self._eval("window.setLensConfig(%s, %s, %s, %s, %s);" % (
+            json.dumps(fisheye), json.dumps(labels), json.dumps(radius),
+            json.dumps(strength), json.dumps(label_radius)))
 
     def _on_theme_changed(self, *_a) -> None:
         # Defer so the style context has settled on the new theme before we read it.

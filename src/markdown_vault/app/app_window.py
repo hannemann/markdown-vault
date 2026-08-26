@@ -2198,7 +2198,9 @@ class MainWindow(Adw.ApplicationWindow):
         if self._graph_explorer is None:
             from markdown_vault.graph.graph_explorer import GraphExplorer
             self._graph_explorer = GraphExplorer(
-                get_payload=self._graph_explorer_payload)
+                get_payload=self._graph_explorer_payload,
+                lens_config=self._graph_lens_config(),
+                on_lens_config_changed=self._persist_graph_lens_config)
             self._graph_explorer.connect(
                 "node-activated", self._on_graph_node_activated)
             self._graph_explorer.connect(
@@ -2256,6 +2258,26 @@ class MainWindow(Adw.ApplicationWindow):
         self._sidebar.add_card_for_node(path, color, switch=True)
         if not self._sidebar.get_visible():
             self._sidebar_toggle.set_active(True)  # triggers the show path + state save
+
+    def _graph_lens_config(self) -> dict:
+        """Persisted cursor-lens options (fisheye/labels/radius/strength) for the graph."""
+        return {
+            "fisheye": config.get_setting(self._settings, "graph.fisheye", True),
+            "labels": config.get_setting(self._settings, "graph.cursor_labels", True),
+            "radius": config.get_setting(self._settings, "graph.lens_radius", 140.0),
+            "strength": config.get_setting(self._settings, "graph.lens_strength", 2.6),
+            "label_radius": config.get_setting(
+                self._settings, "graph.label_radius", 160.0),
+        }
+
+    def _persist_graph_lens_config(self, cfg: dict) -> None:
+        config.set_setting(self._settings, "graph.fisheye", bool(cfg["fisheye"]))
+        config.set_setting(self._settings, "graph.cursor_labels", bool(cfg["labels"]))
+        config.set_setting(self._settings, "graph.lens_radius", float(cfg["radius"]))
+        config.set_setting(self._settings, "graph.lens_strength", float(cfg["strength"]))
+        config.set_setting(self._settings, "graph.label_radius",
+                           float(cfg["label_radius"]))
+        config.save_settings()
 
     def _apply_view_mode(self) -> None:
         self._view_mode_manager.apply_view_mode()
