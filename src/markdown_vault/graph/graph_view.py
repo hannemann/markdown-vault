@@ -159,14 +159,24 @@ function draw(){
   // Edges. Normal edges batch into one path; when a hover/search is active they
   // split into a dim pass (all) + a bright pass (both endpoints in focus). Out-edges
   // (from the centre node, sidebar's local graph) are always drawn bright.
-  if(hoverId||searchQ||focusColor){
-    ctx.globalAlpha=0.12; strokeEdges(e=>e.source!==centerId, theme.edge, 1.3);
+  if(hoverId){
+    // An active hover wins over the permanent centre emphasis: dim every edge,
+    // then light only the hovered node's incident edges. Otherwise the centre's
+    // out-edges glow bright regardless and read as belonging to the hovered node
+    // when they connect the centre to unrelated nodes.
+    ctx.globalAlpha=0.10; strokeEdges(null, theme.edge, 1.1);
     ctx.globalAlpha=1;
-    strokeEdges((e,a,b)=>e.source!==centerId&&!faded(a)&&!faded(b), theme.edge, 1.3);
+    strokeEdges((e)=>e.source===hoverId||e.target===hoverId, theme.edgeOut, 1.6);
   } else {
-    strokeEdges(e=>e.source!==centerId, theme.edge, 1.3);
+    if(searchQ||focusColor){
+      ctx.globalAlpha=0.12; strokeEdges(e=>e.source!==centerId, theme.edge, 1.3);
+      ctx.globalAlpha=1;
+      strokeEdges((e,a,b)=>e.source!==centerId&&!faded(a)&&!faded(b), theme.edge, 1.3);
+    } else {
+      strokeEdges(e=>e.source!==centerId, theme.edge, 1.3);
+    }
+    if(centerId) strokeEdges(e=>e.source===centerId, theme.edgeOut, 1.6);
   }
-  if(centerId) strokeEdges(e=>e.source===centerId, theme.edgeOut, 1.6);
   ctx.globalAlpha=1;
   // Nodes as shaded spheres (radial gradient: highlight top-left -> base -> dark rim),
   // so importance reads at a glance and the graph has some depth. The gradient's dark
