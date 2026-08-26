@@ -69,12 +69,12 @@ def resolve_wikilink(vault_name: str, relative_path: str) -> str | None:
     if os.path.isabs(relative_path):
         return None
     result = os.path.normpath(os.path.join(vault_path, relative_path)) + ".md"
-    if not _path_is_within(vault_path, result):
+    if not path_is_within(vault_path, result):
         return None
     return result
 
 
-def _path_is_within(vault_root: str, target: str) -> bool:
+def path_is_within(vault_root: str, target: str) -> bool:
     """Return ``True`` if *target* is inside or equal to *vault_root*."""
     root = os.path.abspath(vault_root)
     target = os.path.abspath(target)
@@ -87,7 +87,7 @@ def find_vault_name_for_path(file_path: str) -> str | None:
     Looks up the vault whose ``path`` matches or contains *file_path*.
     """
     for entry in config.load_vaults():
-        if _path_is_within(entry["path"], file_path):
+        if path_is_within(entry["path"], file_path):
             return entry["name"]
     return None
 
@@ -101,7 +101,7 @@ def vault_relative_name(file_path: str) -> str:
     configured vault.
     """
     for entry in config.load_vaults():
-        if _path_is_within(entry["path"], file_path):
+        if path_is_within(entry["path"], file_path):
             rel = os.path.relpath(file_path, entry["path"])
             if rel.lower().endswith(".md"):
                 rel = rel[:-3]
@@ -121,6 +121,6 @@ def find_vault_for_dir(dir_path: str, vault_paths: list[str] | None = None) -> s
         entry["path"] for entry in config.load_vaults()
     ]
     for v in roots:
-        if _path_is_within(v, dir_path):
+        if path_is_within(v, dir_path):
             return v
     return None

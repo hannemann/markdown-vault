@@ -11,6 +11,7 @@ import shutil
 from pathlib import Path
 
 from markdown_vault.core import path_utils
+from markdown_vault.core.i18n import _
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +68,13 @@ class FileOps:
             name += ".md"
 
         file_path = os.path.join(vault_path, name)
+        # Guard the computed target (after the .md-append above), BEFORE makedirs — a
+        # name with ../ or an absolute path must not create or touch anything outside
+        # the vault. Lexical check, matching the rest of the app; symlink escapes are a
+        # separate, app-wide concern (see the Security ticket).
+        if not path_utils.path_is_within(vault_path, file_path):
+            logger.warning("create_file: rejected name escaping the vault: %r", name)
+            return _("Invalid file name: path escapes the vault")
         parent = str(Path(file_path).parent)
 
         if parent != vault_path:
@@ -100,6 +108,11 @@ class FileOps:
         Returns an error message on failure, ``None`` on success.
         """
         folder_path = os.path.join(vault_path, name)
+        # Guard BEFORE mkdir — unlike create_file, no .md is appended, so a bare '..'
+        # already escapes here. Lexical check (see create_file).
+        if not path_utils.path_is_within(vault_path, folder_path):
+            logger.warning("create_folder: rejected name escaping the vault: %r", name)
+            return _("Invalid folder name: path escapes the vault")
         try:
             os.mkdir(folder_path)
         except OSError as e:

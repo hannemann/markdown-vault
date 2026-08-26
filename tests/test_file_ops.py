@@ -101,20 +101,37 @@ class TestCreateFile(unittest.TestCase):
         # 1 skip for parent dir + 1 skip for file
         self.assertEqual(self._skip.call_count, 2)
 
-    # create_file has NO vault-boundary check — it writes wherever the traversal
-    # points (vault/file_ops.py:60ff.). This test only ever passed by accident: under
-    # system /tmp, '../../' hit the unwritable root and touch() raised PermissionError,
-    # so it tested the OS permission layout, not the app's (missing) boundary check.
-    # With temp pinned inside the writable project tree the traversal now succeeds and
-    # no error is returned. expectedFailure (not skip) so this goes from xfail to an
-    # "unexpected success" — reddening the suite — the moment the real guard lands,
-    # forcing this test to be rewritten as a genuine boundary assertion. See
-    # Tickets/VaultTree/Pending/create-file-erlaubt-path-traversal-aus-dem-vault.md.
-    @unittest.expectedFailure
-    def test_create_file_invalid_path_returns_error(self):
-        """Path traversal must be rejected — currently unguarded (see comment above)."""
+    def test_create_file_rejects_parent_traversal(self):
+        """A .md name with ../ escapes the vault → error, and nothing written outside."""
+        escaped = Path(self._tmp).parent.parent / "escape.md"
+        self.addCleanup(lambda: escaped.unlink(missing_ok=True))
         err = self._ops.create_file(self._tmp, "../../escape.md")
         self.assertIsNotNone(err)
+        self.assertFalse(escaped.exists())
+
+    def test_create_file_rejects_absolute_path_outside_vault(self):
+        """An absolute name makes os.path.join discard the vault → target outside → rejected.
+        Uses a writable location, so the test is red before the guard — not green by a denied
+        write on an unwritable path (the exact accident that hid this gap before)."""
+        outside = Path(self._tmp).parent / "abs_escape.md"
+        self.addCleanup(lambda: outside.unlink(missing_ok=True))
+        err = self._ops.create_file(self._tmp, str(outside))
+        self.assertIsNotNone(err)
+        self.assertFalse(outside.exists())
+
+    def test_create_file_dotdot_is_neutralised_not_escape(self):
+        """create_file appends .md BEFORE joining, so a bare '..' becomes the in-vault
+        filename '...md' — no escape. Guards that the check runs on the computed file_path,
+        not the raw name (which would wrongly reject this). Asymmetric with create_folder."""
+        err = self._ops.create_file(self._tmp, "..")
+        self.assertIsNone(err)
+        self.assertTrue(Path(self._tmp, "...md").exists())
+
+    def test_create_file_inner_traversal_stays_inside(self):
+        """'sub/../ok.md' normalises back inside the vault → allowed."""
+        err = self._ops.create_file(self._tmp, "sub/../ok.md")
+        self.assertIsNone(err)
+        self.assertTrue(Path(self._tmp, "ok.md").exists())
 
     def test_create_file_existing_dir_no_error(self):
         """Creating a file in an existing dir works."""
@@ -145,6 +162,21 @@ class TestCreateFolder(unittest.TestCase):
         err = self._ops.create_folder(self._tmp, "existing")
         self.assertIsNotNone(err)
         self.assertIn("Errno 17", err)
+
+    def test_create_folder_rejects_parent_traversal(self):
+        """create_folder has no .md logic, so ../ escapes → error, nothing created outside."""
+        escaped = Path(self._tmp).parent.parent / "escape"
+        self.addCleanup(lambda: escaped.rmdir() if escaped.is_dir() else None)
+        err = self._ops.create_folder(self._tmp, "../../escape")
+        self.assertIsNotNone(err)
+        self.assertFalse(escaped.exists())
+
+    def test_create_folder_inner_traversal_stays_inside(self):
+        """'sub/../ok' normalises back inside the vault → allowed."""
+        os.makedirs(os.path.join(self._tmp, "sub"), exist_ok=True)
+        err = self._ops.create_folder(self._tmp, "sub/../ok")
+        self.assertIsNone(err)
+        self.assertTrue(Path(self._tmp, "ok").is_dir())
 
 
 class TestDeletePath(unittest.TestCase):
