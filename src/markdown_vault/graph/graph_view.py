@@ -71,8 +71,13 @@ _PAGE = r"""<!doctype html>
     justify-content:center;color:var(--dim,#999);font-style:italic}
   /* Node info: a fixed panel in the top-right corner (mirror of the legend), so it
      never occludes the hovered node the way a pointer-anchored tooltip did. */
+  /* pointer-events:none so the panel never swallows a click; therefore NO scroll
+     (a wheel would fall through to the canvas and zoom) — overflow:hidden clips, and
+     the description is length-bounded host-side (frontmatter.tip_of) so it rarely
+     reaches the clip. max-width shrinks in a narrow view (the sidebar mini-graph) so
+     it does not cover the top-left legend: 8+240(legend)+8+8 = 264px reserved. */
   #tip{position:absolute;display:none;right:8px;top:8px;pointer-events:none;
-    max-width:260px;max-height:42vh;overflow-y:auto;
+    max-width:min(260px,calc(100% - 264px));max-height:42vh;overflow:hidden;
     background:var(--tip-bg,Canvas);color:var(--tip-fg,CanvasText);
     border:1px solid var(--tip-border,rgba(127,127,127,.45));
     border-radius:6px;padding:6px 9px;line-height:1.35;z-index:10;

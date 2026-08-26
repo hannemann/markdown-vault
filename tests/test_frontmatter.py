@@ -134,6 +134,14 @@ class TestTipOf(unittest.TestCase):
             "venus.md", "---\ntitle: Venus\n---\nSecond planet from the sun.")
         self.assertEqual(fm.tip_of(path), ("Venus", "Second planet from the sun."))
 
+    def test_frontmatter_description_is_bounded(self):
+        # A frontmatter description is bounded to preview_chars like the body preview,
+        # so the hover panel / card cannot overflow the viewport (AA1).
+        path = self._write(
+            "big.md", "---\ntitle: Big\ndescription: %s\n---\nbody" % ("y" * 400))
+        _title, desc = fm.tip_of(path, preview_chars=200)
+        self.assertEqual(len(desc), 200)
+
     def test_body_preview_is_cut_and_whitespace_collapsed(self):
         body = "word   \n\n  spaced\ttext " + "x" * 400
         path = self._write("long.md", body)

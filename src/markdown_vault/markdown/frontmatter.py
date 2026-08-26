@@ -122,11 +122,11 @@ def _stem(path: str) -> str:
 
 
 def tip_of(path: str, preview_chars: int = 200) -> tuple:
-    """``(title, description)`` for a graph-node hover tooltip, reading only the
-    file head. Frontmatter ``title``/``description`` win; otherwise the title
-    falls back to the filename stem and the description to the first
-    ``preview_chars`` characters of the body (whitespace collapsed). Unreadable
-    → ``(stem, '')``."""
+    """``(title, description)`` for a graph-node hover panel / card, reading only the
+    file head. Frontmatter ``title``/``description`` win; otherwise the title falls
+    back to the filename stem and the description to the body preview (whitespace
+    collapsed). Either way the description is bounded to ``preview_chars`` so the
+    fixed-size hover panel and cards cannot overflow. Unreadable → ``(stem, '')``."""
     head = ""
     try:
         with open(path, "r", encoding="utf-8", errors="replace") as fh:
@@ -137,7 +137,9 @@ def tip_of(path: str, preview_chars: int = 200) -> tuple:
     meta = parse(head)
     t = title(meta) or _stem(path)
     d = description(meta)
-    if not d:
+    if d:
+        d = d[:preview_chars]
+    else:
         m = _FRONTMATTER_RE.match(head)
         body = head[m.end():] if m else head
         body = strip_markdown(body)
