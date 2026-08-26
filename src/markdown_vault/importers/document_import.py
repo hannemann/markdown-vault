@@ -63,8 +63,9 @@ _WHISPER_FILES = ["config.json", "preprocessor_config.json", "model.bin",
 
 def whisper_model_dir(name: str | None = None) -> "Path":
     """App-local folder for a Whisper model size, beside the other downloaded models
-    (``<state>/models/whisper-<size>/``) — not the global HuggingFace cache, so it is
-    visible, managed by the app, and removed with it."""
+    (``<data>/models/whisper-<size>/`` — ``config.models_dir()`` is under the XDG **data**
+    dir, not state) — not the global HuggingFace cache, so it is visible, managed by the
+    app, and removed with it."""
     from markdown_vault.core import config
     safe = (name or whisper_model_name()).replace("/", "--")
     return config.models_dir() / f"whisper-{safe}"
