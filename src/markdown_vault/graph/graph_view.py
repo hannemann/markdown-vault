@@ -47,8 +47,8 @@ _PAGE = r"""<!doctype html>
      paper over the graph, so the list scrolls inside a bounded box and the header
      folds it away. */
   #legend{position:absolute;left:8px;top:8px;font-size:11px;max-width:240px;
-    background:var(--legend-bg,rgba(28,28,30,.86));color:var(--legend-fg,#ccc);
-    border:1px solid var(--legend-border,rgba(127,127,127,.3));border-radius:6px;
+    background:var(--legend-bg,Canvas);color:var(--legend-fg,CanvasText);
+    border:1px solid var(--legend-border,rgba(127,127,127,.45));border-radius:6px;
     pointer-events:auto;overflow:hidden;box-shadow:0 2px 10px rgba(0,0,0,.4)}
   #legendhd{padding:4px 9px;cursor:pointer;font-weight:600;user-select:none;
     display:flex;align-items:center;gap:6px;opacity:.9}
@@ -62,9 +62,11 @@ _PAGE = r"""<!doctype html>
   #legenditems .row.active{background:rgba(127,127,127,.30)}
   /* box-shadow, not border, keeps the 9x9 geometry — the swatch keeps its exact
      colour (so it still matches the node in the graph) but always has an edge, even
-     a pale one on a light legend in a light GTK theme (ZW1). */
+     a pale one on a light legend in a light GTK theme (ZW1). The ring uses its own
+     --swatch-ring (a stronger alpha than the subtle panel outline), so it stays
+     perceptible against the very swatches it is there for (ZX1). */
   #legenditems i{width:9px;height:9px;border-radius:50%;flex:none;
-    box-shadow:0 0 0 1px var(--legend-border,rgba(127,127,127,.3))}
+    box-shadow:0 0 0 1px var(--swatch-ring,rgba(127,127,127,.55))}
   #empty{position:absolute;inset:0;display:none;align-items:center;
     justify-content:center;color:var(--dim,#999);font-style:italic}
   /* A 0x0 anchor placed at the pointer; the tooltip is positioned against it
@@ -83,7 +85,7 @@ _PAGE = r"""<!doctype html>
   #tip .tip-vault{display:flex;align-items:center;gap:5px;opacity:.7;
     font-size:.9em;margin-top:5px}
   #tip .tip-vault i{width:8px;height:8px;border-radius:50%;flex:none;
-    box-shadow:0 0 0 1px var(--tip-border,rgba(127,127,127,.45))}
+    box-shadow:0 0 0 1px var(--swatch-ring,rgba(127,127,127,.55))}
 </style></head>
 <body>
 <canvas id="cv"></canvas>
@@ -662,7 +664,9 @@ class GraphView(Gtk.Box):
             v["--legend-bg"] = v["--tip-bg"] = css(leg_bg, 0.96)
         if leg_fg is not None:
             v["--legend-fg"] = v["--tip-fg"] = css(leg_fg)
+            # panel outline stays subtle; the colour-dot ring needs a stronger alpha (ZX1)
             v["--legend-border"] = v["--tip-border"] = css(leg_fg, 0.22)
+            v["--swatch-ring"] = css(leg_fg, 0.45)
         self._eval("window.setTheme(%s);" % json.dumps(v))
 
     def _apply_strings(self) -> None:
