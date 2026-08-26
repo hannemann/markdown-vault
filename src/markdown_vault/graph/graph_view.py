@@ -233,15 +233,15 @@ function qchild(q,n){
 }
 function qrepel(q,n,REP,THETA2,EPS){
   if(q.mass===0)return;
-  let dx=q.cmx-n.x, dy=q.cmy-n.y, d2=dx*dx+dy*dy;
-  if(q.kids===null){                          // leaf: a single body or a tiny aggregate
-    if(q.body===n)return;                      // never repel self
-    if(d2<EPS)d2=EPS;
-    const d=Math.sqrt(d2), f=REP*q.mass/d2; n.vx-=dx/d*f; n.vy-=dy/d*f; return;
-  }
-  if(q.bw*q.bw < THETA2*d2){                   // cell far enough -> one point mass
-    if(d2<EPS)d2=EPS;
-    const d=Math.sqrt(d2), f=REP*q.mass/d2; n.vx-=dx/d*f; n.vy-=dy/d*f; return;
+  const dx=q.cmx-n.x, dy=q.cmy-n.y, d2=dx*dx+dy*dy, leaf=q.kids===null;
+  if(leaf && q.body===n)return;                // never repel self (leaf only)
+  if(leaf || q.bw*q.bw < THETA2*d2){           // leaf, or a cell far enough -> one point mass
+    // Direction from the TRUE distance, magnitude from the clamped one. Clamping d2 but
+    // dividing by sqrt(clamped) shrinks the unit vector below EPS, so repulsion collapses
+    // to zero exactly where near-coincident nodes must push apart (ZP1). Split them.
+    const dr=Math.sqrt(d2), cd2=d2<EPS?EPS:d2, f=REP*q.mass/cd2;
+    if(dr>1e-9){ n.vx-=dx/dr*f; n.vy-=dy/dr*f; }
+    return;
   }
   for(let k=0;k<4;k++)if(q.kids[k])qrepel(q.kids[k],n,REP,THETA2,EPS);
 }
@@ -307,9 +307,9 @@ function scheduleHover(id){
   hoverTimer=setTimeout(()=>{ hoverTimer=0; hoverId=id; draw();
     if(id)tipEnter(id); else tipHide(); }, id?300:1000);
 }
-let down=false,moved=false,sx0=0,sy0=0,btn=0,dragNode=null,pan=false;
+let down=false,moved=false,sx0=0,sy0=0,lx=0,ly=0,btn=0,dragNode=null,pan=false;
 cv.addEventListener("pointerdown",ev=>{
-  down=true;moved=false;btn=ev.button;sx0=ev.clientX;sy0=ev.clientY;
+  down=true;moved=false;btn=ev.button;sx0=ev.clientX;sy0=ev.clientY;lx=ev.clientX;ly=ev.clientY;
   zStop();tipHide(); if(hoverTimer){clearTimeout(hoverTimer);hoverTimer=0;}
   if(ev.button===1)ev.preventDefault();  // no middle-click autoscroll
   dragNode=nodeAt(ev.clientX,ev.clientY);
@@ -320,8 +320,11 @@ cv.addEventListener("pointerdown",ev=>{
 cv.addEventListener("pointermove",ev=>{
   if(down){
     if(Math.abs(ev.clientX-sx0)+Math.abs(ev.clientY-sy0)>3)moved=true;
-    if(dragNode){dragNode.x+=ev.movementX/scale;dragNode.y+=ev.movementY/scale;draw();}
-    else if(pan){tx+=ev.movementX;ty+=ev.movementY;draw();}
+    // clientX/Y deltas, not ev.movementX: movementX is device-scaled/unreliable in
+    // WebKit, so the graph would lag the cursor. clientX deltas are CSS px -> 1:1 pan.
+    const dx=ev.clientX-lx, dy=ev.clientY-ly; lx=ev.clientX; ly=ev.clientY;
+    if(dragNode){dragNode.x+=dx/scale;dragNode.y+=dy/scale;draw();}
+    else if(pan){tx+=dx;ty+=dy;draw();}
     return;
   }
   tipX=ev.clientX;tipY=ev.clientY;
@@ -341,6 +344,7 @@ cv.addEventListener("pointerup",ev=>{
 cv.addEventListener("pointerleave",()=>{
   if(!down){hoverTarget=null;scheduleHover(null);} });
 cv.addEventListener("wheel",ev=>{ev.preventDefault();zStop();tipHide();
+  if(hoverTimer){clearTimeout(hoverTimer);hoverTimer=0;}
   const f=ev.deltaY<0?1.1:0.9,mx=ev.clientX,my=ev.clientY;
   tx=mx-(mx-tx)*f;ty=my-(my-ty)*f;scale*=f;draw();},{passive:false});
 
