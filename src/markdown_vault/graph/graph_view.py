@@ -76,7 +76,10 @@ _PAGE = r"""<!doctype html>
      the description is length-bounded host-side (frontmatter.tip_of) so it rarely
      reaches the clip. Default corner: top-right (the full-graph explorer). In the
      narrow sidebar mini-graph the host adds .panel-br to move it bottom-right — the
-     opposite corner from the top-left legend, so the two never collide at any width. */
+     diagonally opposite corner from the top-left legend. In a narrow sidebar the two
+     share the horizontal band, so they clear each other only VERTICALLY: in a short
+     view (both boxes together taller than it) the panel covers the legend's LOWEST
+     rows — still clickable, pointer-events:none — never its header. */
   #tip{position:absolute;display:none;right:8px;top:8px;pointer-events:none;
     max-width:260px;max-height:42vh;overflow:hidden;
     background:var(--tip-bg,Canvas);color:var(--tip-fg,CanvasText);

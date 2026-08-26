@@ -3,6 +3,7 @@
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from gi.repository import GLib
 from markdown_vault.core.event_router import FileEvent
@@ -350,6 +351,20 @@ class TestSidebarCards(unittest.TestCase):
     def test_vault_label_falls_back_to_parent_dir(self):
         self.sidebar.set_vault_paths(["/other/vault"])
         self.assertEqual(self.sidebar._vault_label_for("/some/place/note.md"), "place")
+
+
+class TestSidebarMiniGraph(unittest.TestCase):
+    """The sidebar's lazily-built mini-graph."""
+
+    def test_mini_graph_asks_for_the_bottom_corner(self):
+        # The narrow sidebar graph must place the node-info panel bottom-right
+        # (bottom_panel=True), clear of the top-left legend.
+        sidebar = Sidebar()
+        sidebar._get_graph_payload = lambda _p: {"nodes": [], "edges": []}
+        sidebar._graph_panel = mock.Mock()   # stand-in, skips the real widget check
+        with mock.patch("markdown_vault.graph.graph_view.GraphView") as gv:
+            sidebar._refresh_graph()
+        self.assertTrue(gv.call_args.kwargs.get("bottom_panel"))
 
 
 if __name__ == "__main__":

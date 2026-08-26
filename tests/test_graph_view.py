@@ -15,6 +15,8 @@ fine headless — other test modules already do it — and needs no display (onl
 import unittest
 from unittest import mock
 
+from gi.repository import WebKit
+
 from markdown_vault.graph import graph_view
 from markdown_vault.graph.graph_view import parse_graph_message
 
@@ -124,6 +126,29 @@ class TestCollectMode(unittest.TestCase):
     def test_dblclick_opens(self):
         me = _msg(_me(True), "dblclick\t/v/a.md")
         me.emit.assert_called_once_with("node-activated", "/v/a.md")
+
+
+class TestBottomPanelCorner(unittest.TestCase):
+    """bottom_panel moves the node-info panel to the bottom-right corner by adding the
+    .panel-br class to the page once the load finishes."""
+
+    _ADD = "document.documentElement.classList.add('panel-br');"
+
+    def _me(self, bottom_panel):
+        me = mock.Mock()
+        me._bottom_panel = bottom_panel
+        me._pending = None
+        return me
+
+    def test_flag_set_adds_the_class_on_load(self):
+        me = self._me(True)
+        graph_view.GraphView._on_load_changed(me, None, WebKit.LoadEvent.FINISHED)
+        self.assertIn(mock.call(self._ADD), me._eval.call_args_list)
+
+    def test_flag_unset_leaves_the_default_corner(self):
+        me = self._me(False)
+        graph_view.GraphView._on_load_changed(me, None, WebKit.LoadEvent.FINISHED)
+        self.assertNotIn(mock.call(self._ADD), me._eval.call_args_list)
 
 
 class TestTipRouting(unittest.TestCase):
