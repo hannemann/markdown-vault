@@ -47,8 +47,8 @@ _PAGE = r"""<!doctype html>
      paper over the graph, so the list scrolls inside a bounded box and the header
      folds it away. */
   #legend{position:absolute;left:8px;top:8px;font-size:11px;max-width:240px;
-    background:var(--tip-bg,rgba(28,28,30,.86));color:var(--fg,#ccc);
-    border:1px solid var(--tip-border,rgba(127,127,127,.3));border-radius:6px;
+    background:var(--legend-bg,rgba(28,28,30,.86));color:var(--legend-fg,#ccc);
+    border:1px solid var(--legend-border,rgba(127,127,127,.3));border-radius:6px;
     pointer-events:auto;overflow:hidden;box-shadow:0 2px 10px rgba(0,0,0,.4)}
   #legendhd{padding:4px 9px;cursor:pointer;font-weight:600;user-select:none;
     display:flex;align-items:center;gap:6px;opacity:.9}
@@ -608,25 +608,30 @@ class GraphView(Gtk.Box):
         GLib.idle_add(self._apply_theme)
 
     def _apply_theme(self) -> None:
-        """The graph is a fixed dark canvas (the page background is black), so its
-        colours deliberately do NOT follow the light/dark GTK theme — a themed light
-        foreground on black would be unreadable. Push a fixed dark-canvas palette;
-        only the accent (centre/focus ring, out-edges) follows the user's accent."""
+        """The graph CANVAS is a fixed dark surface (the page background is black), so
+        its colours deliberately do NOT follow the light/dark GTK theme — a themed light
+        foreground on black would be unreadable. The LEGEND box, by contrast, follows the
+        system theme so it reads as a native panel. Only the accent (centre/focus ring,
+        out-edges) follows the user's accent colour."""
         if not self._ready:
             return
         ctx = self._web.get_style_context()
+
+        def look(*names):
+            for n in names:
+                ok, c = ctx.lookup_color(n)
+                if ok:
+                    return c
+            return None
 
         def css(c, alpha=None):
             return "rgba(%d,%d,%d,%g)" % (
                 round(c.red * 255), round(c.green * 255), round(c.blue * 255),
                 c.alpha if alpha is None else alpha)
 
-        accent = None
-        for name in ("accent_color", "accent_bg_color"):
-            ok, c = ctx.lookup_color(name)
-            if ok:
-                accent = c
-                break
+        accent = look("accent_color", "accent_bg_color")
+        leg_bg = look("popover_bg_color", "window_bg_color")   # legend = native panel
+        leg_fg = look("popover_fg_color", "window_fg_color")
 
         v = {
             "--fg": "rgba(232,234,240,0.92)",       # labels
@@ -640,6 +645,11 @@ class GraphView(Gtk.Box):
             "--accent": css(accent) if accent else "#e66100",
             "--edge-out": css(accent, 0.85) if accent else "rgba(230,97,0,0.85)",
         }
+        if leg_bg is not None:
+            v["--legend-bg"] = css(leg_bg, 0.96)
+        if leg_fg is not None:
+            v["--legend-fg"] = css(leg_fg)
+            v["--legend-border"] = css(leg_fg, 0.22)
         self._eval("window.setTheme(%s);" % json.dumps(v))
 
     def _apply_strings(self) -> None:
