@@ -299,5 +299,58 @@ class TestSidebarGitBatching(unittest.TestCase):
                          "on the caller thread would leave the worker uncached")
 
 
+class TestSidebarCards(unittest.TestCase):
+    """The Cards sub-view: collecting a graph node as a card."""
+
+    def setUp(self):
+        self.sidebar = Sidebar()
+
+    def _note(self, directory, body):
+        path = Path(directory) / "note.md"
+        path.write_text(body, encoding="utf-8")
+        return str(path)
+
+    def test_add_card_for_node_resolves_and_switches(self):
+        with tempfile.TemporaryDirectory() as d:
+            self.sidebar.set_vault_paths([d])
+            path = self._note(
+                d, "---\ntitle: My Note\ndescription: A short note.\n---\nx\n")
+            self.assertTrue(self.sidebar.add_card_for_node(path, "#abcdef", switch=True))
+            cards = self.sidebar._cards_panel._store.cards()
+            self.assertEqual(len(cards), 1)
+            self.assertEqual(cards[0].title, "My Note")
+            self.assertEqual(cards[0].desc, "A short note.")
+            self.assertEqual(cards[0].vault, Path(d).name)
+            self.assertEqual(cards[0].color, "#abcdef")
+            self.assertEqual(self.sidebar._stack.get_visible_child_name(), "cards")
+
+    def test_switch_false_pulses_icon_and_keeps_current_tab(self):
+        with tempfile.TemporaryDirectory() as d:
+            self.sidebar.set_vault_paths([d])
+            path = self._note(d, "# Body\n")
+            before = self.sidebar._stack.get_visible_child_name()
+            self.sidebar.add_card_for_node(path, "#000000", switch=False)
+            self.assertEqual(self.sidebar._stack.get_visible_child_name(), before)
+            self.assertIn(
+                "card-pulse", self.sidebar._rail_buttons["cards"].get_css_classes())
+
+    def test_duplicate_node_not_collected_twice(self):
+        with tempfile.TemporaryDirectory() as d:
+            self.sidebar.set_vault_paths([d])
+            path = self._note(d, "# Body\n")
+            self.assertTrue(self.sidebar.add_card_for_node(path, "#111111"))
+            self.assertFalse(self.sidebar.add_card_for_node(path, "#222222"))
+            self.assertEqual(len(self.sidebar._cards_panel._store), 1)
+
+    def test_vault_label_uses_containing_root(self):
+        self.sidebar.set_vault_paths(["/home/u/Notes", "/home/u/Other"])
+        self.assertEqual(
+            self.sidebar._vault_label_for("/home/u/Notes/sub/a.md"), "Notes")
+
+    def test_vault_label_falls_back_to_parent_dir(self):
+        self.sidebar.set_vault_paths(["/other/vault"])
+        self.assertEqual(self.sidebar._vault_label_for("/some/place/note.md"), "place")
+
+
 if __name__ == "__main__":
     unittest.main()

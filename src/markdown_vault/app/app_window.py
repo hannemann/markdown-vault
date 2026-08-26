@@ -2201,6 +2201,8 @@ class MainWindow(Adw.ApplicationWindow):
                 get_payload=self._graph_explorer_payload)
             self._graph_explorer.connect(
                 "node-activated", self._on_graph_node_activated)
+            self._graph_explorer.connect(
+                "node-carded", self._on_graph_node_carded)
             self._content_stack.add_named(self._graph_explorer, "__graph__")
         self._graph_explorer.refresh()
         self._content_stack.set_visible_child_name("__graph__")
@@ -2246,6 +2248,14 @@ class MainWindow(Adw.ApplicationWindow):
         btn = self._view_toggle_buttons.get(default)
         if btn is not None:
             btn.set_active(True)  # untoggles graph + applies the default mode
+
+    def _on_graph_node_carded(self, _explorer, path: str, color: str) -> None:
+        """A single click in the main explorer collected a node → add it as a card and
+        switch the sidebar to the Cards tab, revealing the sidebar if it is hidden
+        (graph mode itself stays put)."""
+        self._sidebar.add_card_for_node(path, color, switch=True)
+        if not self._sidebar.get_visible():
+            self._sidebar_toggle.set_active(True)  # triggers the show path + state save
 
     def _apply_view_mode(self) -> None:
         self._view_mode_manager.apply_view_mode()

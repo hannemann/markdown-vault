@@ -436,6 +436,16 @@ paned > separator {
 .sidebar-rail-btn:checked {
     background: alpha(@window_fg_color, 0.15);
 }
+/* Feedback flash: a card was collected into the Cards tab without switching to it
+   (from the sidebar mini-graph). Briefly wash the rail icon in the accent colour. */
+@keyframes card-pulse {
+    0%   { background: alpha(@accent_bg_color, 0.0); }
+    35%  { background: alpha(@accent_bg_color, 0.7); }
+    100% { background: alpha(@accent_bg_color, 0.0); }
+}
+.sidebar-rail-btn.card-pulse {
+    animation: card-pulse 700ms ease-out;
+}
 
 /* Browser-style hover-URL status line, pinned to the preview's bottom-left. */
 .preview-hover-url {

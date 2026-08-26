@@ -1966,3 +1966,31 @@ msgstr "Notizen nach Bedeutung finden. Standardmäßig aus; solange deaktiviert,
 #: src/markdown_vault/ui/preferences/web_page.py
 msgid "Web"
 msgstr "Web"
+
+#: src/markdown_vault/ui/graph_cards.py src/markdown_vault/ui/sidebar.py
+msgid "Cards"
+msgstr "Karten"
+
+#: src/markdown_vault/ui/graph_cards.py
+msgid "Remove all cards"
+msgstr "Alle Karten entfernen"
+
+#: src/markdown_vault/ui/graph_cards.py
+msgid ""
+"No cards yet.\n"
+"\n"
+"Click a node in the graph to collect it here; double-click a node to open "
+"its file."
+msgstr ""
+"Noch keine Karten.\n"
+"\n"
+"Klicke einen Knoten im Graphen an, um ihn hier zu sammeln; ein Doppelklick "
+"öffnet die Datei."
+
+#: src/markdown_vault/ui/graph_cards.py
+msgid "Open file"
+msgstr "Datei öffnen"
+
+#: src/markdown_vault/ui/graph_cards.py
+msgid "Remove card"
+msgstr "Karte entfernen"

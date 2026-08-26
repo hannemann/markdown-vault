@@ -10,6 +10,7 @@ Provides four switchable sub-views:
 
 import json
 import logging
+import os
 import re
 import threading
 from datetime import datetime
@@ -28,9 +29,11 @@ from markdown_vault.vault import git_integration
 from markdown_vault.vault.backlink_index import BacklinkIndex
 from markdown_vault.core.event_router import FileEvent
 from markdown_vault.core.i18n import _
+from markdown_vault.markdown import frontmatter
 from markdown_vault.markdown.md_fences import FenceTracker
 from markdown_vault.markdown.md_text import strip_markdown
 from markdown_vault.core.path_utils import HEADING_RE
+from markdown_vault.ui.graph_cards import GraphCardsPanel
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +47,7 @@ _SIDEBAR_SECTIONS = [
     ("outline", "view-list-symbolic", _("Outline")),
     ("backlinks", "insert-link-symbolic", _("Backlinks")),
     ("graph", "network-wired-symbolic", _("Graph")),
+    ("cards", "view-paged-symbolic", _("Cards")),
     ("metadata", "document-properties-symbolic", _("Metadata")),
     ("git", "media-flash-symbolic", _("Git")),
     ("details", "dialog-information-symbolic", _("Details")),
@@ -130,6 +134,12 @@ class Sidebar(Gtk.Box):
         self._graph_panel.set_vexpand(True)
         self._stack.add_titled(self._graph_panel, "graph", _("Graph"))
 
+        # Cards panel — nodes the user collected by clicking them in the explorer.
+        self._cards_panel = GraphCardsPanel()
+        self._cards_panel.connect(
+            "card-open-requested", lambda _p, path: self.emit("file-open-requested", path))
+        self._stack.add_titled(self._cards_panel, "cards", _("Cards"))
+
         self._metadata_list = self._make_scrollable_list()
         self._stack.add_titled(self._metadata_list["parent"], "metadata", _("Metadata"))
 
@@ -180,6 +190,50 @@ class Sidebar(Gtk.Box):
     def set_vault_paths(self, paths: list[str]) -> None:
         """Set the list of vault root paths (used for backlink search)."""
         self._vault_paths = list(paths)
+
+    def add_card_for_node(self, path: str, color: str, switch: bool = True) -> bool:
+        """Collect a graph node as a card, resolving its title/description and vault.
+
+        ``switch=True`` (main explorer): bring the Cards tab to the front. ``switch=
+        False`` (sidebar mini-graph): stay on the current tab and pulse the Cards rail
+        icon instead, since switching would hide the graph the user is clicking.
+        Returns False if the node was already collected.
+        """
+        title, desc = frontmatter.tip_of(path)
+        added = self._cards_panel.add_card(
+            path, title, desc, self._vault_label_for(path), color)
+        if switch:
+            self.show_cards()
+        else:
+            self._pulse_cards_icon()
+        return added
+
+    def show_cards(self) -> None:
+        """Bring the Cards sub-view to the front."""
+        self._rail_buttons["cards"].set_active(True)
+
+    def _vault_label_for(self, path: str) -> str:
+        """Basename of the vault root containing *path* (the card's vault line); falls
+        back to the file's parent directory name when no root matches."""
+        best = ""
+        for root in self._vault_paths:
+            if (path == root or path.startswith(root.rstrip("/") + "/")) \
+                    and len(root) > len(best):
+                best = root
+        return os.path.basename(best.rstrip("/")) if best \
+            else os.path.basename(os.path.dirname(path))
+
+    def _pulse_cards_icon(self) -> None:
+        """Briefly flash the Cards rail icon as feedback that a card was collected
+        without switching to it."""
+        btn = self._rail_buttons["cards"]
+        btn.add_css_class("card-pulse")
+        GLib.timeout_add(700, self._clear_cards_pulse, btn)
+
+    @staticmethod
+    def _clear_cards_pulse(btn: Gtk.Widget) -> bool:
+        btn.remove_css_class("card-pulse")
+        return False   # one-shot timeout
 
     def update_for_file(self, file_path: str | None, text: str = "") -> None:
         """Refresh all sub-views for *file_path*.
@@ -248,13 +302,20 @@ class Sidebar(Gtk.Box):
             return
         if self._graph_view is None:
             from markdown_vault.graph.graph_view import GraphView
-            self._graph_view = GraphView()
+            # Collect mode like the main explorer: a single click collects a card, a
+            # double click opens. Unlike the explorer it must NOT switch to the Cards
+            # tab — that would hide the graph the user is clicking — so it pulses the
+            # Cards rail icon for feedback instead.
+            self._graph_view = GraphView(collect_on_click=True)
             self._graph_view.connect(
                 "node-activated",
                 lambda _v, path: self.emit("file-open-requested", path))
             self._graph_view.connect(
                 "node-activated-new-tab",
                 lambda _v, path: self.emit("file-open-new-tab", path))
+            self._graph_view.connect(
+                "node-carded",
+                lambda _v, path, color: self.add_card_for_node(path, color, switch=False))
             self._graph_panel.append(self._graph_view)
         self._graph_view.set_graph(self._get_graph_payload(self._current_file))
 

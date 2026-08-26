@@ -22,6 +22,8 @@ from markdown_vault.graph.graph_view import GraphView
 class GraphExplorer(Gtk.Box):
     __gsignals__ = {
         "node-activated": (GObject.SignalFlags.RUN_LAST, None, (str,)),
+        # node-carded(file_path, colour): a single click collected the node as a card.
+        "node-carded": (GObject.SignalFlags.RUN_LAST, None, (str, str)),
     }
 
     def __init__(self, get_payload=None) -> None:
@@ -67,7 +69,9 @@ class GraphExplorer(Gtk.Box):
         bar.append(self._fit)
         self.append(bar)
 
-        self._graph = GraphView()
+        # Collect mode: in the full explorer a single click collects a card and a
+        # double click opens; the sidebar mini-graph keeps the default (click opens).
+        self._graph = GraphView(collect_on_click=True)
         self._graph.set_vexpand(True)
         # The overlay launcher always opens in a tab, so a middle-click node is
         # routed the same as a plain click.
@@ -75,6 +79,8 @@ class GraphExplorer(Gtk.Box):
             "node-activated", lambda _v, path: self.emit("node-activated", path))
         self._graph.connect(
             "node-activated-new-tab", lambda _v, path: self.emit("node-activated", path))
+        self._graph.connect(
+            "node-carded", lambda _v, path, color: self.emit("node-carded", path, color))
         self.append(self._graph)
 
     def scope(self) -> str:

@@ -37,6 +37,7 @@ src/markdown_vault/ui/preferences/prompt_subpage.py
 src/markdown_vault/ui/preferences/runtime_subpage.py
 src/markdown_vault/ui/preferences/search_page.py
 src/markdown_vault/ui/preferences/web_page.py
+src/markdown_vault/ui/graph_cards.py
 src/markdown_vault/ui/sidebar.py
 src/markdown_vault/uikit/banners.py
 src/markdown_vault/uikit/dialogs.py

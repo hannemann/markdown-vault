@@ -387,9 +387,10 @@ function kick(){ if(raf)return; const loop=()=>{
   else {raf=0; if(fitPending){fitPending=false; zoomTo(nodes);}} };
   raf=requestAnimationFrame(loop);}
 
-// newTab flag is prefixed ("1\t" / "0\t") so the host can route it.
-function post(id,newTab){ if(window.webkit&&webkit.messageHandlers&&webkit.messageHandlers.graph)
-  webkit.messageHandlers.graph.postMessage((newTab?"1":"0")+"\t"+id); }
+// Messages are "verb\tpath[\tcolour]"; the host (parse_graph_message) routes by verb.
+function send(msg){ if(window.webkit&&webkit.messageHandlers&&webkit.messageHandlers.graph)
+  webkit.messageHandlers.graph.postMessage(msg); }
+function clickMsg(n,newTab){ return (newTab?"clicknt":"click")+"\t"+n.id+"\t"+(n.color||""); }
 
 // --- Interaction: one set of handlers on the canvas, manual hit-testing --
 function nodeAt(sx,sy){  // screen px -> topmost node under the pointer, or null
@@ -438,11 +439,15 @@ cv.addEventListener("pointerup",ev=>{
   try{cv.releasePointerCapture(ev.pointerId);}catch(e){}
   if(dragNode){dragNode.fixed=false;
     // Detect click vs. drag: a no-move release IS the click (middle / Ctrl -> new tab).
-    if(!moved)post(dragNode.id, btn===1||ev.ctrlKey);
+    // The host decides what a single click means (collect a card, or open); a
+    // double click always opens and is handled by the dblclick listener below.
+    if(!moved)send(clickMsg(dragNode, btn===1||ev.ctrlKey));
     else{alpha=Math.max(alpha,0.4);kick();}
     dragNode=null;}
   else if(pan){pan=false;cv.classList.remove("grabbing");}
 });
+cv.addEventListener("dblclick",ev=>{const h=nodeAt(ev.clientX,ev.clientY);
+  if(h)send("dblclick\t"+h.id);});
 cv.addEventListener("pointerleave",()=>{
   if(!down){hoverTarget=null;scheduleHover(null);} });
 cv.addEventListener("wheel",ev=>{ev.preventDefault();zStop();tipHide();
@@ -498,8 +503,7 @@ function tipRequest(id){
   // Stale-while-revalidate: show any cached text at once (no flicker), but always
   // re-ask the host — the file may have changed since it was last cached.
   if(tipCache[id]!==undefined)tipShow(id);
-  if(window.webkit&&webkit.messageHandlers&&webkit.messageHandlers.graph)
-    webkit.messageHandlers.graph.postMessage("tip\t"+id);
+  send("tip\t"+id);
 }
 function tipShow(id){
   const data=tipCache[id];
@@ -542,16 +546,45 @@ resize();
 """
 
 
+def parse_graph_message(raw):
+    r"""Parse a raw ``verb\tpath[\tcolor]`` message from the graph page.
+
+    Returns ``(kind, path, arg)``: kind is one of ``"tip"``, ``"click"``,
+    ``"clicknt"``, ``"dblclick"``, or ``""`` for an empty or unrecognised message.
+    ``arg`` carries the node colour for the click verbs and ``""`` otherwise.
+    """
+    if not raw:
+        return ("", "", "")
+    parts = raw.split("\t")
+    verb = parts[0]
+    path = parts[1] if len(parts) > 1 else ""
+    if verb == "tip":
+        return ("tip", path, "")
+    if verb in ("click", "clicknt"):
+        return (verb, path, parts[2] if len(parts) > 2 else "")
+    if verb == "dblclick":
+        return ("dblclick", path, "")
+    return ("", "", "")
+
+
 class GraphView(Gtk.Box):
     __gsignals__ = {
-        # node-activated(file_path): a plain click on a node.
+        # node-activated(file_path): open the file — a double click in collect mode,
+        # a single click otherwise.
         "node-activated": (GObject.SignalFlags.RUN_LAST, None, (str,)),
         # node-activated-new-tab(file_path): middle-click / Ctrl+click on a node.
         "node-activated-new-tab": (GObject.SignalFlags.RUN_LAST, None, (str,)),
+        # node-carded(file_path, colour): a single click in collect mode — collect
+        # the node as a card rather than opening it.
+        "node-carded": (GObject.SignalFlags.RUN_LAST, None, (str, str)),
     }
 
-    def __init__(self) -> None:
+    def __init__(self, collect_on_click: bool = False) -> None:
         super().__init__(orientation=Gtk.Orientation.VERTICAL)
+        # collect_on_click flips a single click from "open the file" (default, the
+        # sidebar mini-graph) to "collect a card" (the main explorer). A double click
+        # opens in either mode.
+        self._collect_on_click = collect_on_click
         self._web = WebKit.WebView()
         self._web.set_vexpand(True)
         self._web.set_hexpand(True)
@@ -684,18 +717,28 @@ class GraphView(Gtk.Box):
             logger.warning("graph JS message could not be read; a click was dropped",
                            exc_info=True)
             return
-        if not raw:
+        kind, path, color = parse_graph_message(raw)
+        if not kind or not path:
             return
-        flag, sep, path = raw.partition("\t")
-        if flag == "tip":      # lazy hover-tooltip request for node `path`
-            if path:
-                self._send_tip(path)
+        if kind == "tip":      # lazy hover-panel request for node `path`
+            self._send_tip(path)
             return
-        if not sep:            # no flag prefix → treat the whole value as a path
-            flag, path = "0", flag
-        if path:
-            self.emit("node-activated-new-tab" if flag == "1" else "node-activated",
-                      path)
+        if self._collect_on_click:
+            # Main explorer: a single click collects a card, a double click opens.
+            if kind == "click":
+                self.emit("node-carded", path, color)
+            elif kind == "clicknt":
+                self.emit("node-carded", path, color)
+                self.emit("node-activated-new-tab", path)
+            elif kind == "dblclick":
+                self.emit("node-activated", path)
+        else:
+            # Default (sidebar mini-graph): a single click opens, as before.
+            if kind == "click":
+                self.emit("node-activated", path)
+            elif kind == "clicknt":
+                self.emit("node-activated-new-tab", path)
+            # dblclick ignored here: the single click already opened.
 
     def _send_tip(self, path: str) -> None:
         """Resolve a node's hover tooltip (title/description or a body preview)
