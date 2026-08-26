@@ -137,13 +137,14 @@ def tip_of(path: str, preview_chars: int = 200) -> tuple:
     meta = parse(head)
     t = title(meta) or _stem(path)
     d = description(meta)
-    if d:
-        d = d[:preview_chars]
-    else:
+    if not d:
         m = _FRONTMATTER_RE.match(head)
         body = head[m.end():] if m else head
-        body = strip_markdown(body)
-        d = re.sub(r"\s+", " ", body).strip()[:preview_chars].strip()
+        d = strip_markdown(body)
+    # One rule for both sources: collapse whitespace (so the HTML panel and the GTK
+    # card render a multi-line description identically) and bound the length so the
+    # fixed-size panel and cards cannot overflow.
+    d = re.sub(r"\s+", " ", d).strip()[:preview_chars].strip()
     return (t, d)
 
 

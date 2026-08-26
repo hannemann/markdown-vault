@@ -142,6 +142,15 @@ class TestTipOf(unittest.TestCase):
         _title, desc = fm.tip_of(path, preview_chars=200)
         self.assertEqual(len(desc), 200)
 
+    def test_frontmatter_description_whitespace_collapsed(self):
+        # A multi-line YAML description must collapse to one line here, so the HTML
+        # panel (white-space:normal) and the GTK card (literal line breaks) render it
+        # identically (AB2).
+        path = self._write(
+            "multi.md", '---\ntitle: T\ndescription: "line one\\nline two"\n---\nbody')
+        _title, desc = fm.tip_of(path)
+        self.assertEqual(desc, "line one line two")
+
     def test_body_preview_is_cut_and_whitespace_collapsed(self):
         body = "word   \n\n  spaced\ttext " + "x" * 400
         path = self._write("long.md", body)
