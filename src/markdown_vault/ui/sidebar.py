@@ -231,7 +231,10 @@ class Sidebar(Gtk.Box):
         btn = self._rail_buttons["cards"]
         if self._pulse_id:
             GLib.source_remove(self._pulse_id)
-        btn.remove_css_class("card-pulse")   # re-add restarts the CSS animation
+        # Remove + re-add so that a re-add *can* restart the animation; whether GTK
+        # coalesces a same-tick toggle (making this a no-op) is unverified. Harmless
+        # either way — the load-bearing part is extending the timeout below.
+        btn.remove_css_class("card-pulse")
         btn.add_css_class("card-pulse")
         self._pulse_id = GLib.timeout_add(700, self._clear_cards_pulse, btn)
 

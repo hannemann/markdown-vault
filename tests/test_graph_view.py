@@ -66,6 +66,11 @@ class TestParseGraphMessage(unittest.TestCase):
         self.assertEqual(parse_graph_message(""), ("", "", ""))
         self.assertEqual(parse_graph_message("bogus\t/v/a.md"), ("", "", ""))
 
+    def test_falsy_inputs_stay_total(self):
+        # Public function: keep it total, don't rely on "the caller only passes str".
+        for bad in (None, "", 0, []):
+            self.assertEqual(parse_graph_message(bad), ("", "", ""))
+
     def test_path_containing_a_tab_is_preserved(self):
         # POSIX filenames may contain a tab (any byte but "/" and NUL). The colour is
         # always the LAST field and never contains a tab, so the path must survive.

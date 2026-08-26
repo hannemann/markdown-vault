@@ -546,13 +546,20 @@ resize();
 """
 
 
-def parse_graph_message(raw):
-    r"""Parse a raw ``verb\tpath[\tcolor]`` message from the graph page.
+def parse_graph_message(raw: str):
+    r"""Parse a raw ``verb\tpath[\tcolour]`` message from the graph page.
 
     Returns ``(kind, path, arg)``: kind is one of ``"tip"``, ``"click"``,
     ``"clicknt"``, ``"dblclick"``, or ``""`` for an empty or unrecognised message.
     ``arg`` carries the node colour for the click verbs and ``""`` otherwise.
+
+    For ``click``/``clicknt`` the colour is split off from the RIGHT, so the path may
+    legally contain a tab (POSIX allows any byte but ``/`` and NUL). This relies on the
+    JS ``clickMsg`` always appending a colour field (``(n.color||"")``); were that field
+    ever dropped, a tab-bearing path would be truncated.
     """
+    if not raw:
+        return ("", "", "")
     verb, _, rest = raw.partition("\t")
     if verb in ("tip", "dblclick"):
         return (verb, rest, "")
