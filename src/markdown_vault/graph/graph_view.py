@@ -234,12 +234,20 @@ function qchild(q,n){
 function qrepel(q,n,REP,THETA2,EPS){
   if(q.mass===0)return;
   const dx=q.cmx-n.x, dy=q.cmy-n.y, d2=dx*dx+dy*dy, leaf=q.kids===null;
-  if(leaf && q.body===n)return;                // never repel self (leaf only)
+  let m=q.mass;
+  if(leaf){
+    // Aggregate leaf: several near-coincident bodies share one cell. Subtract n's own
+    // unit of mass when n is one of them -- skipping only q.body would give the stored
+    // node nothing while its pile-mates get mass*, a one-sided kick that drifts the pile
+    // instead of separating it (ZQ1). Also subsumes the plain single-body self-skip.
+    if(n.x>=q.bx && n.x<q.bx+q.bw && n.y>=q.by && n.y<q.by+q.bw) m-=1;
+    if(m<=0)return;
+  }
   if(leaf || q.bw*q.bw < THETA2*d2){           // leaf, or a cell far enough -> one point mass
-    // Direction from the TRUE distance, magnitude from the clamped one. Clamping d2 but
-    // dividing by sqrt(clamped) shrinks the unit vector below EPS, so repulsion collapses
-    // to zero exactly where near-coincident nodes must push apart (ZP1). Split them.
-    const dr=Math.sqrt(d2), cd2=d2<EPS?EPS:d2, f=REP*q.mass/cd2;
+    // Direction from the TRUE distance, magnitude from the clamped one: clamping d2 but
+    // dividing by sqrt(clamped) shrinks the unit vector below EPS, so repulsion would
+    // collapse to zero exactly where near-coincident nodes must push apart (ZP1).
+    const dr=Math.sqrt(d2), cd2=d2<EPS?EPS:d2, f=REP*m/cd2;
     if(dr>1e-9){ n.vx-=dx/dr*f; n.vy-=dy/dr*f; }
     return;
   }
