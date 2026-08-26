@@ -124,8 +124,8 @@ def _stem(path: str) -> str:
 def tip_of(path: str, preview_chars: int = 200) -> tuple:
     """``(title, description)`` for a graph-node hover panel / card, reading only the
     file head. Frontmatter ``title``/``description`` win; otherwise the title falls
-    back to the filename stem and the description to the body preview (whitespace
-    collapsed). Either way the description is bounded to ``preview_chars`` so the
+    back to the filename stem and the description to the body preview. Either way the
+    description is whitespace-collapsed and bounded to ``preview_chars`` so the
     fixed-size hover panel and cards cannot overflow. Unreadable → ``(stem, '')``."""
     head = ""
     try:
