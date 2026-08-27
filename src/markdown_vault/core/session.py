@@ -118,7 +118,6 @@ def save_session(
     *sidebar_paned_position* width of the sidebar.
     *main_paned_position* width of the vault tree panel.
     """
-    config._ensure_state_dir()
     data = {
         "window": {"width": width, "height": height},
         "sidebar_visible": sidebar_visible,
