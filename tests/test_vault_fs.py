@@ -75,6 +75,40 @@ class TestWriteOps(unittest.TestCase):
                 vfs.mkdir(os.path.join(v.outside, "d"))
 
 
+class TestAtomicWrites(unittest.TestCase):
+    def test_write_text_atomic_writes_and_leaves_no_part(self):
+        with _Vault() as v:
+            p = os.path.join(v.vault, "note.md")
+            vfs.write_text_atomic(p, "# hi")
+            self.assertEqual(Path(p).read_text(encoding="utf-8"), "# hi")
+            self.assertFalse(Path(p + ".part").exists())
+
+    def test_write_text_atomic_outside_is_refused(self):
+        with _Vault() as v:
+            with self.assertRaises(vfs.OutsideVault):
+                vfs.write_text_atomic(os.path.join(v.outside, "note.md"), "x")
+
+    def test_a_failed_atomic_write_leaves_the_previous_file_intact(self):
+        # The whole point: os.replace failing (or a crash before it) must not destroy the
+        # existing note — unlike a direct write_text, which truncates first.
+        with _Vault() as v:
+            p = os.path.join(v.vault, "note.md")
+            Path(p).write_text("PRECIOUS")
+            with mock.patch("markdown_vault.core.vault_fs.os.replace",
+                            side_effect=OSError("disk full")):
+                with self.assertRaises(OSError):
+                    vfs.write_text_atomic(p, "new content")
+            self.assertEqual(Path(p).read_text(), "PRECIOUS")   # old content survives
+            self.assertFalse(Path(p + ".part").exists())        # partial cleaned up
+
+    def test_write_bytes_atomic(self):
+        with _Vault() as v:
+            p = os.path.join(v.vault, "attachments", "img.png")
+            vfs.write_bytes_atomic(p, b"\x89PNG")               # parent created
+            self.assertEqual(Path(p).read_bytes(), b"\x89PNG")
+            self.assertFalse(Path(p + ".part").exists())
+
+
 class TestDeleteOps(unittest.TestCase):
     def test_unlink_a_file_inside(self):
         with _Vault() as v:

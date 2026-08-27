@@ -71,6 +71,43 @@ def write_bytes(path, data: bytes) -> None:
     Path(path).write_bytes(data)
 
 
+def _atomic_bytes(target: Path, data: bytes) -> None:
+    tmp = target.with_name(target.name + ".part")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        with open(tmp, "wb") as fh:
+            fh.write(data)
+        os.replace(tmp, target)
+    except BaseException:
+        try:
+            tmp.unlink(missing_ok=True)
+        except OSError:
+            pass  # best-effort cleanup; the caller re-raises the real failure
+        raise
+
+
+def write_text_atomic(path, text: str, *, encoding: str = "utf-8") -> None:
+    """Atomically write *text* to a vault file (guarded): a ``.part`` renamed into place, so
+    a crash leaves the PREVIOUS content intact rather than the empty file a direct
+    :func:`write_text` would leave (it truncates before writing).
+
+    For the batch callers (backlink rewrites, importers, attachments), where a truncated
+    file would be worst and the write is infrequent. Caveat for the migration: on a TRACKED
+    (open tab / indexed) ``.md`` file the final rename surfaces to VaultMonitor as a moved
+    event, which it reads as an external change (a false reload banner). A caller that can
+    hit such a file must ``skip_next_event`` at the call site, as ``FileOps`` does; a
+    non-``.md`` attachment is filtered by the monitor's suffix test and is free of this."""
+    _guard(path, follow_last=True)
+    _atomic_bytes(Path(path), text.encode(encoding))
+
+
+def write_bytes_atomic(path, data: bytes) -> None:
+    """Atomically write *data* to a vault file (guarded). See :func:`write_text_atomic`;
+    a non-``.md`` attachment carries no VaultMonitor interaction."""
+    _guard(path, follow_last=True)
+    _atomic_bytes(Path(path), data)
+
+
 def mkdir(path, *, parents: bool = False, exist_ok: bool = False) -> None:
     """Create a directory inside a vault (guarded)."""
     _guard(path, follow_last=True)
