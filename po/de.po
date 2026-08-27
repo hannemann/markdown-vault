@@ -2030,3 +2030,15 @@ msgstr "Auch im Sidebar-Graph"
 #: src/markdown_vault/graph/graph_explorer.py
 msgid "Apply the cursor lens to the small graph in the sidebar too"
 msgstr "Die Cursor-Linse auch auf den kleinen Graphen in der Seitenleiste anwenden"
+
+#: src/markdown_vault/search/model_download.py
+msgid "The download was redirected off HTTPS and refused."
+msgstr "Der Download wurde von HTTPS umgeleitet und abgelehnt."
+
+#: src/markdown_vault/search/model_download.py
+msgid "Could not reach the download server."
+msgstr "Der Download-Server war nicht erreichbar."
+
+#: src/markdown_vault/search/model_download.py
+msgid "The download failed. See the log for details."
+msgstr "Der Download ist fehlgeschlagen. Details siehe Log."

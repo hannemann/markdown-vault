@@ -5,6 +5,7 @@ install_data(
     'ask_models.py',
     'lexical_search.py',
     'llama_runtime.py',
+    'model_download.py',
     'quick_open.py',
     'quick_open_palette.py',
     'search.py',
