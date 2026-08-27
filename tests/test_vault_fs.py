@@ -169,6 +169,39 @@ class TestMoveRename(unittest.TestCase):
                 vfs.move(src, os.path.join(v.outside, "a.md"))
             self.assertTrue(Path(src).exists())
 
+    def test_move_final_path_escaping_via_symlink_is_refused(self):
+        # AO1: shutil.move lands the file at dst/basename(src). If THAT path is a symlink
+        # pointing out, guarding only the dst directory admits an escape (reachable when a
+        # vault spans mount points, where shutil copies through the link). Guard the final
+        # resting path, not just the directory.
+        with _Vault() as v:
+            src = os.path.join(v.vault, "note.md")
+            Path(src).write_text("secret")
+            subdir = os.path.join(v.vault, "sub")
+            os.mkdir(subdir)
+            os.symlink(os.path.join(v.outside, "victim.md"),
+                       os.path.join(subdir, "note.md"))   # the trap
+            with self.assertRaises(vfs.OutsideVault):
+                vfs.move(src, subdir)
+            self.assertTrue(Path(src).exists())            # refused before moving
+
+    def test_rename_over_a_symlink_pointing_out_stays_inside(self):
+        # AO2: os.rename REPLACES a symlink at the destination, it does not write through
+        # it, so a dst that is a symlink pointing out still stays inside. Refusing it
+        # (follow_last=True) mirrors the AG2 over-strictness; it must be allowed, exactly
+        # as unlink of that same link is.
+        with _Vault() as v:
+            src = os.path.join(v.vault, "a.md")
+            Path(src).write_text("NEW")
+            victim = os.path.join(v.outside, "victim.md")
+            Path(victim).write_text("VICTIM")
+            dst = os.path.join(v.vault, "link.md")
+            os.symlink(victim, dst)
+            vfs.rename(src, dst)
+            self.assertFalse(os.path.islink(dst))               # link replaced by the file
+            self.assertEqual(Path(dst).read_text(), "NEW")
+            self.assertEqual(Path(victim).read_text(), "VICTIM")  # target untouched
+
 
 if __name__ == "__main__":
     unittest.main()

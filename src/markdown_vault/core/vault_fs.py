@@ -16,9 +16,18 @@ The two path_guard modes carry the distinction the escape hinges on:
 
 A rename/move is therefore checked on **both** ends, each in its own mode.
 
-Writes are direct, not atomic: the vault tree is watched by VaultMonitor, and a ``.part``
-appearing and being renamed would surface as spurious file events. All raw filesystem
-mutation for vault writes lives here; the AST guard forbids it anywhere else.
+Writes are direct, not atomic — a deliberate, still-open trade. A tmp-then-rename would
+NOT confuse VaultMonitor by its ``.part`` (the monitor filters by suffix, so a ``.part`` is
+already invisible); the real cost is that the rename arrives as a RENAMED/MOVED_IN event
+rather than a change, and the vault tree, backlink index and file index treat those
+differently — every note save would look like a rename. Against that, ``Path.write_text``
+truncates first, so a crash mid-save leaves an EMPTY note, losing all prior content, not
+just the last edit. Which way the frequent editor-save path should go is a product
+decision (tracked in the VaultFS ticket); a separate atomic writer for the batch callers
+may land later.
+
+All raw filesystem mutation for vault writes lives here; the AST guard forbids it anywhere
+else.
 """
 
 import logging
@@ -87,16 +96,30 @@ def rmtree(path) -> None:
 
 
 def rename(src, dst) -> None:
-    """Rename *src* to *dst*, both inside a vault. The source acts on the link (delete
-    mode), the destination follows it (write mode); both must stay in the vault."""
+    """Rename *src* to *dst*, both inside a vault. Both ends act on the link, not through
+    it: ``os.rename`` REPLACES a symlink at the destination rather than following it, so
+    *dst* is checked in delete mode too (follow_last=False) — otherwise a rename that would
+    stay inside by replacing an outward link is refused for no reason."""
     _guard(src, follow_last=False)
-    _guard(dst, follow_last=True)
+    _guard(dst, follow_last=False)
     os.rename(src, dst)
 
 
 def move(src, dst) -> None:
-    """Move *src* to *dst*, both inside a vault (``shutil.move`` semantics; *dst* may be a
-    directory). Source in delete mode, destination in write mode."""
+    """Move *src* to *dst*, both inside a vault (``shutil.move`` semantics). Source acts on
+    the link (delete mode); the destination follows it (write mode), because ``shutil.move``
+    may fall back to ``copy2`` across filesystems, which writes THROUGH a destination link.
+
+    When *dst* is an existing directory the file lands at ``dst/basename(src)``, so the
+    guard checks that final resting path, not just the directory — otherwise a symlink
+    planted at that path could redirect the write outside the vault.
+
+    Note: a failed ``shutil.move`` can leave a partial copy at the final name (not a
+    ``.part``), which looks complete and would be indexed as a note. That is shutil's
+    contract; VaultFS does not roll it back."""
+    target = Path(dst)
+    if target.is_dir():                        # same test shutil.move uses (os.path.isdir)
+        target = target / Path(src).name
     _guard(src, follow_last=False)
-    _guard(dst, follow_last=True)
+    _guard(target, follow_last=True)
     shutil.move(src, dst)
