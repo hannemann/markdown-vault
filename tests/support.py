@@ -7,6 +7,11 @@ place instead of an inline ``mock.patch`` pair in every migrated caller's test.
 
 Not for testing StateFS itself — those tests (``test_state_fs``) control the vault clause
 and the root topology directly; this always clears the vault roots.
+
+It patches ``_state_roots`` and ``_vault_roots`` but NOT ``_model_roots`` (used only by
+``write_stream``). When the download tier migrates, its tests need the model roots pinned
+too, or the real configured model folder quietly applies — harmless under the test-home
+pinning, but unintended.
 """
 
 from contextlib import contextmanager

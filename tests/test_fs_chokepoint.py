@@ -242,7 +242,7 @@ _BASELINE = {
         ".write_text": 1, ".write_bytes": 1, ".mkdir": 2, ".rmdir": 1,
         "shutil.move": 1, "shutil.rmtree": 1,
     },
-    "core/config.py": {".mkdir": 2, "os.fdopen": 1, "os.replace": 1, "os.unlink": 1},
+    "core/config.py": {".mkdir": 1, "os.fdopen": 1, "os.replace": 1, "os.unlink": 1},
     "core/logging_setup.py": {"os.makedirs": 2},
     "editor/editor.py": {".write_text": 1},
     "importers/document_import.py": {".mkdir": 2, ".write_text": 1},

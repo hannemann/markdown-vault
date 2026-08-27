@@ -39,11 +39,6 @@ def _ensure_config_dir() -> None:
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
 
 
-def _ensure_state_dir() -> None:
-    """Create the state directory if it does not exist (session.json, dumps)."""
-    STATE_DIR.mkdir(parents=True, exist_ok=True)
-
-
 def check_config_access() -> None:
     """Raise OSError if the config file/directory is not accessible.
 
