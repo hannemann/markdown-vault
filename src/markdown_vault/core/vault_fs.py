@@ -72,12 +72,18 @@ def write_bytes(path, data: bytes) -> None:
 
 
 def _atomic_bytes(target: Path, data: bytes) -> None:
-    tmp = target.with_name(target.name + ".part")
-    target.parent.mkdir(parents=True, exist_ok=True)
+    # Write at the RESOLVED leaf. os.replace renames onto the name, it does not write
+    # through a symlink there — so to preserve a symlinked note's semantics (update the
+    # target, keep the link), as the direct writer does, we must target the real file. The
+    # guard already ran on the ORIGINAL path (follow_last=True), so the resolved leaf is
+    # known to be in the vault; a link pointing out was refused before we got here.
+    real = Path(os.path.realpath(target))
+    tmp = real.with_name(real.name + ".part")
+    real.parent.mkdir(parents=True, exist_ok=True)
     try:
         with open(tmp, "wb") as fh:
             fh.write(data)
-        os.replace(tmp, target)
+        os.replace(tmp, real)
     except BaseException:
         try:
             tmp.unlink(missing_ok=True)

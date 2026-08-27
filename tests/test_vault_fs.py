@@ -101,6 +101,30 @@ class TestAtomicWrites(unittest.TestCase):
             self.assertEqual(Path(p).read_text(), "PRECIOUS")   # old content survives
             self.assertFalse(Path(p + ".part").exists())        # partial cleaned up
 
+    def test_atomic_write_through_a_symlinked_note_keeps_the_link(self):
+        # AP1: a direct write goes THROUGH a symlink (target updated, link survives). The
+        # atomic writer must match — otherwise migrating a batch caller (the backlink
+        # rewrite is one) would replace a symlinked note with a file and leave the real
+        # note stale. os.replace renames onto the NAME, so resolve the leaf after the guard.
+        with _Vault() as v:
+            real = os.path.join(v.vault, "real.md")
+            Path(real).write_text("ORIGINAL")
+            link = os.path.join(v.vault, "alias.md")
+            os.symlink(real, link)
+            vfs.write_text_atomic(link, "REWRITTEN")
+            self.assertTrue(os.path.islink(link))                  # link preserved
+            self.assertEqual(Path(real).read_text(), "REWRITTEN")  # target updated through it
+
+    def test_atomic_write_through_a_symlink_pointing_out_is_still_refused(self):
+        # Resolving the leaf must not weaken the guard: a link pointing outside is still
+        # caught (the guard runs on the original path, follow_last=True, before the write).
+        with _Vault() as v:
+            link = os.path.join(v.vault, "escape.md")
+            os.symlink(os.path.join(v.outside, "victim.md"), link)
+            with self.assertRaises(vfs.OutsideVault):
+                vfs.write_text_atomic(link, "x")
+            self.assertFalse(os.path.exists(os.path.join(v.outside, "victim.md")))
+
     def test_write_bytes_atomic(self):
         with _Vault() as v:
             p = os.path.join(v.vault, "attachments", "img.png")
