@@ -219,6 +219,8 @@ class TestFacadesAreScannedOut(unittest.TestCase):
 
 
 class TestFsChokepoint(unittest.TestCase):
+    maxDiff = None   # this goes red by design on nearly every slice-5 commit; show the exact delta
+
     def test_raw_fs_only_in_the_facades(self):
         current = _scan_tree()
         current_plain = {f: dict(c) for f, c in current.items()}
