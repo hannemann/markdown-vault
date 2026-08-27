@@ -20,7 +20,6 @@ from markdown_vault.core.i18n import _, ngettext
 from markdown_vault.core import config
 from markdown_vault.uikit import dialogs
 
-from markdown_vault.ui.preferences.constants import _HttpsOnlyRedirect
 
 
 class EmbeddingSubpageMixin:
@@ -578,48 +577,23 @@ class EmbeddingSubpageMixin:
 
     def _download_worker(self, button, url, target, filename, bar,
                          refresh=None, validate=None) -> None:
-        import urllib.request
-        from urllib.parse import urlparse
+        # Thread body: the download's network + FS live in search.model_download; here we
+        # only marshal its progress and result back onto the main loop for the widgets.
+        from markdown_vault.search import model_download
         try:
-            if urlparse(url).scheme != "https":
-                GLib.idle_add(self._download_done, button, bar, False,
-                              _("Refusing a non-HTTPS download URL."), refresh)
-                return
-            target.parent.mkdir(parents=True, exist_ok=True)
-            req = urllib.request.Request(
-                url, headers={"User-Agent": "markdown-vault"})
-            tmp = target.with_name(target.name + ".part")
-            # Custom opener: refuse a redirect that downgrades off HTTPS.
-            opener = urllib.request.build_opener(_HttpsOnlyRedirect())
-            with opener.open(req, timeout=30) as resp:
-                total = int(resp.headers.get("Content-Length") or 0)
-                done = last = 0
-                with open(tmp, "wb") as fh:
-                    while True:
-                        buf = resp.read(65536)
-                        if not buf:
-                            break
-                        fh.write(buf)
-                        done += len(buf)
-                        if done - last >= 1024 * 1024:  # throttle to ~1 MB
-                            last = done
-                            GLib.idle_add(self._download_progress, bar, done, total)
-            problem = validate(tmp) if validate is not None else None
-            if problem:                        # wrong content (e.g. an HTML page)
-                tmp.unlink(missing_ok=True)
-                GLib.idle_add(self._download_done, button, bar, False,
-                              problem, refresh)
-                return
-            tmp.replace(target)
-            mb = target.stat().st_size / 1024 / 1024
+            size = model_download.download_to(
+                url, target, validate=validate,
+                progress=lambda done, total: GLib.idle_add(
+                    self._download_progress, bar, done, total))
+            mb = size / 1024 / 1024
             GLib.idle_add(
                 self._download_done, button, bar, True,
                 _("Downloaded {name} ({size} MB)").format(name=filename, size=f"{mb:.0f}"),
                 refresh)
-        except Exception as exc:  # noqa: BLE001 — network/IO/permission — report, don't crash
-            logger.warning("model download failed: %s", exc)
-            GLib.idle_add(
-                self._download_done, button, bar, False, f"Failed: {exc}", refresh)
+        except Exception as exc:  # any network/IO/validation failure -> logged and mapped
+            logger.warning("model download failed: %s", exc, exc_info=True)
+            GLib.idle_add(self._download_done, button, bar, False,
+                          model_download.describe_error(exc), refresh)
 
     def _download_progress(self, bar, done, total) -> bool:
         mb = done / 1024 / 1024

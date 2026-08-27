@@ -60,25 +60,3 @@ def _accel_to_label(accel: str) -> str:
     if key_name:
         parts.append(key_name.capitalize())
     return "+".join(parts)
-
-
-class _HttpsOnlyRedirect:
-    """A urllib redirect handler that refuses to leave HTTPS. A model URL that
-    redirects to http/ftp would deliver an unauthenticated file straight into a
-    native parser (llama.cpp's GGUF loader, ONNX Runtime's protobuf) — a
-    memory-safety surface, not a mere parse error. Instantiated lazily so the
-    urllib import stays local to the download path."""
-
-    def __new__(cls):
-        import urllib.request
-        import urllib.error
-        from urllib.parse import urlparse
-
-        class _Handler(urllib.request.HTTPRedirectHandler):
-            def redirect_request(self, req, fp, code, msg, headers, newurl):
-                if urlparse(newurl).scheme != "https":
-                    raise urllib.error.HTTPError(
-                        newurl, code, "refusing a non-HTTPS redirect", headers, fp)
-                return super().redirect_request(req, fp, code, msg, headers, newurl)
-
-        return _Handler()

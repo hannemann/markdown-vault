@@ -748,5 +748,45 @@ class TestExternalWarning(_DialogTest):
         self.assertFalse(dlg._ask_external_row.get_visible())
 
 
+class TestDownloadWorkerWiring(unittest.TestCase):
+    """The download worker delegates to search.model_download and maps a failure through
+    describe_error — a foreign str(exc) must never reach the toast."""
+
+    def _run(self, side_effect=None):
+        from markdown_vault.ui.preferences.embedding_subpage import EmbeddingSubpageMixin
+        me = MagicMock()
+        with patch("markdown_vault.search.model_download.download_to") as dl, \
+             patch("markdown_vault.search.model_download.describe_error",
+                   return_value="MAPPED") as de, \
+             patch("markdown_vault.ui.preferences.embedding_subpage.GLib.idle_add") as idle:
+            dl.side_effect = side_effect
+            if side_effect is None:
+                dl.return_value = 2 * 1024 * 1024
+            EmbeddingSubpageMixin._download_worker(
+                me, "btn", "https://h/m", "TARGET", "model.onnx", "bar",
+                refresh="R", validate="V")
+        done = [c.args for c in idle.call_args_list
+                if c.args and c.args[0] is me._download_done]
+        return dl, de, done
+
+    def test_forwards_url_target_validate_and_a_progress_callback(self):
+        dl, _de, _done = self._run()
+        args, kwargs = dl.call_args
+        self.assertEqual(args[:2], ("https://h/m", "TARGET"))
+        self.assertEqual(kwargs["validate"], "V")
+        self.assertTrue(callable(kwargs["progress"]))
+
+    def test_success_reports_ok(self):
+        _dl, _de, done = self._run()
+        self.assertTrue(done and done[-1][3] is True)
+
+    def test_failure_maps_via_describe_error_not_str_exc(self):
+        _dl, de, done = self._run(side_effect=RuntimeError("[Errno 13] denied"))
+        de.assert_called_once()
+        self.assertTrue(done)
+        self.assertFalse(done[-1][3])            # ok flag False
+        self.assertEqual(done[-1][4], "MAPPED")  # the mapped message, not str(exc)
+
+
 if __name__ == "__main__":
     unittest.main()
