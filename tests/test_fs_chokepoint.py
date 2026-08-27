@@ -18,7 +18,13 @@ Migration is a ratchet: the current findings are frozen in ``_BASELINE`` and the
 the scan equals it exactly. A NEW raw call turns it red immediately; redirecting a site onto a
 facade turns it red too, forcing a deliberate baseline update in the same commit — so the
 baseline is always the accurate remaining-work list. "Done" for the whole effort is
-``_BASELINE == {}``.
+``_BASELINE == {}`` — at which point this ratchet should be REPLACED by a plain "must be empty"
+assertion, so the apparatus does not outlive its purpose.
+
+The baseline is keyed ``file -> per-op count``, deliberately without line numbers (they shift
+on every unrelated edit and would make the baseline a merge-conflict magnet). The cost: a swap
+WITHIN one file is invisible — drop one ``write_text`` and add another and the count is
+unchanged. Acceptable for the question it answers ("which file still holds raw FS?").
 """
 
 import ast
@@ -33,55 +39,67 @@ _FACADES = {"core/vault_fs.py", "core/state_fs.py"}
 
 #: Module-level functions that mutate the filesystem, keyed by the module's top name.
 _MUTATING_MODULE_FUNCS = {
-    "os": {"remove", "unlink", "rename", "replace", "mkdir", "makedirs", "rmdir", "fdopen"},
+    "os": {"remove", "unlink", "rename", "renames", "replace", "mkdir", "makedirs",
+           "rmdir", "removedirs", "fdopen", "symlink", "link"},
     "shutil": {"move", "rmtree", "copy", "copy2", "copyfile", "copytree", "copystat"},
 }
 
-#: pathlib.Path methods that mutate. ``replace``/``rename`` are arity-disambiguated below.
+#: pathlib.Path methods that mutate. ``replace``/``rename`` are arity-disambiguated below;
+#: ``open`` is handled specially (flagged only in a write mode, like the builtin).
 _PATH_METHODS = {
     "write_text", "write_bytes", "unlink", "rename", "replace",
-    "mkdir", "rmdir", "touch", "symlink_to",
+    "mkdir", "rmdir", "touch", "symlink_to", "hardlink_to",
 }
 
 
-def _imported_modules(tree: ast.AST) -> dict:
-    """Map each name bound to a module to that module's top-level name.
+def _imported(tree: ast.AST) -> tuple:
+    """Return ``(modules, bare_muts)``.
 
+    *modules* maps each name bound to a module to its top-level name:
     ``import os`` -> {"os": "os"}; ``import shutil as sh`` -> {"sh": "shutil"};
     ``from markdown_vault.core.paths import STATE_DIR`` -> {"STATE_DIR": "markdown_vault"}.
+
+    *bare_muts* maps a name imported directly from a mutating module to its op label:
+    ``from os import replace`` -> {"replace": "os.replace"}, so a bare ``replace(a, b)`` is
+    caught. This spelling is not the house style (measured zero today) but is statically
+    visible, so it belongs in the guard rather than a caveat.
     """
-    modules = {}
+    modules, bare_muts = {}, {}
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             for alias in node.names:
                 bound = alias.asname or alias.name.split(".")[0]
                 modules[bound] = alias.name.split(".")[0]
         elif isinstance(node, ast.ImportFrom) and node.module:
-            # `from x import y` binds y (a module or a name); record it as coming from x's
-            # top so a bare `y.attr` is judged by x — good enough for os/shutil submodules.
             for alias in node.names:
                 bound = alias.asname or alias.name
                 modules[bound] = node.module.split(".")[0]
-    return modules
+                if alias.name in _MUTATING_MODULE_FUNCS.get(node.module, ()):
+                    bare_muts[bound] = f"{node.module}.{alias.name}"
+    return modules, bare_muts
 
 
-def _write_mode(node: ast.Call) -> bool:
-    """Whether an ``open(...)`` call opens for writing (mode contains w/a/x/+)."""
+def _write_mode(node: ast.Call, mode_pos: int) -> bool:
+    """Whether an open call opens for writing (mode contains w/a/x/+). *mode_pos* is where
+    the mode argument sits positionally — 1 for the builtin ``open(file, mode)``, 0 for the
+    method ``Path.open(mode)``."""
     mode = None
-    if len(node.args) >= 2 and isinstance(node.args[1], ast.Constant):
-        mode = node.args[1].value
+    if len(node.args) > mode_pos and isinstance(node.args[mode_pos], ast.Constant):
+        mode = node.args[mode_pos].value
     for kw in node.keywords:
         if kw.arg == "mode" and isinstance(kw.value, ast.Constant):
             mode = kw.value.value
     return isinstance(mode, str) and any(c in mode for c in "wax+")
 
 
-def _mutation_op(node: ast.Call, modules: dict) -> str | None:
+def _mutation_op(node: ast.Call, modules: dict, bare_muts: dict) -> str | None:
     """The mutation label for *node*, or ``None`` if it is not a raw FS mutation."""
     func = node.func
     if isinstance(func, ast.Name):
-        if func.id == "open" and _write_mode(node):
+        if func.id == "open" and _write_mode(node, 1):    # builtin open(file, mode)
             return "open(w)"
+        if func.id in bare_muts:                          # from os import replace; replace(...)
+            return bare_muts[func.id]
         return None
     if not isinstance(func, ast.Attribute):
         return None
@@ -91,6 +109,8 @@ def _mutation_op(node: ast.Call, modules: dict) -> str | None:
         if attr in _MUTATING_MODULE_FUNCS.get(top, ()):   # os.replace yes, dataclasses.replace no
             return f"{top}.{attr}"
         return None
+    if attr == "open" and _write_mode(node, 0):           # Path.open("w") — mode is arg 0
+        return "open(w)"
     if attr in _PATH_METHODS:
         nargs = len(node.args)
         if attr == "replace" and nargs != 1:      # str.replace(a, b) / DOM replace(el, marker)
@@ -104,11 +124,11 @@ def _mutation_op(node: ast.Call, modules: dict) -> str | None:
 def _scan(src: str) -> list:
     """Return sorted ``(lineno, op)`` for every raw FS mutation in *src*."""
     tree = ast.parse(src)
-    modules = _imported_modules(tree)
+    modules, bare_muts = _imported(tree)
     out = []
     for node in ast.walk(tree):
         if isinstance(node, ast.Call):
-            op = _mutation_op(node, modules)
+            op = _mutation_op(node, modules, bare_muts)
             if op:
                 out.append((node.lineno, op))
     return sorted(out)
@@ -168,6 +188,25 @@ class TestScanner(unittest.TestCase):
     def test_mkdir_and_unlink_and_touch(self):
         self.assertEqual(self._ops("Path(p).mkdir()\nq.unlink()\nr.touch()"),
                          [".mkdir", ".unlink", ".touch"])
+
+    def test_path_open_write_mode_is_flagged(self):
+        # AR1: the builtin open is covered, so must the Path method be — the likely spelling.
+        self.assertEqual(self._ops("Path(p).open('w')"), ["open(w)"])
+        self.assertEqual(self._ops("f.open('rb')"), [])          # a read open is not a mutation
+
+    def test_os_symlink_and_link_are_flagged(self):
+        # AR1: .symlink_to is on the method list, so os.symlink (same op) must be too; and
+        # os.link creates a directory entry.
+        self.assertEqual(self._ops("import os\nos.symlink(a, b)\nos.link(a, b)"),
+                         ["os.symlink", "os.link"])
+
+    def test_path_hardlink_to_is_flagged(self):
+        self.assertEqual(self._ops("Path(a).hardlink_to(b)"), [".hardlink_to"])
+
+    def test_bare_from_os_import_is_flagged(self):
+        # AR1/(b): statically visible, so it belongs in the guard, not a caveat.
+        self.assertEqual(self._ops("from os import replace\nreplace(a, b)"), ["os.replace"])
+        self.assertEqual(self._ops("from shutil import rmtree as rm\nrm(d)"), ["shutil.rmtree"])
 
 
 class TestFacadesAreScannedOut(unittest.TestCase):
