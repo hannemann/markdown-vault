@@ -170,7 +170,7 @@ class TestModelRootScope(unittest.TestCase):
     pinned to the XDG state roots, so picking $HOME for models does not let StateFS write
     arbitrary files under it."""
 
-    def test_download_may_write_a_model_folder_but_write_text_may_not(self):
+    def test_model_folder_is_writable_by_download_only_not_the_other_ops(self):
         with TemporaryDirectory() as xdg, TemporaryDirectory() as models:
             with mock.patch.object(sfs, "_state_roots", return_value=[xdg]), \
                  mock.patch.object(sfs, "_model_roots", return_value=[models]), \
@@ -178,11 +178,19 @@ class TestModelRootScope(unittest.TestCase):
                 # write_stream is allowed into the model folder...
                 n = sfs.write_stream(os.path.join(models, "m.gguf"), [b"GGUF"])
                 self.assertEqual(n, 4)
-                # ...but a plain write to the same folder is refused: it is not a state root.
+                # ...but no other op is: the model roots widen the guard for the download
+                # alone, so a plain write/mkdir/delete into the same folder is refused.
                 with self.assertRaises(sfs.OutsideAllowedRoots):
                     sfs.write_text(os.path.join(models, "notes.txt"), "x")
                 with self.assertRaises(sfs.OutsideAllowedRoots):
                     sfs.mkdir(os.path.join(models, "sub"))
+                # unlink pinned explicitly — it is the op that destroys data, so a scope
+                # regression here (model roots leaking back in) must fail a test, not slip.
+                victim = os.path.join(models, "keepme")
+                Path(victim).write_text("precious")
+                with self.assertRaises(sfs.OutsideAllowedRoots):
+                    sfs.unlink(victim)
+                self.assertEqual(Path(victim).read_text(), "precious")  # not destroyed
 
 
 class TestRootsDerivation(unittest.TestCase):
