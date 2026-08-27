@@ -92,6 +92,17 @@ class TestDownloadTo(unittest.TestCase):
                     md.download_to("https://h/m.bin", target)
             self.assertFalse(target.with_name("m.bin.part").exists())   # tmp cleaned up
 
+    def test_a_cleanup_failure_does_not_mask_the_real_error(self):
+        # If unlinking the .part itself fails (read-only dir, parent gone), the real
+        # download error must still reach the caller — not the cleanup's own exception.
+        with TemporaryDirectory() as d:
+            target = Path(d) / "m.gguf"
+            with _fake_opener(_FakeResp(b"short", total=1000)), \
+                 mock.patch.object(Path, "unlink",
+                                   side_effect=PermissionError("read-only")):
+                with self.assertRaises(md.IncompleteDownload):
+                    md.download_to("https://h/m.gguf", target)
+
     def test_rejected_content_raises_and_cleans_up(self):
         with TemporaryDirectory() as d:
             target = Path(d) / "model.gguf"

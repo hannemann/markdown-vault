@@ -97,7 +97,10 @@ def download_to(url, target, *, validate=None, progress=None) -> int:
         tmp.replace(target)
         return target.stat().st_size
     except BaseException:                  # never leave a multi-GB partial behind
-        tmp.unlink(missing_ok=True)
+        try:
+            tmp.unlink(missing_ok=True)
+        except OSError:
+            pass                           # best-effort cleanup; the real failure re-raises below
         raise
 
 
