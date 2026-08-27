@@ -13,6 +13,17 @@ Two resolution modes, matching how an operation treats the last path component:
 - ``follow_last=False`` — a delete/rename, or a move *source*: resolve the parent, keep
   the last component literal. Deleting a symlink acts on the link itself, not its target;
   resolving it would misjudge where the operation lands.
+
+Known limits — realpath is not a fence, and these are named rather than papered over:
+
+- **Hardlinks** are invisible to ``realpath``: a hardlink inside a root to a file outside
+  is judged contained (no link to resolve), so a write through it reaches the outside
+  inode. Reach is low — hardlinks do not survive an archive/share transport, it takes
+  local creation on the same filesystem — but it is a real gap, of the same kind as TOCTOU.
+- The compare is **byte-exact**. On a case-insensitive filesystem a root ``/mnt/Vault`` and
+  a target ``/mnt/vault/…`` count as different: for a *positive* check (VaultFS) that fails
+  closed (refusal), but for StateFS's *negative* "under no vault" clause it fails open. The
+  common Linux case (ext4/btrfs, case-sensitive) is unaffected.
 """
 
 import logging
