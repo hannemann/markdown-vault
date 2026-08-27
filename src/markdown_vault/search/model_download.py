@@ -62,7 +62,9 @@ class _HttpsOnlyRedirect(urllib.request.HTTPRedirectHandler):
 
 def download_to(url, target, *, validate=None, progress=None) -> int:
     """Download *url* into *target* (a ``Path``), streaming through a ``.part`` file and
-    renaming on success so a half-written file never looks complete.
+    renaming on success so a half-written file never looks complete. A response short of
+    its Content-Length is rejected (:class:`IncompleteDownload`) and the ``.part`` is
+    removed on any failure, so the caller never has to clean up a partial itself.
 
     Refuses a non-HTTPS URL or an off-HTTPS redirect. If *validate* is given it is called
     with the temp path; a truthy return rejects the download (the value is the reason,
