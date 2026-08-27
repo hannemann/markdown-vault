@@ -163,6 +163,7 @@ _CORE_ALLOW = {
     "path_utils":    {"core"},
     "session":       {"core"},
     "state_fs":      {"core"},
+    "vault_fs":      {"core"},
 }
 
 

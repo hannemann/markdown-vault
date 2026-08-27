@@ -17,6 +17,7 @@ install_data(
     'state_fs.py',
     'settings.schema.json',
     'validation.py',
+    'vault_fs.py',
   ),
   install_dir: pythondir / 'markdown_vault' / 'core',
 )
