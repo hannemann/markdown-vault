@@ -164,6 +164,32 @@ class TestWriteStream(unittest.TestCase):
             self.assertFalse(Path(r.vault, "m.gguf.part").exists())
 
 
+class TestSymlinkedStateFile(unittest.TestCase):
+    """C / AQ1: StateFS guards against our own code, not a crafted path, so a state file the
+    USER symlinked out of the state dir (settings.yaml -> a dotfiles repo) is honoured — the
+    write goes THROUGH the link and the link survives. The vault clause stays fully resolved,
+    so a state file symlinked INTO a vault is still refused (it would bypass VaultFS)."""
+
+    def test_a_state_file_symlinked_out_is_written_through_and_the_link_kept(self):
+        with _Roots() as r, TemporaryDirectory() as dotfiles:
+            realfile = os.path.join(dotfiles, "settings.yaml")
+            Path(realfile).write_text("old")
+            link = os.path.join(r.root, "settings.yaml")
+            os.symlink(realfile, link)
+            sfs.write_text(link, "new")
+            self.assertTrue(os.path.islink(link))                 # link preserved
+            self.assertEqual(Path(realfile).read_text(), "new")   # written through the link
+
+    def test_a_state_file_symlinked_into_a_vault_is_still_refused(self):
+        with _Roots() as r:
+            target_in_vault = os.path.join(r.vault, "sneak.yaml")
+            link = os.path.join(r.root, "settings.yaml")
+            os.symlink(target_in_vault, link)
+            with self.assertRaises(sfs.InsideVault):
+                sfs.write_text(link, "x")
+            self.assertFalse(os.path.exists(target_in_vault))     # nothing written into vault
+
+
 class TestModelRootScope(unittest.TestCase):
     """AM1: a user-picked model folder (a folder chooser can point it anywhere, e.g. the
     home directory) widens containment for the DOWNLOAD only. write_text/mkdir/unlink stay

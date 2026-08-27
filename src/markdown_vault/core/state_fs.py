@@ -79,11 +79,18 @@ def _vault_roots() -> list[str]:
 
 
 def _guard(target, *, follow_last: bool, extra_roots=()) -> None:
-    """Refuse a target that is under no allowed root, or under a vault. The base roots are
-    the XDG state dirs; *extra_roots* widens the positive clause for a single op (the
-    download passes the model folders). Same resolution mode for both clauses — a write
-    resolves the whole path, a delete keeps the leaf."""
-    if not within_any(_state_roots() + list(extra_roots), target, follow_last=follow_last):
+    """Refuse a target that is under no allowed root, or under a vault.
+
+    The two clauses run in DIFFERENT modes on purpose. The **positive** clause judges where
+    the file SITS (``follow_last=False``): StateFS guards against our own future code, not a
+    crafted path (the ticket says so), so a state file the user symlinked out of the state
+    dir — ``settings.yaml`` into a dotfiles repo — is a deliberate instruction, not an
+    escape; resolving and refusing it would break saving for that user without protecting
+    anyone. The **vault** clause resolves as the operation does (*follow_last*): a write
+    follows the link, so it must not land IN a vault (the one protection that matters here);
+    a delete acts on the link and leaves the target. *extra_roots* widens the positive clause
+    for a single op (the download passes the model folders)."""
+    if not within_any(_state_roots() + list(extra_roots), target, follow_last=False):
         raise OutsideAllowedRoots(f"{target!s} is under no allowed state root")
     if within_any(_vault_roots(), target, follow_last=follow_last):
         raise InsideVault(f"{target!s} is inside a vault — use VaultFS")
@@ -98,12 +105,18 @@ def _discard(tmp: Path) -> None:
 
 
 def _atomic_bytes(target: Path, data: bytes) -> None:
-    tmp = target.with_name(target.name + ".part")
-    target.parent.mkdir(parents=True, exist_ok=True)
+    # Write at the RESOLVED leaf so a user-symlinked state file is written THROUGH it (the
+    # link survives), matching VaultFS. os.replace renames onto the name, not through the
+    # link, so without this a symlinked settings.yaml would be replaced by a plain file.
+    # The guard already validated the original path (the positive clause on where it sits,
+    # the vault clause on where it resolves).
+    real = Path(os.path.realpath(target))
+    tmp = real.with_name(real.name + ".part")
+    real.parent.mkdir(parents=True, exist_ok=True)
     try:
         with open(tmp, "wb") as fh:
             fh.write(data)
-        os.replace(tmp, target)
+        os.replace(tmp, real)
     except BaseException:
         _discard(tmp)
         raise
@@ -136,7 +149,7 @@ def write_stream(path, chunks, *, validate=None) -> int:
     model roots widen the positive clause here — and only here.
     """
     _guard(path, follow_last=True, extra_roots=_model_roots())
-    target = Path(path)
+    target = Path(os.path.realpath(path))   # write THROUGH a symlinked target (see _atomic_bytes)
     tmp = target.with_name(target.name + ".part")
     target.parent.mkdir(parents=True, exist_ok=True)
     written = 0
