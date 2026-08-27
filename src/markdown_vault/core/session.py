@@ -19,6 +19,7 @@ import os
 from pathlib import Path
 
 from markdown_vault.core import config
+from markdown_vault.core import state_fs
 
 logger = logging.getLogger(__name__)
 
@@ -132,9 +133,9 @@ def save_session(
         "ask_last_question": ask_last_question,
     }
     try:
-        SESSION_FILE.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        state_fs.write_text(SESSION_FILE, json.dumps(data, indent=2))
         logger.debug("Session saved to %s", SESSION_FILE)
-    except OSError as exc:
+    except (OSError, state_fs.StateWriteError) as exc:
         logger.warning("Failed to save session: %s", exc)
 
 
