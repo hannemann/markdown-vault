@@ -162,6 +162,7 @@ _CORE_ALLOW = {
     "logging_setup": {"gi", "core"},
     "path_utils":    {"core"},
     "session":       {"core"},
+    "state_fs":      {"core"},
 }
 
 

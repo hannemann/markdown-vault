@@ -14,6 +14,7 @@ install_data(
     'paths.py',
     'secret_store.py',
     'session.py',
+    'state_fs.py',
     'settings.schema.json',
     'validation.py',
   ),
