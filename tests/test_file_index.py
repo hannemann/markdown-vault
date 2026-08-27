@@ -6,7 +6,10 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from unittest import mock
+
 import markdown_vault.core.config as _cfg
+from markdown_vault.core import state_fs
 from markdown_vault.vault.file_index import FileIndex
 
 
@@ -206,7 +209,10 @@ class TestFileIndexSharedIndex(unittest.TestCase):
         (self._vault / "Note.md").write_text("# Note")
         idx.build([{"name": "vault", "path": str(self._vault)}])
         dump_path = Path(self._tmp) / "dump.json"
-        idx.dump_to_file(dump_path)
+        # The dump now writes through StateFS; allow the temp dir as a state root.
+        with mock.patch.object(state_fs, "_state_roots", return_value=[self._tmp]), \
+             mock.patch.object(state_fs, "_vault_roots", return_value=[]):
+            idx.dump_to_file(dump_path)
         data = json.loads(dump_path.read_text(encoding="utf-8"))
         self.assertEqual(data["Page"], str(self._vault / "Page.md"))
         self.assertEqual(data["Note"], str(self._vault / "Note.md"))
@@ -217,7 +223,9 @@ class TestFileIndexSharedIndex(unittest.TestCase):
         idx = FileIndex()
         dump_path = Path(self._tmp) / "dump.json"
         dump_path.write_text("old")
-        idx.dump_to_file(dump_path)
+        with mock.patch.object(state_fs, "_state_roots", return_value=[self._tmp]), \
+             mock.patch.object(state_fs, "_vault_roots", return_value=[]):
+            idx.dump_to_file(dump_path)
         data = json.loads(dump_path.read_text(encoding="utf-8"))
         self.assertIsInstance(data, dict)
 

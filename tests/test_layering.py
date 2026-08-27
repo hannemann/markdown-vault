@@ -158,6 +158,7 @@ _CORE = _ROOT / "core"
 # default automatically.
 _CORE_ALLOW = {
     "config":        {"yaml", "core"},
+    "debug":         {"core"},
     "debug_control": {"gi"},
     "logging_setup": {"gi", "core"},
     "path_utils":    {"core"},

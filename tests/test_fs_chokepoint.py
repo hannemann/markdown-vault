@@ -235,14 +235,14 @@ class TestFsChokepoint(unittest.TestCase):
 
 
 # Frozen snapshot of the raw-FS sites still to migrate (slice 5). Empty == effort complete.
-# 13 modules, 46 call sites — matches the ticket's measured count. Each redirect shrinks this.
+# Raw-FS sites still to migrate (slice 5). Started at 13 modules / 46 sites; shrinks per redirect.
+# Migrated: core/debug.py -> StateFS.
 _BASELINE = {
     "core/attachments.py": {
         ".write_text": 1, ".write_bytes": 1, ".mkdir": 2, ".rmdir": 1,
         "shutil.move": 1, "shutil.rmtree": 1,
     },
     "core/config.py": {".mkdir": 2, "os.fdopen": 1, "os.replace": 1, "os.unlink": 1},
-    "core/debug.py": {".write_text": 2},
     "core/logging_setup.py": {"os.makedirs": 2},
     "core/session.py": {".write_text": 1},
     "editor/editor.py": {".write_text": 1},
