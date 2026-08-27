@@ -12,7 +12,6 @@ hierarchy of :class:`VaultNode` objects held in per-directory
 hierarchy lazily to the view.
 """
 
-import json
 import logging
 import os
 from pathlib import Path
@@ -26,6 +25,7 @@ gi.require_version("Pango", "1.0")
 from gi.repository import Gtk, Adw, GLib, GObject, Pango, Gio, Gdk
 
 from markdown_vault.core import attachments
+from markdown_vault.core import debug
 from markdown_vault.core.i18n import _
 from markdown_vault.core import validation
 from markdown_vault.uikit import dialogs
@@ -1401,11 +1401,5 @@ class VaultTree(Gtk.Box):
                 nodes.append(entry)
             return nodes
 
-        try:
-            data = _walk(self._roots)
-            Path(path).write_text(
-                json.dumps(data, indent=2, ensure_ascii=False),
-                encoding="utf-8",
-            )
-        except (OSError, ValueError):
-            logger.warning("Failed to dump VaultTree to %s", path, exc_info=True)
+        data = _walk(self._roots)
+        debug.dump_json(path, data, "VaultTree")

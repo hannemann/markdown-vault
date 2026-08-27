@@ -6,11 +6,11 @@ The index is built once on startup and updated incrementally as files
 are created, deleted, renamed, or modified.
 """
 
-import json
 import logging
 import os
 from pathlib import Path
 
+from markdown_vault.core import debug
 from markdown_vault.core.path_utils import (
     find_vault_name_for_path,
     resolve_vault_path,
@@ -346,21 +346,15 @@ class BacklinkIndex:
 
     def dump_to_file(self, path: str | Path) -> None:
         """Write the backlink index as JSON to *path* (overwrites)."""
-        try:
-            data = {
-                "target_to_sources": {
-                    k: sorted(v) for k, v in self._target_to_sources.items()
-                },
-                "source_to_targets": {
-                    k: sorted(v) for k, v in self._source_to_targets.items()
-                },
-            }
-            Path(path).write_text(
-                json.dumps(data, indent=2, ensure_ascii=False),
-                encoding="utf-8",
-            )
-        except OSError:
-            logger.warning("Failed to dump BacklinkIndex to %s", path, exc_info=True)
+        data = {
+            "target_to_sources": {
+                k: sorted(v) for k, v in self._target_to_sources.items()
+            },
+            "source_to_targets": {
+                k: sorted(v) for k, v in self._source_to_targets.items()
+            },
+        }
+        debug.dump_json(path, data, "BacklinkIndex")
 
     # ------------------------------------------------------------------
     # Internals

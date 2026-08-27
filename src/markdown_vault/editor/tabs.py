@@ -5,7 +5,6 @@ Provides a ``Tab`` data class and a ``TabBar`` widget that owns one
 each tab retains its own buffer state and scroll position.
 """
 
-import json
 import logging
 from pathlib import Path
 
@@ -17,6 +16,7 @@ gi.require_version("Gdk", "4.0")
 
 from gi.repository import Gtk, GObject, Gio, Gdk, GLib
 
+from markdown_vault.core import debug
 from markdown_vault.core.i18n import _
 from markdown_vault.core.path_utils import find_vault_for_dir
 
@@ -729,20 +729,14 @@ class TabBar(Gtk.Box):
 
     def dump_to_file(self, path: str | Path) -> None:
         """Write the tab state as JSON to *path* (overwrites)."""
-        try:
-            data = {
-                "current_path": self._current_path,
-                "tabs": {
-                    fp: {
-                        "view_mode": tab.view_mode,
-                        "is_modified": tab.editor.is_modified,
-                    }
-                    for fp, tab in self._tabs.items()
-                },
-            }
-            Path(path).write_text(
-                json.dumps(data, indent=2, ensure_ascii=False),
-                encoding="utf-8",
-            )
-        except OSError:
-            logger.warning("Failed to dump TabBar to %s", path, exc_info=True)
+        data = {
+            "current_path": self._current_path,
+            "tabs": {
+                fp: {
+                    "view_mode": tab.view_mode,
+                    "is_modified": tab.editor.is_modified,
+                }
+                for fp, tab in self._tabs.items()
+            },
+        }
+        debug.dump_json(path, data, "TabBar")

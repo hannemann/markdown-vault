@@ -8,7 +8,6 @@ Provides four switchable sub-views:
 * **Details** — file metadata (path, word count, size, last modified).
 """
 
-import json
 import logging
 import os
 import re
@@ -27,6 +26,7 @@ from gi.repository import Gtk, GLib, GObject, Gdk
 
 from markdown_vault.vault import git_integration
 from markdown_vault.vault.backlink_index import BacklinkIndex
+from markdown_vault.core import debug
 from markdown_vault.core.event_router import FileEvent
 from markdown_vault.core.i18n import _
 from markdown_vault.markdown import frontmatter
@@ -659,18 +659,12 @@ class Sidebar(Gtk.Box):
 
     def dump_to_file(self, path: str | Path) -> None:
         """Write sidebar state as JSON to *path* (overwrites)."""
-        try:
-            backlinks = []
-            if self._current_file:
-                backlinks = self._backlink_index.find_backlinks(self._current_file)
-            data = {
-                "current_file": self._current_file,
-                "vault_paths": self._vault_paths,
-                "backlinks": backlinks,
-            }
-            Path(path).write_text(
-                json.dumps(data, indent=2, ensure_ascii=False),
-                encoding="utf-8",
-            )
-        except OSError:
-            logger.warning("Failed to dump Sidebar to %s", path, exc_info=True)
+        backlinks = []
+        if self._current_file:
+            backlinks = self._backlink_index.find_backlinks(self._current_file)
+        data = {
+            "current_file": self._current_file,
+            "vault_paths": self._vault_paths,
+            "backlinks": backlinks,
+        }
+        debug.dump_json(path, data, "Sidebar")

@@ -3,6 +3,7 @@ install_data(
     '__init__.py',
     'attachments.py',
     'config.py',
+    'debug.py',
     'debug_control.py',
     'event_router.py',
     'history.py',

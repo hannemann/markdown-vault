@@ -12,11 +12,11 @@ Hidden file/directory filtering:
     ``.git/``, ``.DS_Store``, ``.hidden.md``).
 """
 
-import json
 import os
 import logging
 from pathlib import Path
 
+from markdown_vault.core import debug
 from markdown_vault.core.path_utils import find_vault_name_for_path, resolve_vault_path
 
 logger = logging.getLogger(__name__)
@@ -144,21 +144,15 @@ class FileIndex:
 
         Strips the vault prefix from keys for readability.
         """
-        try:
-            dump = {}
-            for key, path_str in self._stem_to_path.items():
-                # Strip vault prefix: "VaultName>stem" → "stem"
-                if ">" in key:
-                    _, stem = key.split(">", 1)
-                else:
-                    stem = key
-                dump[stem] = path_str
-            Path(path).write_text(
-                json.dumps(dump, indent=2, ensure_ascii=False),
-                encoding="utf-8",
-            )
-        except OSError:
-            logger.warning("Failed to dump FileIndex to %s", path, exc_info=True)
+        dump = {}
+        for key, path_str in self._stem_to_path.items():
+            # Strip vault prefix: "VaultName>stem" → "stem"
+            if ">" in key:
+                _, stem = key.split(">", 1)
+            else:
+                stem = key
+            dump[stem] = path_str
+        debug.dump_json(path, dump, "FileIndex")
 
     # ------------------------------------------------------------------
     # Internals

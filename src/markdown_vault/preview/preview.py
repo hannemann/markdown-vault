@@ -31,6 +31,7 @@ from pygments.formatters import HtmlFormatter
 from urllib.parse import unquote
 from pymdownx.emoji import to_alt
 from markdown_vault.core import config
+from markdown_vault.core import debug
 from markdown_vault.core.i18n import _
 from markdown_vault.markdown.latex_mathml import MathMLPostprocessor
 from markdown_vault.markdown.md_fences import FenceTracker
@@ -1608,13 +1609,7 @@ class Preview(Gtk.ScrolledWindow):
 
     def dump_html(self, path: str | Path) -> None:
         """Write the last rendered HTML to *path* (overwrites)."""
-        try:
-            Path(path).write_text(
-                self._last_html or "<!-- no content -->",
-                encoding="utf-8",
-            )
-        except OSError:
-            logger.warning("Failed to dump preview HTML to %s", path, exc_info=True)
+        debug.dump_text(path, self._last_html or "<!-- no content -->", "preview HTML")
 
     # ------------------------------------------------------------------
     # Internal
