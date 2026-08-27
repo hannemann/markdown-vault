@@ -73,6 +73,26 @@ class TestSymlinkResolution(unittest.TestCase):
             os.symlink(os.path.join(outside, "victim"), link)
             self.assertTrue(pg.within_any([root], link, follow_last=False))
 
+    def test_dotdot_behind_a_dir_symlink_escapes_in_delete_mode(self):
+        # AL1: '..' anywhere behind a directory symlink. abspath() would collapse
+        # vault/dirlink/../x.md to vault/x.md lexically, before realpath sees dirlink ->
+        # outside; the operation actually lands on outside/x.md. follow_last=False must
+        # resolve the *original* dirname (dirlink), not the lexically-collapsed one.
+        with TemporaryDirectory() as root, TemporaryDirectory() as outside:
+            deep = os.path.join(outside, "deep")
+            os.mkdir(deep)
+            os.symlink(deep, os.path.join(root, "dirlink"))
+            target = os.path.join(root, "dirlink", "..", "x.md")
+            self.assertFalse(pg.within_any([root], target, follow_last=False))
+
+    def test_dotdot_as_leaf_behind_a_dir_symlink_escapes_in_delete_mode(self):
+        with TemporaryDirectory() as root, TemporaryDirectory() as outside:
+            deep = os.path.join(outside, "deep")
+            os.mkdir(deep)
+            os.symlink(deep, os.path.join(root, "dirlink"))
+            target = os.path.join(root, "dirlink", "..")
+            self.assertFalse(pg.within_any([root], target, follow_last=False))
+
     def test_intermediate_symlink_out_escapes_in_both_modes(self):
         # A directory component (not the leaf) points out: both modes resolve the parent,
         # so both see the escape.

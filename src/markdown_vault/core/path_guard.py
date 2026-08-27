@@ -35,9 +35,12 @@ def resolve(target, *, follow_last: bool) -> str:
     """
     if follow_last:
         return os.path.realpath(target)
-    absolute = os.path.abspath(target)
-    parent = os.path.realpath(os.path.dirname(absolute))
-    return os.path.join(parent, os.path.basename(absolute))
+    # Resolve the ORIGINAL dirname, not os.path.abspath(target)'s: abspath collapses a
+    # '..' lexically before realpath can see the directory symlink in front of it, so
+    # `dirlink/../x` would be judged at `x` while the operation lands where dirlink points.
+    literal = os.fspath(target)
+    parent = os.path.realpath(os.path.dirname(literal) or os.curdir)
+    return os.path.join(parent, os.path.basename(literal))
 
 
 def within_any(roots, target, *, follow_last: bool) -> bool:
