@@ -43,33 +43,47 @@ class RejectedContent(StateWriteError):
     """A streamed download failed the caller's ``validate()`` (carries the reason)."""
 
 
-def _allowed_roots() -> list[str]:
-    """The state roots, resolved per call. The four XDG dirs plus the two configured model
-    folders (Ask GGUF, semantic ONNX); an unusable root is logged and dropped, not fatal."""
-    s = config.settings()
-    candidates = [
-        paths.CONFIG_DIR, paths.STATE_DIR, paths.CACHE_DIR, paths.DATA_DIR,
-        config.ask_models_dir(s),
-        Path(config.get_setting(s, "semantic.onnx.dir") or (paths.DATA_DIR / "onnx")),
-    ]
+def _checked(candidates) -> list[str]:
+    """Validate roots, logging and dropping any unusable one rather than failing every
+    write: a "" / relative / filesystem-root value simply grants no containment."""
     roots = []
     for candidate in candidates:
         try:
             roots.append(checked_root(candidate))
         except InvalidRoot:
-            logger.warning("StateFS: ignoring unusable allowed-root %r", candidate,
-                           exc_info=True)
+            logger.warning("StateFS: ignoring unusable root %r", candidate, exc_info=True)
     return roots
+
+
+def _state_roots() -> list[str]:
+    """The four XDG dirs — the roots EVERY state op is confined to. Deliberately without
+    the model folders: those come from a folder chooser and can point anywhere (a home
+    directory, say), so admitting them for write_text/mkdir/unlink would widen the
+    chokepoint far past "state" for ops that have nothing to do with models."""
+    return _checked([paths.CONFIG_DIR, paths.STATE_DIR, paths.CACHE_DIR, paths.DATA_DIR])
+
+
+def _model_roots() -> list[str]:
+    """The configured model folders (Ask GGUF, semantic ONNX), read per call. Allowed for
+    the download alone (:func:`write_stream`), so a user-picked folder widens containment
+    only where a model is actually written."""
+    s = config.settings()
+    return _checked([
+        config.ask_models_dir(s),
+        Path(config.get_setting(s, "semantic.onnx.dir") or (paths.DATA_DIR / "onnx")),
+    ])
 
 
 def _vault_roots() -> list[str]:
     return [entry["path"] for entry in config.load_vaults()]
 
 
-def _guard(target, *, follow_last: bool) -> None:
-    """Refuse a target that is under no allowed root, or under a vault. Same resolution
-    mode for both clauses (a write resolves the whole path; a delete keeps the leaf)."""
-    if not within_any(_allowed_roots(), target, follow_last=follow_last):
+def _guard(target, *, follow_last: bool, extra_roots=()) -> None:
+    """Refuse a target that is under no allowed root, or under a vault. The base roots are
+    the XDG state dirs; *extra_roots* widens the positive clause for a single op (the
+    download passes the model folders). Same resolution mode for both clauses — a write
+    resolves the whole path, a delete keeps the leaf."""
+    if not within_any(_state_roots() + list(extra_roots), target, follow_last=follow_last):
         raise OutsideAllowedRoots(f"{target!s} is under no allowed state root")
     if within_any(_vault_roots(), target, follow_last=follow_last):
         raise InsideVault(f"{target!s} is inside a vault — use VaultFS")
@@ -117,8 +131,11 @@ def write_stream(path, chunks, *, validate=None) -> int:
     mid-stream, a write error, a rejected validation — removes the ``.part`` and re-raises,
     so a partial never survives. The producer counts its own bytes (progress is its job,
     not the facade's); this returns the total actually written.
+
+    Unlike the other ops, the download may target a user-configured model folder, so the
+    model roots widen the positive clause here — and only here.
     """
-    _guard(path, follow_last=True)
+    _guard(path, follow_last=True, extra_roots=_model_roots())
     target = Path(path)
     tmp = target.with_name(target.name + ".part")
     target.parent.mkdir(parents=True, exist_ok=True)

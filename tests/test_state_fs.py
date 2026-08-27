@@ -31,15 +31,18 @@ class _Roots:
         self.root = self._base.__enter__()
         self.vault = os.path.join(self.root, "vault")
         os.mkdir(self.vault)
-        self._p1 = mock.patch.object(sfs, "_allowed_roots", return_value=[self.root])
-        self._p2 = mock.patch.object(sfs, "_vault_roots", return_value=[self.vault])
-        self._p1.start()
-        self._p2.start()
+        self._patches = [
+            mock.patch.object(sfs, "_state_roots", return_value=[self.root]),
+            mock.patch.object(sfs, "_vault_roots", return_value=[self.vault]),
+            mock.patch.object(sfs, "_model_roots", return_value=[]),
+        ]
+        for p in self._patches:
+            p.start()
         return self
 
     def __exit__(self, *a):
-        self._p1.stop()
-        self._p2.stop()
+        for p in self._patches:
+            p.stop()
         self._base.__exit__(*a)
 
 
@@ -66,7 +69,7 @@ class TestGuard(unittest.TestCase):
         with TemporaryDirectory() as vault:
             model_dir = os.path.join(vault, "models")
             os.mkdir(model_dir)
-            with mock.patch.object(sfs, "_allowed_roots", return_value=[model_dir]), \
+            with mock.patch.object(sfs, "_state_roots", return_value=[model_dir]), \
                  mock.patch.object(sfs, "_vault_roots", return_value=[vault]):
                 with self.assertRaises(sfs.InsideVault):
                     sfs.write_bytes(os.path.join(model_dir, "m.gguf"), b"GGUF")
@@ -161,34 +164,57 @@ class TestWriteStream(unittest.TestCase):
             self.assertFalse(Path(r.vault, "m.gguf.part").exists())
 
 
-class TestAllowedRootsDerivation(unittest.TestCase):
-    def test_roots_are_the_xdg_dirs_plus_the_model_folders(self):
+class TestModelRootScope(unittest.TestCase):
+    """AM1: a user-picked model folder (a folder chooser can point it anywhere, e.g. the
+    home directory) widens containment for the DOWNLOAD only. write_text/mkdir/unlink stay
+    pinned to the XDG state roots, so picking $HOME for models does not let StateFS write
+    arbitrary files under it."""
+
+    def test_download_may_write_a_model_folder_but_write_text_may_not(self):
+        with TemporaryDirectory() as xdg, TemporaryDirectory() as models:
+            with mock.patch.object(sfs, "_state_roots", return_value=[xdg]), \
+                 mock.patch.object(sfs, "_model_roots", return_value=[models]), \
+                 mock.patch.object(sfs, "_vault_roots", return_value=[]):
+                # write_stream is allowed into the model folder...
+                n = sfs.write_stream(os.path.join(models, "m.gguf"), [b"GGUF"])
+                self.assertEqual(n, 4)
+                # ...but a plain write to the same folder is refused: it is not a state root.
+                with self.assertRaises(sfs.OutsideAllowedRoots):
+                    sfs.write_text(os.path.join(models, "notes.txt"), "x")
+                with self.assertRaises(sfs.OutsideAllowedRoots):
+                    sfs.mkdir(os.path.join(models, "sub"))
+
+
+class TestRootsDerivation(unittest.TestCase):
+    def test_state_roots_are_the_four_xdg_dirs(self):
         with TemporaryDirectory() as cfg, TemporaryDirectory() as state, \
-             TemporaryDirectory() as cache, TemporaryDirectory() as data, \
-             TemporaryDirectory() as gguf:
+             TemporaryDirectory() as cache, TemporaryDirectory() as data:
             with mock.patch.object(sfs.paths, "CONFIG_DIR", Path(cfg)), \
                  mock.patch.object(sfs.paths, "STATE_DIR", Path(state)), \
                  mock.patch.object(sfs.paths, "CACHE_DIR", Path(cache)), \
-                 mock.patch.object(sfs.paths, "DATA_DIR", Path(data)), \
+                 mock.patch.object(sfs.paths, "DATA_DIR", Path(data)):
+                roots = sfs._state_roots()
+            self.assertEqual(set(roots), {cfg, state, cache, data})
+
+    def test_model_roots_are_the_configured_folders(self):
+        with TemporaryDirectory() as data, TemporaryDirectory() as gguf:
+            with mock.patch.object(sfs.paths, "DATA_DIR", Path(data)), \
                  mock.patch.object(sfs.config, "settings",
                                    return_value={"ask": {"gguf": {"dir": gguf}}}):
-                roots = sfs._allowed_roots()
-            for d in (cfg, state, cache, data, gguf):
-                self.assertIn(d, roots)
+                roots = sfs._model_roots()
+            self.assertIn(gguf, roots)                       # the configured Ask folder
+            self.assertIn(os.path.join(data, "onnx"), roots)  # the ONNX default under data
 
     def test_an_invalid_model_root_is_dropped_not_fatal(self):
-        # A hand-edited ask.gguf.dir of "" or a relative path must not break every state
-        # write; it is logged and dropped, the XDG roots still stand.
-        with TemporaryDirectory() as state:
-            with mock.patch.object(sfs.paths, "CONFIG_DIR", Path(state)), \
-                 mock.patch.object(sfs.paths, "STATE_DIR", Path(state)), \
-                 mock.patch.object(sfs.paths, "CACHE_DIR", Path(state)), \
-                 mock.patch.object(sfs.paths, "DATA_DIR", Path(state)), \
+        # A hand-edited ask.gguf.dir of "" or a relative path must not break the download;
+        # it is logged and dropped rather than admitted or fatal.
+        with TemporaryDirectory() as data:
+            with mock.patch.object(sfs.paths, "DATA_DIR", Path(data)), \
                  mock.patch.object(sfs.config, "settings",
                                    return_value={"ask": {"gguf": {"dir": "relative/bad"}}}):
-                roots = sfs._allowed_roots()
-            self.assertIn(state, roots)
+                roots = sfs._model_roots()
             self.assertNotIn("relative/bad", roots)
+            self.assertIn(os.path.join(data, "onnx"), roots)  # the valid one still stands
 
 
 if __name__ == "__main__":
