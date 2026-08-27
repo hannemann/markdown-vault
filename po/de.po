@@ -2042,3 +2042,7 @@ msgstr "Der Download-Server war nicht erreichbar."
 #: src/markdown_vault/search/model_download.py
 msgid "The download failed. See the log for details."
 msgstr "Der Download ist fehlgeschlagen. Details siehe Log."
+
+#: src/markdown_vault/search/model_download.py
+msgid "The download was incomplete — the connection dropped. Try again."
+msgstr "Der Download war unvollständig — die Verbindung ist abgebrochen. Bitte erneut versuchen."

@@ -38,6 +38,13 @@ class ContentRejected(ModelDownloadError):
     expected). Carries the already-translated reason as its message."""
 
 
+class IncompleteDownload(ModelDownloadError):
+    """Fewer bytes arrived than the server's Content-Length promised. ``http.client``
+    returns an empty read (no exception) when a Content-Length response drops, so without
+    this check a truncated model would be renamed into place and reported complete — and
+    handed to a native GGUF/ONNX parser, a memory-safety surface, not a parse error."""
+
+
 class InsecureRedirect(urllib.error.HTTPError):
     """A redirect tried to leave HTTPS. Subclasses ``HTTPError`` so urllib's redirect
     machinery propagates it unchanged. A downgraded, unauthenticated file would reach a
@@ -68,25 +75,30 @@ def download_to(url, target, *, validate=None, progress=None) -> int:
     req = urllib.request.Request(url, headers={"User-Agent": "markdown-vault"})
     tmp = target.with_name(target.name + ".part")
     opener = urllib.request.build_opener(_HttpsOnlyRedirect())
-    with opener.open(req, timeout=30) as resp:
-        total = int(resp.headers.get("Content-Length") or 0)
-        done = last = 0
-        with open(tmp, "wb") as fh:
-            while True:
-                buf = resp.read(_CHUNK)
-                if not buf:
-                    break
-                fh.write(buf)
-                done += len(buf)
-                if progress and done - last >= _PROGRESS_STEP:
-                    last = done
-                    progress(done, total)
-    problem = validate(tmp) if validate is not None else None
-    if problem:                            # wrong content (e.g. an HTML page)
+    try:
+        with opener.open(req, timeout=30) as resp:
+            total = int(resp.headers.get("Content-Length") or 0)
+            done = last = 0
+            with open(tmp, "wb") as fh:
+                while True:
+                    buf = resp.read(_CHUNK)
+                    if not buf:
+                        break
+                    fh.write(buf)
+                    done += len(buf)
+                    if progress and done - last >= _PROGRESS_STEP:
+                        last = done
+                        progress(done, total)
+        if total and done != total:        # a dropped connection ends the read with no error
+            raise IncompleteDownload(f"got {done} of {total} bytes")
+        problem = validate(tmp) if validate is not None else None
+        if problem:                        # wrong content (e.g. an HTML page)
+            raise ContentRejected(problem)
+        tmp.replace(target)
+        return target.stat().st_size
+    except BaseException:                  # never leave a multi-GB partial behind
         tmp.unlink(missing_ok=True)
-        raise ContentRejected(problem)
-    tmp.replace(target)
-    return target.stat().st_size
+        raise
 
 
 def describe_error(exc: BaseException) -> str:
@@ -96,6 +108,8 @@ def describe_error(exc: BaseException) -> str:
     one)."""
     if isinstance(exc, NonHttpsUrl):
         return _("Refusing a non-HTTPS download URL.")
+    if isinstance(exc, IncompleteDownload):
+        return _("The download was incomplete — the connection dropped. Try again.")
     if isinstance(exc, InsecureRedirect):
         return _("The download was redirected off HTTPS and refused.")
     if isinstance(exc, ContentRejected):

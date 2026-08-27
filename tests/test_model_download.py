@@ -67,6 +67,31 @@ class TestDownloadTo(unittest.TestCase):
             self.assertTrue(seen)                       # progress was called at least once
             self.assertEqual(seen[-1][1], 3 * 1024 * 1024)   # total forwarded
 
+    def test_a_short_download_is_rejected_not_installed(self):
+        # http.client returns b"" (no exception) when a Content-Length response drops, so
+        # a truncated model would otherwise be replace()d into place and called complete.
+        with TemporaryDirectory() as d:
+            target = Path(d) / "model.gguf"
+            with _fake_opener(_FakeResp(b"GGUFshort", total=1000)):   # claims 1000, gives 9
+                with self.assertRaises(md.IncompleteDownload):
+                    md.download_to("https://h/model.gguf", target)
+            self.assertFalse(target.exists())                        # never promoted
+            self.assertFalse(target.with_name("model.gguf.part").exists())
+
+    def test_a_mid_stream_failure_leaves_no_part_file(self):
+        class _Boom(_FakeResp):
+            def read(self, n):
+                if self._pos == 0:
+                    return super().read(n)          # first read yields the data...
+                raise ConnectionResetError("dropped")   # ...then the connection dies
+
+        with TemporaryDirectory() as d:
+            target = Path(d) / "m.bin"
+            with _fake_opener(_Boom(b"y" * 10, total=1000)):
+                with self.assertRaises(ConnectionResetError):
+                    md.download_to("https://h/m.bin", target)
+            self.assertFalse(target.with_name("m.bin.part").exists())   # tmp cleaned up
+
     def test_rejected_content_raises_and_cleans_up(self):
         with TemporaryDirectory() as d:
             target = Path(d) / "model.gguf"
@@ -85,6 +110,7 @@ class TestDescribeError(unittest.TestCase):
                          "our own message")
         self.assertIn("404", md.describe_error(
             urllib.error.HTTPError("u", 404, "nf", {}, None)))
+        self.assertIn("incomplete", md.describe_error(md.IncompleteDownload("x")).lower())
         self.assertTrue(md.describe_error(urllib.error.URLError("dns")))
         self.assertTrue(md.describe_error(RuntimeError("boom")))   # generic default
 
