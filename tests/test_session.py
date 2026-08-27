@@ -6,11 +6,11 @@ import shutil
 import tempfile
 import unittest
 from pathlib import Path
-from unittest import mock
+
+import support
 
 import markdown_vault.core.session as _ses
 import markdown_vault.core.config as _cfg
-from markdown_vault.core import state_fs
 
 
 class _TempSessionMixin:
@@ -30,16 +30,11 @@ class _TempSessionMixin:
         _ses.SESSION_FILE = Path(self._tmpdir) / "session.json"
         _cfg._vaults_cache = None
         # session.json now writes through StateFS; allow the temp dir as a state root.
-        self._state_patches = [
-            mock.patch.object(state_fs, "_state_roots", return_value=[self._tmpdir]),
-            mock.patch.object(state_fs, "_vault_roots", return_value=[]),
-        ]
-        for p in self._state_patches:
-            p.start()
+        self._state_ctx = support.state_roots(self._tmpdir)
+        self._state_ctx.__enter__()
 
     def tearDown(self):
-        for p in self._state_patches:
-            p.stop()
+        self._state_ctx.__exit__(None, None, None)
         _cfg.CONFIG_DIR = self._orig_dir
         _cfg.CONFIG_FILE = self._orig_file
         _cfg.STATE_DIR = self._orig_state

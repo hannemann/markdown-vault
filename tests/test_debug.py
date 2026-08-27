@@ -14,29 +14,21 @@ import logging
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from unittest import mock
+
+import support
 
 from markdown_vault.core import debug
-from markdown_vault.core import state_fs
-
-
-def _state_root(root):
-    """Patch StateFS so *root* is the one allowed state root and there are no vaults."""
-    return (mock.patch.object(state_fs, "_state_roots", return_value=[str(root)]),
-            mock.patch.object(state_fs, "_vault_roots", return_value=[]))
 
 
 class _Rooted(unittest.TestCase):
     def setUp(self):
         self._dir = TemporaryDirectory()
         self.root = self._dir.name
-        self._patches = _state_root(self.root)
-        for p in self._patches:
-            p.start()
+        self._ctx = support.state_roots(self.root)
+        self._ctx.__enter__()
 
     def tearDown(self):
-        for p in self._patches:
-            p.stop()
+        self._ctx.__exit__(None, None, None)
         self._dir.cleanup()
 
 
