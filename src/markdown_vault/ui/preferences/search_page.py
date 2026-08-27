@@ -275,9 +275,10 @@ class SearchPageMixin:
             document_import.download_whisper_model(
                 model, tqdm_class=self._make_whisper_tqdm())
             GLib.idle_add(self._after_whisper_download, True, None)
-        except Exception as exc:
+        except Exception as exc:  # HF/network/IO — the errno goes to the log, not the UI
             logger.warning("Whisper model download failed: %s", exc, exc_info=True)
-            GLib.idle_add(self._after_whisper_download, False, str(exc))
+            GLib.idle_add(self._after_whisper_download, False,
+                          _("The download failed. See the log for details."))
 
     def _after_whisper_download(self, ok: bool, msg: str | None) -> bool:
         self._whisper_progress.set_visible(False)
@@ -285,6 +286,6 @@ class SearchPageMixin:
             self._apply_whisper_status(True)
         else:
             self._whisper_status_icon.set_from_icon_name("dialog-error-symbolic")
-            self._whisper_row.set_subtitle(_("Download failed: {error}").format(error=msg[:70]))
+            self._whisper_row.set_subtitle(msg)   # already a complete translated message
             self._whisper_dl_btn.set_sensitive(True)
         return False

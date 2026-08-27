@@ -788,5 +788,24 @@ class TestDownloadWorkerWiring(unittest.TestCase):
         self.assertEqual(done[-1][4], "MAPPED")  # the mapped message, not str(exc)
 
 
+class TestWhisperDownloadWiring(unittest.TestCase):
+    """A failed Whisper download shows a translated generic, not the foreign str(exc)."""
+
+    def test_failure_shows_a_generic_message_not_str_exc(self):
+        from markdown_vault.ui.preferences.search_page import SearchPageMixin
+        me = MagicMock()
+        with patch("markdown_vault.importers.document_import.download_whisper_model",
+                   side_effect=RuntimeError("[Errno 13] denied")), \
+             patch("markdown_vault.ui.preferences.search_page.GLib.idle_add") as idle:
+            SearchPageMixin._whisper_download_worker(me, "small")
+        calls = [c.args for c in idle.call_args_list
+                 if c.args and c.args[0] is me._after_whisper_download]
+        self.assertTrue(calls)
+        ok, msg = calls[-1][1], calls[-1][2]
+        self.assertFalse(ok)
+        self.assertNotIn("Errno", msg)
+        self.assertNotIn("denied", msg)
+
+
 if __name__ == "__main__":
     unittest.main()
