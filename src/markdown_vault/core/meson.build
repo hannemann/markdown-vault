@@ -9,6 +9,7 @@ install_data(
     'history.py',
     'i18n.py',
     'logging_setup.py',
+    'path_guard.py',
     'path_utils.py',
     'paths.py',
     'secret_store.py',
