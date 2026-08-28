@@ -1,5 +1,10 @@
-"""AST guard: raw mutating filesystem calls live ONLY in the two facades (core/vault_fs.py,
-core/state_fs.py). Everywhere else they must go through VaultFS / StateFS.
+"""AST guard: no raw mutating filesystem call the guard can SEE outside the two facades
+(core/vault_fs.py, core/state_fs.py) and a small set of named, test-backed exceptions
+(_EXCEPTIONS). Everywhere else the write must go through VaultFS / StateFS.
+
+The wording matters: "the guard can see". The criterion has never been "exactly two files
+touch raw FS" literally — logging opens its file through a stdlib handler the scanner cannot
+see, and always could. This enforces the guard's *reach*, not an unattainable absolute.
 
 Fail-loud at test time with file:line, so a stray direct write is caught when it is written,
 not when it corrupts something. The scan is a static approximation — it catches the
@@ -28,14 +33,29 @@ unchanged. Acceptable for the question it answers ("which file still holds raw F
 """
 
 import ast
+import sys
 import unittest
 from collections import Counter
 from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parents[1] / "src" / "markdown_vault"
 
-#: The only files allowed to touch raw filesystem mutation.
+#: The two guarded facades — the intended homes for raw filesystem mutation.
 _FACADES = {"core/vault_fs.py", "core/state_fs.py"}
+
+#: Named exceptions: files that legitimately hold guard-visible raw FS, each with a reason
+#: that is a CHECKED FACT rather than a promise (that is the line against the allowlist AG4
+#: removed — "trusted writer" cannot be tested, "runs before the facade exists" can, and is
+#: pinned by a test below). Not for open decisions: the editor's still-direct save stays in
+#: the baseline as remaining work (option C), so its number keeps nagging.
+_EXCEPTIONS = {
+    "core/logging_setup.py":
+        "Runs as main.py's first import, before config exists (it imports only stdlib, gi "
+        "and core.paths). Routing its log-dir os.makedirs through StateFS would pull config "
+        "into bootstrap, and a broken-settings.yaml warning parsed before the handlers/fd "
+        "redirect exist would never reach the log file — the file you open to find out why "
+        "the config is broken. Pinned by TestLoggingSetupStaysEarly.",
+}
 
 #: Module-level functions that mutate the filesystem, keyed by the module's top name.
 _MUTATING_MODULE_FUNCS = {
@@ -139,7 +159,7 @@ def _scan_tree() -> dict:
     found = {}
     for py in sorted(_ROOT.rglob("*.py")):
         rel = py.relative_to(_ROOT).as_posix()
-        if rel in _FACADES:
+        if rel in _FACADES or rel in _EXCEPTIONS:
             continue
         ops = Counter(op for _, op in _scan(py.read_text(encoding="utf-8")))
         if ops:
@@ -217,6 +237,45 @@ class TestFacadesAreScannedOut(unittest.TestCase):
             ops = _scan((_ROOT / facade).read_text(encoding="utf-8"))
             self.assertTrue(ops, f"{facade} should contain raw FS the scanner detects")
 
+    def test_each_exception_still_holds_raw_fs(self):
+        # An exception excuses raw FS the scanner sees. If a file's raw FS is gone (migrated
+        # or removed), the exemption is stale — drop it from _EXCEPTIONS so it cannot cover a
+        # future raw call added there by mistake.
+        for exc in _EXCEPTIONS:
+            ops = _scan((_ROOT / exc).read_text(encoding="utf-8"))
+            self.assertTrue(ops, f"{exc} no longer holds raw FS — remove it from _EXCEPTIONS")
+
+
+class TestLoggingSetupStaysEarly(unittest.TestCase):
+    """The logging_setup exception rests on it staying import-light AT MODULE LOAD — main.py
+    imports it first (line 13), before config (line 20), and its raw-FS mkdir must not drag
+    config/state_fs into that first import. That is a property of its MODULE-LEVEL imports, so
+    the exception is a checked fact, not a promise; a function-local config import (deferred to
+    call time, well after bootstrap) is fine and is how logging_setup already reaches config."""
+
+    def test_module_level_imports_stay_bootstrap_light(self):
+        tree = ast.parse((_ROOT / "core" / "logging_setup.py").read_text(encoding="utf-8"))
+        first_party = set()
+        for node in tree.body:                      # top level only — not ast.walk into functions
+            if isinstance(node, ast.ImportFrom) and node.module:
+                top = node.module.split(".")[0]
+                if top == "markdown_vault":
+                    first_party.update(f"{node.module}.{a.name}" for a in node.names)
+                elif top != "gi" and top not in sys.stdlib_module_names:
+                    self.fail(f"logging_setup pulls in third-party {node.module!r} at load")
+            elif isinstance(node, ast.Import):
+                for a in node.names:
+                    top = a.name.split(".")[0]
+                    if top == "markdown_vault":
+                        first_party.add(a.name)
+                    elif top != "gi" and top not in sys.stdlib_module_names:
+                        self.fail(f"logging_setup pulls in third-party {a.name!r} at load")
+        self.assertEqual(
+            first_party, {"markdown_vault.core.paths"},
+            "logging_setup must import only core.paths from the app AT MODULE LEVEL — its raw-FS "
+            "exception rests on staying import-light before config exists. Reach config/state_fs "
+            "via a function-local import (deferred to call time) if you must, never at load")
+
 
 class TestFsChokepoint(unittest.TestCase):
     maxDiff = None   # this goes red by design on nearly every slice-5 commit; show the exact delta
@@ -226,24 +285,25 @@ class TestFsChokepoint(unittest.TestCase):
         current_plain = {f: dict(c) for f, c in current.items()}
         self.assertEqual(
             current_plain, _BASELINE,
-            "Raw filesystem mutation outside the two facades changed.\n"
-            "  New/grown entry  -> route it through VaultFS/StateFS, or (if it IS a facade) "
-            "add the file to _FACADES.\n"
+            "Raw filesystem mutation the guard can see, outside the facades and exceptions, "
+            "changed.\n"
+            "  New/grown entry  -> route it through VaultFS/StateFS; only if it genuinely "
+            "cannot (a facade, or a bootstrap/pre-facade case) add it to _FACADES or "
+            "_EXCEPTIONS with a test-backed reason.\n"
             "  Shrunk/removed    -> a site was migrated; update _BASELINE to match "
             "(the baseline is the remaining-work list).\n"
             f"  scanned: {current_plain}")
 
 
-# Frozen snapshot of the raw-FS sites still to migrate (slice 5). Empty == effort complete.
-# Raw-FS sites still to migrate (slice 5). Started at 13 modules / 46 sites; shrinks per redirect.
-# Migrated: core/debug.py, core/session.py -> StateFS.
+# Raw-FS sites still to migrate (slice 5). Started at 13 modules / 46 sites; shrinks per
+# redirect; empty == effort complete. Migrated: core/debug.py, core/session.py -> StateFS.
+# Exempted (see _EXCEPTIONS): core/logging_setup.py — a bootstrap dir mkdir before the facade.
 _BASELINE = {
     "core/attachments.py": {
         ".write_text": 1, ".write_bytes": 1, ".mkdir": 2, ".rmdir": 1,
         "shutil.move": 1, "shutil.rmtree": 1,
     },
     "core/config.py": {".mkdir": 1, "os.fdopen": 1, "os.replace": 1, "os.unlink": 1},
-    "core/logging_setup.py": {"os.makedirs": 2},
     "editor/editor.py": {".write_text": 1},
     "importers/document_import.py": {".mkdir": 2, ".write_text": 1},
     "importers/web_import.py": {".mkdir": 3, ".write_bytes": 2, ".write_text": 1},
