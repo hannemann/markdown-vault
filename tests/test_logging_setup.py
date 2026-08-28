@@ -16,6 +16,7 @@ from unittest import mock
 
 from markdown_vault.core import config
 from markdown_vault.core import logging_setup
+from markdown_vault.core import state_fs
 
 _ROOT = logging.getLogger()
 
@@ -107,7 +108,17 @@ class InitTest(LoggingSetupTestCase):
         # StateFS would do (StateFS's vault clause calls config.load_vaults). Pin the property
         # directly against the real makedirs path; the module-level import check in
         # test_fs_chokepoint is only a cheap early proxy for this.
-        with mock.patch.object(config, "load_vaults", side_effect=AssertionError("read yaml")), \
+        # The fixture MUST allow its temp state dir as a StateFS root (AU1). Otherwise, if a
+        # refactor routes the mkdir through StateFS, the POSITIVE clause fails first
+        # (OutsideAllowedRoots) and the config-reading VAULT clause is never reached — the
+        # test would go red for the wrong reason, pointing a future reader at the roots
+        # instead of at "the bootstrap read the config". With the temp dir allowed, the
+        # positive clause passes and _vault_roots() -> config.load_vaults() fires, so the
+        # failure names the real cause.
+        # Deliberately NOT support.state_roots: it also clears _vault_roots, and then the
+        # vault clause never calls load_vaults() — the regression would slip through GREEN.
+        with mock.patch.object(state_fs, "_state_roots", return_value=[self._tmp]), \
+             mock.patch.object(config, "load_vaults", side_effect=AssertionError("read yaml")), \
              mock.patch.object(config, "settings", side_effect=AssertionError("read yaml")):
             self._init({})   # must not raise: bootstrap reads no config file
 
