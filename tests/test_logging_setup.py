@@ -12,7 +12,9 @@ import os
 import shutil
 import tempfile
 import unittest
+from unittest import mock
 
+from markdown_vault.core import config
 from markdown_vault.core import logging_setup
 
 _ROOT = logging.getLogger()
@@ -96,6 +98,18 @@ class InitTest(LoggingSetupTestCase):
         self._init({"log": {"level": "debug"}})
         self.assertTrue(os.path.exists(self._stdout_log()))
         self.assertTrue(os.path.exists(self._stderr_log()))
+
+    def test_init_does_not_read_settings_yaml(self):
+        # AT1 — the load-bearing justification for logging_setup's chokepoint-guard exception:
+        # the log-dir setup must NOT read settings.yaml. A config parse warning raised there
+        # (before the file handlers exist) would go nowhere — the file you open to find out
+        # why the config is broken. Reading it is exactly what routing the mkdir through
+        # StateFS would do (StateFS's vault clause calls config.load_vaults). Pin the property
+        # directly against the real makedirs path; the module-level import check in
+        # test_fs_chokepoint is only a cheap early proxy for this.
+        with mock.patch.object(config, "load_vaults", side_effect=AssertionError("read yaml")), \
+             mock.patch.object(config, "settings", side_effect=AssertionError("read yaml")):
+            self._init({})   # must not raise: bootstrap reads no config file
 
     def test_init_reads_loglevel_from_dict(self):
         self._init({"log": {"level": "debug"}})

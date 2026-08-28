@@ -50,11 +50,15 @@ _FACADES = {"core/vault_fs.py", "core/state_fs.py"}
 #: the baseline as remaining work (option C), so its number keeps nagging.
 _EXCEPTIONS = {
     "core/logging_setup.py":
-        "Runs as main.py's first import, before config exists (it imports only stdlib, gi "
-        "and core.paths). Routing its log-dir os.makedirs through StateFS would pull config "
-        "into bootstrap, and a broken-settings.yaml warning parsed before the handlers/fd "
-        "redirect exist would never reach the log file — the file you open to find out why "
-        "the config is broken. Pinned by TestLoggingSetupStaysEarly.",
+        "main.py runs logging_setup.init() before settings.yaml is read (init(None) at "
+        "main.py:18; config.settings() at :22). init imports config but only does a dict "
+        "lookup on the PASSED settings — it reads no file. Routing its log-dir os.makedirs "
+        "through StateFS would pull the READING of settings.yaml into that first init, via "
+        "StateFS's vault clause (config.load_vaults), ahead of the handlers — so a broken-"
+        "settings.yaml warning there would never reach the log file, the file you open to "
+        "find out why the config is broken. The property (bootstrap reads no config file) is "
+        "pinned by test_logging_setup.InitTest.test_init_does_not_read_settings_yaml; "
+        "TestLoggingSetupStaysEarly below is a cheap early proxy for it.",
 }
 
 #: Module-level functions that mutate the filesystem, keyed by the module's top name.
@@ -247,11 +251,15 @@ class TestFacadesAreScannedOut(unittest.TestCase):
 
 
 class TestLoggingSetupStaysEarly(unittest.TestCase):
-    """The logging_setup exception rests on it staying import-light AT MODULE LOAD — main.py
-    imports it first (line 13), before config (line 20), and its raw-FS mkdir must not drag
-    config/state_fs into that first import. That is a property of its MODULE-LEVEL imports, so
-    the exception is a checked fact, not a promise; a function-local config import (deferred to
-    call time, well after bootstrap) is fine and is how logging_setup already reaches config."""
+    """A CHEAP EARLY PROXY for the real property (pinned directly in
+    test_logging_setup.InitTest.test_init_does_not_read_settings_yaml): logging_setup must
+    not read settings.yaml during bootstrap. This checks the module-level imports stay
+    stdlib/gi/core.paths — a load-time first-party import is the usual way that reading would
+    sneak in. It is only a proxy and diverges both ways (a harmless module-level import fails
+    it; a config.load_vaults() added INSIDE init passes it), so it is the early warning, not
+    the guarantee. logging_setup already imports config function-locally — that fires at the
+    first init() call (main.py:18), but only does a dict lookup on the passed settings and
+    reads no file, so it is fine."""
 
     def test_module_level_imports_stay_bootstrap_light(self):
         tree = ast.parse((_ROOT / "core" / "logging_setup.py").read_text(encoding="utf-8"))
