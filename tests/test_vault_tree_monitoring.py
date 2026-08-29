@@ -449,6 +449,7 @@ class TestDropDeferredRefresh(unittest.TestCase):
         emitted = []
         self.tree.connect("file-renamed", lambda _t, o, n: emitted.append((o, n)))
         deferred = []
+        self.tree.vault_monitor = MagicMock()
 
         with support.vault_roots(self._tmpdir), \
                 patch.object(mod.GLib, "idle_add",
@@ -463,6 +464,10 @@ class TestDropDeferredRefresh(unittest.TestCase):
         self.assertEqual(emitted, [(src, expected_dest)])
         refresh.assert_not_called()
         self.assertEqual(deferred, [self.tree._refresh_after_drop])
+        # AW1: the success path must still register the skips (the fix's claim is "later,
+        # not never") — else the app treats its own move as a foreign change.
+        self.tree.vault_monitor.skip_next_event.assert_any_call(src)
+        self.tree.vault_monitor.skip_next_event.assert_any_call(expected_dest)
 
     def test_a_refused_drop_registers_no_skip(self):
         # AV1: a skip registered BEFORE the FS op leaks when the op is refused and swallows
@@ -484,6 +489,28 @@ class TestDropDeferredRefresh(unittest.TestCase):
 
         self.assertFalse(result)
         self.tree.vault_monitor.skip_next_event.assert_not_called()   # no leaked skip
+
+    def test_commit_rename_registers_skip_on_success(self):
+        # AW1, the rename site: a successful rename must register the skips for both paths,
+        # or the app reacts to its own rename as an external change. _commit_rename has no
+        # other test, so this also pins that the rename goes through VaultFS.
+        import markdown_vault.vault.vault_tree as mod
+        old = self._tmpdir / "old.md"
+        old.write_text("x")
+        node = VaultNode("old.md", str(old), False)
+        new_path = str(self._tmpdir / "new.md")
+        self.tree.vault_monitor = MagicMock()
+
+        with support.vault_roots(self._tmpdir), \
+                patch.object(self.tree, "_parent_store_of", return_value=None), \
+                patch.object(self.tree, "_is_vault_root", return_value=False), \
+                patch.object(mod.validation, "validate_rename", return_value=None), \
+                patch.object(self.tree, "_rename_node"):
+            self.tree._commit_rename(node, "new.md")
+
+        self.assertTrue(old.exists() is False and Path(new_path).exists())  # rename happened
+        self.tree.vault_monitor.skip_next_event.assert_any_call(str(old))
+        self.tree.vault_monitor.skip_next_event.assert_any_call(new_path)
 
 
 if __name__ == "__main__":
