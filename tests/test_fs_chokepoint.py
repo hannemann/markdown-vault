@@ -306,11 +306,11 @@ class TestFsChokepoint(unittest.TestCase):
 # Raw-FS sites still to migrate (slice 5). Started at 13 modules / 46 sites; shrinks per
 # redirect; empty == effort complete. Migrated: core/debug.py, core/session.py -> StateFS;
 # vault/vault_tree.py, vault/backlink_index.py, vault/file_ops.py, core/attachments.py,
-# editor/editor.py -> VaultFS.
+# editor/editor.py -> VaultFS; importers/document_import.py -> both (note+dir VaultFS,
+# whisper model dir StateFS).
 # Exempted (see _EXCEPTIONS): core/logging_setup.py — a bootstrap dir mkdir before the facade.
 _BASELINE = {
     "core/config.py": {".mkdir": 1, "os.fdopen": 1, "os.replace": 1, "os.unlink": 1},
-    "importers/document_import.py": {".mkdir": 2, ".write_text": 1},
     "importers/web_import.py": {".mkdir": 3, ".write_bytes": 2, ".write_text": 1},
     "search/model_download.py": {".mkdir": 1, "open(w)": 1, ".replace": 1, ".unlink": 1},
     "search/semantic_index.py": {

@@ -6,12 +6,15 @@ format round-trips need the optional AI stack and are skipUnless-guarded.
 
 import datetime
 import re
+import sys
 import tempfile
 import unittest
+import unittest.mock
 from pathlib import Path
 
 import support
 
+from markdown_vault.core import vault_fs
 from markdown_vault.importers import document_import as di
 
 _HAS_STACK = di.is_available() is None
@@ -252,7 +255,7 @@ class TestNoteAssembly(unittest.TestCase):
         self.assertEqual(fm["title"], "- weird: title #1")
 
 
-class TestSaveToVault(unittest.TestCase):
+class TestSaveToVault(_RegisterTempAsVault, unittest.TestCase):
     def _res(self, title="My Doc", md="content"):
         return di.DocumentResult(path="/src/a.pdf", title=title, markdown=md)
 
@@ -277,6 +280,62 @@ class TestSaveToVault(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             p = di.save_to_vault(self._res(), d, name="   ")
             self.assertEqual(p.stem, "my-doc")
+
+
+class TestSaveToVaultRoutesThroughVaultFS(_RegisterTempAsVault, unittest.TestCase):
+    """The import's own two writes — the target directory and the note — go through VaultFS.
+    Mutation-verified: a raw mkdir/write_text leaves these mocks uncalled."""
+
+    def _res(self):
+        return di.DocumentResult(path="/src/a.pdf", title="My Doc", markdown="content")
+
+    def test_the_target_directory_is_created_through_vault_fs(self):
+        with tempfile.TemporaryDirectory() as d:
+            target = Path(d) / "sub"
+            with unittest.mock.patch("markdown_vault.core.vault_fs.mkdir") as m:
+                with unittest.mock.patch("markdown_vault.core.vault_fs.write_text"):
+                    di.save_to_vault(self._res(), target)
+            m.assert_called_once()
+
+    def test_the_note_is_written_through_vault_fs(self):
+        with tempfile.TemporaryDirectory() as d:
+            with unittest.mock.patch("markdown_vault.core.vault_fs.write_text") as w:
+                di.save_to_vault(self._res(), d)
+            w.assert_called_once()
+
+    def test_a_note_written_directly_is_not_atomic(self):
+        # A NEW note has no previous content to protect, and the atomic writer's rename would
+        # reach VaultMonitor as a MOVE — reporting a creation as a move, so the tree and the
+        # indexes classify it wrongly. Direct write_text keeps the created event.
+        with tempfile.TemporaryDirectory() as d:
+            with unittest.mock.patch("markdown_vault.core.vault_fs.write_text_atomic") as a:
+                di.save_to_vault(self._res(), d)
+            a.assert_not_called()
+
+    def test_importing_outside_every_vault_is_refused_not_written(self):
+        # VaultFS refuses a target under no configured vault. The import then fails and
+        # dialog_import's top-level `except Exception` surfaces it — the same route the
+        # embedded-image write already takes. Nothing is written beside the chosen folder.
+        with tempfile.TemporaryDirectory() as d:
+            outside = Path(d) / "not-a-vault"
+            with support.vault_roots(str(Path(d) / "elsewhere")):
+                with self.assertRaises(vault_fs.VaultWriteError):
+                    di.save_to_vault(self._res(), outside)
+            self.assertFalse(outside.exists())
+
+
+class TestWhisperModelDirRoutesThroughStateFS(unittest.TestCase):
+    """The whisper model folder is app data (``<data>/models/whisper-*``), not a vault — so
+    its creation belongs to StateFS, not VaultFS. Runs without the optional AI stack by
+    standing in for huggingface_hub, so a base-only install still covers this."""
+
+    def test_the_model_directory_is_created_through_state_fs(self):
+        fake_hub = unittest.mock.MagicMock()
+        with unittest.mock.patch.dict(sys.modules, {"huggingface_hub": fake_hub}):
+            with unittest.mock.patch("markdown_vault.core.state_fs.mkdir") as m:
+                di.download_whisper_model("tiny")
+        m.assert_called_once()
+        fake_hub.snapshot_download.assert_called_once()
 
 
 class TestImageStorage(_RegisterTempAsVault, unittest.TestCase):

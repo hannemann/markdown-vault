@@ -28,6 +28,8 @@ import yaml
 
 from markdown_vault.vault import note_writer
 from markdown_vault.core import attachments
+from markdown_vault.core import state_fs
+from markdown_vault.core import vault_fs
 from markdown_vault.core.i18n import _
 from markdown_vault.markdown.md_fences import FenceTracker
 from markdown_vault.markdown.md_text import unwrap_bold_headings
@@ -492,7 +494,9 @@ def download_whisper_model(name: str | None = None, tqdm_class=None) -> str:
     from huggingface_hub import snapshot_download
     name = name or whisper_model_name()
     dest = whisper_model_dir(name)
-    dest.mkdir(parents=True, exist_ok=True)
+    # StateFS, not VaultFS: this is app data (<data>/models/whisper-*), not a note. The
+    # download itself is huggingface_hub's own writing and stays outside the chokepoint.
+    state_fs.mkdir(str(dest), parents=True, exist_ok=True)
     snapshot_download(_whisper_repo(name), allow_patterns=_WHISPER_FILES,
                       local_dir=str(dest), tqdm_class=tqdm_class)
     return str(dest)
@@ -592,13 +596,16 @@ def save_to_vault(result: DocumentResult, vault_dir: str | Path,
     importing into a subfolder still keeps them under the vault root). Returns the
     written path."""
     vault_dir = Path(vault_dir)
-    vault_dir.mkdir(parents=True, exist_ok=True)
+    vault_fs.mkdir(str(vault_dir), parents=True, exist_ok=True)
     stem = note_writer.slug(name if name and name.strip() else result.title,
                             fallback="imported-document")
     target = note_writer.unique_path(vault_dir, stem)
     body = _store_images(result, target, vault_root or vault_dir)
-    target.write_text(to_note(replace(result, markdown=body), today=today),
-                      encoding="utf-8")
+    # Direct, not atomic: the note is NEW (unique_path), so there is no previous content an
+    # atomic write would protect, while its rename would reach VaultMonitor as a move —
+    # reporting a creation as one. Both refusals propagate to dialog_import's top-level
+    # handler, which surfaces the import as failed.
+    vault_fs.write_text(str(target), to_note(replace(result, markdown=body), today=today))
     return target
 
 
