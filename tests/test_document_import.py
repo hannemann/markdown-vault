@@ -20,7 +20,12 @@ _HAS_STACK = di.is_available() is None
 class _RegisterTempAsVault:
     """Image storage routes through VaultFS, which refuses writes outside a configured vault.
     These tests write into a TemporaryDirectory (under the pinned test TMPDIR) and pass it as
-    vault_root, so register that TMPDIR root as the vault for the guard to allow the write."""
+    vault_root, so register the TMPDIR root as the vault to let the guard admit the write.
+
+    The TMPDIR root, not each test's specific temp dir, because the dir is created inside the
+    test body (a ``with`` block) and setUp cannot see it. The wider radius costs no sharpness:
+    each test asserts the EXACT stored path, so a mis-located attachment fails the assertion
+    regardless of the guard; the guard's containment is pinned directly in test_vault_fs."""
 
     def setUp(self):
         super().setUp()

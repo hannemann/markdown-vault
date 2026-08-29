@@ -570,6 +570,11 @@ def _store_images(result: DocumentResult, note_path: Path, vault_root) -> str:
         key = hashlib.sha256(img.data).hexdigest()
         link = by_hash.get(key)
         if link is None:                               # first sighting: store it once
+            # store_image raises VaultWriteError if vault_root is outside every configured vault
+            # — reachable, because save_to_vault falls back to the target dir when
+            # find_vault_for_dir returns None (an import target need not be a vault). It is not
+            # caught here on purpose: dialog_import's top-level `except Exception` surfaces it as
+            # a clean import failure. That blanket except must stay broad enough to catch it.
             link = attachments.store_image(vault_root, note_path, img.data, img.filename)
             by_hash[key] = link
         md = md.replace(f"({img.token})", f"({link})")     # closing paren makes it unambiguous
