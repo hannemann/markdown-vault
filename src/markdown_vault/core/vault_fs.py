@@ -80,11 +80,19 @@ def atomic_save_paths(path) -> tuple[str, str]:
     on a symlinked note, where the writer resolves the leaf (see :func:`_atomic_bytes`) —
     and the announcement would silently never match.
 
+    The **process id** in the name is what keeps that announcement honest. Announcer and
+    writer compute the pair independently, so it must stay derivable — but derivable must
+    not mean guessable: ``.part`` is a common convention (wget, browsers, sync clients), so
+    a plain ``<note>.md.part`` is a name an EXTERNAL tool can produce, and its atomic save
+    would be indistinguishable from ours and swallowed as our own, losing a genuine change.
+    The pid is known process-wide, so both sides still derive it without threading the pair
+    through the writer's signature, while no outside tool can hit it.
+
     The ``.part`` suffix is load-bearing: VaultMonitor only watches ``.md`` files, so the
     temp file must not end in ``.md`` or it raises an extra created event of its own.
     """
     real = os.path.realpath(path)
-    return real + ".part", real
+    return f"{real}.{os.getpid()}.part", real
 
 
 def _atomic_bytes(target: Path, data: bytes) -> None:
@@ -113,12 +121,13 @@ def write_text_atomic(path, text: str, *, encoding: str = "utf-8") -> None:
     a crash leaves the PREVIOUS content intact rather than the empty file a direct
     :func:`write_text` would leave (it truncates before writing).
 
-    For the batch callers (backlink rewrites, importers, attachments), where a truncated
-    file would be worst and the write is infrequent. Caveat for the migration: on a TRACKED
-    (open tab / indexed) ``.md`` file the final rename surfaces to VaultMonitor as a moved
-    event, which it reads as an external change (a false reload banner). A caller that can
-    hit such a file must ``skip_next_event`` at the call site, as ``FileOps`` does; a
-    non-``.md`` attachment is filtered by the monitor's suffix test and is free of this."""
+    Caveat for a ``.md`` caller: the final rename surfaces to VaultMonitor as a move, which
+    it reads as an external change. A caller writing a note must therefore announce it with
+    ``VaultMonitor.expect_atomic_save(path)`` **before** the write (and
+    ``forget_atomic_save`` if it fails), as the save sites do — NOT with
+    ``skip_next_event``, which ignores the next event whatever it is and so is consumed by a
+    concurrent external change instead. A non-``.md`` attachment is filtered by the monitor's
+    suffix test and needs neither."""
     _guard(path, follow_last=True)
     _atomic_bytes(Path(path), text.encode(encoding))
 

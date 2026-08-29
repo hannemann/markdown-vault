@@ -181,7 +181,21 @@ class TestAtomicSavePaths(unittest.TestCase):
             os.symlink(real, link)
             part, target = vfs.atomic_save_paths(link)
             self.assertEqual(target, os.path.realpath(link))
-            self.assertEqual(part, os.path.realpath(link) + ".part")
+            # The temp file sits beside the REAL note, not the link. Asserted on the prefix
+            # so this test stays about resolution and does not re-pin the name's shape.
+            self.assertTrue(part.startswith(os.path.realpath(link) + "."))
+            self.assertNotIn("alias", part)
+
+    def test_the_part_name_carries_the_process_id(self):
+        # BC1: the pair is computed independently by announcer and writer, so it must stay
+        # derivable — but derivable must not mean GUESSABLE. ".part" is a common convention
+        # (wget, browsers, sync clients), so a plain "<note>.md.part" is a name an external
+        # tool can produce, and its atomic save would be indistinguishable from ours and get
+        # swallowed as our own. The pid stays derivable inside the process and is effectively
+        # unguessable outside it, without threading the pair through the writer's signature.
+        with _Vault() as v:
+            part, _target = vfs.atomic_save_paths(os.path.join(v.vault, "note.md"))
+            self.assertIn(str(os.getpid()), part)
 
     def test_the_part_name_does_not_end_in_md(self):
         # Load-bearing: VaultMonitor only looks at .md files, so the temp file must stay

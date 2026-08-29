@@ -475,6 +475,13 @@ class TestAtomicSaveAnnouncement(unittest.TestCase):
     def test_forgetting_what_was_never_announced_is_harmless(self):
         self.monitor.forget_atomic_save(self.note)   # must not raise
 
+    def test_announcing_without_a_path_is_harmless(self):
+        # BC3: the announcement now sits in front of save()'s own `if not self._file_path`
+        # guard, so it sees a None path first. Previously skip_next_event(None) was a
+        # harmless dict insert; realpath(None) raises TypeError.
+        self.monitor.expect_atomic_save(None)   # must not raise
+        self.monitor.forget_atomic_save(None)
+
     def test_an_unannounced_atomic_save_is_reported(self):
         # Another editor atomically saving our note IS an external change — it must reach the
         # banner. Pins that the announcement is what distinguishes them, not the shape.

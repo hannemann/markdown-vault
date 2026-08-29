@@ -203,11 +203,17 @@ class VaultMonitor:
         The pair comes from :func:`vault_fs.atomic_save_paths`, the single source of that
         naming, so a symlinked note resolves exactly as the writer resolves it.
         """
+        if not file_path:
+            # The announcement sits in front of save()'s own "no file path" guard, so it
+            # sees an unsaved buffer's None first; realpath(None) would raise.
+            return
         self._expected_atomic_saves.add(vault_fs.atomic_save_paths(file_path))
 
     def forget_atomic_save(self, file_path: str) -> None:
         """Withdraw an announcement made by :meth:`expect_atomic_save` (the save failed, so
         no event will arrive). Withdrawing one that was never made is a no-op."""
+        if not file_path:
+            return
         self._expected_atomic_saves.discard(vault_fs.atomic_save_paths(file_path))
 
     def _start_monitor(self, vault_path):
