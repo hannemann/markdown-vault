@@ -406,8 +406,12 @@ class TestAtomicSaveAnnouncement(unittest.TestCase):
     Deliberately not the skip_next_event counter ("ignore the next event, whatever it is"):
     that one is blind, so a concurrent external change consumes it — the real change is
     swallowed and our own save then raises the banner, i.e. wrong in both directions. Matching
-    the pair keeps every other event untouched, and a leftover announcement is inert because
-    only this one rename can redeem it.
+    the pair keeps every other event untouched. What makes announcing BEFORE the write safe
+    is not that a leftover announcement is harmless in itself — it is that no unrelated tool
+    can produce the rename that redeems it, the pair being ``(<file>.<pid>.part, <file>)``.
+    A bare ``.part`` would not do: it is a shared convention (wget, browsers, sync clients),
+    so an external tool's atomic save of the same note would match the announcement and its
+    genuine change would be swallowed as ours.
     """
 
     def _monitor(self):

@@ -107,8 +107,12 @@ def _pid_alive(pid: int) -> bool:
     except PermissionError:
         # Signalling refused means the process EXISTS and belongs to someone else.
         return True
-    except OSError:
+    except (OSError, OverflowError, ValueError):
         # Cannot tell — report alive so the caller keeps the file (see _sweep_stale_parts).
+        # OverflowError is the one that matters and is NOT an OSError: a digit run too large
+        # for a C long comes straight from a foreign filename, so without it a file named
+        # <note>.md.<many digits>.part made that note unsaveable (the error escaped every
+        # handler up to the GTK callback).
         return True
     return True
 
@@ -124,8 +128,16 @@ def _sweep_stale_parts(real: Path) -> None:
 
     Goes by whether the owner still runs, not by age, because a *live* pid's temp belongs to
     a concurrently running instance saving the same note (duplicate instances do happen), and
-    deleting that would corrupt its write. Every doubt therefore keeps the file: an orphan is
-    recoverable, a destroyed in-flight write is not.
+    deleting that would corrupt its write. Every doubt therefore keeps the file — including a
+    pid that cannot even be parsed or converted, which comes from a foreign filename rather
+    than from us: an orphan is recoverable, a destroyed in-flight write is not.
+
+    A pid says nothing about which MACHINE it belongs to, and a vault is often synced. A temp
+    file from another machine whose number happens to be dead here is therefore swept while
+    that machine may still be writing it. Accepted knowingly: the consequence is not data
+    loss but a failed save over there (``os.replace`` hits a missing source), surfaced to
+    that user with the note intact. The mirror case — a foreign pid that happens to be live
+    here — merely keeps the orphan.
     """
     prefix, suffix = real.name + ".", ".part"
     for candidate in real.parent.glob(glob.escape(real.name) + ".*.part"):

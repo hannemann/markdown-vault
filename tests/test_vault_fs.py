@@ -257,6 +257,25 @@ class TestStalePartSweep(unittest.TestCase):
     def test_pid_alive_reports_this_process(self):
         self.assertTrue(vfs._pid_alive(os.getpid()))
 
+    def test_an_out_of_range_pid_in_a_part_name_does_not_block_the_save(self):
+        # BE1: os.kill raises OverflowError on an int too large for a C long, and
+        # OverflowError is NOT an OSError — so it escaped _pid_alive's handlers, the sweep's
+        # wrapper, and editor.save()'s, and reached the GTK callback. A foreign file named
+        # <note>.md.<many digits>.part therefore made THAT NOTE UNSAVEABLE, with no reason
+        # shown. The app never produces such a name; it arrives from a sync, a backup or a
+        # foreign repo — untrusted input the sweep has to survive rather than trust.
+        with _Vault() as v:
+            note = os.path.join(v.vault, "note.md")
+            junk = Path(f"{note}.9999999999999999999999.part")
+            junk.write_text("not ours")
+            vfs.write_text_atomic(note, "new")          # must not raise
+            self.assertEqual(Path(note).read_text(), "new")
+            self.assertTrue(junk.exists())              # undecidable -> kept
+
+    def test_pid_alive_treats_an_undecidable_pid_as_alive(self):
+        self.assertTrue(vfs._pid_alive(9999999999999999999999))
+        self.assertTrue(vfs._pid_alive(-1))
+
 
 class TestDeleteOps(unittest.TestCase):
     def test_unlink_a_file_inside(self):
