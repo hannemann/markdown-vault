@@ -133,6 +133,12 @@ def _sweep_stale_parts(real: Path) -> None:
     pid that cannot even be parsed or converted, which comes from a foreign filename rather
     than from us: an orphan is recoverable, a destroyed in-flight write is not.
 
+    The limit of the whole idea, stated plainly because this deletes files in the user's
+    vault: the name shape is the ONLY identifier there is. A genuine user file that happens
+    to be called ``<note>.md.<ascii digits>.part``, whose number is a dead pid, is
+    indistinguishable from our orphan and will be removed. Specific enough to accept, not
+    specific enough to leave unsaid.
+
     A pid says nothing about which MACHINE it belongs to, and a vault is often synced. A temp
     file from another machine whose number happens to be dead here is therefore swept while
     that machine may still be writing it. Accepted knowingly: the consequence is not data
