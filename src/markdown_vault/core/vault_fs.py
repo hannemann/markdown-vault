@@ -60,9 +60,20 @@ def _guard(target, *, follow_last: bool) -> None:
         raise OutsideVault(f"{target!s} is outside every vault")
 
 
-def write_text(path, text: str, *, encoding: str = "utf-8") -> None:
-    """Write *text* to a vault file (guarded)."""
+def write_text(path, text: str, *, encoding: str = "utf-8", exclusive: bool = False) -> None:
+    """Write *text* to a vault file (guarded).
+
+    With *exclusive*, refuse to overwrite: the file is created or ``FileExistsError`` is
+    raised. For a caller that picked its filename with an earlier "does it exist?" test and
+    writes some work later — an importer processing images in between — where a plain write
+    would truncate whatever appeared in that window. It makes "never overwrite" a property of
+    the write rather than a promise made by a check that has since gone stale.
+    """
     _guard(path, follow_last=True)
+    if exclusive:
+        with open(path, "x", encoding=encoding) as fh:
+            fh.write(text)
+        return
     Path(path).write_text(text, encoding=encoding)
 
 

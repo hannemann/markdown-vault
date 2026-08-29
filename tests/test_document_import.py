@@ -324,6 +324,25 @@ class TestSaveToVaultRoutesThroughVaultFS(_RegisterTempAsVault, unittest.TestCas
             self.assertFalse(outside.exists())
 
 
+class TestDescribeError(unittest.TestCase):
+    """BG1: the containment refusal is the failure users hit most now, and it reached the
+    dialog as str(exc) — "…/report.md is outside every vault": English, untranslated,
+    developer vocabulary, and it does not say what to do. Map it at the boundary, like
+    web_import.describe_error does."""
+
+    def test_a_containment_refusal_becomes_an_actionable_sentence(self):
+        msg = di.describe_error(vault_fs.OutsideVault("/home/x/Downloads/r.md is outside"))
+        self.assertNotIn("/home/x", msg)          # no path, no developer text
+        self.assertNotIn("outside every vault", msg)
+        self.assertIn("vault", msg.lower())       # still says what the problem is
+
+    def test_an_already_translated_message_is_passed_through(self):
+        # ValueError("No text could be extracted…") is raised translated at the call site;
+        # re-mapping it would drop the specific reason.
+        self.assertEqual(di.describe_error(ValueError("Nothing to extract")),
+                         "Nothing to extract")
+
+
 class TestWhisperModelDirRoutesThroughStateFS(unittest.TestCase):
     """The whisper model folder is app data (``<data>/models/whisper-*``), not a vault — so
     its creation belongs to StateFS, not VaultFS. Runs without the optional AI stack by
@@ -336,6 +355,14 @@ class TestWhisperModelDirRoutesThroughStateFS(unittest.TestCase):
                 di.download_whisper_model("tiny")
         m.assert_called_once()
         fake_hub.snapshot_download.assert_called_once()
+
+    def test_the_model_directory_is_actually_accepted_by_state_fs(self):
+        # The test above pins WHICH facade is called, not that the path would pass its guard.
+        # If models_dir() ever moved under a user-picked folder, that test would stay green
+        # while the app refused at runtime — _state_roots deliberately excludes those. Let the
+        # real guard run (XDG is pinned to the test home, so this creates nothing outside it).
+        from markdown_vault.core import state_fs
+        state_fs.mkdir(str(di.whisper_model_dir("tiny")), parents=True, exist_ok=True)
 
 
 class TestImageStorage(_RegisterTempAsVault, unittest.TestCase):

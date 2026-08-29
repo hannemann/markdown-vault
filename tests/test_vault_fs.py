@@ -43,6 +43,24 @@ class TestWriteOps(unittest.TestCase):
             vfs.write_text(p, "# hi")
             self.assertEqual(Path(p).read_text(encoding="utf-8"), "# hi")
 
+    def test_write_text_exclusive_refuses_to_clobber(self):
+        # BG3: an importer picks its filename with a "does it exist?" test and writes later —
+        # image processing runs in between. Anything creating that name in the window would be
+        # truncated by a plain write. The exclusive mode makes "never overwrite" a property of
+        # the write instead of a promise made by an earlier check.
+        with _Vault() as v:
+            p = os.path.join(v.vault, "note.md")
+            Path(p).write_text("PRECIOUS")
+            with self.assertRaises(FileExistsError):
+                vfs.write_text(p, "clobber", exclusive=True)
+            self.assertEqual(Path(p).read_text(), "PRECIOUS")
+
+    def test_write_text_exclusive_creates_a_new_file(self):
+        with _Vault() as v:
+            p = os.path.join(v.vault, "new.md")
+            vfs.write_text(p, "hello", exclusive=True)
+            self.assertEqual(Path(p).read_text(), "hello")
+
     def test_write_text_outside_is_refused(self):
         with _Vault() as v:
             with self.assertRaises(vfs.OutsideVault):

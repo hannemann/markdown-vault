@@ -351,7 +351,9 @@ class ImportDialog(Adw.Dialog):
         except Exception as exc:            # surface any failure, never crash
             logger.warning("Document import failed for %s: %s", file_path, exc,
                            exc_info=True)
-            GLib.idle_add(self._on_file_error, str(exc))
+            # describe_error, not str(exc): a containment refusal reads as
+            # "…/report.md is outside every vault" — English and developer-facing.
+            GLib.idle_add(self._on_file_error, document_import.describe_error(exc))
             return
         GLib.idle_add(self._on_success, str(path))
 

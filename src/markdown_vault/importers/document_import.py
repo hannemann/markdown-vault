@@ -39,6 +39,24 @@ logger = logging.getLogger(__name__)
 _INSTALL_HINT = _("Document import needs the optional AI stack, which isn't "
                   "installed. Add it to the app venv:\n  make install-ai")
 
+
+def describe_error(exc: BaseException) -> str:
+    """One translated, user-facing sentence for a document-import failure — the GUI boundary's
+    mapper, mirroring :func:`web_import.describe_error`.
+
+    Only exceptions whose own text is developer-facing are mapped; the rest pass through,
+    because most failures here are raised with an already-translated message at their call
+    site and re-mapping would drop the specific reason.
+    """
+    if isinstance(exc, vault_fs.VaultWriteError):
+        # Would otherwise surface as "…/report.md is outside every vault": English, and it
+        # does not tell the user that the target folder is the thing to change.
+        return _("The chosen folder is not inside a vault. Pick a folder in one of your "
+                 "vaults and try again.")
+    if isinstance(exc, FileExistsError):
+        return _("A note with that name appeared while importing. Try again.")
+    return str(exc)
+
 # Default CTranslate2 Whisper model size for audio (overridable in Preferences).
 # Options: tiny, base, small, medium, large-v3 — bigger = more accurate, slower,
 # larger download. Downloaded explicitly via Preferences, never during an import.
@@ -601,11 +619,17 @@ def save_to_vault(result: DocumentResult, vault_dir: str | Path,
                             fallback="imported-document")
     target = note_writer.unique_path(vault_dir, stem)
     body = _store_images(result, target, vault_root or vault_dir)
-    # Direct, not atomic: the note is NEW (unique_path), so there is no previous content an
-    # atomic write would protect, while its rename would reach VaultMonitor as a move —
-    # reporting a creation as one. Both refusals propagate to dialog_import's top-level
-    # handler, which surfaces the import as failed.
-    vault_fs.write_text(str(target), to_note(replace(result, markdown=body), today=today))
+    # Direct, not atomic: the file is new, so there is no previous content an atomic write
+    # would protect — and its rename would reach the three external-file-moved listeners,
+    # of which monitor_handler classifies it correctly as a creation while the other two do
+    # not (see the dispatcher-consolidation ticket). A plain create avoids the question.
+    #
+    # exclusive: unique_path only TESTED the name and returned it; _store_images ran since,
+    # so the check is stale by the time we write. Let the create itself refuse to clobber
+    # rather than trust that window. Both refusals propagate to dialog_import's top-level
+    # handler, which maps them through describe_error.
+    vault_fs.write_text(str(target), to_note(replace(result, markdown=body), today=today),
+                        exclusive=True)
     return target
 
 
