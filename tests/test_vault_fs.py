@@ -205,6 +205,26 @@ class TestDeleteOps(unittest.TestCase):
                 vfs.rmtree(d)
             self.assertTrue(Path(d).exists())
 
+    def test_rmtree_forwards_ignore_errors_true(self):
+        # AZ1: a best-effort caller (attachments cleanup) relies on shutil clearing everything
+        # removable and leaving only the stubborn part, instead of aborting on the first error
+        # (which would orphan the whole tree). The flag must reach shutil; the guard already ran
+        # on the top path, so it only affects error handling inside the walk, never containment.
+        with _Vault() as v:
+            d = os.path.join(v.vault, "tree")
+            os.makedirs(d)
+            with mock.patch("markdown_vault.core.vault_fs.shutil.rmtree") as m:
+                vfs.rmtree(d, ignore_errors=True)
+            m.assert_called_once_with(d, ignore_errors=True)
+
+    def test_rmtree_defaults_to_not_ignoring_errors(self):
+        with _Vault() as v:
+            d = os.path.join(v.vault, "tree")
+            os.makedirs(d)
+            with mock.patch("markdown_vault.core.vault_fs.shutil.rmtree") as m:
+                vfs.rmtree(d)
+            m.assert_called_once_with(d, ignore_errors=False)
+
 
 class TestMoveRename(unittest.TestCase):
     def test_rename_within_the_vault(self):

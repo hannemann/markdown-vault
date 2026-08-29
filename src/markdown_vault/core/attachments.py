@@ -124,11 +124,12 @@ def remove(vault_root, path) -> None:
         return
     if d.is_dir():
         try:
-            vault_fs.rmtree(str(d))
-        except (OSError, vault_fs.VaultWriteError) as exc:
-            # Best-effort cleanup of a deleted note's attachments (shutil's ignore_errors is
-            # gone with the raw call). An orphaned mirror dir is harmless; a raise here is not.
-            logger.warning("attachments: could not remove %s: %s", d, exc)
+            # ignore_errors=True keeps shutil's best-effort walk: one un-removable file costs
+            # that one file, not the whole mirror. So no OSError reaches here — only the
+            # guard's defensive VaultWriteError, which _within_attachments already precludes.
+            vault_fs.rmtree(str(d), ignore_errors=True)
+        except vault_fs.VaultWriteError as exc:
+            logger.warning("attachments: refused remove %s: %s", d, exc)
             return
         _prune_empty(d.parent, Path(vault_root) / "attachments")
 

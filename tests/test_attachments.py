@@ -149,14 +149,24 @@ class TestFilesystem(unittest.TestCase):
         with self.assertRaises(vault_fs.VaultWriteError):
             at.store_image(str(loose), str(loose / "note.md"), b"X", "p.png")
 
-    def test_remove_routes_through_vaultfs_and_swallows_failure(self):
-        # remove is best-effort (shutil's ignore_errors is gone with the raw call) — a failed
-        # rmtree must be logged and swallowed, not propagate.
+    def test_remove_forwards_ignore_errors_to_rmtree(self):
+        # AZ1: remove is best-effort; the original shutil.rmtree(ignore_errors=True) cleared
+        # everything removable and left only the stubborn part. The flag must reach the facade,
+        # or one un-removable file orphans the WHOLE mirror instead of just itself.
+        self._mk("attachments/note/img.png")
+        with mock.patch("markdown_vault.core.vault_fs.rmtree") as w:
+            at.remove(self.v, str(Path(self.v) / "note.md"))
+        w.assert_called_once()
+        self.assertTrue(w.call_args.kwargs.get("ignore_errors"))
+
+    def test_remove_swallows_a_refused_rmtree(self):
+        # Defensive: _within_attachments confines d, so the guard cannot refuse a legit call —
+        # but if it did, remove must log and not propagate (its callers catch OSError, not the
+        # VaultWriteError type).
         self._mk("attachments/note/img.png")
         with mock.patch("markdown_vault.core.vault_fs.rmtree",
-                        side_effect=OSError("busy")) as w:
+                        side_effect=vault_fs.VaultWriteError("refused")):
             at.remove(self.v, str(Path(self.v) / "note.md"))   # must not raise
-        w.assert_called_once()
 
     def test_move_routes_through_vaultfs(self):
         self._mk("attachments/old/img.png")

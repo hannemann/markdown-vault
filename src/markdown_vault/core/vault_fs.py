@@ -141,10 +141,15 @@ def rmdir(path) -> None:
     Path(path).rmdir()
 
 
-def rmtree(path) -> None:
-    """Recursively remove a directory tree inside a vault (guarded, delete mode)."""
+def rmtree(path, *, ignore_errors: bool = False) -> None:
+    """Recursively remove a directory tree inside a vault (guarded, delete mode). *ignore_errors*
+    is forwarded to ``shutil.rmtree``: when set, the walk clears everything it can and leaves
+    only what it cannot delete, instead of aborting on the first error and leaving the rest of
+    the tree behind — a best-effort caller (attachments cleanup) depends on that. The guard runs
+    first on the top path, so the flag only affects error handling inside the walk, never
+    containment."""
     _guard(path, follow_last=False)
-    shutil.rmtree(path)
+    shutil.rmtree(path, ignore_errors=ignore_errors)
 
 
 def rename(src, dst) -> None:
