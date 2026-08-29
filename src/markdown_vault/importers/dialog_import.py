@@ -342,7 +342,8 @@ class ImportDialog(Adw.Dialog):
         try:
             result = document_import.convert(file_path)
             if not result.markdown.strip():
-                raise ValueError(_("No text could be extracted from this file."))
+                raise document_import.DocumentImportError(
+                    _("No text could be extracted from this file."))
             # Attachments go under the vault root (…/attachments/<note-path>/),
             # even when importing into a subfolder — same as the web import.
             vault_root = path_utils.find_vault_for_dir(self._target_dir)

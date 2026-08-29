@@ -40,13 +40,23 @@ _INSTALL_HINT = _("Document import needs the optional AI stack, which isn't "
                   "installed. Add it to the app venv:\n  make install-ai")
 
 
+class DocumentImportError(ValueError):
+    """A document-import failure raised by US, whose message is already translated and
+    user-facing — the marker :func:`describe_error` passes through.
+
+    It exists because "ours" is otherwise indistinguishable: a plain ``ValueError`` from
+    docling or a codec looks exactly like one we raised, so without the marker either the
+    foreign text reaches the user untranslated or our own specific reason is thrown away.
+    Subclasses ``ValueError`` so existing callers catching that keep working.
+    """
+
+
 def describe_error(exc: BaseException) -> str:
     """One translated, user-facing sentence for a document-import failure — the GUI boundary's
     mapper, mirroring :func:`web_import.describe_error`.
 
-    Only exceptions whose own text is developer-facing are mapped; the rest pass through,
-    because most failures here are raised with an already-translated message at their call
-    site and re-mapping would drop the specific reason.
+    Everything foreign gets a translated catch-all; only :class:`DocumentImportError` passes
+    through, carrying the specific reason it was raised with.
     """
     if isinstance(exc, vault_fs.VaultWriteError):
         # Would otherwise surface as "…/report.md is outside every vault": English, and it
@@ -55,7 +65,9 @@ def describe_error(exc: BaseException) -> str:
                  "vaults and try again.")
     if isinstance(exc, FileExistsError):
         return _("A note with that name appeared while importing. Try again.")
-    return str(exc)
+    if isinstance(exc, DocumentImportError):
+        return str(exc)
+    return _("The import failed. See the log for details.")
 
 # Default CTranslate2 Whisper model size for audio (overridable in Preferences).
 # Options: tiny, base, small, medium, large-v3 — bigger = more accurate, slower,
@@ -523,7 +535,7 @@ def download_whisper_model(name: str | None = None, tqdm_class=None) -> str:
 def _convert_audio(path: Path) -> tuple[str, str, list]:
     from faster_whisper import WhisperModel
     if not whisper_model_ready():                  # never download silently mid-import
-        raise RuntimeError(_model_missing_msg())
+        raise DocumentImportError(_model_missing_msg())
     model = WhisperModel(str(whisper_model_dir()), device="cpu", compute_type="int8")
     segments, info = model.transcribe(str(path))
     text = " ".join(seg.text.strip() for seg in segments).strip()
@@ -556,7 +568,7 @@ def convert(path: str | Path) -> DocumentResult:
     path = Path(path)
     handler = _HANDLERS.get(path.suffix.lower())
     if handler is None:
-        raise ValueError(
+        raise DocumentImportError(
             _("Unsupported file type: {suffix}").format(
                 suffix=path.suffix or _("(none)")))
     markdown, title, images = handler(path)

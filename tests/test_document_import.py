@@ -312,6 +312,15 @@ class TestSaveToVaultRoutesThroughVaultFS(_RegisterTempAsVault, unittest.TestCas
                 di.save_to_vault(self._res(), d)
             a.assert_not_called()
 
+    def test_the_note_write_asks_for_the_exclusive_mode(self):
+        # BH1, caller side: the tests for `exclusive` live on vault_fs and pin that the MODE
+        # behaves. Nothing pinned that save_to_vault asks for it — dropping the flag while
+        # tidying brings the silent truncation back with a green suite.
+        with tempfile.TemporaryDirectory() as d:
+            with unittest.mock.patch("markdown_vault.core.vault_fs.write_text") as w:
+                di.save_to_vault(self._res(), d)
+            self.assertTrue(w.call_args.kwargs.get("exclusive"))
+
     def test_importing_outside_every_vault_is_refused_not_written(self):
         # VaultFS refuses a target under no configured vault. The import then fails and
         # dialog_import's top-level `except Exception` surfaces it — the same route the
@@ -336,11 +345,19 @@ class TestDescribeError(unittest.TestCase):
         self.assertNotIn("outside every vault", msg)
         self.assertIn("vault", msg.lower())       # still says what the problem is
 
-    def test_an_already_translated_message_is_passed_through(self):
-        # ValueError("No text could be extracted…") is raised translated at the call site;
-        # re-mapping it would drop the specific reason.
-        self.assertEqual(di.describe_error(ValueError("Nothing to extract")),
+    def test_our_own_translated_failure_is_passed_through(self):
+        # Ours carry an already-translated, specific reason; re-mapping would drop it.
+        self.assertEqual(di.describe_error(di.DocumentImportError("Nothing to extract")),
                          "Nothing to extract")
+
+    def test_a_foreign_exception_does_not_reach_the_user_raw(self):
+        # BH3: a docling/whisper/OS failure is English developer text. Passing str(exc)
+        # through was BG1 one exception class over. Only OUR marker type passes; a plain
+        # ValueError from a library is indistinguishable from ours without it.
+        msg = di.describe_error(PermissionError(13, "Permission denied", "/srv/x.pdf"))
+        self.assertNotIn("Permission denied", msg)
+        self.assertNotIn("/srv/x.pdf", msg)
+        self.assertTrue(msg)
 
 
 class TestWhisperModelDirRoutesThroughStateFS(unittest.TestCase):

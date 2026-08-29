@@ -72,6 +72,28 @@ class TestWorkerErrorMapping(unittest.TestCase):
         self.assertEqual(msg, "The page redirected to a blocked or non-public target.")
         self.assertNotIn("HTTP Error", msg)
 
+    @patch("markdown_vault.importers.dialog_import.GLib")
+    @patch("markdown_vault.importers.dialog_import.path_utils")
+    @patch("markdown_vault.importers.dialog_import.document_import")
+    def test_file_worker_maps_a_containment_refusal_not_str(
+            self, mock_doc, _mock_paths, mock_glib):
+        # The file worker's mirror of the test above. Without it, reverting the mapping to
+        # str(exc) leaves the suite green and the user reads
+        # "…/report.md is outside every vault" again — the caller side of BG1.
+        from markdown_vault.core import vault_fs
+        from markdown_vault.importers import document_import as di
+        mock_doc.convert.return_value = MagicMock(markdown="text")
+        mock_doc.save_to_vault.side_effect = vault_fs.OutsideVault(
+            "/home/x/Downloads/report.md is outside every vault")
+        mock_doc.describe_error = di.describe_error       # keep the real mapper
+        win = MagicMock()
+        ImportDialog._file_worker(win, "/tmp/report.pdf", "")
+        mock_glib.idle_add.assert_called_once()
+        fn, msg = mock_glib.idle_add.call_args.args
+        self.assertIs(fn, win._on_file_error)
+        self.assertNotIn("/home/x", msg)
+        self.assertNotIn("outside every vault", msg)
+
 
 class TestModuleStructure(unittest.TestCase):
     """The dialog exposes the two documented signals."""
