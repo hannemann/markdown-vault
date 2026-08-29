@@ -16,8 +16,9 @@ filesystem helpers move/remove directories and rewrite a note's image links.
 import logging
 import os
 import re
-import shutil
 from pathlib import Path
+
+from markdown_vault.core import vault_fs
 
 logger = logging.getLogger(__name__)
 
@@ -85,7 +86,12 @@ def relink_file(path, old_prefix: str, new_prefix: str) -> None:
         return
     relinked = relink(text, old_prefix, new_prefix)
     if relinked != text:
-        p.write_text(relinked, encoding="utf-8")
+        try:
+            vault_fs.write_text(str(p), relinked)
+        except (OSError, vault_fs.VaultWriteError) as exc:
+            # Best-effort relink; the caller (app_window) does not wrap this. A stale link in
+            # a note the guard refused to rewrite is harmless, an uncaught raise is not.
+            logger.warning("attachments: could not relink %s: %s", path, exc)
 
 
 def _prune_empty(start, stop) -> None:
@@ -95,9 +101,9 @@ def _prune_empty(start, stop) -> None:
     while start != stop and start != start.parent and start.is_dir() \
             and not any(start.iterdir()):
         try:
-            start.rmdir()
-        except OSError:
-            # best-effort upward prune; stop as soon as a dir won't remove
+            vault_fs.rmdir(str(start))
+        except (OSError, vault_fs.VaultWriteError):
+            # best-effort upward prune; stop as soon as a dir won't remove (or is refused)
             return
         start = start.parent
 
@@ -117,7 +123,13 @@ def remove(vault_root, path) -> None:
     if not _within_attachments(d, vault_root):
         return
     if d.is_dir():
-        shutil.rmtree(d, ignore_errors=True)
+        try:
+            vault_fs.rmtree(str(d))
+        except (OSError, vault_fs.VaultWriteError) as exc:
+            # Best-effort cleanup of a deleted note's attachments (shutil's ignore_errors is
+            # gone with the raw call). An orphaned mirror dir is harmless; a raise here is not.
+            logger.warning("attachments: could not remove %s: %s", d, exc)
+            return
         _prune_empty(d.parent, Path(vault_root) / "attachments")
 
 
@@ -145,9 +157,12 @@ def store_image(vault_root, note_path, data: bytes, filename: str) -> str:
     "Insert Image…" so the user never touches the app-managed attachments tree."""
     note_path = Path(note_path)
     dest_dir, prefix = attachment_target(vault_root, note_path.parent, note_path.stem)
-    dest_dir.mkdir(parents=True, exist_ok=True)
+    vault_fs.mkdir(str(dest_dir), parents=True, exist_ok=True)
     fname = _unique_name(dest_dir, filename)
-    (dest_dir / fname).write_bytes(data)
+    # Atomic: a non-.md image is monitor-filtered (no false-reload banner), so the atomic
+    # writer is free here and guards against a half-written image on crash. A refusal or OS
+    # error raises to the caller (editor / document import), which handles it.
+    vault_fs.write_bytes_atomic(str(dest_dir / fname), data)
     return f"{prefix}/{fname}"
 
 
@@ -203,6 +218,14 @@ def move(old_vault, old_path, new_vault, new_path) -> None:
     if not _within_attachments(old_d, old_vault) or not _within_attachments(new_d, new_vault):
         return
     if old_d != new_d and old_d.is_dir():
-        new_d.parent.mkdir(parents=True, exist_ok=True)
-        shutil.move(str(old_d), str(new_d))
+        try:
+            vault_fs.mkdir(str(new_d.parent), parents=True, exist_ok=True)
+            vault_fs.move(str(old_d), str(new_d))
+        except vault_fs.VaultWriteError as exc:
+            # Defensive: _within_attachments already confined both ends to <vault>/attachments,
+            # so a containment refusal cannot happen for a legit call. Contain the new type
+            # here rather than leak it past the caller's `except OSError`; OSError still flows
+            # through to that handler unchanged.
+            logger.warning("attachments: refused move %s -> %s: %s", old_d, new_d, exc)
+            return
         _prune_empty(old_d.parent, Path(old_vault) / "attachments")

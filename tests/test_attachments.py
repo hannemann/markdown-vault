@@ -3,8 +3,11 @@
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
+import markdown_vault.core.config as _cfg
 from markdown_vault.core import attachments as at
+from markdown_vault.core import vault_fs
 
 
 class TestPaths(unittest.TestCase):
@@ -51,6 +54,10 @@ class TestFilesystem(unittest.TestCase):
     def setUp(self):
         self.v = tempfile.mkdtemp()
         self.addCleanup(lambda: __import__("shutil").rmtree(self.v, ignore_errors=True))
+        # The FS ops now route through VaultFS, which refuses writes outside a configured
+        # vault. Register the temp dir as the vault so the legitimate in-vault ops here pass.
+        _cfg._vaults_cache = [{"name": "v", "path": self.v}]
+        self.addCleanup(lambda: setattr(_cfg, "_vaults_cache", None))
 
     def _mk(self, rel, content=b"x"):
         p = Path(self.v) / rel
@@ -107,6 +114,56 @@ class TestFilesystem(unittest.TestCase):
         note = self._mk("note.md", b"![x](attachments/old/a.png)")
         at.relink_file(str(note), "attachments/old", "attachments/new")
         self.assertEqual(note.read_text(), "![x](attachments/new/a.png)")
+
+    def test_relink_file_rewrites_through_vaultfs(self):
+        # Mutation-verified route check: a raw p.write_text leaves this mock uncalled.
+        note = self._mk("note.md", b"![x](attachments/old/a.png)")
+        with mock.patch("markdown_vault.core.vault_fs.write_text") as w:
+            at.relink_file(str(note), "attachments/old", "attachments/new")
+        w.assert_called_once()
+
+    def test_relink_file_swallows_a_refused_write_and_keeps_the_note(self):
+        # relink_file is best-effort and its caller (app_window) does not wrap it — a refused
+        # write must be logged and swallowed, never propagate, and never corrupt the note.
+        note = self._mk("note.md", b"![x](attachments/old/a.png)")
+        with mock.patch("markdown_vault.core.vault_fs.write_text",
+                        side_effect=vault_fs.VaultWriteError("refused")):
+            at.relink_file(str(note), "attachments/old", "attachments/new")  # must not raise
+        self.assertEqual(note.read_bytes(), b"![x](attachments/old/a.png)")  # untouched
+
+    def test_store_image_writes_atomically_through_vaultfs(self):
+        # A non-.md image is monitor-filtered, so the atomic writer is free of the false-reload
+        # banner and guards against a half-written image on crash. Mutation-verified: a direct
+        # write_bytes would leave this mock uncalled.
+        note = str(Path(self.v) / "note.md")
+        with mock.patch("markdown_vault.core.vault_fs.write_bytes_atomic") as w:
+            at.store_image(self.v, note, b"PNGDATA", "pic.png")
+        w.assert_called_once()
+
+    def test_store_image_outside_any_vault_is_refused(self):
+        # The regression the migration makes explicit: a note outside every configured vault
+        # (editor's `find_vault_for_dir(...) or note_dir` fallback) can no longer store a
+        # managed image — VaultFS refuses the write rather than dropping it beside the note.
+        loose = Path(self.v).parent / "loose"
+        self.addCleanup(lambda: __import__("shutil").rmtree(loose, ignore_errors=True))
+        with self.assertRaises(vault_fs.VaultWriteError):
+            at.store_image(str(loose), str(loose / "note.md"), b"X", "p.png")
+
+    def test_remove_routes_through_vaultfs_and_swallows_failure(self):
+        # remove is best-effort (shutil's ignore_errors is gone with the raw call) — a failed
+        # rmtree must be logged and swallowed, not propagate.
+        self._mk("attachments/note/img.png")
+        with mock.patch("markdown_vault.core.vault_fs.rmtree",
+                        side_effect=OSError("busy")) as w:
+            at.remove(self.v, str(Path(self.v) / "note.md"))   # must not raise
+        w.assert_called_once()
+
+    def test_move_routes_through_vaultfs(self):
+        self._mk("attachments/old/img.png")
+        with mock.patch("markdown_vault.core.vault_fs.move") as w:
+            at.move(self.v, str(Path(self.v) / "old.md"),
+                    self.v, str(Path(self.v) / "new.md"))
+        w.assert_called_once()
 
     def test_store_image_writes_and_returns_link(self):
         note = str(Path(self.v) / "sub" / "note.md")

@@ -157,6 +157,7 @@ _CORE = _ROOT / "core"
 # is a structural *consequence*, and a NEW ``core/`` module falls under the strict
 # default automatically.
 _CORE_ALLOW = {
+    "attachments":   {"core"},   # -> vault_fs, the guarded write chokepoint
     "config":        {"yaml", "core"},
     "debug":         {"core"},
     "debug_control": {"gi"},

@@ -10,9 +10,23 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import support
+
 from markdown_vault.importers import document_import as di
 
 _HAS_STACK = di.is_available() is None
+
+
+class _RegisterTempAsVault:
+    """Image storage routes through VaultFS, which refuses writes outside a configured vault.
+    These tests write into a TemporaryDirectory (under the pinned test TMPDIR) and pass it as
+    vault_root, so register that TMPDIR root as the vault for the guard to allow the write."""
+
+    def setUp(self):
+        super().setUp()
+        ctx = support.vault_roots(tempfile.gettempdir())
+        ctx.__enter__()
+        self.addCleanup(ctx.__exit__, None, None, None)
 
 
 class TestAvailability(unittest.TestCase):
@@ -260,7 +274,7 @@ class TestSaveToVault(unittest.TestCase):
             self.assertEqual(p.stem, "my-doc")
 
 
-class TestImageStorage(unittest.TestCase):
+class TestImageStorage(_RegisterTempAsVault, unittest.TestCase):
     """save_to_vault stores extracted images into the attachments tree and
     rewrites their `mvattach:N` placeholder links — reusing the same layout and
     plumbing (attachments.store_image) as the web importer."""
@@ -361,7 +375,7 @@ class TestImageStorage(unittest.TestCase):
 
 
 @unittest.skipUnless(_HAS_STACK, "needs the optional AI stack (make install-ai)")
-class TestFormatRoundTrips(unittest.TestCase):
+class TestFormatRoundTrips(_RegisterTempAsVault, unittest.TestCase):
     """Convert tiny real files created with the installed backends."""
 
     def test_pdf(self):

@@ -203,12 +203,14 @@ class Editor(Gtk.ScrolledWindow):
         if not self._file_path:
             logger.warning("insert_image: note has no path yet; save it first")
             return
-        from markdown_vault.core import attachments, path_utils
+        from markdown_vault.core import attachments, path_utils, vault_fs
         note_dir = str(Path(self._file_path).parent)
         vault = path_utils.find_vault_for_dir(note_dir) or note_dir
         try:
             link = attachments.store_image(vault, self._file_path, data, name)
-        except OSError as exc:
+        except (OSError, vault_fs.VaultWriteError) as exc:
+            # VaultWriteError (not an OSError): a note outside every vault cannot store a
+            # managed image. Refuse gracefully — log and insert nothing, do not crash.
             logger.warning("insert_image: could not store %s: %s", name, exc, exc_info=True)
             return
         alt = Path(name).stem or "image"
@@ -324,12 +326,14 @@ class Editor(Gtk.ScrolledWindow):
         except OSError as exc:
             logger.warning("adopt image: cannot read %s: %s", source, exc)
             return
-        from markdown_vault.core import attachments, path_utils
+        from markdown_vault.core import attachments, path_utils, vault_fs
         note_dir = str(Path(self._file_path).parent)
         vault = path_utils.find_vault_for_dir(note_dir) or note_dir
         try:
             link = attachments.store_image(vault, self._file_path, data, Path(source).name)
-        except OSError as exc:
+        except (OSError, vault_fs.VaultWriteError) as exc:
+            # VaultWriteError (not an OSError): a note outside every vault cannot adopt an
+            # image into a managed tree. Refuse gracefully — log and return, do not crash.
             logger.warning("adopt image: cannot store %s: %s", source, exc, exc_info=True)
             return
         ok, line_start = self._buffer.get_iter_at_line(line)

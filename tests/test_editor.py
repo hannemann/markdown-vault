@@ -226,5 +226,25 @@ class TestEditorScrollPosition(unittest.TestCase):
         vadj.set_value.assert_not_called()
 
 
+class TestInsertImageOutsideVault(unittest.TestCase):
+    """The caller side of the attachments VaultFS migration: a note outside every configured
+    vault makes store_image refuse with VaultWriteError — which is NOT an OSError. insert_image
+    must catch it and insert nothing, not crash. Tests the caller, not only the receiver: a bare
+    `except OSError` would let the new type through (the exact wiring the migration fixed)."""
+
+    def test_insert_image_outside_any_vault_is_caught_not_crashing(self):
+        from unittest.mock import patch
+
+        from markdown_vault.core import vault_fs
+        from markdown_vault.editor.editor import Editor
+        ed = Editor()
+        ed._file_path = "/loose/note.md"          # not inside any configured vault
+        before = ed.get_text()
+        with patch("markdown_vault.core.attachments.store_image",
+                   side_effect=vault_fs.VaultWriteError("outside every vault")):
+            ed.insert_image(b"PNGDATA", "pic.png")   # must not raise
+        self.assertEqual(ed.get_text(), before)      # nothing inserted
+
+
 if __name__ == "__main__":
     unittest.main()
