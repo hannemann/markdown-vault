@@ -599,21 +599,33 @@ class TestRenameRewritesSourceFilesThroughVaultFS(unittest.TestCase):
         self.assertNotIn("[[Target]]", rewritten)   # old link gone
         self.assertIn("Renamed", rewritten)          # rewritten through VaultFS, on disk
 
-    def test_a_refused_write_is_swallowed_not_raised(self):
-        # A tracked, in-vault source whose write VaultFS refuses — reachable when the source
-        # note is a symlink escaping the vault — must be swallowed, not crash the rename.
-        # Patch write_text to raise the containment error and assert the widened except
-        # (OSError, VaultWriteError) catches it: the source is simply not reported modified.
+    def test_a_refused_write_is_swallowed_at_every_rename_site(self):
+        # A refused write (VaultFS raising, reachable via a symlinked source escaping the
+        # vault) must be swallowed, not crash — at ALL THREE rewrite sites. They are three
+        # separate except branches that can be narrowed independently, so parameterise
+        # rather than let one stand for three (AX1). subTest names which site breaks.
         source = self._vault / "Source.md"
-        source.write_text("Link: [[Target]].\n", encoding="utf-8")
-        self._idx.update_file(str(source), source.read_text(encoding="utf-8"))
-
-        with patch("markdown_vault.core.vault_fs.write_text",
-                   side_effect=vault_fs.VaultWriteError("refused")):
-            modified = self._idx.rename_wikilinks(
-                str(self._vault / "Target.md"), str(self._vault / "Renamed.md"))
-
-        self.assertNotIn(str(source), modified)   # refused write swallowed, no crash
+        target = str(self._vault / "Target.md")
+        renamed = str(self._vault / "Renamed.md")
+        vaults = [{"name": "vault", "path": str(self._vault)}]
+        cases = [
+            ("remove_wikilinks", "See [[Target]].\n",
+             lambda: self._idx.remove_wikilinks(target)),
+            ("rename_wikilinks", "See [[Target]].\n",
+             lambda: self._idx.rename_wikilinks(target, renamed)),
+            ("rename_vault_wikilinks", "See [[vault>Target]].\n",
+             lambda: self._idx.rename_vault_wikilinks("vault", "newvault", vaults)),
+        ]
+        for name, text, call in cases:
+            with self.subTest(site=name):
+                source.write_text(text, encoding="utf-8")
+                self._idx = BacklinkIndex()
+                self._idx.update_file(str(source), text)   # index-based sites need this
+                with patch("markdown_vault.core.vault_fs.write_text",
+                           side_effect=vault_fs.VaultWriteError("refused")) as w:
+                    modified = call()                      # must not raise (widened except)
+                w.assert_called()                          # the write was actually reached
+                self.assertNotIn(str(source), modified)    # refused -> not counted modified
 
 
 if __name__ == "__main__":
