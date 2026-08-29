@@ -323,7 +323,6 @@ _BASELINE = {
     "vault/file_ops.py": {
         ".touch": 1, "os.mkdir": 1, "os.makedirs": 1, "os.remove": 1, "shutil.rmtree": 1,
     },
-    "vault/vault_tree.py": {"os.rename": 1, "shutil.move": 1},
 }
 
 

@@ -22,6 +22,8 @@ import gi
 gi.require_version("Gtk", "4.0")
 from gi.repository import GLib, Gtk
 
+import support
+
 from markdown_vault.vault.vault_tree import VaultTree, VaultNode
 
 
@@ -448,8 +450,9 @@ class TestDropDeferredRefresh(unittest.TestCase):
         self.tree.connect("file-renamed", lambda _t, o, n: emitted.append((o, n)))
         deferred = []
 
-        with patch.object(mod.GLib, "idle_add",
-                          side_effect=lambda cb, *a: deferred.append(cb)), \
+        with support.vault_roots(self._tmpdir), \
+                patch.object(mod.GLib, "idle_add",
+                             side_effect=lambda cb, *a: deferred.append(cb)), \
                 patch.object(mod.validation, "validate_drop", return_value=None), \
                 patch("shutil.move") as mv, \
                 patch.object(self.tree, "refresh") as refresh:

@@ -26,6 +26,7 @@ from gi.repository import Gtk, Adw, GLib, GObject, Pango, Gio, Gdk
 
 from markdown_vault.core import attachments
 from markdown_vault.core import debug
+from markdown_vault.core import vault_fs
 from markdown_vault.core.i18n import _
 from markdown_vault.core import validation
 from markdown_vault.uikit import dialogs
@@ -1066,8 +1067,8 @@ class VaultTree(Gtk.Box):
             self.vault_monitor.skip_next_event(old_path)
             self.vault_monitor.skip_next_event(new_path)
         try:
-            os.rename(old_path, new_path)
-        except OSError:
+            vault_fs.rename(old_path, new_path)
+        except (OSError, vault_fs.VaultWriteError):
             logger.warning("Failed to rename %s → %s", old_path, new_path, exc_info=True)
             return
 
@@ -1184,9 +1185,8 @@ class VaultTree(Gtk.Box):
             self.vault_monitor.skip_next_event(source_path)
             self.vault_monitor.skip_next_event(dest_path)
         try:
-            import shutil
-            shutil.move(source_path, dest_path)
-        except OSError:
+            vault_fs.move(source_path, dest_path)
+        except (OSError, vault_fs.VaultWriteError):
             logger.warning("Failed to move %s → %s", source_path, dest_path, exc_info=True)
             return False
 

@@ -18,6 +18,7 @@ from contextlib import contextmanager
 from unittest import mock
 
 from markdown_vault.core import state_fs
+from markdown_vault.core import vault_fs
 
 
 @contextmanager
@@ -28,4 +29,14 @@ def state_roots(*roots):
     allowed = [str(r) for r in roots]
     with mock.patch.object(state_fs, "_state_roots", return_value=allowed), \
          mock.patch.object(state_fs, "_vault_roots", return_value=[]):
+        yield
+
+
+@contextmanager
+def vault_roots(*roots):
+    """Make *roots* the configured vault roots for VaultFS, so a guarded vault write into
+    one of them is allowed. The VaultFS mirror of :func:`state_roots`, for the caller tests
+    of modules whose vault writes now go through VaultFS (which reads config.load_vaults)."""
+    allowed = [str(r) for r in roots]
+    with mock.patch.object(vault_fs, "_vault_roots", return_value=allowed):
         yield
