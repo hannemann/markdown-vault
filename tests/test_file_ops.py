@@ -94,15 +94,23 @@ class TestCreateFile(unittest.TestCase):
         # 2 skip events for touch() on existing monitor
         self.assertEqual(self._skip.call_count, 2)
 
-    def test_create_file_refused_by_vaultfs_returns_error_not_crash(self):
-        # The lexical check catches the common ../ escape; VaultFS's containment refusal is
-        # reachable only via a symlink escaping the vault. Pin the widened except: a
-        # VaultWriteError from the touch is surfaced as an error, not propagated.
-        with patch("markdown_vault.core.vault_fs.touch",
-                   side_effect=vault_fs.VaultWriteError("refused")):
-            err = self._ops.create_file(self._tmp, "note.md")
-        self.assertIsNotNone(err)
-        self.assertEqual(self._skip.call_count, 0)   # AV1: no skip leaked on a refused touch
+    def test_create_file_refused_by_vaultfs_at_either_branch(self):
+        # VaultFS's containment refusal is reachable via a symlink escaping the vault. Two
+        # SEPARATE excepts — the intermediate-dir mkdir and the touch — so parameterise, or a
+        # narrowing of one branch slips (AY2). Each pins: no crash, no leaked skip (AV1), and
+        # a TRANSLATED message that does not leak the absolute path (AY1, not str(exc)).
+        cases = [
+            ("touch", "note.md", "markdown_vault.core.vault_fs.touch"),
+            ("mkdir", "sub/note.md", "markdown_vault.core.vault_fs.mkdir"),
+        ]
+        for branch, name, target in cases:
+            with self.subTest(branch=branch):
+                self._skip.reset_mock()
+                with patch(target, side_effect=vault_fs.VaultWriteError("refused")):
+                    err = self._ops.create_file(self._tmp, name)
+                self.assertIsNotNone(err)
+                self.assertNotIn(self._tmp, err)             # AY1: no absolute path leaked
+                self.assertEqual(self._skip.call_count, 0)   # AV1: no skip leaked on refusal
 
     def test_create_file_adds_md_extension(self):
         err = self._ops.create_file(self._tmp, "note")
@@ -193,6 +201,7 @@ class TestCreateFolder(unittest.TestCase):
                    side_effect=vault_fs.VaultWriteError("refused")):
             err = self._ops.create_folder(self._tmp, "mydir")
         self.assertIsNotNone(err)
+        self.assertNotIn(self._tmp, err)   # AY1: translated message, no absolute path
 
     def test_create_folder(self):
         err = self._ops.create_folder(self._tmp, "mydir")
@@ -244,6 +253,7 @@ class TestDeletePath(unittest.TestCase):
                    side_effect=vault_fs.VaultWriteError("refused")):
             err = FileOps.delete_path(str(fp))   # static method
         self.assertIsNotNone(err)
+        self.assertNotIn(self._tmp, err)   # AY1: translated message, no absolute path
 
     def test_delete_file(self):
         fp = Path(self._tmp, "file.md")

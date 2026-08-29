@@ -81,7 +81,10 @@ class FileOps:
             # Intermediate directories needed.
             try:
                 vault_fs.mkdir(parent, parents=True, exist_ok=True)
-            except (OSError, ValueError, vault_fs.VaultWriteError) as e:  # ValueError: NUL byte
+            except vault_fs.VaultWriteError:
+                logger.warning("create_file: parent escapes the vault: %s", parent, exc_info=True)
+                return _("Invalid file name: path escapes the vault")
+            except (OSError, ValueError) as e:  # ValueError: embedded NUL byte in the name
                 logger.warning("create_file: mkdir failed for %s: %s", parent, e)
                 return str(e)
             self._skip_fn(parent)
@@ -94,7 +97,10 @@ class FileOps:
 
         try:
             vault_fs.touch(file_path)
-        except (OSError, ValueError, vault_fs.VaultWriteError) as e:  # ValueError: NUL byte
+        except vault_fs.VaultWriteError:
+            logger.warning("create_file: target escapes the vault: %s", file_path, exc_info=True)
+            return _("Invalid file name: path escapes the vault")
+        except (OSError, ValueError) as e:  # ValueError: embedded NUL byte in the name
             logger.warning("create_file: touch failed for %s: %s", file_path, e)
             return str(e)
         # Skips only after the touch succeeds: a skip registered before a refused op leaks
@@ -118,7 +124,10 @@ class FileOps:
             return _("Invalid folder name: path escapes the vault")
         try:
             vault_fs.mkdir(folder_path)
-        except (OSError, ValueError, vault_fs.VaultWriteError) as e:  # ValueError: NUL byte
+        except vault_fs.VaultWriteError:
+            logger.warning("create_folder: escapes the vault: %s", folder_path, exc_info=True)
+            return _("Invalid folder name: path escapes the vault")
+        except (OSError, ValueError) as e:  # ValueError: embedded NUL byte in the name
             logger.warning("create_folder: mkdir failed for %s: %s", folder_path, e)
             return str(e)
 
@@ -136,7 +145,10 @@ class FileOps:
                 vault_fs.rmtree(path)
             else:
                 vault_fs.unlink(path)
-        except (OSError, vault_fs.VaultWriteError) as e:
+        except vault_fs.VaultWriteError:
+            logger.warning("delete_path: escapes the vault: %s", path, exc_info=True)
+            return _("Cannot delete a path outside the vault")
+        except OSError as e:
             logger.warning("delete_path: failed for %s: %s", path, e)
             return str(e)
 
