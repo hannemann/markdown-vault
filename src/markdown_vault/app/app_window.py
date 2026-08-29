@@ -1737,6 +1737,12 @@ class MainWindow(Adw.ApplicationWindow):
     def _on_attachments_moved(self, _vault_path, new_path, old_path=None) -> None:
         """External rename/move (monitor path). In-app renames are handled from
         the tree's file-renamed signal instead (the monitor skips them)."""
+        # Same staleness guard as monitor_handler.on_file_moved: an in-app move whose
+        # skip_next_event leaked fires a late reverse-direction event on this shared signal.
+        # Its new path does not exist; applying it would re-run _sync_attachments_move
+        # backwards and revert the mirror move + relink already done via file-renamed.
+        if old_path and not os.path.exists(new_path):
+            return
         if old_path and not self._is_attachment_path(new_path):
             self._sync_attachments_move(old_path, new_path)
 

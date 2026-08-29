@@ -70,6 +70,33 @@ class TestOpenPreferencesConfigError(unittest.TestCase):
         win._show_error.assert_called_once()
 
 
+class TestAttachmentsMovedStaleGuard(unittest.TestCase):
+    """Seam guard (stub window, internal name): _on_attachments_moved must ignore a stale
+    reverse move event whose new path no longer exists — the same guard
+    monitor_handler.on_file_moved already has. An in-app move whose skip_next_event leaked
+    fires a late reverse-direction event on the shared external-file-moved signal; applying it
+    re-runs _sync_attachments_move backwards and reverts the mirror move + relink already done
+    via the tree's file-renamed signal (the double-sync that broke the attachments E2E)."""
+
+    def test_a_stale_reverse_event_with_a_missing_new_path_is_ignored(self):
+        win = unittest.mock.Mock()
+        win._is_attachment_path.return_value = False
+        with unittest.mock.patch("markdown_vault.app.app_window.os.path.exists",
+                                 return_value=False):
+            MainWindow._on_attachments_moved(
+                win, "vault", "/vault/gone.md", old_path="/vault/old.md")
+        win._sync_attachments_move.assert_not_called()
+
+    def test_a_genuine_move_with_an_existing_new_path_still_syncs(self):
+        win = unittest.mock.Mock()
+        win._is_attachment_path.return_value = False
+        with unittest.mock.patch("markdown_vault.app.app_window.os.path.exists",
+                                 return_value=True):
+            MainWindow._on_attachments_moved(
+                win, "vault", "/vault/there.md", old_path="/vault/old.md")
+        win._sync_attachments_move.assert_called_once_with("/vault/old.md", "/vault/there.md")
+
+
 class TestActions(AppWindowTest):
     """The action surface: what the menus, shortcuts and the app shell can call.
 
