@@ -195,9 +195,12 @@ class VaultMonitor:
         recognised as the app's own rather than reported as an external change.
 
         Call this BEFORE the write — unlike ``skip_next_event``, whose registration must
-        follow a successful save (AV1/BB1). The distinction is what makes that safe: this
-        announcement names the exact ``(<file>.part, <file>)`` rename, so an unredeemed one is
-        inert — only that very rename can consume it, never a concurrent external change.
+        follow a successful save (AV1/BB1). What makes that safe is not that an unredeemed
+        announcement is harmless in itself, but that no unrelated tool can produce the rename
+        that redeems it: the pair is ``(<file>.<pid>.part, <file>)``. A bare ``.part`` would
+        NOT be safe — it is a shared convention (wget, browsers, sync clients), so an external
+        tool's atomic save of the same note would match the announcement and its genuine
+        change would be swallowed as ours. See :func:`vault_fs.atomic_save_paths`.
         Withdraw it with :meth:`forget_atomic_save` when the save fails and no event follows.
 
         The pair comes from :func:`vault_fs.atomic_save_paths`, the single source of that
