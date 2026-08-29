@@ -107,12 +107,13 @@ def _pid_alive(pid: int) -> bool:
     except PermissionError:
         # Signalling refused means the process EXISTS and belongs to someone else.
         return True
-    except (OSError, OverflowError, ValueError):
+    except (OSError, OverflowError):
         # Cannot tell — report alive so the caller keeps the file (see _sweep_stale_parts).
-        # OverflowError is the one that matters and is NOT an OSError: a digit run too large
+        # OverflowError is NOT an OSError and is the one that matters: a digit run too large
         # for a C long comes straight from a foreign filename, so without it a file named
         # <note>.md.<many digits>.part made that note unsaveable (the error escaped every
-        # handler up to the GTK callback).
+        # handler up to the GTK callback). A malformed pid never reaches here — the caller's
+        # ASCII-decimal test rejects it before converting.
         return True
     return True
 
@@ -142,7 +143,12 @@ def _sweep_stale_parts(real: Path) -> None:
     prefix, suffix = real.name + ".", ".part"
     for candidate in real.parent.glob(glob.escape(real.name) + ".*.part"):
         pid = candidate.name[len(prefix):-len(suffix)]
-        if not pid.isdigit() or _pid_alive(int(pid)):
+        # ASCII decimal only. str.isdigit() alone is not that test: '²' passes it and makes
+        # int() raise (here, at the call site, where _pid_alive's handler cannot see it), and
+        # '٣' passes it AND converts to 3 — reading a foreign file as one of our processes
+        # and licensing its deletion on a misreading. Our own pids are ASCII decimal by
+        # construction, so anything else is by construction not ours and is kept.
+        if not (pid.isascii() and pid.isdigit()) or _pid_alive(int(pid)):
             continue
         try:
             candidate.unlink()

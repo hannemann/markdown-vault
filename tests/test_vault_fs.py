@@ -272,6 +272,33 @@ class TestStalePartSweep(unittest.TestCase):
             self.assertEqual(Path(note).read_text(), "new")
             self.assertTrue(junk.exists())              # undecidable -> kept
 
+    def test_a_non_ascii_digit_in_a_part_name_does_not_block_the_save(self):
+        # BF1: str.isdigit() is True for '²', but int('²') raises ValueError — and that
+        # conversion happens at the CALL SITE, before _pid_alive is entered, so neither its
+        # handler nor the sweep's `except OSError` sees it. Same failure as BE1 through the
+        # other exception: the note became unsaveable. Not exotic for an app shipped
+        # worldwide — a superscript or non-Latin digit in a filename is ordinary input.
+        with _Vault() as v:
+            note = os.path.join(v.vault, "note.md")
+            junk = Path(f"{note}.².part")
+            junk.write_text("not ours")
+            vfs.write_text_atomic(note, "new")          # must not raise
+            self.assertEqual(Path(note).read_text(), "new")
+            self.assertTrue(junk.exists())
+
+    def test_a_foreign_digit_is_not_misread_as_one_of_our_pids(self):
+        # BF2: '٣'.isdigit() is True AND int('٣') == 3, so a foreign name would be read as
+        # "process 3" and become deletable the moment that number is dead — a licence to
+        # delete resting on a misreading. Our own pids are ASCII decimal by construction, so
+        # anything else is by construction not ours and is kept, whatever it converts to.
+        with _Vault() as v:
+            note = os.path.join(v.vault, "note.md")
+            junk = Path(f"{note}.٣.part")
+            junk.write_text("not ours")
+            with mock.patch("markdown_vault.core.vault_fs._pid_alive", return_value=False):
+                vfs.write_text_atomic(note, "new")
+            self.assertTrue(junk.exists())
+
     def test_pid_alive_treats_an_undecidable_pid_as_alive(self):
         self.assertTrue(vfs._pid_alive(9999999999999999999999))
         self.assertTrue(vfs._pid_alive(-1))
