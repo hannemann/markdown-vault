@@ -301,7 +301,9 @@ class TestSaveToVaultRoutesThroughVaultFS(_RegisterTempAsVault, unittest.TestCas
         with tempfile.TemporaryDirectory() as d:
             with unittest.mock.patch("markdown_vault.core.vault_fs.write_text") as w:
                 di.save_to_vault(self._res(), d)
-            w.assert_called_once()
+            # Two calls: the empty reservation, then the content. Assert on the CONTENT one.
+            self.assertEqual(w.call_count, 2)
+            self.assertIn("content", w.call_args.args[1])
 
     def test_a_note_written_directly_is_not_atomic(self):
         # A NEW note has no previous content to protect, and the atomic writer's rename would
@@ -312,14 +314,42 @@ class TestSaveToVaultRoutesThroughVaultFS(_RegisterTempAsVault, unittest.TestCas
                 di.save_to_vault(self._res(), d)
             a.assert_not_called()
 
-    def test_the_note_write_asks_for_the_exclusive_mode(self):
-        # BH1, caller side: the tests for `exclusive` live on vault_fs and pin that the MODE
-        # behaves. Nothing pinned that save_to_vault asks for it — dropping the flag while
-        # tidying brings the silent truncation back with a green suite.
+    def test_the_target_is_reserved_before_the_images_are_stored(self):
+        # Reserve-then-fill. The order is the whole point: _store_images derives the
+        # attachment folder from the target and rewrites the markdown links to it, so the
+        # name must be FINAL before it runs. Picking a different name afterwards (the naive
+        # retry) would leave the note pointing at the first name's folder.
+        order = []
+        with tempfile.TemporaryDirectory() as d:
+            with unittest.mock.patch.object(
+                    di.note_writer, "reserve_path",
+                    side_effect=lambda *a, **k: (order.append("reserve"),
+                                                 Path(d) / "my-doc.md")[1]):
+                with unittest.mock.patch.object(
+                        di, "_store_images",
+                        side_effect=lambda *a, **k: (order.append("images"), "body")[1]):
+                    with unittest.mock.patch("markdown_vault.core.vault_fs.write_text"):
+                        di.save_to_vault(self._res(), d)
+        self.assertEqual(order, ["reserve", "images"])
+
+    def test_a_failure_while_filling_removes_the_reserved_note(self):
+        # The reservation creates an empty file. If the fill then fails, that empty note must
+        # not stay behind in the tree — we created it, so we own its removal.
+        with tempfile.TemporaryDirectory() as d:
+            with unittest.mock.patch.object(di, "_store_images",
+                                            side_effect=OSError("disk full")):
+                with self.assertRaises(OSError):
+                    di.save_to_vault(self._res(), d)
+            self.assertEqual(list(Path(d).glob("*.md")), [])
+
+    def test_the_final_write_fills_a_file_we_already_own(self):
+        # The exclusive create moved into the reservation, so the fill must NOT ask for it —
+        # the target exists by then and an exclusive write would refuse our own file. Pins
+        # the pair: exclusivity in reserve_path (tested there), plain write here.
         with tempfile.TemporaryDirectory() as d:
             with unittest.mock.patch("markdown_vault.core.vault_fs.write_text") as w:
                 di.save_to_vault(self._res(), d)
-            self.assertTrue(w.call_args.kwargs.get("exclusive"))
+            self.assertFalse(w.call_args.kwargs.get("exclusive", False))
 
     def test_importing_outside_every_vault_is_refused_not_written(self):
         # VaultFS refuses a target under no configured vault. The import then fails and

@@ -27,9 +27,10 @@ def slug(text: str, max_len: int = 60, fallback: str = "untitled") -> str:
 
 
 def unique_path(vault_dir: str | Path, stem: str, suffix: str = ".md") -> Path:
-    """A non-colliding ``<vault_dir>/<stem><suffix>``. When that name is taken a
-    numeric suffix is appended (``-2``, ``-3`` …) so an import never overwrites an
-    existing note. The directory is not created here."""
+    """A currently free ``<vault_dir>/<stem><suffix>``. When that name is taken a numeric
+    suffix is appended (``-2``, ``-3`` …). The directory is not created here, and neither is
+    the file: the name is only TESTED, so it can be taken again before the caller writes.
+    A caller that does work in between wants :func:`reserve_path` instead."""
     vault_dir = Path(vault_dir)
     target = vault_dir / f"{stem}{suffix}"
     n = 2
@@ -37,3 +38,35 @@ def unique_path(vault_dir: str | Path, stem: str, suffix: str = ".md") -> Path:
         target = vault_dir / f"{stem}-{n}{suffix}"
         n += 1
     return target
+
+
+#: Bound for :func:`reserve_path`'s search. It CREATES in a loop, so a pathological case
+#: (something taking every candidate) must terminate rather than hang the calling thread.
+_RESERVE_ATTEMPTS = 1000
+
+
+def reserve_path(vault_dir: str | Path, stem: str, suffix: str = ".md") -> Path:
+    """Exclusively create — and return — a free ``<vault_dir>/<stem><suffix>``.
+
+    The counterpart to :func:`unique_path` for a caller that does work between choosing the
+    name and writing the content: an importer stores images in that window, and the images'
+    links are rewritten to THIS name, so the name has to be final and owned before that runs.
+    Testing a name and writing later would both truncate whatever appeared meanwhile and,
+    if the caller then picked another name, leave the note pointing at the first one's
+    attachment folder.
+
+    The file is created empty; the caller fills it with a plain (non-exclusive) write, and
+    removes it if the fill fails. Raises ``FileExistsError`` when no free name is found.
+    """
+    from markdown_vault.core import vault_fs
+    vault_dir = Path(vault_dir)
+    for n in range(1, _RESERVE_ATTEMPTS + 1):
+        name = f"{stem}{suffix}" if n == 1 else f"{stem}-{n}{suffix}"
+        target = vault_dir / name
+        try:
+            vault_fs.write_text(str(target), "", exclusive=True)
+        except FileExistsError:
+            continue    # that name is taken — the loop's own outcome, try the next
+
+        return target
+    raise FileExistsError(f"no free name for {stem!r} after {_RESERVE_ATTEMPTS} attempts")

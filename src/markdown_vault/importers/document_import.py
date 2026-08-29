@@ -629,19 +629,28 @@ def save_to_vault(result: DocumentResult, vault_dir: str | Path,
     vault_fs.mkdir(str(vault_dir), parents=True, exist_ok=True)
     stem = note_writer.slug(name if name and name.strip() else result.title,
                             fallback="imported-document")
-    target = note_writer.unique_path(vault_dir, stem)
-    body = _store_images(result, target, vault_root or vault_dir)
-    # Direct, not atomic: the file is new, so there is no previous content an atomic write
-    # would protect — and its rename would reach the three external-file-moved listeners,
-    # of which monitor_handler classifies it correctly as a creation while the other two do
-    # not (see the dispatcher-consolidation ticket). A plain create avoids the question.
-    #
-    # exclusive: unique_path only TESTED the name and returned it; _store_images ran since,
-    # so the check is stale by the time we write. Let the create itself refuse to clobber
-    # rather than trust that window. Both refusals propagate to dialog_import's top-level
-    # handler, which maps them through describe_error.
-    vault_fs.write_text(str(target), to_note(replace(result, markdown=body), today=today),
-                        exclusive=True)
+    # Reserve BEFORE storing the images: _store_images derives the attachment folder from
+    # *target* and rewrites the note's image links to it, so the name has to be final and
+    # owned by then. Testing a name and writing later (unique_path) left a window in which
+    # the file could be taken and then truncated — and choosing a different name after the
+    # images were stored would point the note at the first name's folder.
+    target = note_writer.reserve_path(vault_dir, stem)
+    try:
+        body = _store_images(result, target, vault_root or vault_dir)
+        # Plain, not exclusive: we already own the file. Not atomic either — the rename
+        # would reach the three external-file-moved listeners, of which monitor_handler
+        # classifies it correctly as a creation while the other two do not (see the
+        # dispatcher-consolidation ticket).
+        vault_fs.write_text(str(target),
+                            to_note(replace(result, markdown=body), today=today))
+    except BaseException:
+        # We created the reservation, so we clear it — an empty note must not stay behind in
+        # the tree. Only the file we just made; nothing else is touched.
+        try:
+            vault_fs.unlink(str(target), missing_ok=True)
+        except OSError as exc:
+            logger.warning("could not remove reserved note %s: %s", target, exc)
+        raise
     return target
 
 
