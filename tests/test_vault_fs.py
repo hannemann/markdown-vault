@@ -74,6 +74,27 @@ class TestWriteOps(unittest.TestCase):
             with self.assertRaises(vfs.OutsideVault):
                 vfs.mkdir(os.path.join(v.outside, "d"))
 
+    def test_touch_creates_an_empty_file_inside(self):
+        with _Vault() as v:
+            p = os.path.join(v.vault, "new.md")
+            vfs.touch(p)
+            self.assertTrue(Path(p).is_file())
+            self.assertEqual(Path(p).read_text(), "")
+
+    def test_touch_outside_is_refused(self):
+        with _Vault() as v:
+            with self.assertRaises(vfs.OutsideVault):
+                vfs.touch(os.path.join(v.outside, "new.md"))
+
+    def test_touch_does_not_truncate_an_existing_file(self):
+        # The reason touch is its own op, not write_text(""): create_file has no existence
+        # check, so an existing name must keep its content (touch only bumps mtime).
+        with _Vault() as v:
+            p = os.path.join(v.vault, "note.md")
+            Path(p).write_text("keep me")
+            vfs.touch(p)
+            self.assertEqual(Path(p).read_text(), "keep me")
+
 
 class TestAtomicWrites(unittest.TestCase):
     def test_write_text_atomic_writes_and_leaves_no_part(self):

@@ -5,8 +5,9 @@ import tempfile
 import shutil
 import unittest
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
+from markdown_vault.core import vault_fs
 from markdown_vault.vault.file_ops import FileOps
 import markdown_vault.core.config as _cfg
 
@@ -78,8 +79,12 @@ class TestCreateFile(unittest.TestCase):
         self._tmp = tempfile.mkdtemp()
         self._skip = MagicMock()
         self._ops = FileOps(skip_fn=self._skip)
+        # The FS ops now go through VaultFS; register the temp dir as the vault so a
+        # legitimate in-vault create is allowed (the lexical escape check still runs first).
+        _cfg._vaults_cache = [{"name": "vault", "path": self._tmp}]
 
     def tearDown(self):
+        _cfg._vaults_cache = None
         shutil.rmtree(self._tmp, ignore_errors=True)
 
     def test_create_simple_file(self):
@@ -88,6 +93,16 @@ class TestCreateFile(unittest.TestCase):
         self.assertTrue(Path(self._tmp, "note.md").exists())
         # 2 skip events for touch() on existing monitor
         self.assertEqual(self._skip.call_count, 2)
+
+    def test_create_file_refused_by_vaultfs_returns_error_not_crash(self):
+        # The lexical check catches the common ../ escape; VaultFS's containment refusal is
+        # reachable only via a symlink escaping the vault. Pin the widened except: a
+        # VaultWriteError from the touch is surfaced as an error, not propagated.
+        with patch("markdown_vault.core.vault_fs.touch",
+                   side_effect=vault_fs.VaultWriteError("refused")):
+            err = self._ops.create_file(self._tmp, "note.md")
+        self.assertIsNotNone(err)
+        self.assertEqual(self._skip.call_count, 0)   # AV1: no skip leaked on a refused touch
 
     def test_create_file_adds_md_extension(self):
         err = self._ops.create_file(self._tmp, "note")
@@ -167,9 +182,17 @@ class TestCreateFolder(unittest.TestCase):
         self._tmp = tempfile.mkdtemp()
         self._skip = MagicMock()
         self._ops = FileOps(skip_fn=self._skip)
+        _cfg._vaults_cache = [{"name": "vault", "path": self._tmp}]   # allow in-vault mkdir
 
     def tearDown(self):
+        _cfg._vaults_cache = None
         shutil.rmtree(self._tmp, ignore_errors=True)
+
+    def test_create_folder_refused_by_vaultfs_returns_error_not_crash(self):
+        with patch("markdown_vault.core.vault_fs.mkdir",
+                   side_effect=vault_fs.VaultWriteError("refused")):
+            err = self._ops.create_folder(self._tmp, "mydir")
+        self.assertIsNotNone(err)
 
     def test_create_folder(self):
         err = self._ops.create_folder(self._tmp, "mydir")
@@ -208,9 +231,19 @@ class TestDeletePath(unittest.TestCase):
 
     def setUp(self):
         self._tmp = tempfile.mkdtemp()
+        _cfg._vaults_cache = [{"name": "vault", "path": self._tmp}]   # allow in-vault delete
 
     def tearDown(self):
+        _cfg._vaults_cache = None
         shutil.rmtree(self._tmp, ignore_errors=True)
+
+    def test_delete_refused_by_vaultfs_returns_error_not_crash(self):
+        fp = Path(self._tmp, "file.md")
+        fp.touch()
+        with patch("markdown_vault.core.vault_fs.unlink",
+                   side_effect=vault_fs.VaultWriteError("refused")):
+            err = FileOps.delete_path(str(fp))   # static method
+        self.assertIsNotNone(err)
 
     def test_delete_file(self):
         fp = Path(self._tmp, "file.md")

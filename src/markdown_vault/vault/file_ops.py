@@ -7,10 +7,10 @@ UI concerns (dialogs, tree refresh, tab cleanup) stay in the caller.
 
 import logging
 import os
-import shutil
 from pathlib import Path
 
 from markdown_vault.core import path_utils
+from markdown_vault.core import vault_fs
 from markdown_vault.core.i18n import _
 
 logger = logging.getLogger(__name__)
@@ -80,24 +80,27 @@ class FileOps:
         if parent != vault_path:
             # Intermediate directories needed.
             try:
-                os.makedirs(parent, exist_ok=True)
-                self._skip_fn(parent)
-            except (OSError, ValueError) as e:  # ValueError: embedded NUL byte in the name
-                logger.warning("create_file: makedirs failed for %s: %s", parent, e)
+                vault_fs.mkdir(parent, parents=True, exist_ok=True)
+            except (OSError, ValueError, vault_fs.VaultWriteError) as e:  # ValueError: NUL byte
+                logger.warning("create_file: mkdir failed for %s: %s", parent, e)
                 return str(e)
-            # _emit_existing_entries fires 1 CREATED for the file when the
-            # new directory monitor starts — only 1 skip needed.
-            self._skip_fn(file_path)
+            self._skip_fn(parent)
+            # _emit_existing_entries fires 1 CREATED for the file when the new directory
+            # monitor starts — only 1 skip needed.
+            file_skips = 1
         else:
-            # touch() fires created + changed on existing monitor — need 2.
-            self._skip_fn(file_path)
-            self._skip_fn(file_path)
+            # touch() fires created + changed on the existing monitor — need 2.
+            file_skips = 2
 
         try:
-            Path(file_path).touch()
-        except (OSError, ValueError) as e:  # ValueError: embedded NUL byte in the name
+            vault_fs.touch(file_path)
+        except (OSError, ValueError, vault_fs.VaultWriteError) as e:  # ValueError: NUL byte
             logger.warning("create_file: touch failed for %s: %s", file_path, e)
             return str(e)
+        # Skips only after the touch succeeds: a skip registered before a refused op leaks
+        # and swallows the next genuine event for that path (AV1).
+        for _i in range(file_skips):   # not '_': shadows the gettext _ imported above
+            self._skip_fn(file_path)
 
         logger.info("create_file: created %s", file_path)
         return None
@@ -114,8 +117,8 @@ class FileOps:
             logger.warning("create_folder: rejected name escaping the vault: %r", name)
             return _("Invalid folder name: path escapes the vault")
         try:
-            os.mkdir(folder_path)
-        except (OSError, ValueError) as e:  # ValueError: embedded NUL byte in the name
+            vault_fs.mkdir(folder_path)
+        except (OSError, ValueError, vault_fs.VaultWriteError) as e:  # ValueError: NUL byte
             logger.warning("create_folder: mkdir failed for %s: %s", folder_path, e)
             return str(e)
 
@@ -130,10 +133,10 @@ class FileOps:
         """
         try:
             if Path(path).is_dir():
-                shutil.rmtree(path)
+                vault_fs.rmtree(path)
             else:
-                os.remove(path)
-        except OSError as e:
+                vault_fs.unlink(path)
+        except (OSError, vault_fs.VaultWriteError) as e:
             logger.warning("delete_path: failed for %s: %s", path, e)
             return str(e)
 

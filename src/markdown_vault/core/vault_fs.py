@@ -120,6 +120,15 @@ def mkdir(path, *, parents: bool = False, exist_ok: bool = False) -> None:
     Path(path).mkdir(parents=parents, exist_ok=exist_ok)
 
 
+def touch(path) -> None:
+    """Create an empty file at *path* inside a vault, or bump its mtime if it exists
+    (guarded). Distinct from ``write_text(path, "")`` on purpose: touch does NOT truncate
+    an existing file, which a create-a-new-note path with no existence check relies on.
+    Follows the link (a touch through a symlink lands on the target, like a direct write)."""
+    _guard(path, follow_last=True)
+    Path(path).touch()
+
+
 def unlink(path, *, missing_ok: bool = False) -> None:
     """Remove a file (or symlink) inside a vault (guarded, delete mode)."""
     _guard(path, follow_last=False)
