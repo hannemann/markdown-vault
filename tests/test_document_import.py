@@ -380,6 +380,14 @@ class TestDescribeError(unittest.TestCase):
         self.assertEqual(di.describe_error(di.DocumentImportError("Nothing to extract")),
                          "Nothing to extract")
 
+    def test_an_exhausted_name_search_gets_its_own_message(self):
+        # The only FileExistsError that escapes the import path: reserve_path gave up because
+        # every numbered name was taken (the in-loop collision is caught there). Pins that it
+        # is mapped at all — untested, the branch could rot into str(exc) unnoticed.
+        msg = di.describe_error(FileExistsError("no free name for 'my-doc' after 1000"))
+        self.assertNotIn("1000", msg)
+        self.assertNotIn("my-doc", msg)
+
     def test_a_foreign_exception_does_not_reach_the_user_raw(self):
         # BH3: a docling/whisper/OS failure is English developer text. Passing str(exc)
         # through was BG1 one exception class over. Only OUR marker type passes; a plain

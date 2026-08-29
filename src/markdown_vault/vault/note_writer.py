@@ -10,6 +10,8 @@ import logging
 import re
 from pathlib import Path
 
+from markdown_vault.core import vault_fs
+
 logger = logging.getLogger(__name__)
 
 _SLUG_STRIP = re.compile(r"[^\w\s-]", re.UNICODE)
@@ -57,8 +59,14 @@ def reserve_path(vault_dir: str | Path, stem: str, suffix: str = ".md") -> Path:
 
     The file is created empty; the caller fills it with a plain (non-exclusive) write, and
     removes it if the fill fails. Raises ``FileExistsError`` when no free name is found.
+
+    The residue this design accepts: only *exceptions* can be cleaned up. A crash or a kill
+    between the reservation and the fill leaves the empty note behind — and unlike a
+    ``.part`` file, which the monitor's suffix filter drops, an empty ``.md`` is visible in
+    the tree, gets indexed, and syncs. The window is the caller's work in between, which for
+    an import is storing the images. Inherent to reserving first; the alternative was losing
+    the race instead.
     """
-    from markdown_vault.core import vault_fs
     vault_dir = Path(vault_dir)
     for n in range(1, _RESERVE_ATTEMPTS + 1):
         name = f"{stem}{suffix}" if n == 1 else f"{stem}-{n}{suffix}"

@@ -64,7 +64,11 @@ def describe_error(exc: BaseException) -> str:
         return _("The chosen folder is not inside a vault. Pick a folder in one of your "
                  "vaults and try again.")
     if isinstance(exc, FileExistsError):
-        return _("A note with that name appeared while importing. Try again.")
+        # The only one that escapes the import path: reserve_path exhausted its attempts,
+        # every numbered name being taken. The lost race the previous wording described is
+        # what reserve-then-fill made unlosable, and retrying would not help here.
+        return _("Could not find a free file name for this note. Give it a different name "
+                 "or tidy up the target folder.")
     if isinstance(exc, DocumentImportError):
         return str(exc)
     return _("The import failed. See the log for details.")
@@ -634,6 +638,12 @@ def save_to_vault(result: DocumentResult, vault_dir: str | Path,
     # owned by then. Testing a name and writing later (unique_path) left a window in which
     # the file could be taken and then truncated — and choosing a different name after the
     # images were stored would point the note at the first name's folder.
+    #
+    # What this costs on the monitor side, stated because the choice below is argued from
+    # monitor events too: the reservation is an empty .md inside the vault, so VaultMonitor
+    # reports a `created` for it and a `changed` when the fill lands, where a single write
+    # produced one `created` of a finished note. The 200 ms debounce absorbs that while
+    # _store_images is quick; on an image-heavy import the empty note is briefly visible.
     target = note_writer.reserve_path(vault_dir, stem)
     try:
         body = _store_images(result, target, vault_root or vault_dir)
