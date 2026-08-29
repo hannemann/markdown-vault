@@ -464,6 +464,27 @@ class TestDropDeferredRefresh(unittest.TestCase):
         refresh.assert_not_called()
         self.assertEqual(deferred, [self.tree._refresh_after_drop])
 
+    def test_a_refused_drop_registers_no_skip(self):
+        # AV1: a skip registered BEFORE the FS op leaks when the op is refused and swallows
+        # the next genuine event for that path (the TTL clears the entry but still eats one
+        # event). So a refused move — VaultFS raises OutsideVault, reachable when the drop
+        # target resolves outside the vault — must register NO skip.
+        import markdown_vault.vault.vault_tree as mod
+        (self._tmpdir / "note.md").write_text("x")
+        (self._tmpdir / "sub").mkdir()
+        src = str(self._tmpdir / "note.md")
+        target_node = VaultNode("sub", str(self._tmpdir / "sub"), True)
+        self.tree.vault_monitor = MagicMock()
+
+        # No vault roots -> vault_fs.move refuses with OutsideVault (the refusal under test).
+        with patch("markdown_vault.core.vault_fs._vault_roots", return_value=[]), \
+                patch.object(mod.validation, "validate_drop", return_value=None), \
+                patch.object(self.tree, "refresh"):
+            result = self.tree._perform_drop(src, target_node)
+
+        self.assertFalse(result)
+        self.tree.vault_monitor.skip_next_event.assert_not_called()   # no leaked skip
+
 
 if __name__ == "__main__":
     unittest.main()

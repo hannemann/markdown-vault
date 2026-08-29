@@ -1063,14 +1063,20 @@ class VaultTree(Gtk.Box):
         parent_dir = str(Path(old_path).parent)
         new_path = os.path.join(parent_dir, new_name)
 
-        if getattr(self, "vault_monitor", None):
-            self.vault_monitor.skip_next_event(old_path)
-            self.vault_monitor.skip_next_event(new_path)
         try:
             vault_fs.rename(old_path, new_path)
         except (OSError, vault_fs.VaultWriteError):
             logger.warning("Failed to rename %s → %s", old_path, new_path, exc_info=True)
             return
+        # Skips are registered only AFTER the rename succeeds. The monitor event is
+        # dispatched via the GLib main loop, which cannot run during the synchronous
+        # os.rename, so the skip is in place before the event arrives. Registering it
+        # before would leak a skip that swallows the next genuine event for these paths
+        # when the op is refused (AV1) — the skip's TTL clears the entry but still eats
+        # that one event.
+        if getattr(self, "vault_monitor", None):
+            self.vault_monitor.skip_next_event(old_path)
+            self.vault_monitor.skip_next_event(new_path)
 
         self._rename_node(node, new_name, new_path)
         # Re-sorting removed and re-inserted the item, clearing the selection;
@@ -1181,14 +1187,16 @@ class VaultTree(Gtk.Box):
         source_name = Path(source_path).name
         dest_path = os.path.join(target_dir, source_name)
 
-        if getattr(self, "vault_monitor", None):
-            self.vault_monitor.skip_next_event(source_path)
-            self.vault_monitor.skip_next_event(dest_path)
         try:
             vault_fs.move(source_path, dest_path)
         except (OSError, vault_fs.VaultWriteError):
             logger.warning("Failed to move %s → %s", source_path, dest_path, exc_info=True)
             return False
+        # Skips AFTER success — see the rename path (AV1): a skip registered before the op
+        # leaks and swallows the next genuine event for these paths if the move is refused.
+        if getattr(self, "vault_monitor", None):
+            self.vault_monitor.skip_next_event(source_path)
+            self.vault_monitor.skip_next_event(dest_path)
 
         # Emit rename FIRST so MainWindow repoints tab/index/sidebar, then defer
         # the tree rebuild to the main loop (a synchronous rebuild inside the
