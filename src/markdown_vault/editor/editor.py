@@ -15,6 +15,7 @@ gi.require_version("GtkSource", "5")
 
 from gi.repository import Gtk, GtkSource, GObject, GLib, Gio, Adw, Gdk, Pango
 
+from markdown_vault.core import vault_fs
 from markdown_vault.core.i18n import _
 
 logger = logging.getLogger(__name__)
@@ -403,7 +404,13 @@ class Editor(Gtk.ScrolledWindow):
         return self._buffer.get_text(start, end, True)
 
     def save(self) -> bool:
-        """Write the buffer to ``file_path``.
+        """Write the buffer to ``file_path``, atomically and guarded.
+
+        Atomic (a ``.part`` renamed into place) so an interrupted save leaves the PREVIOUS
+        note intact — a direct write truncates first, so a crash mid-save would leave an
+        empty file and lose everything. The rename this produces reaches VaultMonitor as a
+        move; the save sites announce it via ``expect_atomic_save`` so it is not reported as
+        an external change.
 
         Returns ``True`` on success, ``False`` on failure or when no
         file path is set.
@@ -411,9 +418,15 @@ class Editor(Gtk.ScrolledWindow):
         if not self._file_path:
             return False
         try:
-            Path(self._file_path).write_text(self.get_text(), encoding="utf-8")
+            vault_fs.write_text_atomic(self._file_path, self.get_text())
             self._buffer.set_modified(False)
             return True
+        except vault_fs.VaultWriteError as exc:
+            # Not an OSError: the note resolves outside every configured vault (a note that
+            # is a symlink leading out). Report failure like any other — the caller surfaces
+            # the "could not save" banner — rather than letting it escape into the UI.
+            logger.warning("Refused to save %s: %s", self._file_path, exc)
+            return False
         except (OSError, UnicodeDecodeError) as exc:
             logger.warning("Failed to save %s: %s", self._file_path, exc)
             return False

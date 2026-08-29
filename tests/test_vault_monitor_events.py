@@ -398,6 +398,90 @@ class TestR11_1_AtomicSaveRenamedFilter(unittest.TestCase):
         self.assertEqual(received_moved[0][2], "/tmp/testvault/subdir/note.md")
 
 
+class TestAtomicSaveAnnouncement(unittest.TestCase):
+    """An atomic save renames <note>.part onto <note>, which reaches the monitor as a rename
+    and would otherwise be reported as an external change. The app announces that exact PAIR
+    beforehand, so the monitor recognises its own save by identity.
+
+    Deliberately not the skip_next_event counter ("ignore the next event, whatever it is"):
+    that one is blind, so a concurrent external change consumes it — the real change is
+    swallowed and our own save then raises the banner, i.e. wrong in both directions. Matching
+    the pair keeps every other event untouched, and a leftover announcement is inert because
+    only this one rename can redeem it.
+    """
+
+    def _monitor(self):
+        mock_gio = _make_mock_gio()
+        mock_glib = _make_mock_glib()
+        with patch("markdown_vault.vault.vault_monitor.os.path.isdir", return_value=True):
+            mod = _load_monitor(mock_gio, mock_glib)
+            monitor = mod.VaultMonitor()
+            monitor.set_vaults(["/vaulttest"])
+            return monitor
+
+    def _rename(self, monitor, part, target):
+        """Feed the monitor a Gio RENAMED (file=source, other=destination)."""
+        mock_monitor = list(monitor._monitors.values())[0]
+        monitor._on_monitor_event(mock_monitor, _make_mock_file(part),
+                                  _make_mock_file(target), _RENAMED)
+
+    def setUp(self):
+        from markdown_vault.core import vault_fs
+        self.note = "/vaulttest/note.md"
+        self.part, self.target = vault_fs.atomic_save_paths(self.note)
+        self.monitor = self._monitor()
+        self.moved = []
+        self.changed = []
+        self.monitor.connect("external-file-moved", lambda *a: self.moved.append(a))
+        self.monitor.connect("external-content-changed", lambda *a: self.changed.append(a))
+
+    def test_an_announced_atomic_save_is_not_reported_as_external(self):
+        self.monitor.expect_atomic_save(self.note)
+        self._rename(self.monitor, self.part, self.target)
+        self.assertEqual(self.moved, [])
+
+    def test_an_external_change_to_the_same_note_still_gets_through(self):
+        # The race the blind counter gets wrong: a concurrent external write must still be
+        # reported while our own save is pending. Its event is a content change, not our
+        # rename pair, so the announcement must leave it alone.
+        self.monitor.expect_atomic_save(self.note)
+        mock_monitor = list(self.monitor._monitors.values())[0]
+        self.monitor._on_monitor_event(mock_monitor, _make_mock_file(self.target), None, _HINT)
+        self.assertEqual(len(self.changed), 1)
+
+    def test_a_rename_of_a_different_note_is_unaffected(self):
+        self.monitor.expect_atomic_save(self.note)
+        self._rename(self.monitor, "/vaulttest/other.md", "/vaulttest/renamed.md")
+        self.assertEqual(len(self.moved), 1)
+
+    def test_announcing_twice_leaves_nothing_behind(self):
+        # Two saves inside the 200 ms debounce coalesce into ONE event. With a counter the
+        # second announcement would leak; identity has nothing to count, so after the single
+        # event the announcement is gone and the next genuine rename is reported.
+        self.monitor.expect_atomic_save(self.note)
+        self.monitor.expect_atomic_save(self.note)
+        self._rename(self.monitor, self.part, self.target)
+        self.assertEqual(self.moved, [])
+        self._rename(self.monitor, self.part, self.target)
+        self.assertEqual(len(self.moved), 1)
+
+    def test_forget_withdraws_the_announcement(self):
+        # A failed save produces no event; withdrawing keeps the announcement from lingering.
+        self.monitor.expect_atomic_save(self.note)
+        self.monitor.forget_atomic_save(self.note)
+        self._rename(self.monitor, self.part, self.target)
+        self.assertEqual(len(self.moved), 1)
+
+    def test_forgetting_what_was_never_announced_is_harmless(self):
+        self.monitor.forget_atomic_save(self.note)   # must not raise
+
+    def test_an_unannounced_atomic_save_is_reported(self):
+        # Another editor atomically saving our note IS an external change — it must reach the
+        # banner. Pins that the announcement is what distinguishes them, not the shape.
+        self._rename(self.monitor, self.part, self.target)
+        self.assertEqual(len(self.moved), 1)
+
+
 class TestN4_CallbackExceptionLogging(unittest.TestCase):
     """N.4: Callback exceptions must be logged, not silently swallowed."""
 

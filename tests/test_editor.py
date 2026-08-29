@@ -226,6 +226,39 @@ class TestEditorScrollPosition(unittest.TestCase):
         vadj.set_value.assert_not_called()
 
 
+class TestSaveIsAtomicAndGuarded(unittest.TestCase):
+    """save() writes through VaultFS's atomic writer: a crash mid-save leaves the PREVIOUS
+    note intact, where the direct writer truncated first and would leave an empty file. The
+    resulting rename is announced to the monitor by the save sites, so it is not mistaken for
+    an external change."""
+
+    def test_save_routes_through_the_atomic_writer(self):
+        from unittest.mock import patch
+
+        from markdown_vault.editor.editor import Editor
+        ed = Editor()
+        ed._file_path = "/vault/note.md"
+        with patch("markdown_vault.core.vault_fs.write_text_atomic") as w:
+            self.assertTrue(ed.save())
+        w.assert_called_once()
+
+    def test_a_refused_write_returns_false_instead_of_raising(self):
+        # VaultWriteError is not an OSError, so the existing handler would not catch it and
+        # the refusal would escape into the UI. save() must report failure like any other.
+        from unittest.mock import patch
+
+        from markdown_vault.core import vault_fs
+        from markdown_vault.editor.editor import Editor
+        ed = Editor()
+        ed._file_path = "/outside/note.md"
+        with patch("markdown_vault.core.vault_fs.write_text_atomic",
+                   side_effect=vault_fs.VaultWriteError("outside every vault")) as w:
+            self.assertFalse(ed.save())
+        # Without this the test passes for the wrong reason: the direct writer fails on the
+        # non-existent path with an OSError, and the refusal path is never exercised.
+        w.assert_called_once()
+
+
 class TestInsertImageOutsideVault(unittest.TestCase):
     """The caller side of the attachments VaultFS migration: a note outside every configured
     vault makes store_image refuse with VaultWriteError — which is NOT an OSError. insert_image

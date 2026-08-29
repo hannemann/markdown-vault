@@ -71,14 +71,30 @@ def write_bytes(path, data: bytes) -> None:
     Path(path).write_bytes(data)
 
 
+def atomic_save_paths(path) -> tuple[str, str]:
+    """The ``(part, target)`` pair :func:`write_text_atomic` will rename, for *path*.
+
+    The single source of that naming. VaultMonitor announces this exact pair before an
+    atomic save so it can recognise the resulting rename as the app's own rather than an
+    external change; a second guess at the call site would drift from the writer — notably
+    on a symlinked note, where the writer resolves the leaf (see :func:`_atomic_bytes`) —
+    and the announcement would silently never match.
+
+    The ``.part`` suffix is load-bearing: VaultMonitor only watches ``.md`` files, so the
+    temp file must not end in ``.md`` or it raises an extra created event of its own.
+    """
+    real = os.path.realpath(path)
+    return real + ".part", real
+
+
 def _atomic_bytes(target: Path, data: bytes) -> None:
     # Write at the RESOLVED leaf. os.replace renames onto the name, it does not write
     # through a symlink there — so to preserve a symlinked note's semantics (update the
     # target, keep the link), as the direct writer does, we must target the real file. The
     # guard already ran on the ORIGINAL path (follow_last=True), so the resolved leaf is
     # known to be in the vault; a link pointing out was refused before we got here.
-    real = Path(os.path.realpath(target))
-    tmp = real.with_name(real.name + ".part")
+    tmp_str, real_str = atomic_save_paths(target)
+    real, tmp = Path(real_str), Path(tmp_str)
     real.parent.mkdir(parents=True, exist_ok=True)
     try:
         with open(tmp, "wb") as fh:

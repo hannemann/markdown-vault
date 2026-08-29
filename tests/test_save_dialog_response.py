@@ -22,6 +22,8 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 from gi.repository import Gtk
 
+import support
+
 from markdown_vault.editor.editor import Editor
 
 from test_app_window_construction import AppWindowTest
@@ -33,6 +35,11 @@ class SaveDialogTest(AppWindowTest):
     def setUp(self):
         super().setUp()
         self._tmp = tempfile.mkdtemp()
+        # editor.save() now writes through VaultFS, which refuses a target outside every
+        # configured vault — register the temp dir so these real saves are allowed.
+        ctx = support.vault_roots(self._tmp)
+        ctx.__enter__()
+        self.addCleanup(ctx.__exit__, None, None, None)
         self._md1 = os.path.join(self._tmp, "note1.md")
         self._md2 = os.path.join(self._tmp, "note2.md")
         for path in (self._md1, self._md2):

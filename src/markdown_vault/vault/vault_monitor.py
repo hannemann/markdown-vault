@@ -14,6 +14,8 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 from gi.repository import Gio, GLib
 
+from markdown_vault.core import vault_fs
+
 logger = logging.getLogger(__name__)
 
 
@@ -124,6 +126,11 @@ class VaultMonitor:
         self._skip_paths: dict[str, int] = {}  # Pfad → verbleibende Skipping
         self._skip_timestamps: dict[str, float] = {}  # Pfad → Zeitstempel
 
+        # Announced atomic saves as (source, destination) pairs — see expect_atomic_save.
+        # A set, not a counter: identity is what distinguishes our own save, so there is
+        # nothing to count and nothing to miscount when events coalesce.
+        self._expected_atomic_saves: set[tuple[str, str]] = set()
+
         # Signale: (signal_name, callback)
         self._callbacks = {}
 
@@ -182,6 +189,26 @@ class VaultMonitor:
         """
         self._skip_paths[file_path] = self._skip_paths.get(file_path, 0) + 1
         self._skip_timestamps[file_path] = time.monotonic()
+
+    def expect_atomic_save(self, file_path: str) -> None:
+        """Announce an imminent atomic save of *file_path*, so the rename it produces is
+        recognised as the app's own rather than reported as an external change.
+
+        Call this BEFORE the write — unlike ``skip_next_event``, whose registration must
+        follow a successful save (AV1/BB1). The distinction is what makes that safe: this
+        announcement names the exact ``(<file>.part, <file>)`` rename, so an unredeemed one is
+        inert — only that very rename can consume it, never a concurrent external change.
+        Withdraw it with :meth:`forget_atomic_save` when the save fails and no event follows.
+
+        The pair comes from :func:`vault_fs.atomic_save_paths`, the single source of that
+        naming, so a symlinked note resolves exactly as the writer resolves it.
+        """
+        self._expected_atomic_saves.add(vault_fs.atomic_save_paths(file_path))
+
+    def forget_atomic_save(self, file_path: str) -> None:
+        """Withdraw an announcement made by :meth:`expect_atomic_save` (the save failed, so
+        no event will arrive). Withdrawing one that was never made is a no-op."""
+        self._expected_atomic_saves.discard(vault_fs.atomic_save_paths(file_path))
 
     def _start_monitor(self, vault_path):
         """Startet einen FileMonitor fuer ein Vault-Verzeichnis.
@@ -466,6 +493,13 @@ class VaultMonitor:
             return
 
         if event_type in ("moved", "renamed") and other_path is not None:
+            # Our own atomic save, recognised by identity: this exact (source, destination)
+            # pair was announced. Consume the announcement and report nothing — an
+            # unannounced pair of the same shape is another editor's atomic save and IS an
+            # external change, so it falls through.
+            if (other_path, file_path) in self._expected_atomic_saves:
+                self._expected_atomic_saves.discard((other_path, file_path))
+                return
             if file_path in self._skip_paths or other_path in self._skip_paths:
                 self._decrement_skip(file_path)
                 self._decrement_skip(other_path)

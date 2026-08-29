@@ -1383,13 +1383,13 @@ class MainWindow(Adw.ApplicationWindow):
                 # Autofix runs on close-save too; the warn dialog does not
                 # (returned broken list intentionally ignored here).
                 self._apply_wikilink_autofix(tab)
+                # Announce BEFORE writing — the atomic save's rename happens during it.
+                self._vault_monitor.expect_atomic_save(tab.editor.file_path)
                 if tab.editor.save():
-                    # Skip only on success: a failed save emits no FS event, so an up-front
-                    # skip would leak and swallow this note's next external change (BB1/AV1).
-                    self._vault_monitor.skip_next_event(tab.editor.file_path)
                     self._clear_external_conflict(tab)
                     self._semantic_update(tab.editor.file_path)
                 else:
+                    self._vault_monitor.forget_atomic_save(tab.editor.file_path)
                     failed.append(path)
         return failed
 
@@ -2580,10 +2580,9 @@ class MainWindow(Adw.ApplicationWindow):
         if not tab:
             return
         broken = self._apply_wikilink_autofix(tab)
+        # Announce BEFORE writing — the atomic save's rename happens during it.
+        self._vault_monitor.expect_atomic_save(tab.editor.file_path)
         if tab.editor.save():
-            # Skip only on success: a failed save emits no FS event, so an up-front skip
-            # would leak and swallow this note's next external change (BB1/AV1).
-            self._vault_monitor.skip_next_event(tab.editor.file_path)
             self._tab_bar.clear_tab_error(tab.file_path)
             self._tab_bar.hide_error_banner(tab.file_path)
             self._clear_external_conflict(tab)
@@ -2592,6 +2591,7 @@ class MainWindow(Adw.ApplicationWindow):
             if broken:
                 dialogs.show_broken_wikilinks(self, [b.display for b in broken])
         else:
+            self._vault_monitor.forget_atomic_save(tab.editor.file_path)
             msg = _('Could not save "{name}"').format(name=Path(tab.file_path).name)
             self._tab_bar.set_tab_error(tab.file_path, "save_error", msg)
             self._tab_bar.show_error_banner(
@@ -2699,13 +2699,14 @@ class MainWindow(Adw.ApplicationWindow):
 
     def _autosave_save_tab(self, tab) -> bool:
         """Save a single tab and notify the vault monitor. Returns True on success."""
+        # Announce BEFORE writing — the atomic save's rename happens during it.
+        self._vault_monitor.expect_atomic_save(tab.editor.file_path)
         ok = tab.editor.save()
         if ok:
-            # Skip only on success: a failed save emits no FS event, so an up-front skip
-            # would leak and swallow this note's next external change (BB1/AV1).
-            self._vault_monitor.skip_next_event(tab.editor.file_path)
             self._semantic_update(tab.editor.file_path)
             self._vault_tree.refresh_lifecycle(tab.editor.file_path)
+        else:
+            self._vault_monitor.forget_atomic_save(tab.editor.file_path)
         return ok
 
     def _autosave_on_failed(self, file_path: str, msg: str) -> None:

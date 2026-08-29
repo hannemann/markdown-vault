@@ -154,6 +154,43 @@ class TestAtomicWrites(unittest.TestCase):
             self.assertFalse(Path(p + ".part").exists())
 
 
+class TestAtomicSavePaths(unittest.TestCase):
+    """The atomic writer renames <target>.part onto <target>. The vault monitor has to
+    announce that exact pair BEFORE the save so it can recognise the resulting rename as our
+    own — so the two names must come from ONE place. A second guess at the call site would
+    drift from the writer (notably on a symlinked note, where the writer resolves the leaf)
+    and the announced pair would silently never match."""
+
+    def test_the_pair_is_what_the_writer_actually_renames(self):
+        # Coupling test: capture os.replace's real arguments and compare. A helper that
+        # merely *looks* right but disagrees with the writer fails here.
+        with _Vault() as v:
+            p = os.path.join(v.vault, "note.md")
+            with mock.patch("markdown_vault.core.vault_fs.os.replace") as rep:
+                vfs.write_text_atomic(p, "x")
+            self.assertEqual(vfs.atomic_save_paths(p), tuple(str(a) for a in rep.call_args[0]))
+
+    def test_the_pair_resolves_a_symlinked_note_like_the_writer(self):
+        # AP1: the writer writes THROUGH a symlink (renames onto the real file), so the pair
+        # must name the real file too — otherwise the announcement misses and a save raises a
+        # false "changed externally" banner.
+        with _Vault() as v:
+            real = os.path.join(v.vault, "real.md")
+            Path(real).write_text("x")
+            link = os.path.join(v.vault, "alias.md")
+            os.symlink(real, link)
+            part, target = vfs.atomic_save_paths(link)
+            self.assertEqual(target, os.path.realpath(link))
+            self.assertEqual(part, os.path.realpath(link) + ".part")
+
+    def test_the_part_name_does_not_end_in_md(self):
+        # Load-bearing: VaultMonitor only looks at .md files, so the temp file must stay
+        # invisible to it. A "<name>.part.md" form would raise an extra created event.
+        with _Vault() as v:
+            part, _target = vfs.atomic_save_paths(os.path.join(v.vault, "note.md"))
+            self.assertFalse(part.endswith(".md"))
+
+
 class TestDeleteOps(unittest.TestCase):
     def test_unlink_a_file_inside(self):
         with _Vault() as v:

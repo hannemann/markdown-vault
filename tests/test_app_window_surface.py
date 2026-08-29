@@ -97,13 +97,12 @@ class TestAttachmentsMovedStaleGuard(unittest.TestCase):
         win._sync_attachments_move.assert_called_once_with("/vault/old.md", "/vault/there.md")
 
 
-class TestSaveSkipRegisteredOnlyOnSuccess(unittest.TestCase):
-    """Seam guard (stub window, internal names): the three save paths must register the
-    vault-monitor skip only AFTER a successful save. editor.save() returns False without
-    producing an FS event (no file path, or an OSError/UnicodeDecodeError); a skip registered
-    up-front then leaks and swallows the next genuine external change to the open note — exactly
-    what feeds reload/conflict detection (BB1, same class as AV1). Both directions per site:
-    success registers a skip, failure does not."""
+class TestSaveAnnouncesTheAtomicRename(unittest.TestCase):
+    """Seam guard (stub window, internal names): editor.save() is atomic, so it produces a
+    rename the monitor would otherwise report as an external change. Each of the three save
+    paths must announce the pair BEFORE writing (the event happens during the write, so
+    announcing afterwards is useless), and withdraw it when the save fails and no event will
+    follow. Both directions per site — one site must not stand in for the others (AX1)."""
 
     def _tab(self):
         tab = unittest.mock.Mock()
@@ -112,57 +111,81 @@ class TestSaveSkipRegisteredOnlyOnSuccess(unittest.TestCase):
         tab.editor.is_modified = True
         return tab
 
-    def test_autosave_registers_skip_only_after_a_successful_save(self):
-        win = unittest.mock.Mock()
-        tab = self._tab()
+    def _ordered(self, win, tab, ok):
+        """Record announce/save order so 'announced before writing' is actually pinned."""
+        order = []
+        win._vault_monitor.expect_atomic_save.side_effect = lambda p: order.append("announce")
+        tab.editor.save.side_effect = lambda: (order.append("save"), ok)[1]
+        return order
+
+    def test_autosave_announces_before_writing(self):
+        win, tab = unittest.mock.Mock(), self._tab()
+        order = self._ordered(win, tab, True)
+        MainWindow._autosave_save_tab(win, tab)
+        self.assertEqual(order, ["announce", "save"])
+        win._vault_monitor.expect_atomic_save.assert_called_once_with("/vault/note.md")
+
+    def test_autosave_keeps_the_announcement_on_success(self):
+        win, tab = unittest.mock.Mock(), self._tab()
         tab.editor.save.return_value = True
         MainWindow._autosave_save_tab(win, tab)
-        win._vault_monitor.skip_next_event.assert_called_once_with("/vault/note.md")
+        win._vault_monitor.forget_atomic_save.assert_not_called()
 
-    def test_autosave_registers_no_skip_when_the_save_fails(self):
-        win = unittest.mock.Mock()
-        tab = self._tab()
+    def test_autosave_withdraws_the_announcement_when_the_save_fails(self):
+        win, tab = unittest.mock.Mock(), self._tab()
         tab.editor.save.return_value = False
         MainWindow._autosave_save_tab(win, tab)
-        win._vault_monitor.skip_next_event.assert_not_called()
+        win._vault_monitor.forget_atomic_save.assert_called_once_with("/vault/note.md")
 
-    def test_save_dirty_tabs_registers_skip_only_after_a_successful_save(self):
-        win = unittest.mock.Mock()
-        tab = self._tab()
+    def test_save_dirty_tabs_announces_before_writing(self):
+        win, tab = unittest.mock.Mock(), self._tab()
+        win._tab_bar.get_tab.return_value = tab
+        win._apply_wikilink_autofix.return_value = []
+        order = self._ordered(win, tab, True)
+        MainWindow._save_dirty_tabs(win, ["/vault/note.md"])
+        self.assertEqual(order, ["announce", "save"])
+
+    def test_save_dirty_tabs_keeps_the_announcement_on_success(self):
+        win, tab = unittest.mock.Mock(), self._tab()
         win._tab_bar.get_tab.return_value = tab
         win._apply_wikilink_autofix.return_value = []
         tab.editor.save.return_value = True
         MainWindow._save_dirty_tabs(win, ["/vault/note.md"])
-        win._vault_monitor.skip_next_event.assert_called_once_with("/vault/note.md")
+        win._vault_monitor.forget_atomic_save.assert_not_called()
 
-    def test_save_dirty_tabs_registers_no_skip_when_the_save_fails(self):
-        win = unittest.mock.Mock()
-        tab = self._tab()
+    def test_save_dirty_tabs_withdraws_the_announcement_when_the_save_fails(self):
+        win, tab = unittest.mock.Mock(), self._tab()
         win._tab_bar.get_tab.return_value = tab
         win._apply_wikilink_autofix.return_value = []
         tab.editor.save.return_value = False
         failed = MainWindow._save_dirty_tabs(win, ["/vault/note.md"])
-        win._vault_monitor.skip_next_event.assert_not_called()
+        win._vault_monitor.forget_atomic_save.assert_called_once_with("/vault/note.md")
         self.assertEqual(failed, ["/vault/note.md"])
 
-    def test_save_current_registers_skip_only_after_a_successful_save(self):
-        win = unittest.mock.Mock()
-        tab = self._tab()
+    def test_save_current_announces_before_writing(self):
+        win, tab = unittest.mock.Mock(), self._tab()
+        win._tab_bar.get_current_tab.return_value = tab
+        win._apply_wikilink_autofix.return_value = []
+        order = self._ordered(win, tab, True)
+        MainWindow._save_current(win)
+        self.assertEqual(order, ["announce", "save"])
+
+    def test_save_current_keeps_the_announcement_on_success(self):
+        win, tab = unittest.mock.Mock(), self._tab()
         win._tab_bar.get_current_tab.return_value = tab
         win._apply_wikilink_autofix.return_value = []
         tab.editor.save.return_value = True
         MainWindow._save_current(win)
-        win._vault_monitor.skip_next_event.assert_called_once_with("/vault/note.md")
+        win._vault_monitor.forget_atomic_save.assert_not_called()
 
     @unittest.mock.patch("markdown_vault.app.app_window.dialogs")
-    def test_save_current_registers_no_skip_when_the_save_fails(self, _dialogs):
-        win = unittest.mock.Mock()
-        tab = self._tab()
+    def test_save_current_withdraws_the_announcement_when_the_save_fails(self, _dialogs):
+        win, tab = unittest.mock.Mock(), self._tab()
         win._tab_bar.get_current_tab.return_value = tab
         win._apply_wikilink_autofix.return_value = []
         tab.editor.save.return_value = False
         MainWindow._save_current(win)
-        win._vault_monitor.skip_next_event.assert_not_called()
+        win._vault_monitor.forget_atomic_save.assert_called_once_with("/vault/note.md")
 
 
 class TestActions(AppWindowTest):
