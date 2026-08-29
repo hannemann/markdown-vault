@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 
 from markdown_vault.core import debug
+from markdown_vault.core import vault_fs
 from markdown_vault.core.path_utils import (
     find_vault_name_for_path,
     resolve_vault_path,
@@ -164,8 +165,8 @@ class BacklinkIndex:
             new_text = self._remove_links_to(text, path_str, key)
             if new_text != text:
                 try:
-                    Path(path_str).write_text(new_text, encoding="utf-8")
-                except OSError:
+                    vault_fs.write_text(path_str, new_text)
+                except (OSError, vault_fs.VaultWriteError):
                     logger.warning("Cannot write %s after wikilink removal",
                                    path_str, exc_info=True)
                     continue
@@ -220,8 +221,8 @@ class BacklinkIndex:
             new_text = self._rename_links_to(text, path_str, old_key, new_vault, new_rel)
             if new_text != text:
                 try:
-                    Path(path_str).write_text(new_text, encoding="utf-8")
-                except OSError:
+                    vault_fs.write_text(path_str, new_text)
+                except (OSError, vault_fs.VaultWriteError):
                     logger.warning("Cannot write %s after wikilink rename", path_str, exc_info=True)
                     continue
                 modified.append(path_str)
@@ -291,8 +292,8 @@ class BacklinkIndex:
                     if new_text == text:
                         continue
                     try:
-                        Path(path_str).write_text(new_text, encoding="utf-8")
-                    except OSError:
+                        vault_fs.write_text(path_str, new_text)
+                    except (OSError, vault_fs.VaultWriteError):
                         logger.warning("Cannot write %s after vault rename",
                                        path_str, exc_info=True)
                         continue

@@ -319,7 +319,6 @@ _BASELINE = {
     "search/semantic_index.py": {
         ".mkdir": 1, ".unlink": 1, ".write_text": 1, "os.replace": 2,
     },
-    "vault/backlink_index.py": {".write_text": 3},
     "vault/file_ops.py": {
         ".touch": 1, "os.mkdir": 1, "os.makedirs": 1, "os.remove": 1, "shutil.rmtree": 1,
     },

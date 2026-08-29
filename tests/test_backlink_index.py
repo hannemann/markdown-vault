@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import markdown_vault.core.config as _cfg
+from markdown_vault.core import vault_fs
 from markdown_vault.vault.backlink_index import BacklinkIndex, scan_vaults
 
 
@@ -565,6 +566,54 @@ class TestGraphAdapter(unittest.TestCase):
         by_id = {n.id: n for n in gr.nodes}
         self.assertEqual(by_id[str(page)].degree, 1)   # Page is linked once
         self.assertEqual(by_id[str(note)].degree, 1)
+
+
+class TestRenameRewritesSourceFilesThroughVaultFS(unittest.TestCase):
+    """The rename handlers rewrite the SOURCE notes on disk, now through VaultFS. The
+    incremental tests above use non-existent paths, so the read fails and the write is
+    never reached — these exercise the real rewrite: the write happens (success), and is
+    refused for a source outside every vault (both directions pinned)."""
+
+    def setUp(self):
+        self._tmp = Path(tempfile.mkdtemp())
+        self._vault = self._tmp / "vault"
+        self._vault.mkdir()
+        self._orig_cache = _cfg._vaults_cache
+        _cfg._vaults_cache = [{"name": "vault", "path": str(self._vault)}]
+        self._idx = BacklinkIndex()
+
+    def tearDown(self):
+        _cfg._vaults_cache = self._orig_cache
+        shutil.rmtree(self._tmp, ignore_errors=True)
+
+    def test_rename_wikilinks_rewrites_the_source_on_disk(self):
+        source = self._vault / "Source.md"
+        source.write_text("Link: [[Target]].\n", encoding="utf-8")
+        self._idx.update_file(str(source), source.read_text(encoding="utf-8"))
+
+        modified = self._idx.rename_wikilinks(
+            str(self._vault / "Target.md"), str(self._vault / "Renamed.md"))
+
+        self.assertIn(str(source), modified)
+        rewritten = source.read_text(encoding="utf-8")
+        self.assertNotIn("[[Target]]", rewritten)   # old link gone
+        self.assertIn("Renamed", rewritten)          # rewritten through VaultFS, on disk
+
+    def test_a_refused_write_is_swallowed_not_raised(self):
+        # A tracked, in-vault source whose write VaultFS refuses — reachable when the source
+        # note is a symlink escaping the vault — must be swallowed, not crash the rename.
+        # Patch write_text to raise the containment error and assert the widened except
+        # (OSError, VaultWriteError) catches it: the source is simply not reported modified.
+        source = self._vault / "Source.md"
+        source.write_text("Link: [[Target]].\n", encoding="utf-8")
+        self._idx.update_file(str(source), source.read_text(encoding="utf-8"))
+
+        with patch("markdown_vault.core.vault_fs.write_text",
+                   side_effect=vault_fs.VaultWriteError("refused")):
+            modified = self._idx.rename_wikilinks(
+                str(self._vault / "Target.md"), str(self._vault / "Renamed.md"))
+
+        self.assertNotIn(str(source), modified)   # refused write swallowed, no crash
 
 
 if __name__ == "__main__":
