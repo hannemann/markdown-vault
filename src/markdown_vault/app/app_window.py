@@ -1383,8 +1383,10 @@ class MainWindow(Adw.ApplicationWindow):
                 # Autofix runs on close-save too; the warn dialog does not
                 # (returned broken list intentionally ignored here).
                 self._apply_wikilink_autofix(tab)
-                self._vault_monitor.skip_next_event(tab.editor.file_path)
                 if tab.editor.save():
+                    # Skip only on success: a failed save emits no FS event, so an up-front
+                    # skip would leak and swallow this note's next external change (BB1/AV1).
+                    self._vault_monitor.skip_next_event(tab.editor.file_path)
                     self._clear_external_conflict(tab)
                     self._semantic_update(tab.editor.file_path)
                 else:
@@ -2578,8 +2580,10 @@ class MainWindow(Adw.ApplicationWindow):
         if not tab:
             return
         broken = self._apply_wikilink_autofix(tab)
-        self._vault_monitor.skip_next_event(tab.editor.file_path)
         if tab.editor.save():
+            # Skip only on success: a failed save emits no FS event, so an up-front skip
+            # would leak and swallow this note's next external change (BB1/AV1).
+            self._vault_monitor.skip_next_event(tab.editor.file_path)
             self._tab_bar.clear_tab_error(tab.file_path)
             self._tab_bar.hide_error_banner(tab.file_path)
             self._clear_external_conflict(tab)
@@ -2695,9 +2699,11 @@ class MainWindow(Adw.ApplicationWindow):
 
     def _autosave_save_tab(self, tab) -> bool:
         """Save a single tab and notify the vault monitor. Returns True on success."""
-        self._vault_monitor.skip_next_event(tab.editor.file_path)
         ok = tab.editor.save()
         if ok:
+            # Skip only on success: a failed save emits no FS event, so an up-front skip
+            # would leak and swallow this note's next external change (BB1/AV1).
+            self._vault_monitor.skip_next_event(tab.editor.file_path)
             self._semantic_update(tab.editor.file_path)
             self._vault_tree.refresh_lifecycle(tab.editor.file_path)
         return ok

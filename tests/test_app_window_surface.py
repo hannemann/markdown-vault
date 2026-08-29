@@ -97,6 +97,74 @@ class TestAttachmentsMovedStaleGuard(unittest.TestCase):
         win._sync_attachments_move.assert_called_once_with("/vault/old.md", "/vault/there.md")
 
 
+class TestSaveSkipRegisteredOnlyOnSuccess(unittest.TestCase):
+    """Seam guard (stub window, internal names): the three save paths must register the
+    vault-monitor skip only AFTER a successful save. editor.save() returns False without
+    producing an FS event (no file path, or an OSError/UnicodeDecodeError); a skip registered
+    up-front then leaks and swallows the next genuine external change to the open note — exactly
+    what feeds reload/conflict detection (BB1, same class as AV1). Both directions per site:
+    success registers a skip, failure does not."""
+
+    def _tab(self):
+        tab = unittest.mock.Mock()
+        tab.editor.file_path = "/vault/note.md"
+        tab.file_path = "/vault/note.md"
+        tab.editor.is_modified = True
+        return tab
+
+    def test_autosave_registers_skip_only_after_a_successful_save(self):
+        win = unittest.mock.Mock()
+        tab = self._tab()
+        tab.editor.save.return_value = True
+        MainWindow._autosave_save_tab(win, tab)
+        win._vault_monitor.skip_next_event.assert_called_once_with("/vault/note.md")
+
+    def test_autosave_registers_no_skip_when_the_save_fails(self):
+        win = unittest.mock.Mock()
+        tab = self._tab()
+        tab.editor.save.return_value = False
+        MainWindow._autosave_save_tab(win, tab)
+        win._vault_monitor.skip_next_event.assert_not_called()
+
+    def test_save_dirty_tabs_registers_skip_only_after_a_successful_save(self):
+        win = unittest.mock.Mock()
+        tab = self._tab()
+        win._tab_bar.get_tab.return_value = tab
+        win._apply_wikilink_autofix.return_value = []
+        tab.editor.save.return_value = True
+        MainWindow._save_dirty_tabs(win, ["/vault/note.md"])
+        win._vault_monitor.skip_next_event.assert_called_once_with("/vault/note.md")
+
+    def test_save_dirty_tabs_registers_no_skip_when_the_save_fails(self):
+        win = unittest.mock.Mock()
+        tab = self._tab()
+        win._tab_bar.get_tab.return_value = tab
+        win._apply_wikilink_autofix.return_value = []
+        tab.editor.save.return_value = False
+        failed = MainWindow._save_dirty_tabs(win, ["/vault/note.md"])
+        win._vault_monitor.skip_next_event.assert_not_called()
+        self.assertEqual(failed, ["/vault/note.md"])
+
+    def test_save_current_registers_skip_only_after_a_successful_save(self):
+        win = unittest.mock.Mock()
+        tab = self._tab()
+        win._tab_bar.get_current_tab.return_value = tab
+        win._apply_wikilink_autofix.return_value = []
+        tab.editor.save.return_value = True
+        MainWindow._save_current(win)
+        win._vault_monitor.skip_next_event.assert_called_once_with("/vault/note.md")
+
+    @unittest.mock.patch("markdown_vault.app.app_window.dialogs")
+    def test_save_current_registers_no_skip_when_the_save_fails(self, _dialogs):
+        win = unittest.mock.Mock()
+        tab = self._tab()
+        win._tab_bar.get_current_tab.return_value = tab
+        win._apply_wikilink_autofix.return_value = []
+        tab.editor.save.return_value = False
+        MainWindow._save_current(win)
+        win._vault_monitor.skip_next_event.assert_not_called()
+
+
 class TestActions(AppWindowTest):
     """The action surface: what the menus, shortcuts and the app shell can call.
 
