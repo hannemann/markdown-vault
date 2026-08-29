@@ -30,6 +30,7 @@ All raw filesystem mutation for vault writes lives here; the AST guard forbids i
 else.
 """
 
+import glob
 import logging
 import os
 import shutil
@@ -95,6 +96,49 @@ def atomic_save_paths(path) -> tuple[str, str]:
     return f"{real}.{os.getpid()}.part", real
 
 
+def _pid_alive(pid: int) -> bool:
+    """Whether *pid* still names a running process. Unknown counts as alive — see
+    :func:`_sweep_stale_parts` for why the doubt resolves that way."""
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        # No such process: the answer itself, not a swallowed failure.
+        return False
+    except PermissionError:
+        # Signalling refused means the process EXISTS and belongs to someone else.
+        return True
+    except OSError:
+        # Cannot tell — report alive so the caller keeps the file (see _sweep_stale_parts).
+        return True
+    return True
+
+
+def _sweep_stale_parts(real: Path) -> None:
+    """Delete *real*'s leftover ``.<pid>.part`` files whose owning process is gone.
+
+    The pid in the temp name (see :func:`atomic_save_paths`) costs the self-healing the old
+    fixed name had: a crash-orphan used to be truncated and renamed away by the next save of
+    that note, whereas a later process has a different pid and never touches it. Without this
+    sweep they accumulate per (note, process) — untracked entries in the git panel, and files
+    carried into whatever syncs the vault.
+
+    Goes by whether the owner still runs, not by age, because a *live* pid's temp belongs to
+    a concurrently running instance saving the same note (duplicate instances do happen), and
+    deleting that would corrupt its write. Every doubt therefore keeps the file: an orphan is
+    recoverable, a destroyed in-flight write is not.
+    """
+    prefix, suffix = real.name + ".", ".part"
+    for candidate in real.parent.glob(glob.escape(real.name) + ".*.part"):
+        pid = candidate.name[len(prefix):-len(suffix)]
+        if not pid.isdigit() or _pid_alive(int(pid)):
+            continue
+        try:
+            candidate.unlink()
+        except OSError as exc:
+            # Opportunistic cleanup; a leftover is harmless next to a failed save.
+            logger.debug("could not remove stale part file %s: %s", candidate, exc)
+
+
 def _atomic_bytes(target: Path, data: bytes) -> None:
     # Write at the RESOLVED leaf. os.replace renames onto the name, it does not write
     # through a symlink there — so to preserve a symlinked note's semantics (update the
@@ -104,6 +148,11 @@ def _atomic_bytes(target: Path, data: bytes) -> None:
     tmp_str, real_str = atomic_save_paths(target)
     real, tmp = Path(real_str), Path(tmp_str)
     real.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        _sweep_stale_parts(real)
+    except OSError as exc:
+        # Cleanup is opportunistic — never let it cost the save it precedes.
+        logger.debug("stale part sweep failed for %s: %s", real, exc)
     try:
         with open(tmp, "wb") as fh:
             fh.write(data)

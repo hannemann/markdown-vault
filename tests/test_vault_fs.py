@@ -205,6 +205,59 @@ class TestAtomicSavePaths(unittest.TestCase):
             self.assertFalse(part.endswith(".md"))
 
 
+class TestStalePartSweep(unittest.TestCase):
+    """BD2: the pid in the temp name stopped orphans from self-healing. With the old fixed
+    name a crash-orphan was truncated and renamed away by the next save of that note; a
+    later process has a different pid and never touches it, so they accumulate per (note,
+    process) — visible in the git panel (untracked) and carried into Nextcloud sync.
+
+    The sweep must not take a CONCURRENT instance's in-flight temp with it, which is why it
+    goes by whether the owning process still runs rather than by age. Unknown state keeps the
+    file: leaving an orphan is recoverable, deleting a live write is not."""
+
+    def test_an_orphan_from_a_dead_process_is_removed(self):
+        with _Vault() as v:
+            note = os.path.join(v.vault, "note.md")
+            orphan = Path(f"{note}.999999.part")
+            orphan.write_text("half-written")
+            with mock.patch("markdown_vault.core.vault_fs._pid_alive", return_value=False):
+                vfs.write_text_atomic(note, "new")
+            self.assertFalse(orphan.exists())
+            self.assertEqual(Path(note).read_text(), "new")
+
+    def test_an_orphan_from_a_live_process_is_kept(self):
+        # A second instance saving the same note right now. Deleting its temp would corrupt
+        # that write; AGENTS.md notes duplicate instances do happen.
+        with _Vault() as v:
+            note = os.path.join(v.vault, "note.md")
+            in_flight = Path(f"{note}.999999.part")
+            in_flight.write_text("other instance writing")
+            with mock.patch("markdown_vault.core.vault_fs._pid_alive", return_value=True):
+                vfs.write_text_atomic(note, "new")
+            self.assertTrue(in_flight.exists())
+
+    def test_another_notes_orphan_is_untouched(self):
+        with _Vault() as v:
+            note = os.path.join(v.vault, "note.md")
+            other = Path(os.path.join(v.vault, "other.md.999999.part"))
+            other.write_text("not mine")
+            with mock.patch("markdown_vault.core.vault_fs._pid_alive", return_value=False):
+                vfs.write_text_atomic(note, "new")
+            self.assertTrue(other.exists())
+
+    def test_a_sweep_failure_does_not_fail_the_save(self):
+        # Cleanup is opportunistic; the write is what matters and must still happen.
+        with _Vault() as v:
+            note = os.path.join(v.vault, "note.md")
+            with mock.patch("markdown_vault.core.vault_fs._sweep_stale_parts",
+                            side_effect=OSError("cannot list")):
+                vfs.write_text_atomic(note, "new")
+            self.assertEqual(Path(note).read_text(), "new")
+
+    def test_pid_alive_reports_this_process(self):
+        self.assertTrue(vfs._pid_alive(os.getpid()))
+
+
 class TestDeleteOps(unittest.TestCase):
     def test_unlink_a_file_inside(self):
         with _Vault() as v:
