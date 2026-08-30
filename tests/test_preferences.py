@@ -837,10 +837,10 @@ class TestOnnxDownloadIsValidated(unittest.TestCase):
         kwargs = self._dispatch("tokenizer")
         validate = kwargs["kwargs"]["validate"]
         self.assertIsNotNone(validate)
-        with patch("markdown_vault.ui.preferences.embedding_subpage.config.is_json",
+        with patch("markdown_vault.ui.preferences.embedding_subpage.config.is_tokenizer_json",
                    return_value=False):
             self.assertIsNotNone(validate("/m/tokenizer.json"))
-        with patch("markdown_vault.ui.preferences.embedding_subpage.config.is_json",
+        with patch("markdown_vault.ui.preferences.embedding_subpage.config.is_tokenizer_json",
                    return_value=True):
             self.assertIsNone(validate("/m/tokenizer.json"))
 
@@ -851,7 +851,7 @@ class TestOnnxDownloadIsValidated(unittest.TestCase):
         tok = self._dispatch("tokenizer")["kwargs"]["validate"]
         with patch("markdown_vault.ui.preferences.embedding_subpage.config.is_onnx",
                    return_value=True), \
-             patch("markdown_vault.ui.preferences.embedding_subpage.config.is_json",
+             patch("markdown_vault.ui.preferences.embedding_subpage.config.is_tokenizer_json",
                    return_value=False):
             self.assertIsNone(model("/m/model.onnx"))          # onnx check accepted
             self.assertIsNotNone(tok("/m/tokenizer.json"))     # json check rejected

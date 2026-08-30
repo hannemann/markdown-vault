@@ -571,7 +571,7 @@ class EmbeddingSubpageMixin:
             url = (self._sem_tok_url_entry.get_text().strip()
                    or config.default("semantic.onnx.tokenizer_url"))
             filename, bar, target = "tokenizer.json", self._sem_tok_progress, tok_p
-            check = lambda p: (None if config.is_json(p) else
+            check = lambda p: (None if config.is_tokenizer_json(p) else
                                _("That URL isn't a tokenizer file — use the download link, "
                                  "not the web page."))
         if not url:

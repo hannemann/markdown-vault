@@ -512,21 +512,27 @@ class TestDefaultAndMigration(unittest.TestCase):
         (Path(d) / "empty.onnx").write_bytes(b"")
         self.assertFalse(_cfg.is_onnx(Path(d) / "empty.onnx"))
 
-    def test_is_json_accepts_a_tokenizer_and_rejects_a_page(self):
-        # tokenizer.json is downloaded next to the model and had no check either. It must
-        # parse — an error page does not, and JSON is cheap enough to verify exactly rather
-        # than by a magic byte.
+    def test_is_tokenizer_json_wants_a_tokenizer_not_merely_json(self):
+        # Parsing alone lets the failure it is meant to catch straight through: a server's
+        # JSON error body IS valid JSON. Requiring the "model" key — the tokenizer
+        # algorithm, present in every HF tokenizer.json — separates the two. Named for what
+        # it checks, since it is no longer a generic JSON test.
         import tempfile
         from pathlib import Path
         d = tempfile.mkdtemp()
         self.addCleanup(lambda: __import__("shutil").rmtree(d, ignore_errors=True))
         good = Path(d) / "tokenizer.json"
-        good.write_text('{"version": "1.0", "model": {}}', encoding="utf-8")
-        bad = Path(d) / "page.json"
-        bad.write_text("<!DOCTYPE html><html>", encoding="utf-8")
-        self.assertTrue(_cfg.is_json(good))
-        self.assertFalse(_cfg.is_json(bad))
-        self.assertFalse(_cfg.is_json(Path(d) / "missing.json"))
+        good.write_text('{"version": "1.0", "model": {"type": "BPE"}}', encoding="utf-8")
+        self.assertTrue(_cfg.is_tokenizer_json(good))
+        for name, content in (("page.json", "<!DOCTYPE html><html>"),
+                              ("err.json", '{"error": "not found"}'),
+                              ("list.json", '["not", "an", "object"]'),
+                              ("cut.json", '{"version": "1.0", "mod')):
+            with self.subTest(content=name):
+                bad = Path(d) / name
+                bad.write_text(content, encoding="utf-8")
+                self.assertFalse(_cfg.is_tokenizer_json(bad))
+        self.assertFalse(_cfg.is_tokenizer_json(Path(d) / "missing.json"))
 
     def test_is_gguf_checks_magic(self):
         import os

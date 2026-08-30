@@ -612,19 +612,26 @@ def is_onnx(path) -> bool:
         return False
 
 
-def is_json(path) -> bool:
-    """Whether *path* parses as JSON — the check for a downloaded ``tokenizer.json``.
+def is_tokenizer_json(path) -> bool:
+    """Whether *path* is a tokenizer definition — the check for a downloaded
+    ``tokenizer.json``.
 
-    Exact rather than a magic byte, because JSON is cheap to verify outright; an error page
-    served in place of the tokenizer fails it.
+    Parsing alone would admit the very thing this guards against: a server's JSON error body
+    is valid JSON. So it also requires the ``model`` key, the tokenizer algorithm, which
+    every HuggingFace ``tokenizer.json`` carries.
+
+    Parsing the whole file has a second effect worth keeping: a truncated download does not
+    parse, so this path detects an interrupted transfer even when the server sent no
+    ``Content-Length`` — which the model download cannot (see
+    :func:`model_download.download_to`).
     """
     try:
         with open(path, "rb") as fh:
-            json.load(fh)
-        return True
+            data = json.load(fh)
     except (OSError, ValueError):
         # ValueError covers JSONDecodeError and a bad encoding; either way not a tokenizer
         return False
+    return isinstance(data, dict) and "model" in data
 
 
 def list_models(settings: dict) -> list:
