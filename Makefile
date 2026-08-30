@@ -1,5 +1,5 @@
 SHELL := /bin/bash
-.PHONY: _fetch-wheels lock-wheels download-wheels build-flatpak bundle-flatpak install-flatpak uninstall-flatpak run-flatpak test-flatpak clean clean-build clean-cache build venv venv-ai install install-ai uninstall clean-local run test test-one coverage callbacks lint test-e2e docs-settings graph-build graph-update graph-query graph-path graph-explain start stop restart status dbg-ready dbg-state dbg-tabs dbg-active dbg-open dbg-close dbg-select dbg-search dbg-quickopen dbg-submit dbg-waitidle dbg-answer dbg-ask dbg-prefs
+.PHONY: _fetch-wheels lock-wheels download-wheels build-flatpak bundle-flatpak install-flatpak uninstall-flatpak run-flatpak test-flatpak clean clean-build clean-cache build venv venv-ai install install-ai uninstall clean-local run test test-one coverage callbacks lint test-e2e docs-settings graph-build graph-update graph-obsidian graph-query graph-path graph-explain start stop restart status dbg-ready dbg-state dbg-tabs dbg-active dbg-open dbg-close dbg-select dbg-search dbg-quickopen dbg-submit dbg-waitidle dbg-answer dbg-ask dbg-prefs
 
 WHEEL_DIR := src/share/markdown-vault
 WHEELS_DIR := $(WHEEL_DIR)/wheels
@@ -265,6 +265,7 @@ status:
 graph-build:
 	graphify . --code-only
 	graphify cluster-only . --no-label
+	graphify export wiki
 
 docs-settings:
 	python3 scripts/gen_settings_docs.py
@@ -286,10 +287,12 @@ graph-update:
 	graphify cluster-only .
 	graphify export wiki
 
-# The Obsidian vault is NOT in graph-update: including it pushed that target to ~25-29 s
-# (3825 notes, 17 MB rewritten every time), too much for a path that runs after every edit.
-# On its own, with the clustering it needs to be current: ~9 s. Run it when you actually
-# want to browse the graph by hand — `graphify-out/obsidian/` opens as a vault.
+# The Obsidian vault is NOT in graph-update, and the seconds are the smaller reason. If
+# graphify-out/obsidian/ is registered as a vault in settings.yaml — which is the point of
+# exporting it — then rewriting its 3825 notes fires the vault monitor and a semantic
+# reindex over all of them, on every code edit. (That also inflated the timings taken while
+# it was chained: the app was reindexing during the measurement.) Its own target instead:
+# ~9 s including the clustering it needs to be current.
 graph-obsidian:
 	graphify cluster-only .
 	graphify export obsidian
