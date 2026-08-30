@@ -19,17 +19,16 @@ Two disambiguations keep the false-alarm rate at zero (see the ticket's AG1/AG5)
   is a module call that is NOT a filesystem mutation (skipped) — a bare receiver name that
   matches a module imported in the file is judged by the module table, not the method table.
 
-Migration is a ratchet: the current findings are frozen in ``_BASELINE`` and the test asserts
-the scan equals it exactly. A NEW raw call turns it red immediately; redirecting a site onto a
-facade turns it red too, forcing a deliberate baseline update in the same commit — so the
-baseline is always the accurate remaining-work list. "Done" for the whole effort is
-``_BASELINE == {}`` — at which point this ratchet should be REPLACED by a plain "must be empty"
-assertion, so the apparatus does not outlive its purpose.
+The migration is finished, so this is now a plain **must be empty** assertion. It was a
+ratchet while it ran: the remaining findings were frozen in a baseline the scan had to equal
+exactly, which turned red both on a new raw call and on a migrated one, forcing a deliberate
+update in the same commit. That apparatus is gone with the work it tracked — 46 raw sites in
+13 modules at the start, none left that the scan can see. Keeping the baseline now would only
+offer somewhere to park a new violation.
 
-The baseline is keyed ``file -> per-op count``, deliberately without line numbers (they shift
-on every unrelated edit and would make the baseline a merge-conflict magnet). The cost: a swap
-WITHIN one file is invisible — drop one ``write_text`` and add another and the count is
-unchanged. Acceptable for the question it answers ("which file still holds raw FS?").
+What a green run means, precisely: no *direct* mutating filesystem call outside the two
+facades and the named exceptions. Not "nothing is written outside them" — see the blind spot
+below.
 
 **What an empty baseline does NOT mean.** The scan sees the stdlib calls listed in
 ``_MUTATIONS`` — it cannot see a third-party library writing on our behalf. ``numpy.save``
@@ -299,38 +298,32 @@ class TestFsChokepoint(unittest.TestCase):
     maxDiff = None   # this goes red by design on nearly every slice-5 commit; show the exact delta
 
     def test_raw_fs_only_in_the_facades(self):
-        current = _scan_tree()
-        current_plain = {f: dict(c) for f, c in current.items()}
+        found = {f: dict(c) for f, c in _scan_tree().items()}
         self.assertEqual(
-            current_plain, _BASELINE,
-            "Raw filesystem mutation the guard can see, outside the facades and exceptions, "
-            "changed.\n"
-            "  New/grown entry  -> route it through VaultFS/StateFS; only if it genuinely "
-            "cannot (a facade, or a bootstrap/pre-facade case) add it to _FACADES or "
-            "_EXCEPTIONS with a test-backed reason.\n"
-            "  Shrunk/removed    -> a site was migrated; update _BASELINE to match "
-            "(the baseline is the remaining-work list).\n"
-            f"  scanned: {current_plain}")
+            found, {},
+            "Raw filesystem mutation outside the facades and the named exceptions:\n"
+            f"  {found}\n"
+            "Route it through VaultFS (inside a vault) or StateFS (outside one). If it "
+            "genuinely cannot — a facade itself, or a bootstrap case that runs before one "
+            "exists — add it to _FACADES or _EXCEPTIONS with a reason a test can check, "
+            "never a promise about how the caller will behave.\n"
+            "Do NOT reintroduce a baseline to park it in: the migration is finished, and a "
+            "list of accepted violations is what this guard replaced.")
 
 
-# Raw-FS sites still to migrate (slice 5). Started at 13 modules / 46 sites; shrinks per
-# redirect; empty == effort complete. Migrated: core/debug.py, core/session.py -> StateFS;
-# vault/vault_tree.py, vault/backlink_index.py, vault/file_ops.py, core/attachments.py,
-# editor/editor.py -> VaultFS; importers/document_import.py -> both (note+dir VaultFS,
-# whisper model dir StateFS); importers/web_import.py -> VaultFS (its four image sites went
-# away entirely by sharing attachments.store_image_at rather than being redirected);
-# search/model_download.py -> StateFS (likewise: all four vanished into write_stream, which
-# already owned the .part-then-replace dance the downloader had its own copy of);
-# search/semantic_index.py -> StateFS, which needed a new op: numpy writes the matrix itself,
-# so state_fs.promote guards where the temp file LANDS rather than how it is produced;
-# core/config.py -> StateFS LAST, because state_fs imports it, so the import back has to stay
-# function-local (pinned in test_config).
-# Exempted (see _EXCEPTIONS): core/logging_setup.py — a bootstrap dir mkdir before the facade.
-#
-# EMPTY. The migration is complete; per the docstring above, the ratchet is now due to be
-# replaced by a plain "must be empty" assertion so the apparatus does not outlive its purpose.
-_BASELINE: dict[str, dict[str, int]] = {}
-
+# The migration, for the record — 46 raw sites in 13 modules, now none the scan can see:
+#   core/debug.py, core/session.py, search/model_download.py, search/semantic_index.py,
+#   core/config.py                                      -> StateFS
+#   vault/vault_tree.py, vault/backlink_index.py, vault/file_ops.py, core/attachments.py,
+#   editor/editor.py, importers/web_import.py           -> VaultFS
+#   importers/document_import.py                        -> both (note + dir VaultFS,
+#                                                          whisper model dir StateFS)
+# Three of them lost their sites without a redirect, by sharing an operation that already
+# existed rather than migrating a private copy of it: web_import's four image writes went into
+# attachments.store_image_at, model_download's four into state_fs.write_stream, and config's
+# three into state_fs.write_text. semantic_index needed the one genuinely new operation,
+# state_fs.promote, because numpy writes the matrix itself and only its LANDING can be
+# guarded. config came last: state_fs imports it, so the import back stays function-local.
 
 if __name__ == "__main__":
     unittest.main()
