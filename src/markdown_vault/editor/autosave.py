@@ -64,6 +64,9 @@ class AutosaveManager:
             if self._save_tab(tab):
                 pass  # save_tab handles monitor skip
             else:
+                # The fallback is unreachable (save() sets a reason on every False path) and
+                # a sentence rather than "" so it cannot leave a dangling placeholder if it
+                # ever is reached. A guard, not a message: do not delete it as unused.
                 msg = _('Could not save "{name}". {reason}').format(
                     name=Path(tab.file_path).name,
                     reason=tab.editor.last_save_error or _("The reason is not known."))

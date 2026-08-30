@@ -2621,10 +2621,10 @@ class MainWindow(Adw.ApplicationWindow):
         else:
             self._vault_monitor.forget_atomic_save(tab.editor.file_path)
             # One msgid with named placeholders, not a translated stem plus an appended
-            # reason: the translator has to be able to reorder them. The fallback is a
-            # sentence rather than "" so the message never renders with a dangling
-            # placeholder — a translator cannot see from the msgid that it might be empty,
-            # and would punctuate around it.
+            # reason: the translator has to be able to reorder them. The fallback is
+            # UNREACHABLE — save() sets a reason on every False path — and is a sentence
+            # rather than "" so that if it ever is reached the message does not render with
+            # a dangling placeholder. A guard, not a message: do not delete it as unused.
             msg = _('Could not save "{name}". {reason}').format(
                 name=Path(tab.file_path).name,
                 reason=tab.editor.last_save_error or _("The reason is not known."))
