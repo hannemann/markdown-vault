@@ -172,6 +172,48 @@ class TestAtomicWrites(unittest.TestCase):
             self.assertFalse(Path(p + ".part").exists())
 
 
+class TestWritableTarget(unittest.TestCase):
+    """The predicate a caller asks BEFORE doing work it would have to throw away — the
+    import dialog blocks on it instead of converting a document and failing at the write.
+
+    It must be the guard's own question, not a second approximation of it: a lexical
+    "is this path under a vault?" says yes for a symlinked directory the guard then refuses,
+    and would need its own repair when unlocked links land. Same roots, same mode, one
+    answer."""
+
+    def test_a_folder_in_the_vault_is_writable(self):
+        with _Vault() as v:
+            self.assertTrue(vfs.is_writable_target(v.vault))
+
+    def test_a_folder_outside_every_vault_is_not(self):
+        with _Vault() as v:
+            self.assertFalse(vfs.is_writable_target(v.outside))
+
+    def test_a_symlinked_directory_leading_out_is_not_writable(self):
+        # The case a lexical check gets wrong: the path SITS in the vault, so a string test
+        # admits it, while the guard resolves it and refuses. The predicate must agree with
+        # the guard, or the dialog waves the user into a failure it just promised to prevent.
+        with _Vault() as v:
+            link = os.path.join(v.vault, "linked")
+            os.symlink(v.outside, link)
+            self.assertFalse(vfs.is_writable_target(link))
+
+    def test_it_agrees_with_the_guard_on_the_same_path(self):
+        # The property that matters, asserted directly rather than inferred: whatever the
+        # predicate says, the write does the same.
+        with _Vault() as v:
+            link = os.path.join(v.vault, "linked")
+            os.symlink(v.outside, link)
+            for path in (os.path.join(v.vault, "sub"), link, v.outside):
+                allowed = vfs.is_writable_target(path)
+                try:
+                    vfs.mkdir(os.path.join(path, "probe"), parents=True, exist_ok=True)
+                    refused = False
+                except vfs.VaultWriteError:
+                    refused = True
+                self.assertEqual(allowed, not refused, f"disagreement on {path}")
+
+
 class TestAtomicSavePaths(unittest.TestCase):
     """The atomic writer renames <target>.part onto <target>. The vault monitor has to
     announce that exact pair BEFORE the save so it can recognise the resulting rename as our

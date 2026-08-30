@@ -60,6 +60,22 @@ def _guard(target, *, follow_last: bool) -> None:
         raise OutsideVault(f"{target!s} is outside every vault")
 
 
+def is_writable_target(path) -> bool:
+    """Whether a write to *path* would be allowed — the guard's own question, asked without
+    performing the write.
+
+    For a caller that would otherwise do expensive work only to have it refused: the import
+    dialog blocks its button on this rather than converting a document first. Deliberately
+    NOT a lexical "is this under a vault root?" test — that admits a symlinked directory the
+    guard then refuses, and would need its own repair once unlocked links exist. Same roots,
+    same mode as :func:`_guard`, so the answer cannot drift from the decision.
+
+    It is a snapshot, not a promise: the roots and the filesystem can change between the
+    question and the write, which stays the authority.
+    """
+    return within_any(_vault_roots(), path, follow_last=True)
+
+
 def write_text(path, text: str, *, encoding: str = "utf-8", exclusive: bool = False) -> None:
     """Write *text* to a vault file (guarded).
 

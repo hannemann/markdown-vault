@@ -159,8 +159,8 @@ class TestRecheckFile(unittest.TestCase):
         self.dlg = _make_dialog()
         # The target folder is now checked too, and "/vault/notes" is not a real vault here.
         # Pin it so these tests keep asserting what they are about (backend + model state).
-        p = patch("markdown_vault.importers.dialog_import.path_utils.find_vault_for_dir",
-                  return_value="/vault")
+        p = patch("markdown_vault.importers.dialog_import.vault_fs.is_writable_target",
+                  return_value=True)
         p.start()
         self.addCleanup(p.stop)
 
@@ -224,8 +224,8 @@ class TestRecheckFile(unittest.TestCase):
         # only discovered AFTER converting the document. Block up front, while the user can
         # still act on it, and say so.
         self._doc(mock_doc)
-        with patch("markdown_vault.importers.dialog_import.path_utils.find_vault_for_dir",
-                   return_value=None):
+        with patch("markdown_vault.importers.dialog_import.vault_fs.is_writable_target",
+                   return_value=False):
             self.dlg._file_path = None
             self.dlg._recheck_file()
         self.assertIsNotNone(self.dlg._file_block_reason)
@@ -237,8 +237,8 @@ class TestRecheckFile(unittest.TestCase):
         # A blocking reason must survive picking a file — otherwise the user selects one and
         # the button comes back for an import that cannot work.
         self._doc(mock_doc)
-        with patch("markdown_vault.importers.dialog_import.path_utils.find_vault_for_dir",
-                   return_value=None):
+        with patch("markdown_vault.importers.dialog_import.vault_fs.is_writable_target",
+                   return_value=False):
             self.dlg._file_path = "/docs/report.pdf"
             self.dlg._recheck_file()
         self.assertIsNotNone(self.dlg._file_block_reason)
@@ -572,8 +572,8 @@ class TestSmallGuards(unittest.TestCase):
         self.dlg._file_path = None
         # The target is checked too now, and "/vault/notes" is not a real vault here — pin
         # it so this test keeps asserting what it is about (notice, not a block).
-        with patch("markdown_vault.importers.dialog_import.path_utils.find_vault_for_dir",
-                   return_value="/vault"):
+        with patch("markdown_vault.importers.dialog_import.vault_fs.is_writable_target",
+                   return_value=True):
             self.dlg._recheck_file()
         self.assertIsNone(self.dlg._file_block_reason)   # notice, not a block
         self.assertTrue(self.dlg._file_error.get_revealed())

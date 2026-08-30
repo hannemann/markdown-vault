@@ -286,12 +286,12 @@ class ImportDialog(Adw.Dialog):
                          and not document_import.whisper_model_ready())
         reason = None                                         # blocks Import
         notice = None                                         # informational only
-        if not path_utils.find_vault_for_dir(self._target_dir):
-            # VaultFS refuses a write outside every vault, so the import cannot succeed.
-            # Checked here rather than only at the write: the target is known when the
-            # dialog opens, and failing after the whole conversion tells the user far too
-            # late. Lexical, so it is an EARLY filter, not the authority — the guard still
-            # decides (it resolves symlinks, which this does not).
+        if not vault_fs.is_writable_target(self._target_dir):
+            # Ask the guard its own question instead of approximating it: a lexical
+            # "under a vault?" admits a symlinked directory the write then refuses, and
+            # would need repairing again once unlocked links exist. Checked here at all
+            # because the target is known when the dialog opens, and failing after the
+            # whole conversion tells the user far too late.
             reason = document_import.describe_error(vault_fs.OutsideVault(self._target_dir))
         elif self._file_path:
             suffix = Path(self._file_path).suffix
