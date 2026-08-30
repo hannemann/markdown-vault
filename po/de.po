@@ -548,6 +548,10 @@ msgstr "Die Datei konnte nicht geschrieben werden."
 msgid "The note has no file on disk yet."
 msgstr "Die Notiz hat noch keine Datei auf der Platte."
 
+#: src/markdown_vault/app/app_window.py src/markdown_vault/editor/autosave.py
+msgid "The reason is not known."
+msgstr "Der Grund ist nicht bekannt."
+
 #: src/markdown_vault/search/quick_open_palette.py
 msgid "Quick Open"
 msgstr "Schnell öffnen"

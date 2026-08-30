@@ -305,6 +305,37 @@ class TestSaveFailureReason(unittest.TestCase):
             self.assertTrue(ed.save())
         self.assertIsNone(ed.last_save_error)
 
+    def test_loading_another_file_drops_the_reason(self):
+        # BL1: the reason describes a save attempt on a FILE. Without this it survives into
+        # the next file loaded in the same editor, and the invariant "this reason belongs to
+        # this attempt" rests on every display site happening to read it right after its own
+        # save — call-site discipline instead of construction.
+        import tempfile
+        from unittest.mock import patch
+
+        from markdown_vault.core import vault_fs
+        ed = self._editor()
+        with patch("markdown_vault.core.vault_fs.write_text_atomic",
+                   side_effect=vault_fs.VaultWriteError("outside")):
+            ed.save()
+        with tempfile.NamedTemporaryFile("w", suffix=".md", delete=False) as fh:
+            fh.write("# other")
+        ed.open_file(fh.name)
+        self.assertIsNone(ed.last_save_error)
+
+    def test_renaming_drops_the_reason(self):
+        # A rename can be exactly what fixes the failure (moving the note back into the
+        # vault), so keeping the old reason would describe a path that no longer applies.
+        from unittest.mock import patch
+
+        from markdown_vault.core import vault_fs
+        ed = self._editor()
+        with patch("markdown_vault.core.vault_fs.write_text_atomic",
+                   side_effect=vault_fs.VaultWriteError("outside")):
+            ed.save()
+        ed.set_file_path("/vault/renamed.md")
+        self.assertIsNone(ed.last_save_error)
+
     def test_an_unsaved_buffer_says_so(self):
         ed = self._editor(path=None)
         self.assertFalse(ed.save())

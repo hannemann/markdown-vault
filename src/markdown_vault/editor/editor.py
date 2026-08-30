@@ -369,6 +369,7 @@ class Editor(Gtk.ScrolledWindow):
         the correct location.
         """
         self._file_path = new_path
+        self._last_save_error = None       # describes the old path; a rename may fix it
 
     @property
     def is_modified(self) -> bool:
@@ -386,6 +387,10 @@ class Editor(Gtk.ScrolledWindow):
         is logged.
         """
         self._file_path = path
+        # The reason describes a save attempt on a FILE, so it dies with the file. Held by
+        # call-site discipline otherwise — every display site happens to read it right after
+        # its own attempt — which is the price of state, and cheap to make structural.
+        self._last_save_error = None
         try:
             text = Path(path).read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError) as exc:

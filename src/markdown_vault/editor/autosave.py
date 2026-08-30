@@ -66,7 +66,7 @@ class AutosaveManager:
             else:
                 msg = _('Could not save "{name}". {reason}').format(
                     name=Path(tab.file_path).name,
-                    reason=tab.editor.last_save_error or "")
+                    reason=tab.editor.last_save_error or _("The reason is not known."))
                 logger.warning("autosave: save failed for %s: %s", tab.file_path, msg)
                 self._on_save_failed(tab.file_path, msg)
         return True  # Keep the GLib timeout running.

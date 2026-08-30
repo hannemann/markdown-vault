@@ -2621,10 +2621,13 @@ class MainWindow(Adw.ApplicationWindow):
         else:
             self._vault_monitor.forget_atomic_save(tab.editor.file_path)
             # One msgid with named placeholders, not a translated stem plus an appended
-            # reason: the translator has to be able to reorder them.
+            # reason: the translator has to be able to reorder them. The fallback is a
+            # sentence rather than "" so the message never renders with a dangling
+            # placeholder — a translator cannot see from the msgid that it might be empty,
+            # and would punctuate around it.
             msg = _('Could not save "{name}". {reason}').format(
                 name=Path(tab.file_path).name,
-                reason=tab.editor.last_save_error or "")
+                reason=tab.editor.last_save_error or _("The reason is not known."))
             self._tab_bar.set_tab_error(tab.file_path, "save_error", msg)
             self._tab_bar.show_error_banner(
                 tab.file_path, msg,
