@@ -157,9 +157,14 @@ def load_vaults() -> list[dict[str, str]]:
     callers cannot alias or mutate the cached object.
     """
     global _vaults_cache
-    if _vaults_cache is None:
-        _vaults_cache = _read_vaults_from_disk()
-    return list(_vaults_cache)
+    # Bind to a local FIRST. Reading the global twice — once to test, once to copy — leaves
+    # a window in which _invalidate_cache (called by save_settings on every settings change)
+    # nulls it, and the copy becomes list(None). Not hypothetical since the semantic index's
+    # background thread reaches here through StateFS's guard on every write.
+    cached = _vaults_cache
+    if cached is None:
+        cached = _vaults_cache = _read_vaults_from_disk()
+    return list(cached)
 
 
 def save_vaults(vaults: list[dict[str, str]]) -> None:

@@ -139,6 +139,31 @@ class TestLoadVaults(_TempConfigMixin, unittest.TestCase):
         _cfg.CONFIG_FILE.write_text("vaults: null\n", encoding="utf-8")
         self.assertEqual(_cfg.load_vaults(), [])
 
+    def test_load_vaults_reads_the_cache_global_only_once(self):
+        """load_vaults must bind the cache to a LOCAL before using it.
+
+        Reading the global twice — once to test for None, once to copy — leaves a window in
+        which ``_invalidate_cache`` (which ``save_settings`` calls on every settings change)
+        nulls it, so the copy hits ``list(None)``. Reachable since the semantic index's
+        background thread started calling this through StateFS's guard on every write.
+
+        Checked structurally because it cannot be checked behaviourally: the window is a
+        single bytecode boundary. A threaded probe — one thread looping load_vaults, another
+        looping _invalidate_cache 20000 times — was tried against the unfixed code and never
+        fired, so as a regression guard it would have been worthless while looking like
+        proof. The shape IS the property here.
+        """
+        import ast
+        import inspect
+        tree = ast.parse(inspect.getsource(_cfg.load_vaults).lstrip())
+        reads = [n for n in ast.walk(tree)
+                 if isinstance(n, ast.Name) and n.id == "_vaults_cache"
+                 and isinstance(n.ctx, ast.Load)]
+        self.assertLessEqual(
+            len(reads), 1,
+            "load_vaults reads the _vaults_cache global more than once; an invalidation "
+            "between the reads makes it list(None). Bind it to a local first.")
+
 
 class TestSaveVaults(_TempConfigMixin, unittest.TestCase):
     """Tests for ``save_vaults``."""

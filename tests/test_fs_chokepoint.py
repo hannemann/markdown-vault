@@ -30,6 +30,16 @@ The baseline is keyed ``file -> per-op count``, deliberately without line number
 on every unrelated edit and would make the baseline a merge-conflict magnet). The cost: a swap
 WITHIN one file is invisible — drop one ``write_text`` and add another and the count is
 unchanged. Acceptable for the question it answers ("which file still holds raw FS?").
+
+**What an empty baseline does NOT mean.** The scan sees the stdlib calls listed in
+``_MUTATIONS`` — it cannot see a third-party library writing on our behalf. ``numpy.save``
+in ``search/semantic_index.py`` is the live instance: it produces the index matrix itself,
+and the facade guards only where the result LANDS (``state_fs.promote``). Logging is a second
+case — it opens its own file through a stdlib handler the scanner never sees, which is why
+``core/logging_setup.py`` is an exception rather than a finding. So zero means "no raw
+filesystem call the scanner can see", not "no bytes are written outside the facades". Read as
+the latter it is more convincing than a comment making the same overclaim, because a number
+looks like a measurement.
 """
 
 import ast
