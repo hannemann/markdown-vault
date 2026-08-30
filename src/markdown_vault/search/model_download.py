@@ -82,9 +82,15 @@ def download_to(url, target, *, validate=None, progress=None) -> int:
         def _stream():
             """Yield the response body, reporting progress and refusing a short read.
 
-            Raising from HERE rather than after the write is what makes the truncated
-            download safe: state_fs.write_stream tears down its ``.part`` on any exception
-            from the producer, so an interrupted transfer never lands as a complete file.
+            Raising from HERE rather than after the write is what disarms a truncated
+            download: state_fs.write_stream tears down its ``.part`` on any exception from
+            the producer, so the partial never reaches the rename.
+
+            The guarantee is exactly as wide as the header: a transfer whose length the
+            server ANNOUNCED cannot land truncated. Without a ``Content-Length`` there is
+            nothing to compare against and an interruption is undetectable here — *validate*
+            does not close that gap either, since it tests the format at the start of the
+            file and a truncated download is well-formed at the front.
             """
             done = last = 0
             while True:
