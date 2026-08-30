@@ -6,6 +6,8 @@ import unittest
 from pathlib import Path
 
 # Need to patch config before importing path_utils.
+import support
+
 import markdown_vault.core.config as _cfg
 
 
@@ -18,6 +20,13 @@ class _TempConfigMixin:
         self._orig_file = _cfg.CONFIG_FILE
         _cfg.CONFIG_DIR = Path(self._tmpdir)
         _cfg.CONFIG_FILE = Path(self._tmpdir) / "settings.yaml"
+        # The settings write goes through StateFS, whose guard reads paths.CONFIG_DIR — the
+        # OWNER — not config's rebindable alias, so the two rebinds above do not move the
+        # allowed root. (Same block as test_config's copy of this mixin; the duplication is
+        # pre-existing.)
+        ctx = support.state_roots(self._tmpdir)
+        ctx.__enter__()
+        self.addCleanup(ctx.__exit__, None, None, None)
         # Invalidate cache so tests start fresh.
         if hasattr(_cfg, "_vaults_cache"):
             _cfg._vaults_cache = None

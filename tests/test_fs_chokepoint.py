@@ -322,11 +322,14 @@ class TestFsChokepoint(unittest.TestCase):
 # search/model_download.py -> StateFS (likewise: all four vanished into write_stream, which
 # already owned the .part-then-replace dance the downloader had its own copy of);
 # search/semantic_index.py -> StateFS, which needed a new op: numpy writes the matrix itself,
-# so state_fs.promote guards where the temp file LANDS rather than how it is produced.
+# so state_fs.promote guards where the temp file LANDS rather than how it is produced;
+# core/config.py -> StateFS LAST, because state_fs imports it, so the import back has to stay
+# function-local (pinned in test_config).
 # Exempted (see _EXCEPTIONS): core/logging_setup.py — a bootstrap dir mkdir before the facade.
-_BASELINE = {
-    "core/config.py": {".mkdir": 1, "os.fdopen": 1, "os.replace": 1, "os.unlink": 1},
-}
+#
+# EMPTY. The migration is complete; per the docstring above, the ratchet is now due to be
+# replaced by a plain "must be empty" assertion so the apparatus does not outlive its purpose.
+_BASELINE: dict[str, dict[str, int]] = {}
 
 
 if __name__ == "__main__":

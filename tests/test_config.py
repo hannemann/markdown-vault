@@ -8,6 +8,8 @@ from pathlib import Path
 
 # Patch CONFIG_DIR / CONFIG_FILE before importing the module under test
 # so that no real user config is touched.
+import support
+
 import markdown_vault.core.config as _cfg
 
 
@@ -20,6 +22,12 @@ class _TempConfigMixin:
         self._orig_file = _cfg.CONFIG_FILE
         _cfg.CONFIG_DIR = Path(self._tmpdir)
         _cfg.CONFIG_FILE = Path(self._tmpdir) / "settings.yaml"
+        # The settings write goes through StateFS now, and its guard reads paths.CONFIG_DIR
+        # — the OWNER — not config's rebindable alias, so rebinding the two names above does
+        # not move the allowed root with them. Register the temp dir explicitly.
+        ctx = support.state_roots(self._tmpdir)
+        ctx.__enter__()
+        self.addCleanup(ctx.__exit__, None, None, None)
         _cfg._vaults_cache = None
         # The owned settings are process state: without this, one test's object
         # (loaded from a temp dir that is about to be deleted) would answer the
@@ -138,6 +146,34 @@ class TestLoadVaults(_TempConfigMixin, unittest.TestCase):
     def test_load_vaults_none_yaml_key(self):
         _cfg.CONFIG_FILE.write_text("vaults: null\n", encoding="utf-8")
         self.assertEqual(_cfg.load_vaults(), [])
+
+    def test_the_settings_write_goes_through_state_fs(self):
+        import unittest.mock as mock
+        with mock.patch("markdown_vault.core.state_fs.write_text") as w, \
+             mock.patch("markdown_vault.core.state_fs.mkdir") as md:
+            _cfg.save_vaults([{"name": "V", "path": "/tmp/v"}])
+        w.assert_called_once()
+        md.assert_called()
+
+    def test_config_does_not_import_state_fs_at_module_level(self):
+        """The import must stay inside the functions that write.
+
+        state_fs imports config at module level (for the vault and model roots), so a
+        module-level import back would close a cycle — and the failure mode is not a clean
+        error but an import order the next unrelated change can flip. Pinned structurally
+        because a cycle that only bites in one import order is not reliably reproducible
+        from a test that merely imports the package.
+        """
+        import ast
+        import inspect
+        tree = ast.parse(inspect.getsource(_cfg))
+        top_level = [n for n in tree.body if isinstance(n, (ast.Import, ast.ImportFrom))]
+        names = [a.name for n in top_level if isinstance(n, ast.Import) for a in n.names]
+        names += [n.module or "" for n in top_level if isinstance(n, ast.ImportFrom)]
+        self.assertNotIn(
+            "markdown_vault.core.state_fs", names,
+            "config must import state_fs inside the writing functions, not at module level: "
+            "state_fs imports config, so this closes an import cycle.")
 
     def test_load_vaults_reads_the_cache_global_only_once(self):
         """load_vaults must bind the cache to a LOCAL before using it.

@@ -10,7 +10,6 @@ import copy
 import json
 import logging
 import os
-import tempfile
 import traceback
 from pathlib import Path
 
@@ -36,7 +35,8 @@ LOG_FILE = STATE_DIR / "markdown-vault.log"
 
 def _ensure_config_dir() -> None:
     """Create the configuration directory if it does not exist."""
-    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    from markdown_vault.core import state_fs   # local: state_fs imports us (see _atomic_write)
+    state_fs.mkdir(str(CONFIG_DIR), parents=True, exist_ok=True)
 
 
 def check_config_access() -> None:
@@ -64,19 +64,18 @@ def check_config_access() -> None:
 
 
 def _atomic_write(path: Path, content: str) -> None:
-    """Atomically write *content* to *path* via temp file + replace."""
-    fd, tmp = tempfile.mkstemp(dir=path.parent, suffix=".tmp")
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as fh:
-            fh.write(content)
-        os.replace(tmp, path)
-    except BaseException:
-        try:
-            os.unlink(tmp)
-        except OSError:
-            # best-effort temp removal; the failed write is re-raised right below
-            pass
-        raise
+    """Atomically write *content* to *path* — the facade's tmp-then-rename, guarded.
+
+    The import is function-local ON PURPOSE and must stay that way: ``state_fs`` imports
+    this module at module level (it reads the vault and model roots from here), so importing
+    it back at the top would close a cycle. ``tests/test_config`` pins that structurally.
+
+    This module is written LAST in the chokepoint migration for exactly that reason, and the
+    order still holds at runtime: by the time anything saves settings, config is fully
+    imported, so the local import resolves an already-loaded module.
+    """
+    from markdown_vault.core import state_fs
+    state_fs.write_text(str(path), content)
 
 
 def _read_vaults_from_disk() -> list[dict[str, str]]:
