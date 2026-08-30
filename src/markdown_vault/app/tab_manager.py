@@ -16,6 +16,7 @@ gi.require_version("Adw", "1")
 from gi.repository import Gtk, Gio
 
 from markdown_vault.core import config
+from markdown_vault.core.i18n import _
 from markdown_vault.editor.editor import Editor
 from markdown_vault.preview.preview import Preview
 from markdown_vault.uikit import banners as banner_mod
@@ -208,11 +209,11 @@ class TabOrchestrator:
             banner_type="warning",
         )
         warning_box.add_button(
-            "Reload",
+            _("Reload"),
             lambda: self._cb_call("on_banner_reload", file_path),
         )
         warning_box.add_button(
-            "Dismiss",
+            _("Dismiss"),
             lambda: self._cb_call("on_banner_dismiss", file_path),
         )
         warning_box.connect(

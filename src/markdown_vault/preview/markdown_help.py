@@ -12,6 +12,8 @@ gi.require_version("Adw", "1")
 
 from gi.repository import Gtk, Gdk
 
+from markdown_vault.core.i18n import _
+
 # ── Syntax data ──────────────────────────────────────────────────────
 
 _PAGES: list[list[tuple[str, list[tuple[str, str]]]]] = [
@@ -271,7 +273,7 @@ class MarkdownHelpOverlay(Gtk.Box):
         close_btn = Gtk.Button(icon_name="window-close-symbolic")
         close_btn.add_css_class("flat")
         close_btn.add_css_class("help-close-btn")
-        close_btn.set_tooltip_text("Close (Esc)")
+        close_btn.set_tooltip_text(_("Close (Esc)"))
         close_btn.connect("clicked", lambda *_: self.hide_overlay())
         self._close_btn = close_btn
         title_bar.append(close_btn)

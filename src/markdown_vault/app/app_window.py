@@ -1700,8 +1700,8 @@ class MainWindow(Adw.ApplicationWindow):
         if not getattr(self, "_sem_available", True):
             self._status_bar.show_error(
                 _("Semantic search: embedding backend unavailable"),
-                actions=[("Rebuild", self.rebuild_semantic_index),
-                         ("Settings", lambda: self._open_preferences(page="search"))])
+                actions=[(_("Rebuild"), self.rebuild_semantic_index),
+                         (_("Settings"), lambda: self._open_preferences(page="search"))])
         elif getattr(self, "_sem_progress", None):
             done, total = self._sem_progress
             self._status_bar.show_progress(
@@ -2749,7 +2749,7 @@ class MainWindow(Adw.ApplicationWindow):
         self._tab_bar.set_tab_error(file_path, "save_error", msg)
         self._tab_bar.show_error_banner(
             file_path, msg,
-            buttons=[("Dismiss", lambda: self._tab_bar.hide_error_banner(file_path))],
+            buttons=[(_("Dismiss"), lambda: self._tab_bar.hide_error_banner(file_path))],
         )
         dialogs.show_error(self, _("Save Failed"), msg)
 

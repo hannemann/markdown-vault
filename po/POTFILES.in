@@ -4,6 +4,7 @@ src/markdown_vault/app/app_window.py
 src/markdown_vault/app/ask_controller.py
 src/markdown_vault/app/file_manager.py
 src/markdown_vault/app/preview_actions.py
+src/markdown_vault/app/tab_manager.py
 src/markdown_vault/editor/autosave.py
 src/markdown_vault/editor/content_changes.py
 src/markdown_vault/editor/editor.py
@@ -15,6 +16,7 @@ src/markdown_vault/graph/graph_view.py
 src/markdown_vault/importers/dialog_import.py
 src/markdown_vault/importers/document_import.py
 src/markdown_vault/importers/web_import.py
+src/markdown_vault/preview/markdown_help.py
 src/markdown_vault/preview/preview.py
 src/markdown_vault/search/ask.py
 src/markdown_vault/search/ask_models.py
