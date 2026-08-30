@@ -21,6 +21,7 @@ import re
 import threading
 from pathlib import Path
 
+from markdown_vault.core import state_fs
 from markdown_vault.search import lexical_search
 from markdown_vault.search.semantic_search import (
     Chunk, DimensionMismatch, VectorIndex, chunk_markdown)
@@ -959,7 +960,7 @@ class SemanticIndexManager:
         file from scratch (used by the manual 'rebuild index' action)."""
         for p in (self._json_path, self._npy_path):
             try:
-                p.unlink()
+                state_fs.unlink(str(p))
             except FileNotFoundError:
                 # already gone — the deletion goal is met (sibling OSError below logs)
                 pass
@@ -1016,19 +1017,26 @@ class SemanticIndexManager:
                     mats.append(entry["vecs"])
             matrix = np.vstack(mats) if mats else np.zeros((0, 0), dtype="float32")
         try:
-            self._state_dir.mkdir(parents=True, exist_ok=True)
-            # Atomic write (tmp + os.replace) so a concurrent reader/writer never
-            # sees a half-written .npy or a .json/.npy pair that disagree.  The
-            # npy tmp name ends in .npy so np.save doesn't append its own suffix.
+            state_fs.mkdir(str(self._state_dir), parents=True, exist_ok=True)
+            # Tmp-then-promote so a concurrent reader never sees a half-written .npy or a
+            # half-written .json.  Note what this does NOT give: the two promotions are
+            # separate, so a crash between them leaves a NEW .npy beside an OLD .json — the
+            # pair can disagree even though neither file is torn.  The version/signature
+            # check on load is what catches that.
+            #
+            # np.save writes the matrix itself: buffering it through the facade would mean
+            # holding the whole index in memory for nothing, so the foreign writer produces
+            # the temp file and state_fs.promote owns where it lands.  The npy tmp name ends
+            # in .npy so np.save doesn't append its own suffix.
             npy_tmp = self._npy_path.with_name(self._npy_path.stem + ".tmp.npy")
             json_tmp = self._json_path.with_name(self._json_path.stem + ".tmp.json")
             np.save(npy_tmp, matrix)
-            json_tmp.write_text(json.dumps({
+            state_fs.write_text(str(json_tmp), json.dumps({
                 "version": _INDEX_FORMAT_VERSION,
                 "sig": self._signature_tag,
                 "files": meta_files,
             }))
-            os.replace(npy_tmp, self._npy_path)
-            os.replace(json_tmp, self._json_path)
+            state_fs.promote(str(npy_tmp), str(self._npy_path))
+            state_fs.promote(str(json_tmp), str(self._json_path))
         except Exception:
             logger.warning("failed to save semantic index cache", exc_info=True)

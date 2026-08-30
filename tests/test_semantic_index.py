@@ -6,6 +6,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import support
+
 from markdown_vault.search import semantic_index as SI
 from markdown_vault.search.semantic_index import SemanticIndexManager
 
@@ -72,6 +74,12 @@ class TestSemanticIndexManager(unittest.TestCase):
     def setUp(self):
         self._vault = Path(tempfile.mkdtemp())
         self._state = Path(tempfile.mkdtemp())
+        # The cache write goes through StateFS now, which refuses a target under no allowed
+        # state root — and refuses one INSIDE a vault, so the two temp dirs must stay
+        # separate roots rather than one shared parent.
+        ctx = support.state_roots(str(self._state))
+        ctx.__enter__()
+        self.addCleanup(ctx.__exit__, None, None, None)
         (self._vault / "a.md").write_text("alpha alpha topic\n\nmore alpha", encoding="utf-8")
         (self._vault / "b.md").write_text("beta subject here", encoding="utf-8")
 
@@ -281,6 +289,31 @@ class TestSemanticIndexManager(unittest.TestCase):
         snippet, line = SemanticIndexManager._snippet(chunk)
         self.assertEqual(snippet, "real content on line 48.")
         self.assertEqual(line, 48)  # line number advances past the rule
+
+    def test_the_cache_write_goes_through_state_fs(self):
+        # Four sites in one method: the state dir, the json temp, and both promotions. The
+        # matrix itself is written by numpy — the facade owns where it LANDS, not how a
+        # foreign library streams its own bytes.
+        from unittest import mock
+        m = self._manager(_StubEmbedder())
+        with mock.patch("markdown_vault.core.state_fs.mkdir") as md, \
+             mock.patch("markdown_vault.core.state_fs.write_text") as wt, \
+             mock.patch("markdown_vault.core.state_fs.promote") as pr:
+            m.build()
+        md.assert_called()
+        wt.assert_called()
+        self.assertEqual(pr.call_count, 2)      # the .npy and the .json
+
+    def test_a_refused_cache_write_is_survived_not_fatal(self):
+        # Saving the cache is best-effort: the index is usable in memory either way, so a
+        # refusal must be logged and swallowed rather than break the build that produced it.
+        from unittest import mock
+        from markdown_vault.core import state_fs
+        m = self._manager(_StubEmbedder())
+        with mock.patch("markdown_vault.core.state_fs.mkdir",
+                        side_effect=state_fs.OutsideAllowedRoots("nope")):
+            m.build()                            # must not raise
+        self.assertTrue(m.is_ready())            # and the in-memory index still works
 
     def test_invalidate_cache_forces_reembed(self):
         e1 = _StubEmbedder()

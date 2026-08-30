@@ -310,13 +310,12 @@ class TestFsChokepoint(unittest.TestCase):
 # whisper model dir StateFS); importers/web_import.py -> VaultFS (its four image sites went
 # away entirely by sharing attachments.store_image_at rather than being redirected);
 # search/model_download.py -> StateFS (likewise: all four vanished into write_stream, which
-# already owned the .part-then-replace dance the downloader had its own copy of).
+# already owned the .part-then-replace dance the downloader had its own copy of);
+# search/semantic_index.py -> StateFS, which needed a new op: numpy writes the matrix itself,
+# so state_fs.promote guards where the temp file LANDS rather than how it is produced.
 # Exempted (see _EXCEPTIONS): core/logging_setup.py — a bootstrap dir mkdir before the facade.
 _BASELINE = {
     "core/config.py": {".mkdir": 1, "os.fdopen": 1, "os.replace": 1, "os.unlink": 1},
-    "search/semantic_index.py": {
-        ".mkdir": 1, ".unlink": 1, ".write_text": 1, "os.replace": 2,
-    },
 }
 
 

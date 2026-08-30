@@ -168,6 +168,27 @@ def write_stream(path, chunks, *, validate=None) -> int:
         raise
 
 
+def promote(tmp, target) -> None:
+    """Rename *tmp* onto *target* (both guarded) — the final step of a write this facade did
+    not perform itself.
+
+    For a producer that insists on writing its own file: ``numpy.save`` streams the semantic
+    index's matrix, and buffering it through :func:`write_bytes` would mean holding the whole
+    thing in memory for nothing. So the foreign writer produces a temp file and the facade
+    owns WHERE the result lands, which is the part that matters — it cannot own how a foreign
+    library streams its own bytes, and pretending otherwise would be the more dishonest
+    boundary.
+
+    Both ends are checked. The source, because ``os.replace`` CONSUMES it: leaving it
+    unguarded would turn this into a way of deleting any file by moving it somewhere allowed.
+    It is checked in delete mode (the operation acts on the link, not through it), the target
+    in write mode — the same split the vault-side rename uses.
+    """
+    _guard(tmp, follow_last=False)
+    _guard(target, follow_last=True)
+    os.replace(tmp, target)
+
+
 def mkdir(path, *, parents: bool = False, exist_ok: bool = False) -> None:
     """Create a directory at *path* (guarded)."""
     _guard(path, follow_last=True)

@@ -251,5 +251,46 @@ class TestRootsDerivation(unittest.TestCase):
             self.assertIn(os.path.join(data, "onnx"), roots)  # the valid one still stands
 
 
+class TestPromote(unittest.TestCase):
+    """`promote` is the last step of a write this facade did NOT perform: a third-party
+    writer (numpy's np.save for the semantic index) produces a temp file, and the rename onto
+    the real name goes through the guard. The facade owns WHERE the result lands, which is
+    the part that matters; it cannot own how a foreign library streams its own bytes."""
+
+    def test_it_renames_the_temp_onto_the_target(self):
+        with _Roots() as r:
+            tmp = Path(r.root, "index.tmp.npy")
+            tmp.write_bytes(b"VEC")
+            sfs.promote(str(tmp), os.path.join(r.root, "index.npy"))
+            self.assertEqual(Path(r.root, "index.npy").read_bytes(), b"VEC")
+            self.assertFalse(tmp.exists())
+
+    def test_a_target_outside_the_roots_is_refused(self):
+        with _Roots() as r:
+            tmp = Path(r.root, "index.tmp.npy")
+            tmp.write_bytes(b"VEC")
+            with self.assertRaises(sfs.OutsideAllowedRoots):
+                sfs.promote(str(tmp), "/tmp/not-a-state-root/index.npy")
+            self.assertTrue(tmp.exists())          # nothing consumed on refusal
+
+    def test_a_target_inside_a_vault_is_refused(self):
+        with _Roots() as r:
+            tmp = Path(r.root, "index.tmp.npy")
+            tmp.write_bytes(b"VEC")
+            with self.assertRaises(sfs.InsideVault):
+                sfs.promote(str(tmp), os.path.join(r.vault, "index.npy"))
+
+    def test_a_source_outside_the_roots_is_refused(self):
+        # The source is guarded too, because os.replace CONSUMES it: an unguarded source
+        # turns promote into a way of deleting any file by moving it somewhere allowed.
+        with _Roots() as r:
+            outside = Path(r.root).parent / "precious.bin"
+            outside.write_bytes(b"KEEP")
+            self.addCleanup(lambda: outside.unlink(missing_ok=True))
+            with self.assertRaises(sfs.OutsideAllowedRoots):
+                sfs.promote(str(outside), os.path.join(r.root, "index.npy"))
+            self.assertEqual(outside.read_bytes(), b"KEEP")   # not consumed
+
+
 if __name__ == "__main__":
     unittest.main()
