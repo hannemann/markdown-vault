@@ -2110,5 +2110,13 @@ msgid "The download failed. See the log for details."
 msgstr "Der Download ist fehlgeschlagen. Details siehe Log."
 
 #: src/markdown_vault/search/model_download.py
+msgid ""
+"The configured model folder cannot be written to. Choose another one in "
+"Preferences."
+msgstr ""
+"In den eingestellten Modell-Ordner kann nicht geschrieben werden. Wähle in den "
+"Einstellungen einen anderen."
+
+#: src/markdown_vault/search/model_download.py
 msgid "The download was incomplete — the connection dropped. Try again."
 msgstr "Der Download war unvollständig — die Verbindung ist abgebrochen. Bitte erneut versuchen."

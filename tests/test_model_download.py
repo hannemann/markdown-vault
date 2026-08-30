@@ -11,6 +11,8 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest import mock
 
+import support
+
 from markdown_vault.search import model_download as md
 
 
@@ -43,6 +45,49 @@ def _fake_opener(resp):
 
 
 class TestDownloadTo(unittest.TestCase):
+    def setUp(self):
+        # The write goes through StateFS, which refuses a target under no allowed root.
+        # These tests download into a TemporaryDirectory created inside the test body, which
+        # setUp cannot see — so the TMPDIR root is registered instead. It costs no sharpness:
+        # each test asserts the exact target path, and containment itself is pinned in
+        # test_state_fs. Under the Makefile's TMPDIR pin this sits inside the repo.
+        import tempfile
+        ctx = support.state_roots(tempfile.gettempdir())
+        ctx.__enter__()
+        self.addCleanup(ctx.__exit__, None, None, None)
+        self._tmp = TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.d = self._tmp.name
+
+    def test_the_write_goes_through_state_fs(self):
+        # The whole streaming dance — .part, validate, replace, cleanup — is StateFS's
+        # write_stream. Mutation-verified: writing directly leaves this mock uncalled.
+        target = Path(self.d) / "model.bin"
+        with _fake_opener(_FakeResp(b"GGUF")):
+            with mock.patch("markdown_vault.core.state_fs.write_stream",
+                            return_value=4) as w:
+                md.download_to("https://h/model.bin", target)
+        w.assert_called_once()
+
+    def test_a_facade_rejection_keeps_this_module_s_own_exception(self):
+        # describe_error passes ContentRejected's text through as "already our own
+        # translated reason". If the facade's RejectedContent escaped instead, that branch
+        # would miss and the specific reason would be replaced by the generic catch-all.
+        from markdown_vault.core import state_fs
+        target = Path(self.d) / "model.bin"
+        with _fake_opener(_FakeResp(b"GGUF")):
+            with mock.patch("markdown_vault.core.state_fs.write_stream",
+                            side_effect=state_fs.RejectedContent("looks like an HTML page")):
+                with self.assertRaises(md.ContentRejected) as caught:
+                    md.download_to("https://h/model.bin", target)
+        self.assertIn("HTML page", str(caught.exception))
+
+    def test_a_target_outside_the_allowed_roots_is_reported_not_raw(self):
+        from markdown_vault.core import state_fs
+        msg = md.describe_error(state_fs.OutsideAllowedRoots("/etc/x is under no root"))
+        self.assertNotIn("/etc/x", msg)
+        self.assertTrue(msg)
+
     def test_refuses_a_non_https_url_before_any_network(self):
         with TemporaryDirectory() as d:
             with self.assertRaises(md.NonHttpsUrl):

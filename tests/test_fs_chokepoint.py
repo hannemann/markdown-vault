@@ -308,11 +308,12 @@ class TestFsChokepoint(unittest.TestCase):
 # vault/vault_tree.py, vault/backlink_index.py, vault/file_ops.py, core/attachments.py,
 # editor/editor.py -> VaultFS; importers/document_import.py -> both (note+dir VaultFS,
 # whisper model dir StateFS); importers/web_import.py -> VaultFS (its four image sites went
-# away entirely by sharing attachments.store_image_at rather than being redirected).
+# away entirely by sharing attachments.store_image_at rather than being redirected);
+# search/model_download.py -> StateFS (likewise: all four vanished into write_stream, which
+# already owned the .part-then-replace dance the downloader had its own copy of).
 # Exempted (see _EXCEPTIONS): core/logging_setup.py — a bootstrap dir mkdir before the facade.
 _BASELINE = {
     "core/config.py": {".mkdir": 1, "os.fdopen": 1, "os.replace": 1, "os.unlink": 1},
-    "search/model_download.py": {".mkdir": 1, "open(w)": 1, ".replace": 1, ".unlink": 1},
     "search/semantic_index.py": {
         ".mkdir": 1, ".unlink": 1, ".write_text": 1, "os.replace": 2,
     },
