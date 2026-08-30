@@ -31,7 +31,7 @@ def dump_json(path: str | Path, data, label: str) -> None:
     circular reference) — a debug dump must not crash its caller.
     """
     try:
-        state_fs.write_text(path, json.dumps(data, indent=2, ensure_ascii=False))
+        state_fs.write_text_atomic(path,json.dumps(data, indent=2, ensure_ascii=False))
     except (OSError, ValueError, TypeError, state_fs.StateWriteError):
         logger.warning("Failed to write debug dump %s to %s", label, path, exc_info=True)
 
@@ -40,6 +40,6 @@ def dump_text(path: str | Path, text: str, label: str) -> None:
     """Write *text* verbatim to *path* via StateFS (guarded, atomic). Swallows and logs a
     write/containment failure; a non-str *text* is a programming error and is left to raise."""
     try:
-        state_fs.write_text(path, text)
+        state_fs.write_text_atomic(path,text)
     except (OSError, state_fs.StateWriteError):
         logger.warning("Failed to write debug dump %s to %s", label, path, exc_info=True)

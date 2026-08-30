@@ -132,7 +132,7 @@ def save_session(
         "ask_last_question": ask_last_question,
     }
     try:
-        state_fs.write_text(SESSION_FILE, json.dumps(data, indent=2))
+        state_fs.write_text_atomic(SESSION_FILE, json.dumps(data, indent=2))
         logger.debug("Session saved to %s", SESSION_FILE)
     except (OSError, state_fs.StateWriteError) as exc:
         logger.warning("Failed to save session: %s", exc)

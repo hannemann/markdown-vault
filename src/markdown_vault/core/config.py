@@ -75,7 +75,7 @@ def _atomic_write(path: Path, content: str) -> None:
     imported, so the local import resolves an already-loaded module.
     """
     from markdown_vault.core import state_fs
-    state_fs.write_text(str(path), content)
+    state_fs.write_text_atomic(str(path), content)
 
 
 def _read_vaults_from_disk() -> list[dict[str, str]]:

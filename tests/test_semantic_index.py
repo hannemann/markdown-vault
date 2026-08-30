@@ -297,7 +297,7 @@ class TestSemanticIndexManager(unittest.TestCase):
         from unittest import mock
         m = self._manager(_StubEmbedder())
         with mock.patch("markdown_vault.core.state_fs.mkdir") as md, \
-             mock.patch("markdown_vault.core.state_fs.write_text") as wt, \
+             mock.patch("markdown_vault.core.state_fs.write_text_atomic") as wt, \
              mock.patch("markdown_vault.core.state_fs.promote") as pr:
             m.build()
         md.assert_called()

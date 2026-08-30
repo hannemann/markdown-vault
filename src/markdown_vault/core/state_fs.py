@@ -122,15 +122,23 @@ def _atomic_bytes(target: Path, data: bytes) -> None:
         raise
 
 
-def write_text(path, text: str, *, encoding: str = "utf-8") -> None:
+def write_text_atomic(path, text: str, *, encoding: str = "utf-8") -> None:
     """Atomically write *text* to *path* (guarded). tmp-then-rename, so a crash leaves the
-    previous file intact rather than a truncated one."""
+    previous file intact rather than a truncated one.
+
+    The ``_atomic`` suffix is not decoration: :func:`vault_fs.write_text` is NOT atomic (its
+    atomic twin is a separate function), so the same bare name would carry the opposite
+    guarantee in the sibling facade — and which of the two a caller gets is load-bearing
+    here, not cosmetic. Every write in THIS facade is atomic; the suffix says so rather than
+    leaving it to be inferred from the module you happen to be in.
+    """
     _guard(path, follow_last=True)
     _atomic_bytes(Path(path), text.encode(encoding))
 
 
-def write_bytes(path, data: bytes) -> None:
-    """Atomically write *data* to *path* (guarded)."""
+def write_bytes_atomic(path, data: bytes) -> None:
+    """Atomically write *data* to *path* (guarded). See :func:`write_text_atomic` on the
+    suffix — the sibling facade's bare ``write_bytes`` is not atomic."""
     _guard(path, follow_last=True)
     _atomic_bytes(Path(path), data)
 

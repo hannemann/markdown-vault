@@ -1031,7 +1031,7 @@ class SemanticIndexManager:
             npy_tmp = self._npy_path.with_name(self._npy_path.stem + ".tmp.npy")
             json_tmp = self._json_path.with_name(self._json_path.stem + ".tmp.json")
             np.save(npy_tmp, matrix)
-            state_fs.write_text(str(json_tmp), json.dumps({
+            state_fs.write_text_atomic(str(json_tmp), json.dumps({
                 "version": _INDEX_FORMAT_VERSION,
                 "sig": self._signature_tag,
                 "files": meta_files,

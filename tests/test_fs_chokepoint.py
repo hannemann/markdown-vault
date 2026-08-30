@@ -321,7 +321,7 @@ class TestFsChokepoint(unittest.TestCase):
 # Three of them lost their sites without a redirect, by sharing an operation that already
 # existed rather than migrating a private copy of it: web_import's four image writes went into
 # attachments.store_image_at, model_download's four into state_fs.write_stream, and config's
-# three into state_fs.write_text. semantic_index needed the one genuinely new operation,
+# three into state_fs.write_text_atomic. semantic_index needed the one genuinely new op,
 # state_fs.promote, because numpy writes the matrix itself and only its LANDING can be
 # guarded. config came last: state_fs imports it, so the import back stays function-local.
 

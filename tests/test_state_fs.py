@@ -49,19 +49,19 @@ class _Roots:
 class TestGuard(unittest.TestCase):
     def test_write_under_an_allowed_root_succeeds(self):
         with _Roots() as r:
-            sfs.write_text(os.path.join(r.root, "settings.yaml"), "a: 1")
+            sfs.write_text_atomic(os.path.join(r.root, "settings.yaml"), "a: 1")
             self.assertEqual(Path(r.root, "settings.yaml").read_text(), "a: 1")
 
     def test_write_under_a_vault_is_refused(self):
         with _Roots() as r:
             with self.assertRaises(sfs.InsideVault):
-                sfs.write_text(os.path.join(r.vault, "note.md"), "x")
+                sfs.write_text_atomic(os.path.join(r.vault, "note.md"), "x")
             self.assertFalse(Path(r.vault, "note.md").exists())
 
     def test_write_outside_every_root_is_refused(self):
         with _Roots(), TemporaryDirectory() as outside:
             with self.assertRaises(sfs.OutsideAllowedRoots):
-                sfs.write_text(os.path.join(outside, "x"), "x")
+                sfs.write_text_atomic(os.path.join(outside, "x"), "x")
 
     def test_a_root_that_is_also_inside_a_vault_is_refused(self):
         # The negative clause: even under an allowed root, a target that is ALSO under a
@@ -72,14 +72,14 @@ class TestGuard(unittest.TestCase):
             with mock.patch.object(sfs, "_state_roots", return_value=[model_dir]), \
                  mock.patch.object(sfs, "_vault_roots", return_value=[vault]):
                 with self.assertRaises(sfs.InsideVault):
-                    sfs.write_bytes(os.path.join(model_dir, "m.gguf"), b"GGUF")
+                    sfs.write_bytes_atomic(os.path.join(model_dir, "m.gguf"), b"GGUF")
 
 
 class TestOps(unittest.TestCase):
     def test_write_text_is_atomic_no_part_left(self):
         with _Roots() as r:
             p = os.path.join(r.root, "f.txt")
-            sfs.write_text(p, "Ünïcode")
+            sfs.write_text_atomic(p, "Ünïcode")
             self.assertEqual(Path(p).read_text(encoding="utf-8"), "Ünïcode")
             self.assertFalse(Path(p + ".part").exists())
 
@@ -87,13 +87,13 @@ class TestOps(unittest.TestCase):
         with _Roots() as r:
             p = os.path.join(r.root, "f.txt")
             Path(p).write_text("old")
-            sfs.write_text(p, "new")
+            sfs.write_text_atomic(p, "new")
             self.assertEqual(Path(p).read_text(), "new")
 
     def test_write_bytes(self):
         with _Roots() as r:
             p = os.path.join(r.root, "f.bin")
-            sfs.write_bytes(p, b"\x00\x01\x02")
+            sfs.write_bytes_atomic(p, b"\x00\x01\x02")
             self.assertEqual(Path(p).read_bytes(), b"\x00\x01\x02")
 
     def test_mkdir_creates_under_a_root(self):
@@ -176,7 +176,7 @@ class TestSymlinkedStateFile(unittest.TestCase):
             Path(realfile).write_text("old")
             link = os.path.join(r.root, "settings.yaml")
             os.symlink(realfile, link)
-            sfs.write_text(link, "new")
+            sfs.write_text_atomic(link, "new")
             self.assertTrue(os.path.islink(link))                 # link preserved
             self.assertEqual(Path(realfile).read_text(), "new")   # written through the link
 
@@ -186,7 +186,7 @@ class TestSymlinkedStateFile(unittest.TestCase):
             link = os.path.join(r.root, "settings.yaml")
             os.symlink(target_in_vault, link)
             with self.assertRaises(sfs.InsideVault):
-                sfs.write_text(link, "x")
+                sfs.write_text_atomic(link, "x")
             self.assertFalse(os.path.exists(target_in_vault))     # nothing written into vault
 
 
@@ -207,7 +207,7 @@ class TestModelRootScope(unittest.TestCase):
                 # ...but no other op is: the model roots widen the guard for the download
                 # alone, so a plain write/mkdir/delete into the same folder is refused.
                 with self.assertRaises(sfs.OutsideAllowedRoots):
-                    sfs.write_text(os.path.join(models, "notes.txt"), "x")
+                    sfs.write_text_atomic(os.path.join(models, "notes.txt"), "x")
                 with self.assertRaises(sfs.OutsideAllowedRoots):
                     sfs.mkdir(os.path.join(models, "sub"))
                 # unlink pinned explicitly — it is the op that destroys data, so a scope

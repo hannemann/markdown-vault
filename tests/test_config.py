@@ -149,7 +149,7 @@ class TestLoadVaults(_TempConfigMixin, unittest.TestCase):
 
     def test_the_settings_write_goes_through_state_fs(self):
         import unittest.mock as mock
-        with mock.patch("markdown_vault.core.state_fs.write_text") as w, \
+        with mock.patch("markdown_vault.core.state_fs.write_text_atomic") as w, \
              mock.patch("markdown_vault.core.state_fs.mkdir") as md:
             _cfg.save_vaults([{"name": "V", "path": "/tmp/v"}])
         w.assert_called_once()
