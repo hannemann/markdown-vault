@@ -1848,8 +1848,8 @@ class MainWindow(Adw.ApplicationWindow):
     # ── Vault tree file operations ───────────────────────────────
 
     def _on_import_requested(self, _tree, target_dir: str) -> None:
-        """Handle 'Import…' from the vault tree context menu — fetch a URL as a
-        note into *target_dir*, then open it and reveal it in the tree."""
+        """Handle 'Import…' from the vault tree context menu — fetch a URL or convert a
+        document into a note in *target_dir*, then open it and reveal it in the tree."""
         from markdown_vault.importers import document_import
         from markdown_vault.importers.dialog_import import ImportDialog
         if not vault_fs.is_writable_target(target_dir):

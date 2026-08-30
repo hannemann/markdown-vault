@@ -664,8 +664,3 @@ def save_to_vault(result: DocumentResult, vault_dir: str | Path,
     return target
 
 
-def import_file(path: str | Path, vault_dir: str | Path,
-                name: str | None = None,
-                vault_root: str | Path | None = None) -> Path:
-    """Convert *path* and save it into *vault_dir* — the whole pipeline in one call."""
-    return save_to_vault(convert(path), vault_dir, name=name, vault_root=vault_root)
