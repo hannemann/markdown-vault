@@ -9,6 +9,8 @@ import unittest
 import urllib.error
 import urllib.request
 
+import support
+
 from markdown_vault.importers import web_import as wi
 
 
@@ -758,14 +760,22 @@ class TestImageNormalize(unittest.TestCase):
         self.assertEqual(imgs[0].get("src"), "https://ex.com/y.png")
 
 
-class TestLocalizeImages(unittest.TestCase):
-    """Optional download into attachments/<note>/: rewrite to relative, dedup,
-    keep the remote URL when a fetch fails."""
+class _ImagesLandInAVault:
+    """Image storing now goes through attachments/VaultFS, which refuses a write outside every
+    configured vault — register the temp dir these tests write into."""
 
     def setUp(self):
         import tempfile
         self._tmp = tempfile.mkdtemp()
         self.addCleanup(lambda: __import__("shutil").rmtree(self._tmp, ignore_errors=True))
+        ctx = support.vault_roots(self._tmp)
+        ctx.__enter__()
+        self.addCleanup(ctx.__exit__, None, None, None)
+
+
+class TestLocalizeImages(_ImagesLandInAVault, unittest.TestCase):
+    """Optional download into attachments/<note>/: rewrite to relative, dedup,
+    keep the remote URL when a fetch fails."""
 
     def _fetch_ok(self, url, timeout=20):
         return (b"\x89PNG\r\n\x1a\nDATA", "image/png")
@@ -851,6 +861,25 @@ class TestLocalizeImages(unittest.TestCase):
         self.assertEqual(len(calls), 2)                 # only 2 fetched
         self.assertIn("https://ex.com/4.png", out)      # the rest keep remote URLs
 
+    def test_failed_fetches_do_not_consume_the_image_budget(self):
+        # The limit counts images actually STORED. Counting URLs seen instead would let a
+        # page of dead links exhaust the budget before the real images are reached — and the
+        # count moved from "names taken" to an explicit counter when the storing was handed
+        # to attachments, which is exactly when such a distinction gets lost.
+        import unittest.mock as mock
+        from pathlib import Path
+        md = ("".join(f"![d{i}](https://ex.com/dead{i}.png)" for i in range(4))
+              + "![ok](https://ex.com/real.png)")
+
+        def fetch(url, timeout=20):
+            return None if "dead" in url else (b"D", "image/png")
+
+        with mock.patch.object(wi, "_MAX_IMAGES", 2):
+            out = wi._localize_images(md, Path(self._tmp) / "att", "att", fetch=fetch,
+                                      sleep=lambda *_: None)
+        self.assertIn("att/real.png", out)               # reached despite four failures
+        self.assertIn("https://ex.com/dead0.png", out)   # failures keep their remote URL
+
     def test_total_bytes_is_bounded(self):
         import unittest.mock as mock
         from pathlib import Path
@@ -893,13 +922,8 @@ class TestLocalizeImages(unittest.TestCase):
         self.assertEqual(slept, [wi._THROTTLE_SECONDS, wi._THROTTLE_SECONDS])
 
 
-class TestSingleImage(unittest.TestCase):
+class TestSingleImage(_ImagesLandInAVault, unittest.TestCase):
     """Right-click download of one image: fetch it, then rewrite just its refs."""
-
-    def setUp(self):
-        import tempfile
-        self._tmp = tempfile.mkdtemp()
-        self.addCleanup(lambda: __import__("shutil").rmtree(self._tmp, ignore_errors=True))
 
     def _ok(self, url, timeout=20):
         return (b"\x89PNG DATA", "image/png")

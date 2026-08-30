@@ -311,7 +311,7 @@ class TestFsChokepoint(unittest.TestCase):
 # Exempted (see _EXCEPTIONS): core/logging_setup.py — a bootstrap dir mkdir before the facade.
 _BASELINE = {
     "core/config.py": {".mkdir": 1, "os.fdopen": 1, "os.replace": 1, "os.unlink": 1},
-    "importers/web_import.py": {".mkdir": 3, ".write_bytes": 2, ".write_text": 1},
+    "importers/web_import.py": {".mkdir": 1, ".write_text": 1},
     "search/model_download.py": {".mkdir": 1, "open(w)": 1, ".replace": 1, ".unlink": 1},
     "search/semantic_index.py": {
         ".mkdir": 1, ".unlink": 1, ".write_text": 1, "os.replace": 2,

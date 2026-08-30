@@ -131,6 +131,32 @@ class TestFilesystem(unittest.TestCase):
             at.relink_file(str(note), "attachments/old", "attachments/new")  # must not raise
         self.assertEqual(note.read_bytes(), b"![x](attachments/old/a.png)")  # untouched
 
+    def test_store_image_at_writes_into_a_given_directory(self):
+        # The half of store_image that owns the managed tree — safe name, uniqueness, the
+        # guarded atomic write — split out so a caller that already knows the destination
+        # (the web import derives it once for a whole page) shares it instead of writing its
+        # own. Naming and layout then cannot drift between the two importers.
+        dest = Path(self.v) / "attachments" / "note"
+        link = at.store_image_at(dest, "attachments/note", b"PNG", "My Pic.png")
+        self.assertEqual(link, "attachments/note/my-pic.png")
+        self.assertEqual((dest / "my-pic.png").read_bytes(), b"PNG")
+
+    def test_store_image_at_does_not_overwrite(self):
+        dest = Path(self.v) / "attachments" / "note"
+        at.store_image_at(dest, "attachments/note", b"A", "p.png")
+        second = at.store_image_at(dest, "attachments/note", b"B", "p.png")
+        self.assertEqual(second, "attachments/note/p-2.png")
+        self.assertEqual((dest / "p.png").read_bytes(), b"A")
+
+    def test_store_image_delegates_to_store_image_at(self):
+        # Pins that derivation and storing stay ONE path: if store_image grew its own copy of
+        # the write, the two importers could drift apart again — which is what this split is
+        # meant to end.
+        note = str(Path(self.v) / "note.md")
+        with mock.patch.object(at, "store_image_at", return_value="x") as m:
+            at.store_image(self.v, note, b"X", "p.png")
+        m.assert_called_once()
+
     def test_store_image_writes_atomically_through_vaultfs(self):
         # A non-.md image is monitor-filtered, so the atomic writer is free of the false-reload
         # banner and guards against a half-written image on crash. Mutation-verified: a direct

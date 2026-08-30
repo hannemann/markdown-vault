@@ -32,6 +32,7 @@ from pathlib import Path
 
 from markdown_vault.vault import note_writer
 # re-exported: layout lives in attachments
+from markdown_vault.core import attachments
 from markdown_vault.core.attachments import attachment_target
 from markdown_vault.core.i18n import _
 from markdown_vault.markdown.md_fences import FenceTracker
@@ -967,23 +968,22 @@ def _fetch_image(url: str, timeout: int = 20, sleep=time.sleep):
     return None
 
 
-def _image_filename(url: str, content_type: str, taken: set) -> str:
-    """A safe, unique local filename for an image *url*, keeping its extension
-    (or deriving one from *content_type*)."""
+def _image_filename(url: str, content_type: str) -> str:
+    """The local filename an image *url* should get, keeping its extension or deriving one
+    from *content_type* — the part only the web importer can know, because a URL often
+    carries no usable extension and only the response header says what arrived.
+
+    Making it UNIQUE and safe to write is not this function's job: ``attachments`` owns the
+    managed tree and checks against the directory, which also catches a name left there by an
+    earlier run — something a per-run set cannot see.
+    """
     name = _FNAME_SANITISE.sub("-", urlparse(url).path.rsplit("/", 1)[-1].lower()).strip("-.")
     stem, dot, ext = name.rpartition(".")
     if dot and f".{ext}" in _IMG_EXTS:
         stem, ext = stem, f".{ext}"
     else:
         stem, ext = name, _CTYPE_EXT.get(content_type, ".img")
-    stem = stem or "image"
-    candidate = f"{stem}{ext}"
-    n = 2
-    while candidate in taken:
-        candidate = f"{stem}-{n}{ext}"
-        n += 1
-    taken.add(candidate)
-    return candidate
+    return f"{stem or 'image'}{ext}"
 
 
 def _localize_images(markdown: str, dest_dir: Path, rel_prefix: str,
@@ -997,9 +997,9 @@ def _localize_images(markdown: str, dest_dir: Path, rel_prefix: str,
     hostile or merely slow page cannot stall the pass; images past any limit keep
     their remote URL."""
     mapping: dict[str, str | None] = {}
-    taken: set = set()
     dest_dir = Path(dest_dir)
-    total = 0
+    stored = 0          # images actually written — the _MAX_IMAGES bound counts these, not
+    total = 0           # the URLs seen, so a page full of dead links cannot exhaust it
     start = clock()
     # Both markdown ``![alt](url)`` and HTML ``<img src="url">`` (retained tables)
     # carry images; the group-2 URL is common to both patterns.
@@ -1011,7 +1011,7 @@ def _localize_images(markdown: str, dest_dir: Path, rel_prefix: str,
     for url in urls:
         if url in mapping:
             continue
-        if (len(taken) >= _MAX_IMAGES or total >= _MAX_IMAGE_TOTAL
+        if (stored >= _MAX_IMAGES or total >= _MAX_IMAGE_TOTAL
                 or clock() - start > _IMAGE_DEADLINE_SECONDS):
             logger.warning("web_import: image limit reached, keeping remote URL %s", url)
             mapping[url] = None
@@ -1024,11 +1024,13 @@ def _localize_images(markdown: str, dest_dir: Path, rel_prefix: str,
             mapping[url] = None
             continue
         data, ctype = got
-        dest_dir.mkdir(parents=True, exist_ok=True)
-        fname = _image_filename(url, ctype, taken)
-        (dest_dir / fname).write_bytes(data)
+        # attachments owns the managed tree: safe name, uniqueness against the directory,
+        # and the guarded atomic write. This importer only knows what the file should be
+        # CALLED — the two used to keep separate copies of the rest and could drift.
+        mapping[url] = attachments.store_image_at(
+            dest_dir, rel_prefix, data, _image_filename(url, ctype))
+        stored += 1
         total += len(data)
-        mapping[url] = f"{rel_prefix}/{fname}"
 
     def md_repl(m):
         rel = mapping.get(m.group(2))
@@ -1051,11 +1053,8 @@ def save_one_image(url: str, dest_dir: Path, rel_prefix: str,
     if not got:
         return None
     data, ctype = got
-    dest_dir = Path(dest_dir)
-    dest_dir.mkdir(parents=True, exist_ok=True)
-    fname = _image_filename(url, ctype, set())
-    (dest_dir / fname).write_bytes(data)
-    return f"{rel_prefix}/{fname}"
+    return attachments.store_image_at(
+        dest_dir, rel_prefix, data, _image_filename(url, ctype))
 
 
 def rewrite_image_url(text: str, url: str, rel: str) -> str:

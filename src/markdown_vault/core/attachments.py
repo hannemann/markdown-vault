@@ -152,19 +152,35 @@ def _unique_name(dest_dir: Path, filename: str) -> str:
     return candidate
 
 
+def store_image_at(dest_dir, prefix: str, data: bytes, filename: str) -> str:
+    """Store *data* as an image in *dest_dir* under a safe, unique name and return the link
+    ``<prefix>/<name>``.
+
+    The managed tree's half of the job — safe naming, uniqueness, the guarded write — for a
+    caller that already knows the destination because it derives it once for a whole page
+    (:func:`web_import.save_to_vault`). Sharing this is what keeps the two importers from
+    growing different names and layouts for the same thing; :func:`store_image` is the same
+    operation with the destination derived from a note.
+
+    Uniqueness is checked against the DIRECTORY, not a caller-held set, so a name already on
+    disk from an earlier run collides too. Atomic: a non-``.md`` image is monitor-filtered (no
+    false-reload banner), so the atomic writer is free here and guards against a half-written
+    image on crash. A refusal or OS error raises to the caller.
+    """
+    dest_dir = Path(dest_dir)
+    vault_fs.mkdir(str(dest_dir), parents=True, exist_ok=True)
+    fname = _unique_name(dest_dir, filename)
+    vault_fs.write_bytes_atomic(str(dest_dir / fname), data)
+    return f"{prefix}/{fname}"
+
+
 def store_image(vault_root, note_path, data: bytes, filename: str) -> str:
     """Save a user-supplied image into the note's attachments dir under a safe,
     unique name and return the relative link to insert. Used by paste / drag-drop /
     "Insert Image…" so the user never touches the app-managed attachments tree."""
     note_path = Path(note_path)
     dest_dir, prefix = attachment_target(vault_root, note_path.parent, note_path.stem)
-    vault_fs.mkdir(str(dest_dir), parents=True, exist_ok=True)
-    fname = _unique_name(dest_dir, filename)
-    # Atomic: a non-.md image is monitor-filtered (no false-reload banner), so the atomic
-    # writer is free here and guards against a half-written image on crash. A refusal or OS
-    # error raises to the caller (editor / document import), which handles it.
-    vault_fs.write_bytes_atomic(str(dest_dir / fname), data)
-    return f"{prefix}/{fname}"
+    return store_image_at(dest_dir, prefix, data, filename)
 
 
 _IMG_LINK = re.compile(r"!\[[^\]]*\]\(\s*<?([^)\s>]+)>?(?:\s+[^)]*)?\)")
