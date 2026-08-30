@@ -501,17 +501,27 @@ class TestTempdirPinned(unittest.TestCase):
 
 _PO_DIR = Path(__file__).resolve().parents[1] / "po"
 
-#: Literals that happen to read like a translated string but are NOT user-facing text, keyed
-#: by ``(file relative to markdown_vault/, exact string)``. Keyed by the pair on purpose: an
-#: exception for a key name must not silence a real label of the same text somewhere else.
-#: Each entry states what the string IS — "not user-facing" alone is the sentence that lets
-#: this list rot into a mute button.
+#: What a bare literal may be INSTEAD of user-facing text. A fixed set, so adding a kind is a
+#: visible decision in the diff rather than a sentence nobody reads — free prose would let the
+#: exception list below rot into a mute button one plausible-sounding entry at a time.
+_BARE_CATEGORIES = frozenset({"accelerator", "dbus-method", "debug-label", "cli-output"})
+
+#: Literals that read like a translated string but are NOT user-facing text, keyed by
+#: ``(file relative to markdown_vault/, exact string)`` and carrying ``(category, why)``.
+#:
+#: Keyed by the pair, never by the string alone, for two reasons: an exception for the
+#: ``Delete`` accelerator must not silence a real Delete label elsewhere — and moving the code
+#: to another file makes the exception stop applying, so the check goes RED. It fails towards
+#: a false alarm at a known address rather than towards a silent hole.
 _BARE_IS_INTENDED = {
-    ("vault/vault_tree.py", "Delete"): "a GTK accelerator name for ShortcutTrigger.parse_string",
-    ("core/debug_control.py", "Search"): "a D-Bus method name compared against the wire value",
-    ("ui/sidebar.py", "Sidebar"): "a debug-dump label, written to a JSON file, not shown",
+    ("vault/vault_tree.py", "Delete"):
+        ("accelerator", "GTK accelerator name for ShortcutTrigger.parse_string"),
+    ("core/debug_control.py", "Search"):
+        ("dbus-method", "D-Bus method name compared against the wire value"),
+    ("ui/sidebar.py", "Sidebar"):
+        ("debug-label", "debug-dump label written into a JSON file, never shown"),
     ("importers/web_import.py", "Nothing extractable on that page."):
-        "the CLI driver's stderr, English by decision (see describe_error's docstring)",
+        ("cli-output", "the CLI driver's stderr, English by decision (see describe_error)"),
 }
 
 
@@ -636,8 +646,9 @@ class TestTranslationCatalogIsComplete(unittest.TestCase):
         # on one path and English on the other, and no test could say so.
         # A text worth translating in one place is rarely an internal identifier in another,
         # which makes the comparison cheap; where it genuinely is one, _BARE_IS_INTENDED says
-        # so with a reason. Keyed by (file, string), never by string alone, so an exception
-        # for a key name cannot silence a real menu label of the same text elsewhere.
+        # so. Measured against the tree before those markings: 10 candidates, 6 real defects,
+        # 4 identifiers — the check found every one of the six, including the ones a human
+        # had spotted first.
         marked, bare = set(), []
         for pyfile in sorted(_ROOT.rglob("*.py")):
             tree = ast.parse(pyfile.read_text(encoding="utf-8"), str(pyfile))
@@ -662,6 +673,17 @@ class TestTranslationCatalogIsComplete(unittest.TestCase):
             "string(s) marked for translation elsewhere but left bare here — either wrap "
             "them or add (file, text) to _BARE_IS_INTENDED with the reason:\n  "
             + "\n  ".join(sorted(offenders)))
+
+    def test_every_exception_names_a_known_kind(self):
+        # What keeps the list above from becoming a mute button is that an entry says what the
+        # string IS — and free prose does not enforce that: "internal identifier" reads fine
+        # and means nothing. A category from a fixed set makes a NEW kind a visible decision
+        # in the diff instead.
+        for key, value in _BARE_IS_INTENDED.items():
+            with self.subTest(entry=key):
+                category, why = value
+                self.assertIn(category, _BARE_CATEGORIES)
+                self.assertTrue(why.strip(), "an entry must say why, not only what kind")
 
     def _po(self, body):
         d = tempfile.mkdtemp()
