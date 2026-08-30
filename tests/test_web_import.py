@@ -11,6 +11,7 @@ import urllib.request
 
 import support
 
+from markdown_vault.core import vault_fs
 from markdown_vault.importers import web_import as wi
 
 
@@ -957,14 +958,55 @@ class TestSingleImage(_ImagesLandInAVault, unittest.TestCase):
         self.assertIn('src="att/a.png"', out)
 
 
-class TestSaveToVault(unittest.TestCase):
-    def setUp(self):
-        import tempfile
-        self._tmp = tempfile.mkdtemp()
-        self.addCleanup(lambda: __import__("shutil").rmtree(self._tmp, ignore_errors=True))
-
+class TestSaveToVault(_ImagesLandInAVault, unittest.TestCase):
     def _result(self, title="Some Long Page Title"):
         return wi.ImportResult(url="https://x.io/p", title=title, markdown="# Body")
+
+    def test_the_note_and_its_directory_go_through_vault_fs(self):
+        import unittest.mock as mock
+        with mock.patch("markdown_vault.core.vault_fs.mkdir") as md:
+            with mock.patch("markdown_vault.core.vault_fs.write_text") as w:
+                wi.save_to_vault(self._result(), self._tmp)
+        md.assert_called()
+        w.assert_called()
+
+    def test_the_target_is_reserved_before_the_images_are_downloaded(self):
+        # The same race document_import had, with a far worse window: the attachment folder
+        # is derived from the note's stem and the links are rewritten to it, while the
+        # downloads in between take seconds to minutes. Testing the name and writing after
+        # would let it be taken meanwhile — and choosing another name once the images are
+        # stored points the note at the first name's folder.
+        import unittest.mock as mock
+        from pathlib import Path
+        order = []
+        with mock.patch.object(wi.note_writer, "reserve_path",
+                               side_effect=lambda *a, **k: (order.append("reserve"),
+                                                            Path(self._tmp) / "n.md")[1]):
+            with mock.patch.object(wi, "_localize_images",
+                                   side_effect=lambda *a, **k: (order.append("images"),
+                                                                "body")[1]):
+                with mock.patch("markdown_vault.core.vault_fs.write_text"):
+                    wi.save_to_vault(self._result(), self._tmp, download_images=True)
+        self.assertEqual(order, ["reserve", "images"])
+
+    def test_a_failure_while_filling_removes_the_reserved_note(self):
+        import unittest.mock as mock
+        from pathlib import Path
+        with mock.patch.object(wi, "_localize_images", side_effect=OSError("network gone")):
+            with self.assertRaises(OSError):
+                wi.save_to_vault(self._result(), self._tmp, download_images=True)
+        self.assertEqual(list(Path(self._tmp).glob("*.md")), [])
+
+    def test_saving_outside_every_vault_is_refused(self):
+        from pathlib import Path
+        # Inside the test's own temp dir (so its cleanup covers it) but outside the vault
+        # root registered below — a path the test cannot leave behind if it ever passes for
+        # the wrong reason.
+        outside = Path(self._tmp) / "not-a-vault-web"
+        with support.vault_roots(str(Path(self._tmp) / "elsewhere")):
+            with self.assertRaises(vault_fs.VaultWriteError):
+                wi.save_to_vault(self._result(), outside)
+        self.assertFalse(outside.exists())
 
     def test_default_name_from_title(self):
         p = wi.save_to_vault(self._result(), self._tmp)

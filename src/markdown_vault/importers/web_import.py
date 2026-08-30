@@ -33,6 +33,7 @@ from pathlib import Path
 from markdown_vault.vault import note_writer
 # re-exported: layout lives in attachments
 from markdown_vault.core import attachments
+from markdown_vault.core import vault_fs
 from markdown_vault.core.attachments import attachment_target
 from markdown_vault.core.i18n import _
 from markdown_vault.markdown.md_fences import FenceTracker
@@ -1085,15 +1086,31 @@ def save_to_vault(result: ImportResult, vault_dir: str | Path,
     together. *vault_root* defaults to *vault_dir* (attachments beside the note)."""
     import dataclasses
     vault_dir = Path(vault_dir)
-    vault_dir.mkdir(parents=True, exist_ok=True)
+    vault_fs.mkdir(str(vault_dir), parents=True, exist_ok=True)
     stem = slug(name) if name and name.strip() else slug(result.title)
-    target = note_writer.unique_path(vault_dir, stem)
-    stem = target.stem
-    if download_images:
-        attach_dir, rel_prefix = attachment_target(vault_root or vault_dir, vault_dir, stem)
-        localized = _localize_images(result.markdown, attach_dir, rel_prefix)
-        result = dataclasses.replace(result, markdown=localized)
-    target.write_text(to_note(result, today=today), encoding="utf-8")
+    # Reserve BEFORE downloading: the attachment folder is derived from the note's stem and
+    # the image links are rewritten to it, so the name has to be final and owned by then.
+    # The window here is the downloads — seconds to minutes, not the milliseconds a plain
+    # write would take — and choosing another name afterwards would leave the note pointing
+    # at the first name's attachment folder.
+    target = note_writer.reserve_path(vault_dir, stem)
+    try:
+        if download_images:
+            attach_dir, rel_prefix = attachment_target(
+                vault_root or vault_dir, vault_dir, target.stem)
+            localized = _localize_images(result.markdown, attach_dir, rel_prefix)
+            result = dataclasses.replace(result, markdown=localized)
+        # Plain, not exclusive: we own the file. Not atomic either — see document_import's
+        # save_to_vault for why a creation should not surface as a move.
+        vault_fs.write_text(str(target), to_note(result, today=today))
+    except BaseException:
+        # We created the reservation, so we clear it: an empty note must not stay in the tree
+        # after a failed download. Only the file we just made.
+        try:
+            vault_fs.unlink(str(target), missing_ok=True)
+        except OSError as exc:
+            logger.warning("could not remove reserved note %s: %s", target, exc)
+        raise
     return target
 
 
