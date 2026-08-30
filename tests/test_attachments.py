@@ -1,5 +1,6 @@
 """Tests for the attachment lifecycle (paths + move/remove/relink)."""
 
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -251,6 +252,123 @@ class TestFilesystem(unittest.TestCase):
                                 "attachments/note/cat.png")
         self.assertIn("![c](attachments/note/cat.png)", out)
         self.assertIn("![o](other.png)", out)     # unrelated link untouched
+
+
+class TestSymlinkedComponentInTheAttachmentsTree(unittest.TestCase):
+    """A DIRECTORY COMPONENT of the attachments mirror is a symlink pointing out of the
+    vault — the case the symlink-escape ticket weights highest, tested at the CALLER.
+
+    The facade's own symlink behaviour is covered in tests/test_vault_fs.py. What these add
+    is the layer above it: attachments builds its mirror path from the vault's OWN directory
+    names, which in a vault from a foreign source (a clone, an unpacked archive, a mounted
+    share) are attacker-chosen. Its guard `_within_attachments` is deliberately lexical
+    (`is_relative_to`), so it cannot see a symlink at all — a legitimate directory name is
+    exactly what a symlink is. Containment therefore has to come from VaultFS underneath,
+    and only a test at this level shows that it actually arrives here.
+
+    The links are real on disk: os.path.realpath on a path that does not exist returns it
+    unchanged, so a mocked variant of these would pass even without any resolution.
+    """
+
+    def setUp(self):
+        import shutil
+        self.v = tempfile.mkdtemp()
+        self.outside = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.v, True)
+        self.addCleanup(shutil.rmtree, self.outside, True)
+        _cfg._vaults_cache = [{"name": "v", "path": self.v}]
+        self.addCleanup(lambda: setattr(_cfg, "_vaults_cache", None))
+
+    def _plant_link(self, target):
+        """Make <vault>/attachments/sub a symlink to *target*, and return the link path.
+
+        A note at <vault>/sub/<name>.md mirrors to <vault>/attachments/sub/<name>, so every
+        op below reaches its destination THROUGH this link.
+        """
+        (Path(self.v) / "attachments").mkdir(parents=True, exist_ok=True)
+        link = Path(self.v) / "attachments" / "sub"
+        os.symlink(target, link)
+        return link
+
+    def test_remove_through_a_symlinked_component_deletes_nothing_outside(self):
+        # The ticket's "schärfster Test": remove -> vault_fs.rmtree with ignore_errors=True.
+        # Without containment this walks through the link and wipes the outside tree, and
+        # ignore_errors swallows the error afterwards — silent, irreversible loss.
+        victim_dir = Path(self.outside) / "note"
+        victim_dir.mkdir(parents=True)
+        victim = victim_dir / "keep.png"
+        victim.write_bytes(b"x")
+        self._plant_link(self.outside)
+        at.remove(self.v, str(Path(self.v) / "sub" / "note.md"))
+        self.assertTrue(victim.exists())
+        self.assertTrue(victim_dir.exists())
+
+    def test_move_out_of_a_symlinked_component_moves_nothing_outside(self):
+        # The symlinked component carries the move SOURCE. vault_fs.move judges the source
+        # in delete mode, which resolves the parent — so the escape is seen.
+        victim_dir = Path(self.outside) / "old"
+        victim_dir.mkdir(parents=True)
+        victim = victim_dir / "keep.png"
+        victim.write_bytes(b"x")
+        self._plant_link(self.outside)
+        at.move(self.v, str(Path(self.v) / "sub" / "old.md"),
+                self.v, str(Path(self.v) / "new.md"))
+        self.assertTrue(victim.exists())                                  # not moved away
+        self.assertFalse((Path(self.v) / "attachments" / "new").exists())  # nor arrived
+
+    def test_move_into_a_symlinked_component_writes_nothing_outside(self):
+        # The other polarity: the symlinked component carries the move DESTINATION.
+        (Path(self.v) / "attachments" / "old").mkdir(parents=True)
+        (Path(self.v) / "attachments" / "old" / "img.png").write_bytes(b"x")
+        self._plant_link(self.outside)
+        at.move(self.v, str(Path(self.v) / "old.md"),
+                self.v, str(Path(self.v) / "sub" / "new.md"))
+        self.assertFalse((Path(self.outside) / "new").exists())
+        # refused, so the source is left where it was rather than half-moved
+        self.assertTrue((Path(self.v) / "attachments" / "old" / "img.png").exists())
+
+    def test_store_image_through_a_symlinked_component_pointing_out_is_refused(self):
+        self._plant_link(self.outside)
+        with self.assertRaises(vault_fs.VaultWriteError):
+            at.store_image(self.v, str(Path(self.v) / "sub" / "note.md"), b"PNG", "a.png")
+        self.assertFalse((Path(self.outside) / "note").exists())
+
+    def test_store_image_through_a_symlinked_component_pointing_back_in_is_allowed(self):
+        # The false-alarm counter-check. A link is not the criterion — where it LANDS is.
+        # One that stays inside the vault must keep working, or the guard has traded an
+        # escape for a broken feature. This is the test a one-sided realpath (target
+        # resolved, root not) turns red.
+        store = Path(self.v) / "real-store"
+        store.mkdir()
+        self._plant_link(str(store))
+        link = at.store_image(self.v, str(Path(self.v) / "sub" / "note.md"), b"PNG", "a.png")
+        self.assertTrue((store / "note" / "a.png").exists())
+        self.assertTrue(link.endswith("/a.png"))
+
+    def test_a_traversing_image_filename_lands_inside_the_attachments_dir(self):
+        # Counter-check for the sanitisation the ticket records as ALREADY closed: the
+        # filename is reduced to a single safe component, so it is not the vector — the
+        # directory prefix is. Kept as a test so a rewrite of _unique_name cannot silently
+        # reopen it.
+        #
+        # Both separator forms, because the two sanitising layers only OVERLAP on the slash
+        # one. Path(r"..\..\x.png").name returns the whole string on POSIX — a backslash is
+        # an ordinary filename character here — so for that input the character filter is
+        # the only thing acting, and removing it alone becomes visible. The form is not
+        # exotic either: filenames arrive from Content-Disposition headers, pasted data and
+        # documents authored on Windows.
+        note = Path(self.v) / "sub" / "note.md"
+        dest = Path(self.v) / "attachments" / "sub" / "note"
+        # distinct stems, so the second call is not renamed to <stem>-2 by the uniqueness
+        # counter and the assertions stay exact
+        for filename, expected in (("../../evil.png", "evil.png"),
+                                   ("..\\..\\wicked.png", "wicked.png")):
+            with self.subTest(filename=filename):
+                link = at.store_image(self.v, str(note), b"PNG", filename)
+                self.assertEqual(link.split("/")[-1], expected)
+                self.assertTrue((dest / expected).exists())
+                self.assertFalse((Path(self.v) / expected).exists())
+                self.assertFalse((Path(self.v).parent / expected).exists())
 
 
 if __name__ == "__main__":
