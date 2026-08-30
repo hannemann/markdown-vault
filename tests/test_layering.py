@@ -499,5 +499,113 @@ class TestTempdirPinned(unittest.TestCase):
             "TMPDIR is set but tempfile fell back — the pinned directory is missing")
 
 
+_PO_DIR = Path(__file__).resolve().parents[1] / "po"
+
+
+def _marked_strings():
+    """Yield ``(relative-path, msgid)`` for every literal wrapped in ``_()``/``ngettext()``.
+
+    Only literal first arguments count — a computed one has no msgid to extract anyway (and
+    ``_(f"…")`` is forbidden by convention for exactly that reason).
+    """
+    for pyfile in sorted(_ROOT.rglob("*.py")):
+        tree = ast.parse(pyfile.read_text(encoding="utf-8"), str(pyfile))
+        for node in ast.walk(tree):
+            if (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+                    and node.func.id in ("_", "ngettext") and node.args
+                    and isinstance(node.args[0], ast.Constant)
+                    and isinstance(node.args[0].value, str)):
+                rel = f"src/markdown_vault/{pyfile.relative_to(_ROOT).as_posix()}"
+                yield rel, node.args[0].value
+
+
+_PO_ESCAPES = {"n": "\n", "t": "\t", "r": "\r", '"': '"', "\\": "\\"}
+
+
+def _po_msgids(po_path: Path) -> set[str]:
+    """Every msgid in a ``.po`` file, un-escaped and with continuation lines joined.
+
+    Obsolete entries (``#~``) are not matched, so a string that was removed and later
+    re-added still counts as missing until it is translated again.
+    """
+    def unescape(s):
+        out, i = [], 0
+        while i < len(s):
+            if s[i] == "\\" and i + 1 < len(s):
+                out.append(_PO_ESCAPES.get(s[i + 1], s[i + 1]))
+                i += 2
+            else:
+                out.append(s[i])
+                i += 1
+        return "".join(out)
+
+    ids, parts, collecting = set(), [], False
+    for line in po_path.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+        if stripped.startswith(("msgid ", "msgid_plural ")):
+            if collecting:
+                ids.add(unescape("".join(parts)))
+            parts, collecting = [stripped.split(" ", 1)[1].strip()[1:-1]], True
+        elif collecting and stripped.startswith('"'):
+            parts.append(stripped[1:-1])
+        elif collecting:
+            ids.add(unescape("".join(parts)))
+            parts, collecting = [], False
+    if collecting:
+        ids.add(unescape("".join(parts)))
+    return ids
+
+
+class TestTranslationCatalogIsComplete(unittest.TestCase):
+    """Marking a string with ``_()`` only helps if the catalog knows it. Two ways it does
+    not, both of which have already happened silently:
+
+    - the string is missing from the catalog, so it renders as its English msgid;
+    - the whole FILE is missing from ``POTFILES.in``, so ``xgettext`` never sees it and
+      regenerating the catalog would not have found it either. That is how three
+      user-facing refusals in ``vault/file_ops.py`` shipped untranslated.
+
+    Neither is visible in a review or a normal run — the app just speaks English at one
+    spot — which is what makes it a guard rather than a habit.
+    """
+
+    def test_every_file_with_marked_strings_is_in_potfiles(self):
+        listed = {line.strip()
+                  for line in (_PO_DIR / "POTFILES.in").read_text(encoding="utf-8").splitlines()
+                  if line.strip() and not line.startswith("#")}
+        missing = sorted({rel for rel, _msg in _marked_strings()} - listed)
+        self.assertEqual(
+            missing, [],
+            "file(s) using _()/ngettext but absent from po/POTFILES.in — xgettext will "
+            "never see their strings:\n  " + "\n  ".join(missing))
+
+    def test_every_marked_string_has_a_german_translation(self):
+        known = _po_msgids(_PO_DIR / "de.po")
+        missing = defaultdict(list)
+        for rel, msg in _marked_strings():
+            if msg not in known:
+                missing[rel].append(msg)
+        self.assertEqual(
+            dict(missing), {},
+            "marked string(s) with no entry in po/de.po — they reach the user in English:\n"
+            + "\n".join(f"  {f}: {sorted(set(m))}" for f, m in sorted(missing.items())))
+
+    def test_the_parser_reads_a_multiline_msgid(self):
+        # The catalog wraps long strings over several quoted lines. A parser that only read
+        # the first line would report every wrapped entry as missing, and the guard would be
+        # abandoned as noisy rather than believed.
+        with tempfile.TemporaryDirectory() as d:
+            po = Path(d) / "x.po"
+            po.write_text('msgid ""\n"first part "\n"second part"\nmsgstr "x"\n',
+                          encoding="utf-8")
+            self.assertIn("first part second part", _po_msgids(po))
+
+    def test_the_parser_unescapes(self):
+        with tempfile.TemporaryDirectory() as d:
+            po = Path(d) / "x.po"
+            po.write_text(r'msgid "a\nb \"q\" c"' + '\nmsgstr "x"\n', encoding="utf-8")
+            self.assertIn('a\nb "q" c', _po_msgids(po))
+
+
 if __name__ == "__main__":
     unittest.main()
