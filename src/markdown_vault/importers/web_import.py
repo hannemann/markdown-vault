@@ -1144,7 +1144,14 @@ def main(argv=None) -> int:
     if args.to_stdout or not args.vault:
         print(to_note(result))
     else:
-        path = save_to_vault(result, args.vault, download_images=args.download_images)
+        try:
+            path = save_to_vault(result, args.vault, download_images=args.download_images)
+        except vault_fs.VaultWriteError as exc:
+            # Not an OSError, so the fetch's handler above would not have caught it either:
+            # the target is outside every configured vault. Report it the way this driver
+            # reports everything else rather than ending in a traceback.
+            print(f"Import failed: {exc}", file=sys.stderr)
+            return 1
         print(f"Wrote {path}")
     return 0
 

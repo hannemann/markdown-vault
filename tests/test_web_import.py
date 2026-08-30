@@ -1413,5 +1413,36 @@ class TestRedirectGuardType(unittest.TestCase):
             srv.shutdown()
 
 
+class TestCliRefusal(unittest.TestCase):
+    """The CLI driver reports failures to stderr and exits non-zero. Its fetch handler
+    catches (ValueError, OSError), which VaultWriteError is not — so once the write went
+    through VaultFS, a target outside every vault ended the driver in a traceback instead."""
+
+    def _run(self, save_effect):
+        import io
+        import unittest.mock as mock
+        from contextlib import redirect_stderr
+        result = wi.ImportResult(url="https://x.io/p", title="T", markdown="# Body")
+        err = io.StringIO()
+        with mock.patch.object(wi, "availability", return_value=None), \
+             mock.patch.object(wi, "import_url", return_value=result), \
+             mock.patch.object(wi, "save_to_vault", side_effect=save_effect), \
+             redirect_stderr(err):
+            code = wi.main(["https://x.io/p", "--vault", "/not/a/vault"])
+        return code, err.getvalue()
+
+    def test_a_containment_refusal_exits_cleanly(self):
+        code, err = self._run(vault_fs.OutsideVault("/not/a/vault is outside every vault"))
+        self.assertEqual(code, 1)
+        self.assertIn("Import failed", err)
+
+    def test_an_os_error_from_the_write_still_propagates(self):
+        # Pins the SCOPE of the new handler: it catches the containment refusal, not every
+        # write failure. Widening it later would swallow a disk error the driver should not
+        # dress up as a clean exit.
+        with self.assertRaises(OSError):
+            self._run(OSError("disk full"))
+
+
 if __name__ == "__main__":
     unittest.main()
