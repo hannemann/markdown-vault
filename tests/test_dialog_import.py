@@ -22,6 +22,7 @@ Adw.init()
 
 from markdown_vault.importers.dialog_import import ImportDialog
 from markdown_vault.importers import web_import as wi
+from markdown_vault.importers import document_import as di
 
 
 class TestFileChooserFailure(unittest.TestCase):
@@ -119,6 +120,7 @@ class TestChooserNavigation(unittest.TestCase):
     def test_choose_file_shows_file_form_and_rechecks(self, mock_doc):
         mock_doc.is_available.return_value = None
         mock_doc.whisper_model_ready.return_value = True
+        mock_doc.describe_error = di.describe_error   # keep the real mapper
         self.dlg._on_choose_file(None)
         self.assertEqual(self.dlg._stack.get_visible_child_name(), "file")
 
@@ -155,11 +157,18 @@ class TestRecheckFile(unittest.TestCase):
 
     def setUp(self):
         self.dlg = _make_dialog()
+        # The target folder is now checked too, and "/vault/notes" is not a real vault here.
+        # Pin it so these tests keep asserting what they are about (backend + model state).
+        p = patch("markdown_vault.importers.dialog_import.path_utils.find_vault_for_dir",
+                  return_value="/vault")
+        p.start()
+        self.addCleanup(p.stop)
 
     def _doc(self, mock, *, stack=None, fmt=None, model_ready=True,
              needs_model=False, model_name="base"):
         # is_available() (no arg) reports the whole stack; is_available(suffix)
         # reports one format's backend.
+        mock.describe_error = di.describe_error   # keep the real mapper
         mock.is_available.side_effect = lambda *a: (fmt if a else stack)
         mock.whisper_model_ready.return_value = model_ready
         mock.needs_transcription_model.return_value = needs_model
@@ -207,6 +216,32 @@ class TestRecheckFile(unittest.TestCase):
         self.dlg._recheck_file()
         self.assertIsNotNone(self.dlg._file_block_reason)
         self.assertIn("small", self.dlg._file_block_reason)
+        self.assertFalse(self.dlg._file_import_btn.get_sensitive())
+
+    @patch("markdown_vault.importers.dialog_import.document_import")
+    def test_a_target_outside_every_vault_blocks_before_a_file_is_picked(self, mock_doc):
+        # VaultFS refuses the write, so the import cannot succeed — but until now that was
+        # only discovered AFTER converting the document. Block up front, while the user can
+        # still act on it, and say so.
+        self._doc(mock_doc)
+        with patch("markdown_vault.importers.dialog_import.path_utils.find_vault_for_dir",
+                   return_value=None):
+            self.dlg._file_path = None
+            self.dlg._recheck_file()
+        self.assertIsNotNone(self.dlg._file_block_reason)
+        self.assertIn("vault", self.dlg._file_block_reason.lower())
+        self.assertTrue(self.dlg._file_error.get_revealed())
+
+    @patch("markdown_vault.importers.dialog_import.document_import")
+    def test_a_target_outside_every_vault_keeps_import_disabled_with_a_file(self, mock_doc):
+        # A blocking reason must survive picking a file — otherwise the user selects one and
+        # the button comes back for an import that cannot work.
+        self._doc(mock_doc)
+        with patch("markdown_vault.importers.dialog_import.path_utils.find_vault_for_dir",
+                   return_value=None):
+            self.dlg._file_path = "/docs/report.pdf"
+            self.dlg._recheck_file()
+        self.assertIsNotNone(self.dlg._file_block_reason)
         self.assertFalse(self.dlg._file_import_btn.get_sensitive())
 
 
@@ -282,6 +317,7 @@ class TestFileChosen(unittest.TestCase):
     def test_records_path_and_defaults_name(self, mock_doc):
         mock_doc.is_available.return_value = None
         mock_doc.whisper_model_ready.return_value = True
+        mock_doc.describe_error = di.describe_error   # keep the real mapper
         gfile = MagicMock()
         gfile.get_path.return_value = "/docs/Quarterly Report.pdf"
         gfile.get_basename.return_value = "Quarterly Report.pdf"
@@ -532,8 +568,13 @@ class TestSmallGuards(unittest.TestCase):
         mock_doc.is_available.return_value = None       # stack present
         mock_doc.whisper_model_ready.return_value = False  # but no model
         mock_doc.whisper_model_name.return_value = "base"
+        mock_doc.describe_error = di.describe_error     # keep the real mapper
         self.dlg._file_path = None
-        self.dlg._recheck_file()
+        # The target is checked too now, and "/vault/notes" is not a real vault here — pin
+        # it so this test keeps asserting what it is about (notice, not a block).
+        with patch("markdown_vault.importers.dialog_import.path_utils.find_vault_for_dir",
+                   return_value="/vault"):
+            self.dlg._recheck_file()
         self.assertIsNone(self.dlg._file_block_reason)   # notice, not a block
         self.assertTrue(self.dlg._file_error.get_revealed())
 
