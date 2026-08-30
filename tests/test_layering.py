@@ -501,6 +501,19 @@ class TestTempdirPinned(unittest.TestCase):
 
 _PO_DIR = Path(__file__).resolve().parents[1] / "po"
 
+#: Literals that happen to read like a translated string but are NOT user-facing text, keyed
+#: by ``(file relative to markdown_vault/, exact string)``. Keyed by the pair on purpose: an
+#: exception for a key name must not silence a real label of the same text somewhere else.
+#: Each entry states what the string IS — "not user-facing" alone is the sentence that lets
+#: this list rot into a mute button.
+_BARE_IS_INTENDED = {
+    ("vault/vault_tree.py", "Delete"): "a GTK accelerator name for ShortcutTrigger.parse_string",
+    ("core/debug_control.py", "Search"): "a D-Bus method name compared against the wire value",
+    ("ui/sidebar.py", "Sidebar"): "a debug-dump label, written to a JSON file, not shown",
+    ("importers/web_import.py", "Nothing extractable on that page."):
+        "the CLI driver's stderr, English by decision (see describe_error's docstring)",
+}
+
 
 def _marked_strings():
     """Yield ``(relative-path, msgid)`` for every literal wrapped in ``_()``/``ngettext()``.
@@ -615,6 +628,40 @@ class TestTranslationCatalogIsComplete(unittest.TestCase):
             dict(missing), {},
             "marked string(s) with no entry in po/de.po — they reach the user in English:\n"
             + "\n".join(f"  {f}: {sorted(set(m))}" for f, m in sorted(missing.items())))
+
+    def test_no_string_is_marked_in_one_place_and_bare_in_another(self):
+        # The blind spot of the two checks above: they see only what is already wrapped in
+        # _(), so a user-facing string nobody marked is invisible to them. "Dismiss" was
+        # marked on the Ctrl+S banner and bare on the autosave one — the same button, German
+        # on one path and English on the other, and no test could say so.
+        # A text worth translating in one place is rarely an internal identifier in another,
+        # which makes the comparison cheap; where it genuinely is one, _BARE_IS_INTENDED says
+        # so with a reason. Keyed by (file, string), never by string alone, so an exception
+        # for a key name cannot silence a real menu label of the same text elsewhere.
+        marked, bare = set(), []
+        for pyfile in sorted(_ROOT.rglob("*.py")):
+            tree = ast.parse(pyfile.read_text(encoding="utf-8"), str(pyfile))
+            wrapped = set()
+            for node in ast.walk(tree):
+                if (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+                        and node.func.id in ("_", "ngettext")):
+                    for arg in node.args:
+                        if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
+                            marked.add(arg.value)
+                            wrapped.add(id(arg))
+            rel = pyfile.relative_to(_ROOT).as_posix()
+            for node in ast.walk(tree):
+                if (isinstance(node, ast.Constant) and isinstance(node.value, str)
+                        and id(node) not in wrapped):
+                    bare.append((rel, node.value, node.lineno))
+
+        offenders = [f"{rel}:{line}: {text!r}" for rel, text, line in bare
+                     if text in marked and (rel, text) not in _BARE_IS_INTENDED]
+        self.assertEqual(
+            sorted(offenders), [],
+            "string(s) marked for translation elsewhere but left bare here — either wrap "
+            "them or add (file, text) to _BARE_IS_INTENDED with the reason:\n  "
+            + "\n  ".join(sorted(offenders)))
 
     def _po(self, body):
         d = tempfile.mkdtemp()
