@@ -522,37 +522,63 @@ def _marked_strings():
 _PO_ESCAPES = {"n": "\n", "t": "\t", "r": "\r", '"': '"', "\\": "\\"}
 
 
-def _po_msgids(po_path: Path) -> set[str]:
-    """Every msgid in a ``.po`` file, un-escaped and with continuation lines joined.
+def _unescape(s: str) -> str:
+    out, i = [], 0
+    while i < len(s):
+        if s[i] == "\\" and i + 1 < len(s):
+            out.append(_PO_ESCAPES.get(s[i + 1], s[i + 1]))
+            i += 2
+        else:
+            out.append(s[i])
+            i += 1
+    return "".join(out)
 
-    Obsolete entries (``#~``) are not matched, so a string that was removed and later
-    re-added still counts as missing until it is translated again.
+
+def _translated_msgids(po_path: Path) -> set[str]:
+    """The msgids in a ``.po`` file that actually REACH the user in German.
+
+    Presence of a msgid is not the property — gettext falls back to the msgid whenever a
+    translation is unusable, so the user reads English either way. Three states are
+    therefore excluded, all of which a msgid-only check would pass:
+
+    - an empty ``msgstr``, which is what ``msgmerge`` writes for every NEW entry, i.e. the
+      normal "regenerate now, translate later" state;
+    - a ``#, fuzzy`` entry, which gettext ignores at runtime;
+    - a plural entry with any form left empty — English for exactly that count.
+
+    Obsolete entries (``#~``) never match, and the header (``msgid ""``) is not a string.
     """
-    def unescape(s):
-        out, i = [], 0
-        while i < len(s):
-            if s[i] == "\\" and i + 1 < len(s):
-                out.append(_PO_ESCAPES.get(s[i + 1], s[i + 1]))
-                i += 2
-            else:
-                out.append(s[i])
-                i += 1
-        return "".join(out)
+    ids: set[str] = set()
 
-    ids, parts, collecting = set(), [], False
-    for line in po_path.read_text(encoding="utf-8").splitlines():
-        stripped = line.strip()
-        if stripped.startswith(("msgid ", "msgid_plural ")):
-            if collecting:
-                ids.add(unescape("".join(parts)))
-            parts, collecting = [stripped.split(" ", 1)[1].strip()[1:-1]], True
-        elif collecting and stripped.startswith('"'):
-            parts.append(stripped[1:-1])
-        elif collecting:
-            ids.add(unescape("".join(parts)))
-            parts, collecting = [], False
-    if collecting:
-        ids.add(unescape("".join(parts)))
+    def flush(entry):
+        msgids = [v for k, v in entry.items() if k in ("msgid", "msgid_plural")]
+        msgstrs = [v for k, v in entry.items() if k.startswith("msgstr")]
+        if entry.get("fuzzy") or not msgids or not msgstrs:
+            return
+        if any(not s for s in msgstrs):
+            return
+        ids.update(m for m in msgids if m)          # msgid "" is the header, not a string
+        return
+
+    entry: dict = {}
+    key = None
+    for raw in po_path.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line:
+            flush(entry)
+            entry, key = {}, None
+        elif line.startswith("#,"):
+            if "fuzzy" in line:
+                entry["fuzzy"] = True
+        elif line.startswith("#"):
+            continue                                 # comments, references, obsolete (#~)
+        elif line.startswith(("msgid ", "msgid_plural ", "msgstr ", "msgstr[")):
+            kw, _, rest = line.partition(" ")
+            key = kw
+            entry[key] = _unescape(rest.strip()[1:-1])
+        elif line.startswith('"') and key is not None:
+            entry[key] += _unescape(line[1:-1])
+    flush(entry)
     return ids
 
 
@@ -580,7 +606,7 @@ class TestTranslationCatalogIsComplete(unittest.TestCase):
             "never see their strings:\n  " + "\n  ".join(missing))
 
     def test_every_marked_string_has_a_german_translation(self):
-        known = _po_msgids(_PO_DIR / "de.po")
+        known = _translated_msgids(_PO_DIR / "de.po")
         missing = defaultdict(list)
         for rel, msg in _marked_strings():
             if msg not in known:
@@ -590,21 +616,54 @@ class TestTranslationCatalogIsComplete(unittest.TestCase):
             "marked string(s) with no entry in po/de.po — they reach the user in English:\n"
             + "\n".join(f"  {f}: {sorted(set(m))}" for f, m in sorted(missing.items())))
 
+    def _po(self, body):
+        d = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, d, True)
+        po = Path(d) / "x.po"
+        po.write_text(body, encoding="utf-8")
+        return po
+
+    def test_an_untranslated_entry_does_not_count(self):
+        # The state msgmerge creates for every NEW entry: msgid present, msgstr empty.
+        # gettext then falls back to the msgid, so the user reads English — the exact
+        # defect this guard exists for. A msgid-only check passes it.
+        po = self._po('msgid "Hello"\nmsgstr ""\n')
+        self.assertNotIn("Hello", _translated_msgids(po))
+
+    def test_a_fuzzy_entry_does_not_count(self):
+        # gettext ignores fuzzy translations at runtime, so they render English too.
+        po = self._po('#, fuzzy\nmsgid "Hello"\nmsgstr "Hallo"\n')
+        self.assertNotIn("Hello", _translated_msgids(po))
+
+    def test_a_translated_entry_counts(self):
+        po = self._po('msgid "Hello"\nmsgstr "Hallo"\n')
+        self.assertIn("Hello", _translated_msgids(po))
+
+    def test_a_plural_entry_needs_every_form(self):
+        # A missing plural form renders English for exactly that count — invisible until a
+        # user hits it. Both singular and plural msgids belong to the same entry.
+        filled = self._po('msgid "note"\nmsgid_plural "notes"\n'
+                          'msgstr[0] "Notiz"\nmsgstr[1] "Notizen"\n')
+        self.assertEqual({"note", "notes"} & _translated_msgids(filled), {"note", "notes"})
+        partial = self._po('msgid "note"\nmsgid_plural "notes"\n'
+                           'msgstr[0] "Notiz"\nmsgstr[1] ""\n')
+        self.assertEqual({"note", "notes"} & _translated_msgids(partial), set())
+
+    def test_the_header_is_not_taken_for_a_string(self):
+        po = self._po('msgid ""\nmsgstr "Content-Type: text/plain\\n"\n\n'
+                      'msgid "Hello"\nmsgstr "Hallo"\n')
+        self.assertNotIn("", _translated_msgids(po))
+
     def test_the_parser_reads_a_multiline_msgid(self):
         # The catalog wraps long strings over several quoted lines. A parser that only read
         # the first line would report every wrapped entry as missing, and the guard would be
         # abandoned as noisy rather than believed.
-        with tempfile.TemporaryDirectory() as d:
-            po = Path(d) / "x.po"
-            po.write_text('msgid ""\n"first part "\n"second part"\nmsgstr "x"\n',
-                          encoding="utf-8")
-            self.assertIn("first part second part", _po_msgids(po))
+        po = self._po('msgid ""\n"first part "\n"second part"\nmsgstr "x"\n')
+        self.assertIn("first part second part", _translated_msgids(po))
 
     def test_the_parser_unescapes(self):
-        with tempfile.TemporaryDirectory() as d:
-            po = Path(d) / "x.po"
-            po.write_text(r'msgid "a\nb \"q\" c"' + '\nmsgstr "x"\n', encoding="utf-8")
-            self.assertIn('a\nb "q" c', _po_msgids(po))
+        po = self._po(r'msgid "a\nb \"q\" c"' + '\nmsgstr "x"\n')
+        self.assertIn('a\nb "q" c', _translated_msgids(po))
 
 
 if __name__ == "__main__":
