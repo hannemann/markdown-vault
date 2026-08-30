@@ -591,6 +591,42 @@ def is_gguf(path) -> bool:
         return False
 
 
+def is_onnx(path) -> bool:
+    """Whether *path* plausibly is an ONNX model.
+
+    ONNX is protobuf and has no ASCII magic like GGUF's, so this checks the first byte for
+    ``0x08`` — protobuf's tag for field 1 (``ir_version``), which writers emit first, and
+    which every model checked here starts with. Weaker than a magic string, and enough for
+    what actually turns up by mistake: an HTML error page, a captive-portal login, a JSON
+    error body. Those otherwise reach a NATIVE parser, which is a memory-safety surface
+    rather than a parse error.
+
+    A false rejection is recoverable: a model placed in the folder by hand is never passed
+    through here, only a downloaded one is.
+    """
+    try:
+        with open(path, "rb") as fh:
+            return fh.read(1) == b"\x08"
+    except OSError:
+        # unreadable is not usable; same convention as is_gguf
+        return False
+
+
+def is_json(path) -> bool:
+    """Whether *path* parses as JSON — the check for a downloaded ``tokenizer.json``.
+
+    Exact rather than a magic byte, because JSON is cheap to verify outright; an error page
+    served in place of the tokenizer fails it.
+    """
+    try:
+        with open(path, "rb") as fh:
+            json.load(fh)
+        return True
+    except (OSError, ValueError):
+        # ValueError covers JSONDecodeError and a bad encoding; either way not a tokenizer
+        return False
+
+
 def list_models(settings: dict) -> list:
     """The **valid** GGUF files in the Ask models folder (:func:`ask_models_dir`),
     newest first — files that only carry a ``.gguf`` name but aren't GGUF are

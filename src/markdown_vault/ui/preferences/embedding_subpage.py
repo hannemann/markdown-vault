@@ -555,14 +555,25 @@ class EmbeddingSubpageMixin:
 
     def _on_download_onnx(self, button, which) -> None:
         model_p, tok_p = self._onnx_paths()
+        # Both artefacts are content-checked, as the GGUF download is: what a wrong URL
+        # actually yields is an HTML error page or a portal login, and unchecked it would be
+        # renamed into place and reported as a finished model — then handed to a native
+        # parser. A file the user puts in the folder by hand is unaffected; only downloads
+        # pass through here.
         if which == "model":
             url = (self._sem_model_url_entry.get_text().strip()
                    or config.default("semantic.onnx.model_url"))
             filename, bar, target = "model.onnx", self._sem_model_progress, model_p
+            check = lambda p: (None if config.is_onnx(p) else
+                               _("That URL isn't an ONNX model file — use the download "
+                                 "link, not the web page."))
         else:
             url = (self._sem_tok_url_entry.get_text().strip()
                    or config.default("semantic.onnx.tokenizer_url"))
             filename, bar, target = "tokenizer.json", self._sem_tok_progress, tok_p
+            check = lambda p: (None if config.is_json(p) else
+                               _("That URL isn't a tokenizer file — use the download link, "
+                                 "not the web page."))
         if not url:
             return
         button.set_sensitive(False)
@@ -573,7 +584,8 @@ class EmbeddingSubpageMixin:
         # fixed dir — otherwise a custom configured path never sees the file.
         threading.Thread(
             target=self._download_worker,
-            args=(button, url, target, filename, bar), daemon=True).start()
+            args=(button, url, target, filename, bar),
+            kwargs={"validate": check}, daemon=True).start()
 
     def _download_worker(self, button, url, target, filename, bar,
                          refresh=None, validate=None) -> None:

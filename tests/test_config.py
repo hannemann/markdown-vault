@@ -487,6 +487,47 @@ class TestDefaultAndMigration(unittest.TestCase):
         finally:
             shutil.rmtree(d, ignore_errors=True)
 
+    def test_is_onnx_accepts_a_protobuf_start_and_rejects_a_page(self):
+        # ONNX is protobuf and has no ASCII magic like GGUF's. Every model checked on this
+        # machine starts 08 <varint> — field 1 (ir_version), which protobuf writers emit
+        # first — and that is enough to separate a model from what actually turns up by
+        # mistake: an HTML error page, a captive-portal login, a JSON error body. Without
+        # it those reach a NATIVE parser, which this module elsewhere calls a memory-safety
+        # surface rather than a parse error.
+        import tempfile
+        from pathlib import Path
+        d = tempfile.mkdtemp()
+        self.addCleanup(lambda: __import__("shutil").rmtree(d, ignore_errors=True))
+        good = Path(d) / "model.onnx"
+        good.write_bytes(bytes([0x08, 0x06, 0x12, 0x07]) + b"pytorch")
+        for name, content in (("page.onnx", b"<!DOCTYPE html><html>"),
+                              ("err.onnx", b'{"error": "not found"}'),
+                              ("text.onnx", b"Not Found\n")):
+            with self.subTest(content=name):
+                bad = Path(d) / name
+                bad.write_bytes(content)
+                self.assertFalse(_cfg.is_onnx(bad))
+        self.assertTrue(_cfg.is_onnx(good))
+        self.assertFalse(_cfg.is_onnx(Path(d) / "missing.onnx"))
+        (Path(d) / "empty.onnx").write_bytes(b"")
+        self.assertFalse(_cfg.is_onnx(Path(d) / "empty.onnx"))
+
+    def test_is_json_accepts_a_tokenizer_and_rejects_a_page(self):
+        # tokenizer.json is downloaded next to the model and had no check either. It must
+        # parse — an error page does not, and JSON is cheap enough to verify exactly rather
+        # than by a magic byte.
+        import tempfile
+        from pathlib import Path
+        d = tempfile.mkdtemp()
+        self.addCleanup(lambda: __import__("shutil").rmtree(d, ignore_errors=True))
+        good = Path(d) / "tokenizer.json"
+        good.write_text('{"version": "1.0", "model": {}}', encoding="utf-8")
+        bad = Path(d) / "page.json"
+        bad.write_text("<!DOCTYPE html><html>", encoding="utf-8")
+        self.assertTrue(_cfg.is_json(good))
+        self.assertFalse(_cfg.is_json(bad))
+        self.assertFalse(_cfg.is_json(Path(d) / "missing.json"))
+
     def test_is_gguf_checks_magic(self):
         import os
         import tempfile

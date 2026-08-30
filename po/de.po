@@ -1532,6 +1532,20 @@ msgstr "Startet…"
 msgid "That URL isn't a GGUF model file — use the download (\"resolve\") link, not the web page."
 msgstr "Diese URL ist keine GGUF-Modelldatei — den Download-Link („resolve\") nutzen, nicht die Webseite."
 
+#: src/markdown_vault/ui/preferences/embedding_subpage.py
+msgid ""
+"That URL isn't an ONNX model file — use the download link, not the web page."
+msgstr ""
+"Diese URL ist keine ONNX-Modelldatei — den Download-Link nutzen, nicht die "
+"Webseite."
+
+#: src/markdown_vault/ui/preferences/embedding_subpage.py
+msgid ""
+"That URL isn't a tokenizer file — use the download link, not the web page."
+msgstr ""
+"Diese URL ist keine Tokenizer-Datei — den Download-Link nutzen, nicht die "
+"Webseite."
+
 #: src/markdown_vault/ui/preferences/ask_subpage.py
 msgid "Select the models folder"
 msgstr "Modell-Ordner auswählen"

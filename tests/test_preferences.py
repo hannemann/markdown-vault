@@ -8,6 +8,7 @@ unknown persisted backend still opens. This pins behaviour a later split (ticket
 must keep; it deliberately does not test ``_build_*`` method names.
 """
 import unittest
+from pathlib import Path
 from unittest.mock import patch, MagicMock
 
 import gi
@@ -805,6 +806,55 @@ class TestWhisperDownloadWiring(unittest.TestCase):
         self.assertFalse(ok)
         self.assertNotIn("Errno", msg)
         self.assertNotIn("denied", msg)
+
+
+class TestOnnxDownloadIsValidated(unittest.TestCase):
+    """Seam guard (stub page, internal name): the ONNX download must HAND the worker a
+    content check. Both validators can be perfect and the download still unchecked — which
+    is what it was: the GGUF path passed one, this path passed nothing, so an HTML error
+    page was renamed into place and reported as a finished model."""
+
+    def _dispatch(self, which):
+        page = MagicMock()
+        page._onnx_paths.return_value = (Path("/m/model.onnx"), Path("/m/tokenizer.json"))
+        with patch("markdown_vault.ui.preferences.embedding_subpage.threading") as thr:
+            EmbeddingSubpageMixin._on_download_onnx(page, MagicMock(), which)
+        thr.Thread.assert_called_once()
+        return thr.Thread.call_args.kwargs
+
+    def test_the_model_download_is_given_an_onnx_check(self):
+        kwargs = self._dispatch("model")
+        validate = kwargs["kwargs"]["validate"]
+        self.assertIsNotNone(validate)
+        with patch("markdown_vault.ui.preferences.embedding_subpage.config.is_onnx",
+                   return_value=False):
+            self.assertIsNotNone(validate("/m/model.onnx"))    # a reason, i.e. rejected
+        with patch("markdown_vault.ui.preferences.embedding_subpage.config.is_onnx",
+                   return_value=True):
+            self.assertIsNone(validate("/m/model.onnx"))       # accepted
+
+    def test_the_tokenizer_download_is_given_a_json_check(self):
+        kwargs = self._dispatch("tokenizer")
+        validate = kwargs["kwargs"]["validate"]
+        self.assertIsNotNone(validate)
+        with patch("markdown_vault.ui.preferences.embedding_subpage.config.is_json",
+                   return_value=False):
+            self.assertIsNotNone(validate("/m/tokenizer.json"))
+        with patch("markdown_vault.ui.preferences.embedding_subpage.config.is_json",
+                   return_value=True):
+            self.assertIsNone(validate("/m/tokenizer.json"))
+
+    def test_the_two_downloads_do_not_share_one_check(self):
+        # They validate different formats; handing the same lambda to both would reject the
+        # tokenizer for not being protobuf, or wave an HTML page through as a model.
+        model = self._dispatch("model")["kwargs"]["validate"]
+        tok = self._dispatch("tokenizer")["kwargs"]["validate"]
+        with patch("markdown_vault.ui.preferences.embedding_subpage.config.is_onnx",
+                   return_value=True), \
+             patch("markdown_vault.ui.preferences.embedding_subpage.config.is_json",
+                   return_value=False):
+            self.assertIsNone(model("/m/model.onnx"))          # onnx check accepted
+            self.assertIsNotNone(tok("/m/tokenizer.json"))     # json check rejected
 
 
 if __name__ == "__main__":
