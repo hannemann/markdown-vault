@@ -188,6 +188,39 @@ class TestSaveAnnouncesTheAtomicRename(unittest.TestCase):
         win._vault_monitor.forget_atomic_save.assert_called_once_with("/vault/note.md")
 
 
+class TestImportRequestedGuard(unittest.TestCase):
+    """Seam guard (stub window, internal name): the import dialog must not OPEN for a target
+    the vault guard would refuse. Blocking inside the dialog was worse in two ways — the user
+    had to click through to the File tab to learn why, and the URL tab did not block at all,
+    so one dialog gave two answers for the same folder. Checked once, before it exists."""
+
+    def test_an_unwritable_target_shows_an_error_instead_of_the_dialog(self):
+        win = unittest.mock.Mock()
+        with unittest.mock.patch(
+                "markdown_vault.core.vault_fs.is_writable_target", return_value=False):
+            with unittest.mock.patch(
+                    "markdown_vault.importers.dialog_import.ImportDialog") as dlg:
+                with unittest.mock.patch(
+                        "markdown_vault.app.app_window.dialogs") as mock_dialogs:
+                    MainWindow._on_import_requested(win, None, "/not/a/vault")
+        dlg.assert_not_called()
+        mock_dialogs.show_error.assert_called_once()
+        body = mock_dialogs.show_error.call_args.args[2]
+        self.assertNotIn("/not/a/vault", body)     # translated message, not the raw path
+
+    def test_a_writable_target_opens_the_dialog(self):
+        win = unittest.mock.Mock()
+        with unittest.mock.patch(
+                "markdown_vault.core.vault_fs.is_writable_target", return_value=True):
+            with unittest.mock.patch(
+                    "markdown_vault.importers.dialog_import.ImportDialog") as dlg:
+                with unittest.mock.patch(
+                        "markdown_vault.app.app_window.dialogs") as mock_dialogs:
+                    MainWindow._on_import_requested(win, None, "/vault/notes")
+        dlg.assert_called_once()
+        mock_dialogs.show_error.assert_not_called()
+
+
 class TestActions(AppWindowTest):
     """The action surface: what the menus, shortcuts and the app shell can call.
 

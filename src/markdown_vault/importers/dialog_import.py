@@ -25,7 +25,6 @@ from gi.repository import Gtk, Adw, Gio, GObject, GLib
 
 from markdown_vault.importers import document_import, web_import
 from markdown_vault.core import path_utils
-from markdown_vault.core import vault_fs
 from markdown_vault.core.i18n import _
 from markdown_vault.uikit import dialogs
 
@@ -286,14 +285,7 @@ class ImportDialog(Adw.Dialog):
                          and not document_import.whisper_model_ready())
         reason = None                                         # blocks Import
         notice = None                                         # informational only
-        if not vault_fs.is_writable_target(self._target_dir):
-            # Ask the guard its own question instead of approximating it: a lexical
-            # "under a vault?" admits a symlinked directory the write then refuses, and
-            # would need repairing again once unlocked links exist. Checked here at all
-            # because the target is known when the dialog opens, and failing after the
-            # whole conversion tells the user far too late.
-            reason = document_import.describe_error(vault_fs.OutsideVault(self._target_dir))
-        elif self._file_path:
+        if self._file_path:
             suffix = Path(self._file_path).suffix
             reason = document_import.is_available(suffix)      # this format's backend?
             if (not reason and document_import.needs_transcription_model(suffix)

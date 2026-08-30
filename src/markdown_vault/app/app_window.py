@@ -60,6 +60,7 @@ from markdown_vault.core import session
 from markdown_vault.editor import mru
 from markdown_vault.core import history
 from markdown_vault.core import path_utils
+from markdown_vault.core import vault_fs
 from markdown_vault.vault import vault_monitor
 from markdown_vault.vault.backlink_index import BacklinkIndex, scan_vaults
 from markdown_vault.core.event_router import FileEventDispatcher
@@ -1849,7 +1850,18 @@ class MainWindow(Adw.ApplicationWindow):
     def _on_import_requested(self, _tree, target_dir: str) -> None:
         """Handle 'Import…' from the vault tree context menu — fetch a URL as a
         note into *target_dir*, then open it and reveal it in the tree."""
+        from markdown_vault.importers import document_import
         from markdown_vault.importers.dialog_import import ImportDialog
+        if not vault_fs.is_writable_target(target_dir):
+            # Refuse before the dialog exists rather than inside it: both its tabs write into
+            # this folder, so the answer belongs to the folder, not to a tab — and blocking
+            # inside meant clicking through to the File tab to learn why, while the URL tab
+            # did not block at all. The guard's own question, so it cannot disagree with the
+            # write that would follow.
+            dialogs.show_error(
+                self, _("Import not possible"),
+                document_import.describe_error(vault_fs.OutsideVault(target_dir)))
+            return
         dialog = ImportDialog(
             target_dir,
             last_dir=config.get_setting(self._settings, "document.import_last_dir"),

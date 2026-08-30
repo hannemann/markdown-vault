@@ -514,6 +514,10 @@ msgstr "Die Ordnerauswahl konnte nicht geöffnet werden."
 msgid "Save Failed"
 msgstr "Speichern fehlgeschlagen"
 
+#: src/markdown_vault/app/app_window.py
+msgid "Import not possible"
+msgstr "Import nicht möglich"
+
 #: src/markdown_vault/search/quick_open_palette.py
 msgid "Quick Open"
 msgstr "Schnell öffnen"
