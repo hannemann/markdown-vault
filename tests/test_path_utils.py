@@ -328,5 +328,64 @@ class TestWikilinkUrl(unittest.TestCase):
         )
 
 
+class TestReadPathStaysLexical(_TempConfigMixin, unittest.TestCase):
+    """path_is_within must stay LEXICAL — the read/navigation side of the symlink policy.
+
+    The write side resolves symlinks (core.path_guard) so a crafted link cannot smuggle a
+    write out of a vault. The read side deliberately does not: a note the user symlinked
+    into their vault is a deliberate instruction, and it must still open, still report its
+    vault, and still be reachable by wikilink. Merging the two functions — the tempting
+    "we already have a containment check" cleanup — would silently break exactly that.
+
+    The symlinks here are REAL files on disk, and that is load-bearing: os.path.realpath on
+    a path that does not exist returns it unchanged, so a resolving implementation would
+    pass a mock-only version of this test. Without the link on disk the test would be green
+    for the wrong reason.
+    """
+
+    def setUp(self):
+        super().setUp()
+        import shutil
+        from markdown_vault.core import path_utils
+        self._pu = path_utils
+        self._tree = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self._tree, True)
+        self.vault = os.path.join(self._tree, "vault")
+        self.outside = os.path.join(self._tree, "outside")
+        os.mkdir(self.vault)
+        os.mkdir(self.outside)
+        Path(self.outside, "shared.md").write_text("# Shared", encoding="utf-8")
+        # The user's link: <vault>/Linked.md -> <outside>/shared.md
+        self.linked = os.path.join(self.vault, "Linked.md")
+        os.symlink(os.path.join(self.outside, "shared.md"), self.linked)
+        _cfg.CONFIG_FILE.write_text(
+            f"vaults:\n  - name: Notes\n    path: {self.vault}\n", encoding="utf-8")
+
+    def test_the_two_containment_checks_disagree_on_this_link(self):
+        # The premise every other test here rests on. If this ever fails, the read and the
+        # write check have converged and the rest of the class is no longer testing
+        # anything — so assert the divergence itself rather than leaving it implied.
+        from markdown_vault.core import path_guard
+        self.assertTrue(self._pu.path_is_within(self.vault, self.linked))
+        self.assertFalse(path_guard.within_any([self.vault], self.linked, follow_last=True))
+
+    def test_a_note_symlinked_out_still_reports_its_vault(self):
+        self.assertEqual(self._pu.find_vault_name_for_path(self.linked), "Notes")
+
+    def test_vault_relative_name_of_a_symlinked_note(self):
+        self.assertEqual(self._pu.vault_relative_name(self.linked), "Notes/Linked")
+
+    def test_a_wikilink_resolves_to_a_symlinked_note(self):
+        self.assertEqual(self._pu.resolve_wikilink("Notes", "Linked"), self.linked)
+
+    def test_a_directory_symlinked_out_is_still_found_for_its_vault(self):
+        # The directory variant — a shared folder hung into the vault, the PKM pattern the
+        # symlink ticket named as the legitimate case that must not break.
+        os.mkdir(os.path.join(self.outside, "shared-dir"))
+        linked_dir = os.path.join(self.vault, "Projects")
+        os.symlink(os.path.join(self.outside, "shared-dir"), linked_dir)
+        self.assertEqual(self._pu.find_vault_for_dir(linked_dir), self.vault)
+
+
 if __name__ == "__main__":
     unittest.main()

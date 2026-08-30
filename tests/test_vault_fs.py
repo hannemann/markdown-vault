@@ -415,6 +415,39 @@ class TestDeleteOps(unittest.TestCase):
                 vfs.rmtree(d)
             self.assertTrue(Path(d).exists())
 
+    def test_rmtree_through_a_symlink_with_a_trailing_separator_is_refused(self):
+        # The trailing-separator landmine named in the symlink-escape ticket. A path ending
+        # in os.sep makes shutil.rmtree walk THROUGH the link and wipe the outside tree,
+        # raising NotADirectoryError only afterwards — and the attachments cleanup passes
+        # ignore_errors=True, which swallows even that: silent loss outside the vault.
+        # The guard refuses it because dirname("<link>/") IS the link, which resolves
+        # outside. That is correct but incidental to how dirname strips a trailing
+        # separator, so pin it: a future join(d, "") or str(d)+os.sep must stay refused.
+        with _Vault() as v:
+            os.mkdir(os.path.join(v.outside, "sub"))
+            victim = Path(v.outside, "sub", "victim")
+            victim.write_text("x")
+            link = os.path.join(v.vault, "link")
+            os.symlink(os.path.join(v.outside, "sub"), link)
+            with self.assertRaises(vfs.OutsideVault):
+                vfs.rmtree(link + os.sep, ignore_errors=True)
+            self.assertTrue(victim.exists())
+
+    def test_rmtree_on_the_symlink_itself_deletes_nothing_outside(self):
+        # The other half of the pair: without the trailing separator the guard ALLOWS the
+        # path — delete mode judges the link by where it sits, and it sits in the vault.
+        # Containment is therefore not what protects the outside tree here; shutil is
+        # (it refuses to rmtree a symlink). Asserted so the pair reads as one decision
+        # instead of the permissive half looking like an oversight.
+        with _Vault() as v:
+            os.mkdir(os.path.join(v.outside, "sub"))
+            victim = Path(v.outside, "sub", "victim")
+            victim.write_text("x")
+            link = os.path.join(v.vault, "link")
+            os.symlink(os.path.join(v.outside, "sub"), link)
+            vfs.rmtree(link, ignore_errors=True)
+            self.assertTrue(victim.exists())
+
     def test_rmtree_forwards_ignore_errors_true(self):
         # AZ1: a best-effort caller (attachments cleanup) relies on shutil clearing everything
         # removable and leaving only the stubborn part, instead of aborting on the first error
@@ -510,6 +543,62 @@ class TestMoveRename(unittest.TestCase):
             self.assertFalse(os.path.islink(dst))               # link replaced by the file
             self.assertEqual(Path(dst).read_text(), "NEW")
             self.assertEqual(Path(victim).read_text(), "VICTIM")  # target untouched
+
+
+class TestSymlinkedVaultRoot(unittest.TestCase):
+    """The vault root ITSELF sits behind a symlink — the common real-world setup (a vault
+    under ~/Nextcloud, which is often a link to another disk).
+
+    This is the regression a naive realpath guard causes: resolving only the TARGET and
+    comparing it against an unresolved root makes every path mismatch, so the user's whole
+    vault turns unwritable. within_any resolves the roots too, which is what keeps it
+    working — and that is one line (path_guard.within_any), easily lost to a "simplifying"
+    edit. Nothing else pins it, so these do.
+    """
+
+    def _vault_behind_a_link(self, d):
+        """Return (link_path, real_path) for a vault reached through a directory symlink."""
+        real = os.path.join(d, "real-store")
+        os.mkdir(real)
+        link = os.path.join(d, "vault-link")
+        os.symlink(real, link)
+        return link, real
+
+    def test_write_into_a_vault_configured_by_its_symlinked_path(self):
+        with TemporaryDirectory() as d:
+            link, real = self._vault_behind_a_link(d)
+            with mock.patch.object(vfs, "_vault_roots", return_value=[link]):
+                vfs.write_text(os.path.join(link, "note.md"), "hi")
+            self.assertEqual(Path(real, "note.md").read_text(), "hi")
+
+    def test_write_through_the_link_when_the_root_is_configured_by_its_real_path(self):
+        # The mixed case: config holds the resolved path, the caller hands a path through
+        # the link (or the reverse). Resolving BOTH sides is what makes the two agree.
+        with TemporaryDirectory() as d:
+            link, real = self._vault_behind_a_link(d)
+            with mock.patch.object(vfs, "_vault_roots", return_value=[real]):
+                vfs.write_text(os.path.join(link, "note.md"), "hi")
+            self.assertEqual(Path(real, "note.md").read_text(), "hi")
+
+    def test_delete_inside_a_symlinked_root_still_works(self):
+        # Delete mode resolves only the parent, so it is a separate path through the guard
+        # and can regress on its own.
+        with TemporaryDirectory() as d:
+            link, real = self._vault_behind_a_link(d)
+            note = Path(real, "note.md")
+            note.write_text("x")
+            with mock.patch.object(vfs, "_vault_roots", return_value=[link]):
+                vfs.unlink(os.path.join(link, "note.md"))
+            self.assertFalse(note.exists())
+
+    def test_a_symlinked_root_does_not_admit_its_own_parent(self):
+        # Counter-check: resolving the root must not widen it. The link's parent directory
+        # is outside the vault and stays outside.
+        with TemporaryDirectory() as d:
+            link, _real = self._vault_behind_a_link(d)
+            with mock.patch.object(vfs, "_vault_roots", return_value=[link]):
+                with self.assertRaises(vfs.OutsideVault):
+                    vfs.write_text(os.path.join(d, "escaped.md"), "no")
 
 
 if __name__ == "__main__":
