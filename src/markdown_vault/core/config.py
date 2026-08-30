@@ -617,8 +617,13 @@ def is_tokenizer_json(path) -> bool:
     ``tokenizer.json``.
 
     Parsing alone would admit the very thing this guards against: a server's JSON error body
-    is valid JSON. So it also requires the ``model`` key, the tokenizer algorithm, which
-    every HuggingFace ``tokenizer.json`` carries.
+    is valid JSON. So it also requires the ``model`` key — the tokenizer algorithm itself,
+    which the ``tokenizers`` library always serialises, so the key is a property of the
+    FORMAT rather than of the files that happen to be at hand.
+
+    It stops at identity and does not validate the file: ``{"model": null}`` passes. Telling
+    a tokenizer from an error page is the job here; the library rejects a malformed one on
+    load, and doing that work twice would only drift.
 
     Parsing the whole file has a second effect worth keeping: a truncated download does not
     parse, so this path detects an interrupted transfer even when the server sent no
