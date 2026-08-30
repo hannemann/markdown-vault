@@ -14,6 +14,13 @@ is logged and dropped rather than allowed to break every state write.
 All raw filesystem mutation for state writes lives here (and in VaultFS for vault writes);
 the AST guard forbids it anywhere else. Writes are atomic — a ``.part`` file renamed into
 place — so a crash or a rejected download never leaves a half-written file looking complete.
+
+**EVERY write here is atomic, suffix or not.** The ``_atomic`` in ``write_text_atomic`` and
+``write_bytes_atomic`` borrows VaultFS's vocabulary, where the bare name really does mean a
+plain truncating write and the suffix marks its twin — so a reader arriving from there is not
+misled by a shared name carrying the opposite guarantee. It does NOT mark a contrast within
+this module: ``write_stream`` has no suffix and is atomic all the same, and renaming it would
+only lengthen a name to restate what the whole facade already does.
 """
 
 import logging
