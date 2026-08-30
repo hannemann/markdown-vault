@@ -1146,10 +1146,12 @@ def main(argv=None) -> int:
     else:
         try:
             path = save_to_vault(result, args.vault, download_images=args.download_images)
-        except vault_fs.VaultWriteError as exc:
-            # Not an OSError, so the fetch's handler above would not have caught it either:
-            # the target is outside every configured vault. Report it the way this driver
-            # reports everything else rather than ending in a traceback.
+        except (vault_fs.VaultWriteError, OSError) as exc:
+            # The same pair the fetch branch reports, for the same reason: stderr plus a
+            # non-zero exit IS the failure report, not a way of hiding one. VaultWriteError
+            # is not an OSError and needs naming separately; the OSError half is reachable
+            # too — reserve_path gives up with FileExistsError, for which the GUI has had a
+            # sentence since the reserve-then-fill change.
             print(f"Import failed: {exc}", file=sys.stderr)
             return 1
         print(f"Wrote {path}")

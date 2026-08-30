@@ -1436,12 +1436,14 @@ class TestCliRefusal(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn("Import failed", err)
 
-    def test_an_os_error_from_the_write_still_propagates(self):
-        # Pins the SCOPE of the new handler: it catches the containment refusal, not every
-        # write failure. Widening it later would swallow a disk error the driver should not
-        # dress up as a clean exit.
-        with self.assertRaises(OSError):
-            self._run(OSError("disk full"))
+    def test_a_write_error_is_reported_the_same_way(self):
+        # The write gets the same treatment as the fetch, which reports its own OSErrors:
+        # stderr plus a non-zero exit IS the failure report. Reachable, not theoretical —
+        # reserve_path gives up with FileExistsError, an OSError, for which the GUI has had
+        # a sentence since reserve-then-fill.
+        code, err = self._run(FileExistsError("no free name after 1000 attempts"))
+        self.assertEqual(code, 1)
+        self.assertIn("Import failed", err)
 
 
 if __name__ == "__main__":
