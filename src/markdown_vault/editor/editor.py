@@ -61,6 +61,7 @@ class Editor(Gtk.ScrolledWindow):
                  wrap_text: bool = True) -> None:
         super().__init__()
         self._file_path: str | None = None
+        self._last_save_error: str | None = None
         self._debounce_id: int | None = None
         self._base_font_size: int = base_font_size
         self._zoom_factor: float = 1.0
@@ -403,6 +404,19 @@ class Editor(Gtk.ScrolledWindow):
         end = self._buffer.get_end_iter()
         return self._buffer.get_text(start, end, True)
 
+    @property
+    def last_save_error(self) -> str | None:
+        """Why the last :meth:`save` returned ``False``, as a translated sentence — ``None``
+        after a success.
+
+        Kept as state rather than returned, because the three save paths branch on
+        ``if save():`` and turning that into a message would invert the truthiness at every
+        one of them — a silent trap for the next reader. The reason exists because "Could not
+        save …" alone is unguessable for a note that is a symlink out of the vault: nothing
+        about the note looks different from any other.
+        """
+        return self._last_save_error
+
     def save(self) -> bool:
         """Write the buffer to ``file_path``, atomically and guarded.
 
@@ -416,19 +430,29 @@ class Editor(Gtk.ScrolledWindow):
         file path is set.
         """
         if not self._file_path:
+            self._last_save_error = _("The note has no file on disk yet.")
             return False
         try:
             vault_fs.write_text_atomic(self._file_path, self.get_text())
             self._buffer.set_modified(False)
+            self._last_save_error = None
             return True
         except vault_fs.VaultWriteError as exc:
             # Not an OSError: the note resolves outside every configured vault (a note that
             # is a symlink leading out). Report failure like any other — the caller surfaces
             # the "could not save" banner — rather than letting it escape into the UI.
             logger.warning("Refused to save %s: %s", self._file_path, exc)
+            self._last_save_error = _(
+                "The note lies outside the vault — a link leading out of it "
+                "cannot be written through.")
+            return False
+        except PermissionError as exc:
+            logger.warning("Failed to save %s: %s", self._file_path, exc)
+            self._last_save_error = _("The file is write-protected.")
             return False
         except (OSError, UnicodeDecodeError) as exc:
             logger.warning("Failed to save %s: %s", self._file_path, exc)
+            self._last_save_error = _("The file could not be written.")
             return False
 
     def set_broken_link_ranges(self, ranges: list[tuple[int, int]]) -> None:

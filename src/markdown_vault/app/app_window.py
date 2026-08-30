@@ -88,6 +88,22 @@ def _load_gtk_css() -> None:
     )
 
 
+def _failed_save_line(tab_bar, path: str) -> str:
+    """One list entry for the "could not save" dialog, carrying the editor's reason when it
+    has one — a bare file name leaves the user guessing, and for a note that is a link out of
+    the vault that is unguessable, since nothing about it looks different.
+
+    A module function rather than a method: the dirty-close tests drive the response handler
+    on hand-built stand-in windows that copy the methods they need, so every new method here
+    breaks them for no reason of their own.
+    """
+    tab = tab_bar.get_tab(path)
+    reason = getattr(tab.editor, "last_save_error", None) if tab else None
+    if reason:
+        return _("– {name}: {reason}").format(name=Path(path).name, reason=reason)
+    return f"– {Path(path).name}"
+
+
 def _apply_theme(color_scheme: int) -> None:
     """Set the application-wide colour scheme."""
     Adw.StyleManager.get_default().set_color_scheme(color_scheme)
@@ -1347,7 +1363,7 @@ class MainWindow(Adw.ApplicationWindow):
                     ngettext("Could not save {n} tab:\n\n",
                              "Could not save {n} tabs:\n\n",
                              len(failed)).format(n=len(failed))
-                    + "\n".join(f"\u2013 {Path(p).name}" for p in failed)
+                    + "\n".join(_failed_save_line(self._tab_bar, p) for p in failed)
                 )
 
                 def _on_error_dismissed(_dlg=None, _resp=None):
@@ -2604,7 +2620,11 @@ class MainWindow(Adw.ApplicationWindow):
                 dialogs.show_broken_wikilinks(self, [b.display for b in broken])
         else:
             self._vault_monitor.forget_atomic_save(tab.editor.file_path)
-            msg = _('Could not save "{name}"').format(name=Path(tab.file_path).name)
+            # One msgid with named placeholders, not a translated stem plus an appended
+            # reason: the translator has to be able to reorder them.
+            msg = _('Could not save "{name}". {reason}').format(
+                name=Path(tab.file_path).name,
+                reason=tab.editor.last_save_error or "")
             self._tab_bar.set_tab_error(tab.file_path, "save_error", msg)
             self._tab_bar.show_error_banner(
                 tab.file_path, msg,

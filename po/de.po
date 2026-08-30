@@ -518,6 +518,36 @@ msgstr "Speichern fehlgeschlagen"
 msgid "Import not possible"
 msgstr "Import nicht möglich"
 
+#: src/markdown_vault/app/app_window.py src/markdown_vault/editor/autosave.py
+#, python-brace-format
+msgid "Could not save \"{name}\". {reason}"
+msgstr "„{name}“ konnte nicht gespeichert werden. {reason}"
+
+#: src/markdown_vault/app/app_window.py
+#, python-brace-format
+msgid "– {name}: {reason}"
+msgstr "– {name}: {reason}"
+
+#: src/markdown_vault/editor/editor.py
+msgid ""
+"The note lies outside the vault — a link leading out of it cannot be written "
+"through."
+msgstr ""
+"Die Notiz liegt außerhalb des Vaults — durch einen Verweis, der hinausführt, "
+"kann nicht geschrieben werden."
+
+#: src/markdown_vault/editor/editor.py
+msgid "The file is write-protected."
+msgstr "Die Datei ist schreibgeschützt."
+
+#: src/markdown_vault/editor/editor.py
+msgid "The file could not be written."
+msgstr "Die Datei konnte nicht geschrieben werden."
+
+#: src/markdown_vault/editor/editor.py
+msgid "The note has no file on disk yet."
+msgstr "Die Notiz hat noch keine Datei auf der Platte."
+
 #: src/markdown_vault/search/quick_open_palette.py
 msgid "Quick Open"
 msgstr "Schnell öffnen"

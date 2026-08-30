@@ -259,6 +259,58 @@ class TestSaveIsAtomicAndGuarded(unittest.TestCase):
         w.assert_called_once()
 
 
+class TestSaveFailureReason(unittest.TestCase):
+    """save() knows WHY it failed and used to drop it: the reason was logged and the user got
+    "Could not save …" with no cause. For a note that is a symlink leading out of the vault
+    that is unguessable — nothing about the note looks different. The reason is kept as a
+    translated sentence for the caller to show."""
+
+    def _editor(self, path="/vault/note.md"):
+        from markdown_vault.editor.editor import Editor
+        ed = Editor()
+        ed._file_path = path
+        return ed
+
+    def test_a_refusal_leaves_a_reason(self):
+        from unittest.mock import patch
+
+        from markdown_vault.core import vault_fs
+        ed = self._editor()
+        with patch("markdown_vault.core.vault_fs.write_text_atomic",
+                   side_effect=vault_fs.VaultWriteError("outside")):
+            self.assertFalse(ed.save())
+        self.assertIsNotNone(ed.last_save_error)
+        self.assertIn("vault", ed.last_save_error.lower())
+
+    def test_a_write_error_leaves_its_own_reason(self):
+        from unittest.mock import patch
+        ed = self._editor()
+        with patch("markdown_vault.core.vault_fs.write_text_atomic",
+                   side_effect=PermissionError(13, "denied")):
+            self.assertFalse(ed.save())
+        self.assertIsNotNone(ed.last_save_error)
+        self.assertNotIn("denied", ed.last_save_error)      # translated, not the OS text
+
+    def test_a_successful_save_clears_the_previous_reason(self):
+        # Otherwise a stale reason from an earlier failure is shown after a later failure
+        # of a different kind — or worse, alongside a success.
+        from unittest.mock import patch
+
+        from markdown_vault.core import vault_fs
+        ed = self._editor()
+        with patch("markdown_vault.core.vault_fs.write_text_atomic",
+                   side_effect=vault_fs.VaultWriteError("outside")):
+            ed.save()
+        with patch("markdown_vault.core.vault_fs.write_text_atomic"):
+            self.assertTrue(ed.save())
+        self.assertIsNone(ed.last_save_error)
+
+    def test_an_unsaved_buffer_says_so(self):
+        ed = self._editor(path=None)
+        self.assertFalse(ed.save())
+        self.assertIsNotNone(ed.last_save_error)
+
+
 class TestInsertImageOutsideVault(unittest.TestCase):
     """The caller side of the attachments VaultFS migration: a note outside every configured
     vault makes store_image refuse with VaultWriteError — which is NOT an OSError. insert_image

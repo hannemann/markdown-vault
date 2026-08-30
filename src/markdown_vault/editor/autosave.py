@@ -64,7 +64,9 @@ class AutosaveManager:
             if self._save_tab(tab):
                 pass  # save_tab handles monitor skip
             else:
-                msg = _('Could not save "{name}"').format(name=Path(tab.file_path).name)
+                msg = _('Could not save "{name}". {reason}').format(
+                    name=Path(tab.file_path).name,
+                    reason=tab.editor.last_save_error or "")
                 logger.warning("autosave: save failed for %s: %s", tab.file_path, msg)
                 self._on_save_failed(tab.file_path, msg)
         return True  # Keep the GLib timeout running.
