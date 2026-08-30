@@ -77,7 +77,7 @@ never a bare `graphify …`:
 | Task                                             | `make` target                 | wraps                  |
 | ------------------------------------------------ | ----------------------------- | ---------------------- |
 | Build/refresh the graph (first use, big changes) | `make graph-build`            | `graphify .`           |
-| Incremental update after edits                   | `make graph-update`           | `graphify update .`    |
+| Incremental update after edits                   | `make graph-update`           | `graphify update .` + `cluster-only` + `export wiki` + `export obsidian` |
 | "How does X work?" / how A connects to B         | `make graph-query Q="…"`      | `graphify query "…"`   |
 | Call chain / path between two symbols            | `make graph-path A="…" B="…"` | `graphify path "A" "B"`|
 | Explain / locate a symbol and its wiring         | `make graph-explain S="…"`    | `graphify explain "…"` |
@@ -93,7 +93,14 @@ Rules:
   `graphify-out/GRAPH_REPORT.md` only for broad architecture review or when
   query/path/explain don't surface enough.
 - After modifying code, run `make graph-update` to keep the graph current
-  (AST-only, no API cost).
+  (AST-only, no API cost). It also re-clusters and re-exports the wiki, because both
+  are derived from the graph and drift **silently** otherwise — a wiki built on a
+  clustering left over from earlier edits dropped 29 % of its nodes as stale.
+  Measured end to end: **~16-20 s**, against ~7 s for the bare update.
+- `make graph-obsidian` (~9 s) writes `graphify-out/obsidian/`, which opens as an
+  Obsidian vault — one note per symbol plus `graph.canvas`, for browsing the graph by
+  hand where the wiki is for reading it as an agent. Deliberately NOT in
+  `graph-update`: its 3825 notes alone pushed that target to ~25-29 s.
 
 ```
 WRONG:  "How does the sidebar refresh?"  →  grep -r "refresh" src/
@@ -231,7 +238,7 @@ target exists.
 | Run one test / tests by name  | `make test-one T=<module[.Class[.method]]>` or `make test-one K=<name-substring>` |
 | Measure one file's line coverage | `make coverage FILE=<src-file> [T=<test_module…>]` (`sys.monitoring`, no `coverage.py` dep; fails on a red suite) |
 | Measure one file's coupling | `make callbacks FILE=<src-file>` — how many of its own methods it hands to other objects (pure AST, no test run). The metric a split is judged by: moving code between files does not change it, extracting state and responsibility does. Counting rule in `scripts/count_callbacks.py`; take before/after with this same target, never with an ad-hoc counter. |
-| Code graph (see graphify)     | `make graph-update` · `graph-query Q="…"` · `graph-explain S="…"` · `graph-path A="…" B="…"` · `graph-build` |
+| Code graph (see graphify)     | `make graph-update` · `graph-query Q="…"` · `graph-explain S="…"` · `graph-path A="…" B="…"` · `graph-build` · `graph-obsidian` |
 | Drive the running app (D-Bus) | `make dbg-ready` (wait until up, e.g. after restart) · `dbg-state` · `dbg-tabs` · `dbg-active` · `dbg-open F=…` · `dbg-close F=…` · `dbg-select F=…` · `dbg-search Q="…"` · `dbg-ask Q="…"` (open+submit+wait+print answer) · `dbg-prefs PAGE=… [SUB=…]` (open Preferences at a page, print the visible page) · low-level `dbg-quickopen Q=…` · `dbg-submit` · `dbg-waitidle` · `dbg-answer` |
 
 Hard rules:

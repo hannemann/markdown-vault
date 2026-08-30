@@ -269,8 +269,30 @@ graph-build:
 docs-settings:
 	python3 scripts/gen_settings_docs.py
 
+# Update, then rebuild what is DERIVED from the graph: the clustering and the wiki.
+# `graphify update` refreshes the graph alone and leaves the community assignment as it was;
+# the wiki and GRAPH_REPORT.md are both built FROM that assignment, so they drift silently
+# with every code change. A wiki export after weeks of updates dropped 29 % of its nodes as
+# stale, and only said so because the exporter happens to report it.
+#
+# Measured END TO END on this repo: ~16-20 s, against ~7 s for the bare update. Measure it
+# that way and never by summing its steps — singly they suggest well under half the real
+# cost, because each then runs against already-current output and has little to do.
+# Queries are unaffected either way (traversal runs over edges, not communities); navigation
+# is what was stale. cluster-only backs up per DAY rather than per run, and graphify-out/ is
+# gitignored, so nothing accumulates or shows up in git status.
 graph-update:
 	graphify update .
+	graphify cluster-only .
+	graphify export wiki
+
+# The Obsidian vault is NOT in graph-update: including it pushed that target to ~25-29 s
+# (3825 notes, 17 MB rewritten every time), too much for a path that runs after every edit.
+# On its own, with the clustering it needs to be current: ~9 s. Run it when you actually
+# want to browse the graph by hand — `graphify-out/obsidian/` opens as a vault.
+graph-obsidian:
+	graphify cluster-only .
+	graphify export obsidian
 
 graph-query:
 	@test -n "$(Q)" || { echo 'usage: make graph-query Q="how does the preview render markdown?"'; exit 2; }
