@@ -406,6 +406,22 @@ msgstr "Nicht unterstützter Dateityp: {suffix}"
 msgid "(none)"
 msgstr "(keiner)"
 
+#: src/markdown_vault/importers/document_import.py
+msgid ""
+"The chosen folder is not inside a vault. Pick a folder in one of your vaults "
+"and try again."
+msgstr ""
+"Der gewählte Ordner liegt in keinem Vault. Wähle einen Ordner in einem deiner "
+"Vaults und versuche es erneut."
+
+#: src/markdown_vault/importers/document_import.py
+msgid ""
+"Could not find a free file name for this note. Give it a different name or "
+"tidy up the target folder."
+msgstr ""
+"Es wurde kein freier Dateiname für diese Notiz gefunden. Vergib einen anderen "
+"Namen oder räume den Zielordner auf."
+
 #: src/markdown_vault/importers/web_import.py
 msgid "Imported page"
 msgstr "Importierte Seite"
@@ -425,6 +441,18 @@ msgstr "Im Browser öffnen"
 #: src/markdown_vault/preview/preview.py
 msgid "Download Image"
 msgstr "Bild herunterladen"
+
+#: src/markdown_vault/vault/file_ops.py
+msgid "Invalid file name: path escapes the vault"
+msgstr "Ungültiger Dateiname: Der Pfad führt aus dem Vault heraus"
+
+#: src/markdown_vault/vault/file_ops.py
+msgid "Invalid folder name: path escapes the vault"
+msgstr "Ungültiger Ordnername: Der Pfad führt aus dem Vault heraus"
+
+#: src/markdown_vault/vault/file_ops.py
+msgid "Cannot delete a path outside the vault"
+msgstr "Ein Pfad außerhalb des Vaults kann nicht gelöscht werden"
 
 #: src/markdown_vault/vault/vault_tree.py
 msgid "Vaults"

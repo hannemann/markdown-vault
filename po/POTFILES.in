@@ -42,4 +42,5 @@ src/markdown_vault/ui/graph_cards.py
 src/markdown_vault/ui/sidebar.py
 src/markdown_vault/uikit/banners.py
 src/markdown_vault/uikit/dialogs.py
+src/markdown_vault/vault/file_ops.py
 src/markdown_vault/vault/vault_tree.py
