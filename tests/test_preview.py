@@ -1602,6 +1602,38 @@ class TestContentRootAndAttributionAreSeparate(unittest.TestCase):
             self.preview.update_from_text("# x", str(self.vault), str(plain))
         self.assertIn(str(self.vault) + "/", [c.args[0] for c in to_uri.call_args_list])
 
+    def test_case_A_a_target_in_no_vault_must_not_answer_with_the_active_vault(self):
+        # Resolving the attribution side too makes _resolve_source_vault find nothing and fall
+        # through to _current_vault_path — the ACTIVE vault, which is a different question. It
+        # coincides with the right answer only while the active vault happens to be the note's,
+        # so the active one is set to something else here; otherwise the bug hides.
+        import markdown_vault.core.config as _cfg
+        self.preview._current_vault_path = "/some/other/vault"
+        _cfg._vaults_cache = [{"name": "V", "path": str(self.vault)},
+                              {"name": "Other", "path": "/some/other/vault"}]
+        self.addCleanup(lambda: setattr(_cfg, "_vaults_cache", None))
+        self.assertEqual(self.preview._resolve_source_vault(str(self.vault)), "V")
+
+    def test_case_B_a_target_in_another_vault_must_not_answer_with_that_vault(self):
+        # The sharper half: no fallback runs at all — the lookup answers confidently with the
+        # vault the TARGET happens to sit in, and the note's wikilinks resolve against it.
+        import markdown_vault.core.config as _cfg
+        _cfg._vaults_cache = [{"name": "V", "path": str(self.vault)},
+                              {"name": "Outside", "path": str(self.outside)}]
+        self.addCleanup(lambda: setattr(_cfg, "_vaults_cache", None))
+        original = self.preview._resolve_source_vault
+        seen = []
+
+        def spy(base_dir):
+            seen.append(base_dir)
+            return original(base_dir)
+
+        with unittest.mock.patch.object(self.preview, "_resolve_source_vault", side_effect=spy):
+            self.preview.update_from_text("# x", str(self.vault), str(self.link))
+        self.assertEqual(seen, [str(self.vault)])          # the LINK's directory was asked about
+        self.assertEqual(original(seen[0]), "V")           # and it answers with the note's vault
+        self.assertEqual(original(str(self.outside)), "Outside")   # the wrong answer exists
+
     def test_a_note_without_a_path_falls_back_to_base_dir(self):
         # An unsaved note has no file to resolve; the caller's base_dir is all there is.
         with unittest.mock.patch.object(

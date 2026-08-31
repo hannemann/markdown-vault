@@ -160,6 +160,38 @@ class TestLinkNavigator(unittest.TestCase):
         kwargs["post_open_fn"]()                                 # …until run
         self.tab.preview.arm_anchor.assert_called_once_with("Heading")
 
+    def test_a_link_in_this_vault_pointing_at_another_vault_does_NOT_switch(self):
+        """A note the user linked into THIS vault belongs to this vault, wherever its bytes are.
+
+        Real symlinks and a real vault list, no mocked lookup — the whole point is which path
+        reaches ``follow``. Since navigation stopped resolving, that is the LINK path, so the
+        note stays in its vault and no switch happens. Resolve it and the app would jump the
+        user into the vault the target happens to sit in, over a link they placed here on
+        purpose. This is the deliberate consequence of the identity decision, pinned so it is
+        not later "fixed" back.
+        """
+        import os
+        import shutil
+        import tempfile
+
+        import markdown_vault.core.config as _cfg
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp, True)
+        here, other = os.path.join(tmp, "here"), os.path.join(tmp, "other")
+        os.makedirs(here)
+        os.makedirs(other)
+        with open(os.path.join(other, "shared.md"), "w", encoding="utf-8") as fh:
+            fh.write("# Shared")
+        link = os.path.join(here, "Shared.md")
+        os.symlink(os.path.join(other, "shared.md"), link)
+        _cfg._vaults_cache = [{"name": "Here", "path": here}, {"name": "Other", "path": other}]
+        self.addCleanup(lambda: setattr(_cfg, "_vaults_cache", None))
+
+        nav = self._navigator(active_vault=here)
+        nav.follow(link, new_tab=False)
+        self.calls.switch.assert_not_called()
+        self.calls.in_place.assert_called_once_with(link)
+
     def test_an_anchor_is_armed_on_the_preview_that_ends_up_showing_the_note(self):
         # Which preview that is only becomes clear *after* opening: depending on
         # the view mode the link reuses the tab or opens a new one. Arming it

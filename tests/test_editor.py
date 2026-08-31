@@ -407,6 +407,60 @@ class TestInsertImageThroughAnInVaultDirectorySymlink(unittest.TestCase):
                         f"location {self.note_real.parent}")
         self.assertEqual(target.read_bytes(), b"PNGDATA")
 
+    def test_classification_reports_the_images_real_path(self):
+        """The second content site, and an honest scope note: classification is NOT broken here.
+
+        Measured — the *verdict* is the same either way, because `Path.exists()` follows
+        symlinks, so an image found through `linkdir/pics/` is found through `real/pics/` too.
+        What differs is the SOURCE PATH reported for an adoptable image: derived from the link's
+        directory it reads ``…/linkdir/pics/cat.png``, from the real one ``…/real/pics/cat.png``
+        — one file, two spellings. Nothing compares those across routes today, so this pins
+        consistency with the other two sites rather than fixing a demonstrated defect. Said
+        plainly because an earlier version of this test claimed the image was marked broken,
+        which mutation testing refuted.
+        """
+        from markdown_vault.editor.editor import Editor
+        img_dir = Path(self.note_real.parent, "pics")
+        img_dir.mkdir()
+        (img_dir / "cat.png").write_bytes(b"PNGDATA")
+        ed = Editor()
+        ed._file_path = str(self.note_via_link)
+        ed._buffer.set_text("![c](pics/cat.png)\n")
+        marks = []
+        ed._set_image_link_marks = marks.append
+        ed._refresh_image_marks()
+        sources = [m[4] for m in marks[0] if m[4]]
+        self.assertEqual(sources, [str(img_dir / "cat.png")])
+
+    def test_all_three_content_sites_go_through_the_shared_helper(self):
+        # Route check: the three used to derive their roots separately, which is why the same
+        # defect sat in all three. A reintroduced local derivation leaves this mock uncalled.
+        from unittest.mock import patch
+
+        from markdown_vault.editor.editor import Editor
+        ed = Editor()
+        ed._file_path = str(self.note_via_link)
+        ed._buffer.set_text("![c](pics/cat.png)\n")
+        real = (str(self.note_real), str(self.note_real.parent), self.v)
+        (self.note_real.parent / "outside.png").write_bytes(b"PNGDATA")
+
+        def adopt():
+            # Set the source here, not once up front: _refresh_image_marks rebuilds
+            # _adopt_sources, so the earlier subtest would wipe it and this call would return
+            # before ever reaching the helper — a green result for the wrong reason.
+            ed._adopt_sources[0] = str(self.note_real.parent / "outside.png")
+            ed._adopt_image_on_line(0)
+
+        # One block per entry point: a total would be brittle (insert_image also triggers a
+        # reclassification) and would not say WHICH site regressed.
+        for label, call in (("insert_image", lambda: ed.insert_image(b"PNGDATA", "a.png")),
+                            ("_refresh_image_marks", ed._refresh_image_marks),
+                            ("_adopt_image_on_line", adopt)):
+            with self.subTest(site=label):
+                with patch.object(Editor, "_content_roots", return_value=real) as roots:
+                    call()
+                self.assertTrue(roots.called, f"{label} derives its roots on its own again")
+
     def test_the_written_link_stays_inside_the_vault(self):
         # The sharper half: derived from the link's directory the prefix climbs out of the vault,
         # so the note would reference a file no vault operation may ever write.

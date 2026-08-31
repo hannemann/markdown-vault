@@ -484,6 +484,19 @@ class TestOneFileGetsOneTab(_TabBarTestBase):
         self.assertIsNotNone(bar.find_tab_for_file(self.real))
         self.assertIsNone(bar.get_tab(self.real))     # the raw lookup stays raw
 
+    def test_two_different_LINKS_to_one_file_also_get_one_tab(self):
+        # The shape the unlock feature cares about: consent is per link, so two links must stay
+        # two identities — but they are still ONE file, so they get ONE buffer. The tab keeps
+        # whichever link opened it first, which is surprising for a moment and correct.
+        import os
+        second = os.path.join(self._tmp, "second-alias.md")
+        os.symlink(self.real, second)
+        bar = self._bar()
+        first = bar.add_tab(self.link, editor=None, preview=unittest.mock.Mock())
+        again = bar.add_tab(second, editor=None, preview=unittest.mock.Mock())
+        self.assertIs(first, again)
+        self.assertEqual(bar.get_all_paths(), [self.link])
+
     def test_two_different_files_still_get_two_tabs(self):
         import os
         other = os.path.join(self._tmp, "other.md")
