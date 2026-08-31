@@ -6,6 +6,7 @@ so that unsaved buffer state is preserved when switching between files.
 """
 
 import logging
+import os
 from pathlib import Path
 
 import gi
@@ -205,11 +206,10 @@ class Editor(Gtk.ScrolledWindow):
         if not self._file_path:
             logger.warning("insert_image: note has no path yet; save it first")
             return
-        from markdown_vault.core import attachments, path_utils, vault_fs
-        note_dir = str(Path(self._file_path).parent)
-        vault = path_utils.find_vault_for_dir(note_dir) or note_dir
+        from markdown_vault.core import attachments, vault_fs
+        real, _note_dir, vault = self._content_roots()
         try:
-            link = attachments.store_image(vault, self._file_path, data, name)
+            link = attachments.store_image(vault, real, data, name)
         except (OSError, vault_fs.VaultWriteError) as exc:
             # VaultWriteError (not an OSError): a note outside every vault cannot store a
             # managed image. Refuse gracefully — log and insert nothing, do not crash.
@@ -280,12 +280,32 @@ class Editor(Gtk.ScrolledWindow):
         if not self._file_path:
             self._set_image_link_marks([])
             return False
-        from markdown_vault.core import attachments, path_utils
-        note_dir = str(Path(self._file_path).parent)
-        vault = path_utils.find_vault_for_dir(note_dir) or note_dir
+        from markdown_vault.core import attachments
+        _real, note_dir, vault = self._content_roots()
         self._set_image_link_marks(
             attachments.classify_image_links(self.get_text(), note_dir, vault))
         return False
+
+    def _content_roots(self):
+        """``(real_path, note_dir, vault_root)`` for anything relative to the note's own content.
+
+        **Resolved**, not the path the note was opened under. A relative path in the text belongs
+        to the *file*, so it has to resolve where the file physically sits — that is what every
+        other program does, and what makes the reference survive leaving this app. A note reached
+        through a directory symlink otherwise gets a prefix written into it that resolves
+        somewhere else entirely: measured with the link three levels deeper than its target, the
+        stored link climbed **out of the vault**.
+
+        Attribution — which vault may receive the attachment — is derived from the resolved
+        directory too, so a note whose real file lies outside every vault falls back to its own
+        directory and the VaultFS guard refuses the write. That refusal is the intended
+        behaviour: the app does not create an ``attachments/`` folder in a directory it does not
+        manage.
+        """
+        from markdown_vault.core import path_utils
+        real = os.path.realpath(self._file_path)
+        note_dir = str(Path(real).parent)
+        return real, note_dir, path_utils.find_vault_for_dir(note_dir) or note_dir
 
     def _set_image_link_marks(self, marks) -> None:
         start, end = self._buffer.get_bounds()
@@ -328,11 +348,10 @@ class Editor(Gtk.ScrolledWindow):
         except OSError as exc:
             logger.warning("adopt image: cannot read %s: %s", source, exc)
             return
-        from markdown_vault.core import attachments, path_utils, vault_fs
-        note_dir = str(Path(self._file_path).parent)
-        vault = path_utils.find_vault_for_dir(note_dir) or note_dir
+        from markdown_vault.core import attachments, vault_fs
+        real, note_dir, vault = self._content_roots()
         try:
-            link = attachments.store_image(vault, self._file_path, data, Path(source).name)
+            link = attachments.store_image(vault, real, data, Path(source).name)
         except (OSError, vault_fs.VaultWriteError) as exc:
             # VaultWriteError (not an OSError): a note outside every vault cannot adopt an
             # image into a managed tree. Refuse gracefully — log and return, do not crash.

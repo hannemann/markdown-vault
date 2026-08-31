@@ -4,6 +4,8 @@ Editor requires GTK widgets for full behavioral testing. These tests
 verify the module structure and API surface without a display server.
 """
 
+import os
+import re
 import unittest
 from pathlib import Path
 
@@ -360,6 +362,62 @@ class TestInsertImageOutsideVault(unittest.TestCase):
                    side_effect=vault_fs.VaultWriteError("outside every vault")):
             ed.insert_image(b"PNGDATA", "pic.png")   # must not raise
         self.assertEqual(ed.get_text(), before)      # nothing inserted
+
+
+class TestInsertImageThroughAnInVaultDirectorySymlink(unittest.TestCase):
+    """A note reached through a directory symlink that stays INSIDE the vault.
+
+    The path written into the note must resolve from the file's REAL location, because that is
+    where every other program looks — the file physically sits there. Measured before this test
+    was written, with the link three levels deeper than its target: derived from the LINK's
+    directory the prefix is ``../../../attachments/sub/deep/linkdir/<stem>``, which from the real
+    location resolves OUT of the vault entirely. Depths must differ, or both variants coincide
+    and the test proves nothing.
+
+    Such a note is writable today (the guard resolves, the target is inside the vault), so this
+    is a live defect, not one the symlink-unlock feature introduces.
+    """
+
+    def setUp(self):
+        import shutil
+        import tempfile
+
+        import markdown_vault.core.config as _cfg
+        self.v = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.v, True)
+        _cfg._vaults_cache = [{"name": "v", "path": self.v}]
+        self.addCleanup(lambda: setattr(_cfg, "_vaults_cache", None))
+        Path(self.v, "real").mkdir()
+        Path(self.v, "sub", "deep").mkdir(parents=True)
+        os.symlink(Path(self.v, "real"), Path(self.v, "sub", "deep", "linkdir"))
+        self.note_via_link = Path(self.v, "sub", "deep", "linkdir", "n.md")
+        self.note_via_link.write_text("", encoding="utf-8")
+        self.note_real = Path(os.path.realpath(self.note_via_link))
+
+    def test_the_written_link_resolves_from_the_files_real_location(self):
+        from markdown_vault.editor.editor import Editor
+        ed = Editor()
+        ed._file_path = str(self.note_via_link)
+        ed.insert_image(b"PNGDATA", "pic.png")
+        m = re.search(r"!\[[^\]]*\]\(([^)]+)\)", ed.get_text())
+        self.assertIsNotNone(m, "insert_image wrote no image link")
+        target = Path(os.path.normpath(self.note_real.parent / m.group(1)))
+        self.assertTrue(target.is_file(),
+                        f"link {m.group(1)!r} does not resolve to a file from the note's real "
+                        f"location {self.note_real.parent}")
+        self.assertEqual(target.read_bytes(), b"PNGDATA")
+
+    def test_the_written_link_stays_inside_the_vault(self):
+        # The sharper half: derived from the link's directory the prefix climbs out of the vault,
+        # so the note would reference a file no vault operation may ever write.
+        from markdown_vault.editor.editor import Editor
+        ed = Editor()
+        ed._file_path = str(self.note_via_link)
+        ed.insert_image(b"PNGDATA", "pic.png")
+        m = re.search(r"!\[[^\]]*\]\(([^)]+)\)", ed.get_text())
+        target = Path(os.path.normpath(self.note_real.parent / m.group(1)))
+        self.assertTrue(str(target).startswith(self.v + os.sep),
+                        f"link escapes the vault: {target}")
 
 
 if __name__ == "__main__":
