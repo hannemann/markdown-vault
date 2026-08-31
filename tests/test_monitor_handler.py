@@ -15,6 +15,20 @@ class _GLibMock:
         return False
 
 
+def _tab_bar_mock():
+    """A tab-bar mock whose ``find_tab_for_file`` follows ``get_all_paths``.
+
+    Must be stubbed explicitly: a bare ``MagicMock`` answers any new method with a truthy Mock,
+    so every path would look open and the "not open" tests would pass for the wrong reason. The
+    paths in these tests do not exist on disk, so plain equality is the whole comparison.
+    """
+    bar = MagicMock()
+    bar.get_all_paths.return_value = []
+    bar.find_tab_for_file = lambda p: next(
+        (MagicMock(file_path=q) for q in bar.get_all_paths.return_value if q == p), None)
+    return bar
+
+
 def _handler_class():
     from markdown_vault.app.monitor_handler import MonitorHandler
     return MonitorHandler
@@ -28,7 +42,7 @@ class TestMonitorHandlerFileCreated(unittest.TestCase):
         self.mock_backlink = MagicMock()
         self.mock_file_index = MagicMock()
         self.mock_vault_tree = MagicMock()
-        self.mock_tab_bar = MagicMock()
+        self.mock_tab_bar = _tab_bar_mock()
         self.mock_dispatcher = MagicMock()
         self.mock_debug_fn = MagicMock()
         self._Handler = _handler_class()
@@ -131,7 +145,7 @@ class TestMonitorHandlerFileDeleted(unittest.TestCase):
         self.mock_backlink = MagicMock()
         self.mock_file_index = MagicMock()
         self.mock_vault_tree = MagicMock()
-        self.mock_tab_bar = MagicMock()
+        self.mock_tab_bar = _tab_bar_mock()
         self.mock_dispatcher = MagicMock()
         self.mock_debug_fn = MagicMock()
         self._Handler = _handler_class()
@@ -268,7 +282,7 @@ class TestMonitorHandlerFileMoved(unittest.TestCase):
         self.mock_backlink = MagicMock()
         self.mock_file_index = MagicMock()
         self.mock_vault_tree = MagicMock()
-        self.mock_tab_bar = MagicMock()
+        self.mock_tab_bar = _tab_bar_mock()
         self.mock_dispatcher = MagicMock()
         self.mock_debug_fn = MagicMock()
         self._Handler = _handler_class()
@@ -580,7 +594,7 @@ class TestMonitorHandlerContentChanged(unittest.TestCase):
         self.mock_backlink = MagicMock()
         self.mock_file_index = MagicMock()
         self.mock_vault_tree = MagicMock()
-        self.mock_tab_bar = MagicMock()
+        self.mock_tab_bar = _tab_bar_mock()
         self.mock_dispatcher = MagicMock()
         self.mock_debug_fn = MagicMock()
         self._Handler = _handler_class()
@@ -674,6 +688,83 @@ class TestMonitorHandlerIntegration(unittest.TestCase):
             debug_fn=MagicMock(),
         )
         self.assertFalse(hasattr(h, "_on_banner_reload"))
+
+
+class TestMonitorHandlerMatchesTabsByFile(unittest.TestCase):
+    """A monitor event names the path the filesystem saw; a tab is keyed by the path its note was
+    opened by. For a symlinked note whose target lies inside the watched vault those differ — the
+    event fires on the target, the tab hangs on the link — so every "is this open?" test here has
+    to compare FILES, not spellings.
+
+    Left broken, a deleted file leaves its tab open over a file that no longer exists, and a
+    rename is misclassified as a new file so inbound backlinks are never rewritten.
+    """
+
+    def setUp(self):
+        import os
+        self.os = os
+        self._tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self._tmp, True)
+        self.vault = self.os.path.join(self._tmp, "vault")
+        self.os.makedirs(self.vault)
+        self.target = self.os.path.join(self.vault, "target.md")
+        with open(self.target, "w", encoding="utf-8") as fh:
+            fh.write("x")
+        self.link = self.os.path.join(self.vault, "link.md")
+        self.os.symlink(self.target, self.link)
+
+        self.mock_backlink = MagicMock()
+        self.mock_file_index = MagicMock()
+        self.mock_file_index.has_path.return_value = False
+        self.mock_vault_tree = MagicMock()
+        self.mock_dispatcher = MagicMock()
+        self.mock_debug_fn = MagicMock()
+        self.mock_tab_bar = _tab_bar_mock()
+        self.mock_tab_bar.get_all_paths.return_value = [self.link]
+        # Stub explicitly: a bare MagicMock answers this truthily and every path would look
+        # open, so the negative tests would pass for the wrong reason.
+        self.mock_tab_bar.find_tab_for_file = lambda p: (
+            MagicMock(file_path=self.link)
+            if self.os.path.realpath(p) == self.os.path.realpath(self.link) else None)
+        self._Handler = _handler_class()
+
+    def _make(self):
+        return self._Handler(
+            backlink_index=self.mock_backlink,
+            file_index=self.mock_file_index,
+            vault_tree=self.mock_vault_tree,
+            tab_bar=self.mock_tab_bar,
+            dispatcher=self.mock_dispatcher,
+            debug_fn=self.mock_debug_fn,
+        )
+
+    def test_deleting_the_target_closes_the_tab_keyed_by_the_link(self):
+        with patch("markdown_vault.app.monitor_handler.GLib", _GLibMock):
+            self._make().on_file_deleted(self.vault, self.target)
+        # Closed by the tab's OWN key: close_tab looks the path up, so the event's spelling
+        # would close nothing.
+        self.mock_tab_bar.close_tab.assert_called_once_with(self.link)
+
+    def test_renaming_the_target_is_a_genuine_rename_not_a_new_file(self):
+        dest = self.os.path.join(self.vault, "renamed.md")
+        with open(dest, "w", encoding="utf-8") as fh:
+            fh.write("x")
+        h = self._make()
+        h._handle_genuine_rename = MagicMock()
+        h._handle_new_file_from_move = MagicMock()
+        with patch("markdown_vault.app.monitor_handler.GLib", _GLibMock):
+            h.on_file_moved(self.vault, dest, self.target)
+        h._handle_genuine_rename.assert_called_once()
+        h._handle_new_file_from_move.assert_not_called()
+
+    def test_a_file_that_is_not_open_is_still_not_tracked(self):
+        # The control: without it, a stub that always answers "open" would satisfy the two above.
+        other = self.os.path.join(self.vault, "other.md")
+        with open(other, "w", encoding="utf-8") as fh:
+            fh.write("y")
+        with patch("markdown_vault.app.monitor_handler.GLib", _GLibMock):
+            self._make().on_file_deleted(self.vault, other)
+        self.mock_tab_bar.close_tab.assert_not_called()
 
 
 if __name__ == "__main__":  # pragma: no cover

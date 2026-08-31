@@ -125,8 +125,12 @@ class MonitorHandler:
         self._backlink_index.remove_wikilinks(file_path)
         self._backlink_index.remove_file(file_path)
         self._file_index.remove_file(file_path)
-        if file_path in self._tab_bar.get_all_paths():
-            self._tab_bar.close_tab(file_path)
+        # Match by FILE, not by spelling: for a symlinked note whose target is inside the vault
+        # the event names the target while the tab hangs on the link. Close by the tab's OWN key
+        # — close_tab looks the path up, so the event's spelling would close nothing.
+        tab = self._tab_bar.find_tab_for_file(file_path)
+        if tab is not None:
+            self._tab_bar.close_tab(tab.file_path)
         self._dispatcher.on_file_deleted(vault_path, file_path)
         self._debug_fn(["file_index", "backlink_index", "vault_tree", "tabs", "sidebar"])
 
@@ -169,12 +173,14 @@ class MonitorHandler:
                     other_path, file_path,
                 )
                 return
+            # By file, not by spelling — see on_file_deleted. Misjudged here, a genuine rename
+            # is read as a new file and inbound backlinks are never rewritten.
             source_tracked = (
-                other_path in self._tab_bar.get_all_paths()
+                self._tab_bar.find_tab_for_file(other_path) is not None
                 or self._file_index.has_path(other_path)
             )
             dest_tracked = (
-                file_path in self._tab_bar.get_all_paths()
+                self._tab_bar.find_tab_for_file(file_path) is not None
                 or self._file_index.has_path(file_path)
             )
 
