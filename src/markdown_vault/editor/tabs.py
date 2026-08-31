@@ -6,6 +6,7 @@ each tab retains its own buffer state and scroll position.
 """
 
 import logging
+import os
 from pathlib import Path
 
 import gi
@@ -18,6 +19,7 @@ from gi.repository import Gtk, GObject, Gio, Gdk, GLib
 
 from markdown_vault.core import debug
 from markdown_vault.core.i18n import _
+from markdown_vault.core.path_guard import within_any
 from markdown_vault.core.path_utils import find_vault_for_dir
 
 logger = logging.getLogger(__name__)
@@ -228,9 +230,10 @@ class TabBar(Gtk.Box):
         If *file_path* is already open, the existing tab is selected
         and no new ``Editor``/``Preview`` pair is created.
         """
-        if file_path in self._tabs:
-            self.set_active_tab(file_path)
-            return self._tabs[file_path]
+        existing = self.find_tab_for_file(file_path)
+        if existing is not None:
+            self.set_active_tab(existing.file_path)
+            return existing
 
         title = Path(file_path).name
         tab = Tab(file_path, title, editor, preview,
@@ -416,8 +419,52 @@ class TabBar(Gtk.Box):
             self.close_tab(file_path)
 
     def get_tab(self, file_path: str) -> Tab | None:
-        """Return the ``Tab`` for *file_path*, or ``None``."""
+        """Return the tab stored under exactly this key, or ``None``.
+
+        The raw lookup. Use :meth:`find_tab_for_file` to ask whether a *file* is open.
+        """
         return self._tabs.get(file_path)
+
+    def paths_under_vault(self, vault_path: str) -> list[str]:
+        """The keys of the tabs belonging to the vault at *vault_path* — the ones to close when
+        it is removed.
+
+        Uses the shared containment primitive in **delete mode**: the parent is resolved, the
+        last component is kept literal. That is the mode this question wants. Resolving the root
+        matters because a vault can be configured under a symlinked path (one under
+        ``~/Nextcloud`` is the everyday case) while a tab holds the resolved spelling, or the
+        reverse — compared literally, a tab would stay open on a vault that is gone and keep
+        saving into it. Keeping the *leaf* literal matters because a note that is itself a
+        symlink out of the vault was still opened **through** this vault and must close with it.
+
+        The keys are returned, not the resolved paths: tabs are addressed by their own key
+        everywhere else, so a resolved spelling would close nothing.
+        """
+        return [p for p in self._tabs
+                if within_any([vault_path], p, follow_last=False)]
+
+    def find_tab_for_file(self, file_path: str) -> Tab | None:
+        """Return the tab showing the same FILE as *file_path*, whatever it is keyed under.
+
+        Identity and sameness are different questions and this answers the second. The stored key
+        stays the path the note was opened by — attribution, per-link consent and the tab title
+        all hang off it, and two links to one file must not collapse into one identity. But "is
+        this already open?" is about the file: two spellings of one file used to open two tabs on
+        one buffer, and whichever saved last won.
+
+        Comparison is by resolved PATH, not by file identity. A hardlink gives one file two names
+        with nothing to resolve, so two hardlinks still get two tabs; file identity would mean an
+        ``os.path.samefile`` per open tab. The gap is named rather than closed — its reach is the
+        same as the hardlink limit in :mod:`markdown_vault.core.path_guard`.
+        """
+        exact = self._tabs.get(file_path)
+        if exact is not None:
+            return exact
+        real = os.path.realpath(file_path)
+        for path, tab in self._tabs.items():
+            if os.path.realpath(path) == real:
+                return tab
+        return None
 
     def all_tabs(self) -> list[Tab]:
         """Every open tab, as a snapshot.

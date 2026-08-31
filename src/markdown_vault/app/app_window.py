@@ -2045,9 +2045,8 @@ class MainWindow(Adw.ApplicationWindow):
         """Handle vault removal from the vault tree."""
         logger.info("Vault removed: %s", vault_path)
         # Close all tabs belonging to the removed vault.
-        for tab_path in list(self._tab_bar.get_all_paths()):
-            if tab_path.startswith(vault_path + os.sep) or tab_path == vault_path:
-                self._tab_bar._on_close_button_clicked(tab_path)
+        for tab_path in self._tab_bar.paths_under_vault(vault_path):
+            self._tab_bar._on_close_button_clicked(tab_path)
         # Remove vault from vault monitor.
         self._vault_monitor.remove_vault(vault_path)
         # Purge backlink/file index entries.

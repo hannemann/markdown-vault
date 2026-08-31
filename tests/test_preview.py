@@ -1549,5 +1549,123 @@ class TestArmedAnchorRidesWithTheContent(unittest.TestCase):
         self.assertEqual(len(self._ran), 1, self._ran)
 
 
+class TestContentRootAndAttributionAreSeparate(unittest.TestCase):
+    """``base_dir`` meant two things at once: the root relative URLs in the document resolve
+    against (**content**), and the directory the source-vault lookup asks about
+    (**attribution**). For a note reached through a symlink those are different directories, and
+    each wants the other one:
+
+    * content must be the file's REAL directory — a relative image path belongs to the file, so
+      it has to resolve where the file physically sits, which is what every other program does;
+    * attribution must stay the LINK's directory — resolve it and the lookup either finds no
+      vault and silently falls back to the ACTIVE one, or finds the vault the target happens to
+      live in and resolves the note's wikilinks against that.
+    """
+
+    def setUp(self):
+        self._tmp = tempfile.mkdtemp()
+        d = Path(self._tmp)
+        self.vault = d / "vault"
+        self.outside = d / "outside"
+        self.vault.mkdir()
+        self.outside.mkdir()
+        (self.outside / "real.md").write_text("# Real", encoding="utf-8")
+        self.link = self.vault / "Linked.md"
+        os.symlink(self.outside / "real.md", self.link)
+        self.preview = Preview()
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self._tmp, ignore_errors=True)
+
+    def test_the_document_base_uri_is_the_files_real_directory(self):
+        with unittest.mock.patch.object(
+                _pv.GLib, "filename_to_uri", wraps=_pv.GLib.filename_to_uri) as to_uri:
+            self.preview.update_from_text("# x", str(self.vault), str(self.link))
+        used = [c.args[0] for c in to_uri.call_args_list]
+        self.assertIn(str(self.outside) + "/", used,
+                      f"base URI not built from the real directory; got {used}")
+
+    def test_the_source_vault_lookup_still_uses_the_link_directory(self):
+        # The other half. Resolving this one too is the silent failure: no vault found ->
+        # fall back to the ACTIVE vault, or the target's vault answers instead.
+        with unittest.mock.patch.object(
+                self.preview, "_resolve_source_vault", return_value=None) as lookup:
+            self.preview.update_from_text("# x", str(self.vault), str(self.link))
+        lookup.assert_called_once_with(str(self.vault))
+
+    def test_an_ordinary_note_is_unaffected(self):
+        plain = self.vault / "plain.md"
+        plain.write_text("# Plain", encoding="utf-8")
+        with unittest.mock.patch.object(
+                _pv.GLib, "filename_to_uri", wraps=_pv.GLib.filename_to_uri) as to_uri:
+            self.preview.update_from_text("# x", str(self.vault), str(plain))
+        self.assertIn(str(self.vault) + "/", [c.args[0] for c in to_uri.call_args_list])
+
+    def test_a_note_without_a_path_falls_back_to_base_dir(self):
+        # An unsaved note has no file to resolve; the caller's base_dir is all there is.
+        with unittest.mock.patch.object(
+                _pv.GLib, "filename_to_uri", wraps=_pv.GLib.filename_to_uri) as to_uri:
+            self.preview.update_from_text("# x", str(self.vault), "")
+        self.assertIn(str(self.vault) + "/", [c.args[0] for c in to_uri.call_args_list])
+
+
+class TestNavigationDoesNotResolveSymlinks(unittest.TestCase):
+    """The preview hands the opened path on as the tab's identity, so it must keep the path the
+    note was reached BY, not the path it resolves to.
+
+    Resolving here gave one note two identities — one from the file tree, one from a wikilink —
+    and two tabs on one file, whichever saved last winning. It also answers relative links
+    differently from every other markdown renderer, which resolve lexically against the directory
+    the file sits in.
+    """
+
+    def setUp(self):
+        self._tmp = tempfile.mkdtemp()
+        d = Path(self._tmp)
+        self._vault = d / "vault"
+        self._outside = d / "outside"
+        (self._vault / "Sub").mkdir(parents=True)
+        self._outside.mkdir()
+        (self._outside / "shared.md").write_text("# Shared", encoding="utf-8")
+        os.symlink(self._outside / "shared.md", self._vault / "Linked.md")
+        self._preview = Preview()
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self._tmp, ignore_errors=True)
+
+    def test_a_symlinked_note_keeps_the_link_path(self):
+        link = self._vault / "Linked.md"
+        self.assertEqual(self._preview._resolve_wikilink(str(link)), str(link))
+
+    def test_the_same_holds_without_the_extension(self):
+        # The ".md"-appending branch resolves separately and can regress on its own.
+        self.assertEqual(self._preview._resolve_wikilink(str(self._vault / "Linked")),
+                         str(self._vault / "Linked.md"))
+
+    def test_a_dotdot_link_across_a_directory_symlink_stays_lexical(self):
+        # The one case where dropping .resolve() is not a no-op: it opens a DIFFERENT FILE.
+        # Measured — a/link/../b/x.md with link -> c/real gives c/b/x.md when resolved and
+        # a/b/x.md lexically. The lexical one is correct: it is what a plain markdown renderer
+        # opens, and this project's read side is lexical by design. The link's target must sit
+        # in a different parent, or both answers coincide and the test proves nothing.
+        d = Path(self._tmp)
+        (d / "a" / "b").mkdir(parents=True)
+        (d / "c" / "real").mkdir(parents=True)
+        (d / "c" / "b").mkdir()
+        os.symlink(d / "c" / "real", d / "a" / "link")
+        (d / "a" / "b" / "x.md").write_text("A", encoding="utf-8")
+        (d / "c" / "b" / "x.md").write_text("C", encoding="utf-8")
+        result = self._preview._resolve_wikilink(str(d / "a" / "link" / ".." / "b" / "x.md"))
+        self.assertIsNotNone(result)
+        self.assertEqual(Path(result).read_text(encoding="utf-8"), "A")
+
+    def test_an_ordinary_note_is_unaffected(self):
+        (self._vault / "Sub" / "Deep.md").write_text("# Deep", encoding="utf-8")
+        self.assertEqual(self._preview._resolve_wikilink(str(self._vault / "Sub" / "Deep")),
+                         str(self._vault / "Sub" / "Deep.md"))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -25,6 +25,10 @@ class TestExternalChangesBanner(unittest.TestCase):
         tab_bar = MagicMock()
         tab_bar.get_all_paths.return_value = list(paths)
         tab_bar.get_tab = lambda p: tabs.get(p)
+        # Stub explicitly: a bare MagicMock would auto-answer this with a truthy Mock, so a file
+        # that is NOT open would look open and the "no banner" tests would pass for the wrong
+        # reason. These paths do not exist on disk, so plain equality is the whole comparison.
+        tab_bar.find_tab_for_file = lambda p: tabs.get(p)
         handler = ContentChangeHandler(tab_bar=tab_bar)
         return handler, tab_bar, tabs
 
@@ -171,6 +175,59 @@ class TestExternalChangesBanner(unittest.TestCase):
         mock_show_error.assert_called_once_with(
             parent, "Reload Failed", 'Could not read "test.md" from disk.'
         )
+
+
+class TestEventOnTheTargetPathFindsTheLinkedTab(unittest.TestCase):
+    """A monitor event names the path the FILESYSTEM saw, which for a symlinked note is the
+    target — never the link, since the link's directory entry is untouched by a write through it.
+
+    The tab is keyed by the link (its identity), so matching the event to a tab has to resolve.
+    Before this, the two matched only by accident, when the tab happened to be keyed by the
+    target as well; keying tabs by the link without fixing this would silently switch off
+    external-change detection for exactly those notes.
+    """
+
+    def setUp(self):
+        import os
+        import shutil
+        import tempfile
+        from unittest.mock import MagicMock
+        self._tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self._tmp, True)
+        self.target = os.path.join(self._tmp, "target.md")
+        with open(self.target, "w", encoding="utf-8") as fh:
+            fh.write("x")
+        self.link = os.path.join(self._tmp, "link.md")
+        os.symlink(self.target, self.link)
+
+        self.tab = MagicMock(file_path=self.link)
+        self.tab.editor.is_modified = True          # a real conflict, so the banner path runs
+        tabs = {self.link: self.tab}
+        self.tab_bar = MagicMock()
+        self.tab_bar.get_all_paths.return_value = [self.link]
+        self.tab_bar.get_tab = lambda p: tabs.get(p)
+        self.tab_bar.find_tab_for_file = lambda p: next(
+            (t for k, t in tabs.items() if os.path.realpath(k) == os.path.realpath(p)), None)
+        self.handler = ContentChangeHandler(tab_bar=self.tab_bar)
+
+    def test_an_event_on_the_target_reaches_the_tab_keyed_by_the_link(self):
+        self.handler.handle_external_change(self.target)
+        self.tab_bar.show_warning_banner.assert_called_once()
+        self.assertTrue(self.tab.external_change_pending)
+
+    def test_the_banner_is_attached_to_the_tabs_own_key(self):
+        # The banner is addressed by tab key elsewhere in the tab bar, so passing the event's
+        # spelling would attach it to a tab that does not exist.
+        self.handler.handle_external_change(self.target)
+        self.assertEqual(self.tab_bar.show_warning_banner.call_args[0][0], self.link)
+
+    def test_an_event_for_a_file_that_is_not_open_still_does_nothing(self):
+        import os
+        other = os.path.join(self._tmp, "other.md")
+        with open(other, "w", encoding="utf-8") as fh:
+            fh.write("y")
+        self.handler.handle_external_change(other)
+        self.tab_bar.show_warning_banner.assert_not_called()
 
 
 if __name__ == '__main__':

@@ -604,6 +604,27 @@ def _split_frontmatter(text: str) -> tuple[str, str]:
     return "\n" * raw.count("\n") + text[m.end():], raw
 
 
+def _content_dir(base_dir: str, current_file: str) -> str:
+    """The directory a note's own relative paths resolve against — its **content** root.
+
+    The file's REAL directory, not the one it was opened under. A relative path in the text
+    belongs to the *file*, so it must resolve where the file physically sits: that is what every
+    other markdown renderer does, and it is why an image in a note reached through a symlink
+    renders on one route and not the other when this is skipped.
+
+    Deliberately NOT the same value as *base_dir*, which stays the directory the note was opened
+    by and answers the **attribution** question (which vault do this note's wikilinks resolve in
+    — see :meth:`Preview._resolve_source_vault`). Resolving that one too is the silent failure:
+    it finds no vault and falls back to the *active* one, or finds the vault the target happens
+    to sit in and answers for that.
+
+    Falls back to *base_dir* when there is no file yet — an unsaved note has nothing to resolve.
+    """
+    if not current_file:
+        return base_dir
+    return os.path.dirname(os.path.realpath(current_file))
+
+
 def _same_page_fragment(uri: str, base_uri: str | None) -> str | None:
     """The fragment of *uri* when it is an in-page anchor (its base equals the
     document's own ``base_uri``), else ``None``. Footnote references/backlinks and
@@ -1264,13 +1285,20 @@ class Preview(Gtk.ScrolledWindow):
         target = Path(path_str)
         name = target.name
 
+        # abspath, NOT resolve(): the returned path becomes the tab's identity, so a note reached
+        # through a symlink must keep the path it was reached BY. Resolving gave one note two
+        # identities — link path from the tree, target path from a wikilink — and two tabs on one
+        # file. It also opens a DIFFERENT FILE for a "..": measured on a/link/../b/x.md with
+        # link -> c/real, resolve() yields c/b/x.md and abspath a/b/x.md. The lexical answer is
+        # the right one — it is what a plain markdown renderer opens, and the read side of this
+        # codebase is lexical by design (path_utils.path_is_within).
         if name.endswith(".md") and target.exists():
-            return str(target.resolve())
+            return os.path.abspath(target)
         # Append, don't replace: `with_suffix` would turn "v1.2" into "v1.md" and
         # "My.Notes" into "My.md" — a hit on an unrelated note.
         with_md = target.parent / (name + ".md")
         if with_md.exists():
-            return str(with_md.resolve())
+            return os.path.abspath(with_md)
         return None
 
     def _resolve_wikilink_page(self, uri: str) -> str | None:
@@ -1299,7 +1327,7 @@ class Preview(Gtk.ScrolledWindow):
             return None
         result = resolve_wikilink(vault_name, relative)
         if result and Path(result).exists():
-            return str(Path(result).resolve())
+            return os.path.abspath(result)   # see _resolve_wikilink: identity, not target
         return None
 
     def _resolve_source_vault(self, base_dir: str) -> str | None:
@@ -1376,7 +1404,8 @@ class Preview(Gtk.ScrolledWindow):
             return
         self._last_html_hash = html_hash
 
-        base_uri = GLib.filename_to_uri(base_dir + "/") if base_dir else None
+        content_dir = _content_dir(base_dir, current_file)
+        base_uri = GLib.filename_to_uri(content_dir + "/") if content_dir else None
 
         if not self._loaded:
             # CSP is fixed at load_html (a <meta> in <head>); read the opt-in

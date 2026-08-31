@@ -435,5 +435,140 @@ class TestTabBannerMethods(_TabBarTestBase):
         # No crash.
 
 
+class TestOneFileGetsOneTab(_TabBarTestBase):
+    """Identity and sameness are two questions, and the tab dict answers only the first.
+
+    The stored key stays the path the note was opened BY — attribution, per-link consent and the
+    tab title all hang off it, and two links to one file must not collapse into one identity.
+    But "is this file already open?" is about the FILE: two spellings of one file opened two tabs
+    on one buffer, and whichever saved last won.
+
+    Named limit: this compares PATHS. Two hardlinks have no common resolved path and still get
+    two tabs — see the ticket; file identity would need os.path.samefile per open tab.
+    """
+
+    def setUp(self):
+        super().setUp()
+        import os
+        import shutil
+        import tempfile
+        self._tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self._tmp, True)
+        self.real = os.path.join(self._tmp, "real.md")
+        with open(self.real, "w", encoding="utf-8") as fh:
+            fh.write("x")
+        self.link = os.path.join(self._tmp, "alias.md")
+        os.symlink(self.real, self.link)
+
+    def _bar(self):
+        return TabBar()
+
+    def test_the_same_file_under_two_spellings_gets_one_tab(self):
+        bar = self._bar()
+        first = bar.add_tab(self.link, editor=None, preview=unittest.mock.Mock())
+        second = bar.add_tab(self.real, editor=None, preview=unittest.mock.Mock())
+        self.assertIs(first, second)
+        self.assertEqual(len(bar.get_all_paths()), 1)
+
+    def test_the_stored_identity_is_the_path_it_was_opened_by(self):
+        # The other half: sameness resolves, identity does not. Asserted together so a later
+        # "simplification" cannot satisfy one by collapsing both.
+        bar = self._bar()
+        bar.add_tab(self.link, editor=None, preview=unittest.mock.Mock())
+        bar.add_tab(self.real, editor=None, preview=unittest.mock.Mock())
+        self.assertEqual(bar.get_all_paths(), [self.link])
+
+    def test_find_tab_for_file_matches_across_spellings(self):
+        bar = self._bar()
+        bar.add_tab(self.link, editor=None, preview=unittest.mock.Mock())
+        self.assertIsNotNone(bar.find_tab_for_file(self.real))
+        self.assertIsNone(bar.get_tab(self.real))     # the raw lookup stays raw
+
+    def test_two_different_files_still_get_two_tabs(self):
+        import os
+        other = os.path.join(self._tmp, "other.md")
+        with open(other, "w", encoding="utf-8") as fh:
+            fh.write("y")
+        bar = self._bar()
+        bar.add_tab(self.link, editor=None, preview=unittest.mock.Mock())
+        bar.add_tab(other, editor=None, preview=unittest.mock.Mock())
+        self.assertEqual(len(bar.get_all_paths()), 2)
+
+
+class TestPathsUnderVault(_TabBarTestBase):
+    """Removing a vault closes its tabs, and the match resolves the ROOT while keeping the tab's
+    last component literal.
+
+    Resolving the root: a vault can be configured under a symlinked path (one under ~/Nextcloud
+    is the everyday case) while a tab holds the resolved spelling, or the reverse — compared
+    literally the tab stays open on a vault that is gone and keeps saving into it.
+    Keeping the leaf literal: a note that is itself a symlink out of the vault was still opened
+    THROUGH this vault and must close with it.
+    """
+
+    def setUp(self):
+        super().setUp()
+        import os
+        import shutil
+        import tempfile
+        self.os = os
+        self.tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        self.store = os.path.join(self.tmp, "store")
+        os.makedirs(os.path.join(self.store, "sub"))
+        self.vault_link = os.path.join(self.tmp, "vault")
+        os.symlink(self.store, self.vault_link)
+        for rel in ("a.md", os.path.join("sub", "b.md")):
+            with open(os.path.join(self.store, rel), "w", encoding="utf-8") as fh:
+                fh.write("x")
+
+    def _bar_with(self, *paths):
+        bar = TabBar()
+        for p in paths:
+            bar.add_tab(p, editor=None, preview=unittest.mock.Mock())
+        return bar
+
+    def test_a_tab_opened_through_the_symlinked_root_is_closed(self):
+        tab = self.os.path.join(self.vault_link, "a.md")
+        self.assertEqual(self._bar_with(tab).paths_under_vault(self.store), [tab])
+
+    def test_a_tab_opened_by_the_real_path_is_closed_for_the_symlinked_vault(self):
+        tab = self.os.path.join(self.store, "a.md")
+        self.assertEqual(self._bar_with(tab).paths_under_vault(self.vault_link), [tab])
+
+    def test_nested_paths_are_included(self):
+        tab = self.os.path.join(self.vault_link, "sub", "b.md")
+        self.assertEqual(self._bar_with(tab).paths_under_vault(self.store), [tab])
+
+    def test_a_note_that_is_a_symlink_out_of_the_vault_still_closes_with_it(self):
+        # Leaf kept literal: it was opened through this vault, so it goes with it.
+        outside = self.os.path.join(self.tmp, "outside.md")
+        with open(outside, "w", encoding="utf-8") as fh:
+            fh.write("z")
+        tab = self.os.path.join(self.store, "linked.md")
+        self.os.symlink(outside, tab)
+        self.assertEqual(self._bar_with(tab).paths_under_vault(self.store), [tab])
+
+    def test_a_tab_outside_the_vault_is_left_alone(self):
+        other = self.os.path.join(self.tmp, "elsewhere.md")
+        with open(other, "w", encoding="utf-8") as fh:
+            fh.write("y")
+        self.assertEqual(self._bar_with(other).paths_under_vault(self.store), [])
+
+    def test_a_prefix_sibling_is_not_containment(self):
+        # /…/store must not swallow /…/store-other — the classic startswith bug.
+        sibling = self.os.path.join(self.tmp, "store-other")
+        self.os.makedirs(sibling)
+        tab = self.os.path.join(sibling, "c.md")
+        with open(tab, "w", encoding="utf-8") as fh:
+            fh.write("z")
+        self.assertEqual(self._bar_with(tab).paths_under_vault(self.store), [])
+
+    def test_the_returned_paths_are_the_tabs_own_keys(self):
+        # Tabs are addressed by their key everywhere else; a resolved spelling closes nothing.
+        tab = self.os.path.join(self.vault_link, "a.md")
+        self.assertEqual(self._bar_with(tab).paths_under_vault(self.store)[0], tab)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -37,11 +37,16 @@ class ContentChangeHandler:
         flag the tab so autosave cannot clobber the external change before the
         user resolves it.
         """
-        if file_path not in self._tab_bar.get_all_paths():
-            return
-        tab = self._tab_bar.get_tab(file_path)
+        # Match by FILE, not by spelling: a monitor event names the path the filesystem saw,
+        # which for a symlinked note is the target — a write through a link leaves the link's
+        # own directory entry untouched, so no event ever names it. The tab is keyed by the
+        # link (its identity), so the two only meet once this resolves.
+        tab = self._tab_bar.find_tab_for_file(file_path)
         if tab is None:
             return
+        # From here on address the tab by ITS OWN key: banners and flags are looked up by tab
+        # key elsewhere, so passing the event's spelling would address a tab that does not exist.
+        file_path = tab.file_path
         if not tab.editor.is_modified:
             self.reload_content(file_path)
             return
