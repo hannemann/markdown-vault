@@ -46,7 +46,9 @@ written is separate, under "Conventions".)
   word. This is the standing exception the global rule points at — it covers **`git commit`
   only**. **`git push` and merge still require the user's explicit word** in that message
   (they are outward-facing and effectively irreversible; a commit is local and reversible).
-  Report each commit briefly so the user keeps oversight and can have you amend or undo it.
+  Report each commit briefly so the user keeps oversight and can have you amend or undo it —
+  and when you report work as *finished*, count against the source list, not your summary of
+  it (see "Your own status report is a claim too" under *Conventions*).
   Keep the discipline that makes autonomy safe: one logical change per commit, **tests
   first** (never commit code without its tests, see the TDD section), a factual conventional
   message explaining the *why*, and stage named files only — never `git add -A`/`.`.
@@ -328,6 +330,8 @@ Always write failing tests first, then implement the fix. Run tests to verify th
 
 **Test the caller, not only the receiver.** When a change gives a collaborator a new argument, a unit test of the collaborator leaves the wiring that supplies it unguarded — is the value passed at all, and with the right polarity? Add a small test at the call site that fails when the argument is dropped or inverted. This blind spot has recurred across the codebase; the fuller statement lives in `src/markdown_vault/app/AGENTS.md` (it is not `app/`-specific).
 
+The caller can also be a whole **layer**, not just a call site. `core/vault_fs.py` was thoroughly symlink-tested while `core/attachments.py` — the layer that actually builds the attacker-influenced paths — had no symlink test at all. A facade proven correct says nothing about whether its guarantee arrives where the risky paths are assembled. Test one layer up, and prefer evidence of the **route** (the caller's own log line, a mocked facade call) over evidence of the outcome: an op that never ran looks exactly like an op that was refused.
+
 ## Testing loop (manual integration tests)
 
 For features involving GTK/WebKit/WebViews that cannot be tested
@@ -370,6 +374,12 @@ opening files in editor, toggling sidebar etc.) ask the user.
   ignores) — cost: **one `grep` each**. Prefer a docstring beside the code over a
   prose copy in a doc (which drifts); when a doc must state behaviour, cite the
   symbol and keep it thin.
+- **Your own status report is a claim too — count against the source list, not against
+  your summary of it.** "That closes the last open criteria" was wrong when it was said:
+  three of eight covered, and the two the ticket marks sharpest were among the five missing.
+  Before reporting work complete, re-read the list it is measured
+  against and tick it item by item. It costs one read; a reviewer doing it for you costs a
+  round.
 - **Recompute what follows from a measurement — the figure you *report* is not the figure
   you *measured*.** A correct measurement does not make the number derived from it correct:
   evaluate a formula in its *target* case, not just at its threshold; check "all N removed"
